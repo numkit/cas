@@ -1,53 +1,16 @@
 #include <numkit/cas/num/bigint.hpp>
 
-#include <cstdint>
 #include <limits>
-#include <string>
-#include <vector>
 
 #include <gtest/gtest.h>
+#include "test_util.hpp"
 
 namespace {
 
+using cas_test::nextU64;
+using cas_test::parse;
+using cas_test::randomBig;
 using numkit::cas::BigInt;
-
-BigInt parse(const std::string &s)
-{
-    BigInt v;
-    if (!BigInt::tryParse(v, s))
-        ADD_FAILURE() << "tryParse failed on: " << s;
-    return v;
-}
-
-std::uint64_t nextU64(std::uint64_t &state)
-{
-    state ^= state >> 12;
-    state ^= state << 25;
-    state ^= state >> 27;
-    return state * 0x2545F4914F6CDD1DULL;
-}
-
-BigInt randomBig(std::uint64_t &state, int maxLimbs)
-{
-    static const char *nasty[] = {
-        "0", "1", "-1", "2", "-2", "18446744073709551615",
-        "18446744073709551616", "9223372036854775807",
-        "-9223372036854775808", "999999999999999999",
-        "1000000000000000000", "-1000000000000000000",
-    };
-    if (nextU64(state) % 8 == 0)
-        return parse(nasty[nextU64(state) % 12]);
-
-    const int limbs = static_cast<int>(nextU64(state) % (maxLimbs + 1));
-    BigInt out;
-    for (int i = 0; i < limbs; ++i) {
-        const std::uint64_t limb = nextU64(state) | (i + 1 == limbs ? 1 : 0);
-        out = (out << 64) + BigInt(limb);
-    }
-    if (!out.isZero() && nextU64(state) & 1)
-        out = -out;
-    return out;
-}
 
 // Python-generated oracle vectors: a, b, a+b, a-b, a*b, a/b (trunc), a%b.
 struct BinCase

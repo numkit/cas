@@ -1,5 +1,6 @@
 add_library(numkit_cas STATIC
     num/bigint.cpp
+    num/rational.cpp
 )
 
 add_library(numkit::cas ALIAS numkit_cas)

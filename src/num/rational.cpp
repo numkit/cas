@@ -99,6 +99,20 @@ bool operator>=(const Rational &a, const Rational &b)
     return !(a < b);
 }
 
+Rational Rational::powUInt(const Rational &base, std::uint64_t exp)
+{
+    Rational result(std::int64_t{1});
+    Rational b = base;
+    while (exp != 0) {
+        if (exp & 1)
+            result = result * b;
+        exp >>= 1;
+        if (exp != 0)
+            b = b * b;
+    }
+    return result;
+}
+
 std::uint64_t Rational::hashBits() const
 {
     return (num().hashBits() * 0x9E3779B97F4A7C15ULL) ^

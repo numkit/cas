@@ -3,6 +3,7 @@ add_library(numkit_cas STATIC
     num/rational.cpp
     core/expr.cpp
     core/diff.cpp
+    poly/upoly.cpp
 )
 
 add_library(numkit::cas ALIAS numkit_cas)

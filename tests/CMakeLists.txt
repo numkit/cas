@@ -13,6 +13,7 @@ add_executable(nkcas_gtest
     num/rational_test.cpp
     core/expr_test.cpp
     core/diff_test.cpp
+    poly/upoly_test.cpp
 )
 
 target_link_libraries(nkcas_gtest PRIVATE numkit::cas GTest::gtest_main)

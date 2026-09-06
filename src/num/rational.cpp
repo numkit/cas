@@ -99,6 +99,12 @@ bool operator>=(const Rational &a, const Rational &b)
     return !(a < b);
 }
 
+std::uint64_t Rational::hashBits() const
+{
+    return (num().hashBits() * 0x9E3779B97F4A7C15ULL) ^
+           (den().hashBits() + 0x165667B19E3779F9ULL);
+}
+
 bool Rational::fitsInt64(std::int64_t &out) const
 {
     if (!(den() == BigInt(1)))

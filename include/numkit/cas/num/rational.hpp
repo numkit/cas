@@ -39,6 +39,9 @@ public:
 
     bool fitsInt64(std::int64_t &out) const; // denominator 1, numerator fits
 
+    // Content hash mixing both parts (for hash-consing; collisions are fine).
+    std::uint64_t hashBits() const;
+
     std::string toString() const; // "p" if den == 1, else "p/q"
 
     Rational operator-() const;

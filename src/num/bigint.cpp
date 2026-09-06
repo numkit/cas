@@ -517,6 +517,30 @@ BigInt BigInt::gcd(const BigInt &a, const BigInt &b)
     return x;
 }
 
+BigInt BigInt::powUInt(const BigInt &base, std::uint64_t exp)
+{
+    BigInt result(1);
+    BigInt b = base;
+    while (exp != 0) {
+        if (exp & 1)
+            result = result * b;
+        exp >>= 1;
+        if (exp != 0)
+            b = b * b;
+    }
+    return result;
+}
+
+std::uint64_t BigInt::hashBits() const
+{
+    std::uint64_t h = 0x9E3779B97F4A7C15ULL;
+    if (negative_)
+        h ^= 0x123456789ABCDEFULL;
+    for (std::uint64_t l : limbs_)
+        h = (h ^ l) * 0x100000001B3ULL;
+    return h;
+}
+
 bool BigInt::fitsInt64(std::int64_t &out) const
 {
     if (limbs_.empty()) {

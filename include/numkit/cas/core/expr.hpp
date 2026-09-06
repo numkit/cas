@@ -112,6 +112,17 @@ public:
     // value/name, then children lexicographically.
     int compare(Expr a, Expr b) const;
 
+    // True iff e is the canonical zero Number node.
+    bool isZero(Expr e) const
+    {
+        return kind(e) == NodeKind::Number && numberValue(e).isZero();
+    }
+
+    // Symbolic derivative d/de of e. var must be a Symbol node.
+    // Supported functions: exp, log, sin, cos, tan, atan; anything else
+    // asserts in debug and returns a null Expr in release.
+    Expr diff(Expr e, Expr var);
+
     std::string toString(Expr e) const;
 
     std::size_t nodeCount() const { return nodes_.size(); }
@@ -144,6 +155,7 @@ private:
     Expr makeAdd(const std::vector<Expr> &children);
     Expr makeMul(const std::vector<Expr> &children);
     bool smallInteger(const Rational &e, std::int64_t &n) const;
+    Expr diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &memo);
 
     void print(Expr e, std::string &out) const;
     void printPrec(Expr e, std::string &out, int parentPrec) const;

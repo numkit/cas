@@ -69,6 +69,10 @@ public:
     static void divMod(const BigInt &a, const BigInt &b, BigInt &q, BigInt &r);
     static BigInt gcd(const BigInt &a, const BigInt &b); // non-negative result
     static BigInt powUInt(const BigInt &base, std::uint64_t exp); // 0^0 == 1
+    static BigInt lcm(const BigInt &a, const BigInt &b);          // non-negative
+
+    // Exact integer square root (false for negatives and non-squares).
+    bool sqrtExact(BigInt &out) const;
 
     // Order-insensitive content hash for hash-consing (collisions are fine).
     std::uint64_t hashBits() const;

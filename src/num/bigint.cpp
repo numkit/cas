@@ -531,6 +531,38 @@ BigInt BigInt::powUInt(const BigInt &base, std::uint64_t exp)
     return result;
 }
 
+BigInt BigInt::lcm(const BigInt &a, const BigInt &b)
+{
+    if (a.isZero() || b.isZero())
+        return BigInt();
+    return (a * b).abs() / gcd(a, b);
+}
+
+bool BigInt::sqrtExact(BigInt &out) const
+{
+    if (negative_)
+        return false;
+    if (isZero()) {
+        out = BigInt();
+        return true;
+    }
+    // Newton iteration on x -> (x + n/x)/2, started above sqrt(n).
+    BigInt x = BigInt(1) << (bitLength() / 2 + 1);
+    while (true) {
+        BigInt q, r;
+        divMod(*this, x, q, r);
+        BigInt y = (x + q) >> 1;
+        if (y >= x)
+            break;
+        x = y;
+    }
+    if (x * x == *this) {
+        out = x;
+        return true;
+    }
+    return false;
+}
+
 std::uint64_t BigInt::hashBits() const
 {
     std::uint64_t h = 0x9E3779B97F4A7C15ULL;

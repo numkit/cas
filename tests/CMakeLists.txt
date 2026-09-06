@@ -14,6 +14,7 @@ add_executable(nkcas_gtest
     core/expr_test.cpp
     core/diff_test.cpp
     poly/upoly_test.cpp
+    poly/sturm_test.cpp
     integrate/ratint_test.cpp
 )
 

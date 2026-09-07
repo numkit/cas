@@ -134,6 +134,31 @@ void UPoly::divMod(const UPoly &a, const UPoly &b, UPoly &q, UPoly &r)
     }
 }
 
+UPoly operator%(const UPoly &a, const UPoly &b)
+{
+    UPoly q, r;
+    UPoly::divMod(a, b, q, r);
+    return r;
+}
+
+UPoly UPoly::invMod(const UPoly &u, const UPoly &m)
+{
+    assert(!m.isZero());
+    UPoly r0 = m, r1 = u % m;
+    UPoly s0, s1(Rational(std::int64_t{1}));
+    while (!r1.isZero()) {
+        UPoly q, r;
+        UPoly::divMod(r0, r1, q, r);
+        UPoly s2 = s0 - q * s1;
+        r0 = r1;
+        r1 = r;
+        s0 = s1;
+        s1 = s2;
+    }
+    assert(r0.isConst() && !r0.isZero() && "invMod: gcd is not a constant");
+    return s0 * (Rational(std::int64_t{1}) / r0.lc());
+}
+
 UPoly UPoly::derivative() const
 {
     UPoly out;

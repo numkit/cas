@@ -51,6 +51,11 @@ public:
     // Exact field division: a = q*b + r with deg(r) < deg(b); b != 0.
     static void divMod(const UPoly &a, const UPoly &b, UPoly &q, UPoly &r);
 
+    friend UPoly operator%(const UPoly &a, const UPoly &b);
+
+    // Inverse of u modulo m; asserts gcd(u, m) is a nonzero constant.
+    static UPoly invMod(const UPoly &u, const UPoly &m);
+
     UPoly derivative() const;
     UPoly powUInt(std::uint64_t n) const;
 

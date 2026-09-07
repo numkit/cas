@@ -26,25 +26,6 @@ UPoly pmod(const UPoly &a, const UPoly &b)
     return r;
 }
 
-// Inverse of u modulo m (gcd(u, m) = 1), via extended Euclid.
-UPoly invMod(const UPoly &u, const UPoly &m)
-{
-    assert(!m.isZero());
-    UPoly r0 = m, r1 = pmod(u, m);
-    UPoly s0, s1(R1());
-    while (!r1.isZero()) {
-        UPoly q, r;
-        UPoly::divMod(r0, r1, q, r);
-        UPoly s2 = s0 - q * s1;
-        r0 = r1;
-        r1 = r;
-        s0 = s1;
-        s1 = s2;
-    }
-    assert(r0.isConst());
-    return s0 * (R1() / r0.lc());
-}
-
 // Partial fractions over pairwise-coprime moduli: N/(P1*..*Pk) =
 // sum Bi/Pi with deg Bi < deg Pi.
 std::vector<UPoly> partialFractions(const UPoly &N,
@@ -60,7 +41,7 @@ std::vector<UPoly> partialFractions(const UPoly &N,
         UPoly prod(R1());
         for (std::size_t j = idx + 1; j < Ps.size(); ++j)
             prod = prod * Ps[j];
-        const UPoly inv = invMod(pmod(prod, Ps[idx]), Ps[idx]);
+        const UPoly inv = UPoly::invMod(prod % Ps[idx], Ps[idx]);
         const UPoly bi = pmod(rem * inv, Ps[idx]);
         Bs.push_back(bi);
         UPoly q, r;
@@ -507,7 +488,7 @@ HermiteResult hermiteReduce(const UPoly &N0, const UPoly &D0)
             // C = -A[j] * inv((j-1) * F' mod F) mod F.
             const UPoly coef = dF * Rational(static_cast<std::int64_t>(j - 1));
             const UPoly C = pmod(A[static_cast<std::size_t>(j)] * Rational(std::int64_t{-1}) *
-                                     invMod(pmod(coef, F), F),
+                                     UPoly::invMod(coef % F, F),
                                  F);
 
             const UPoly Fjm1 = F.powUInt(static_cast<std::uint64_t>(j - 1));

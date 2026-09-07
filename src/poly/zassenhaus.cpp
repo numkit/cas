@@ -50,11 +50,17 @@ std::vector<BigInt> bpSub(const std::vector<BigInt> &a, const std::vector<BigInt
     return out;
 }
 
+// Canonical non-negative residues: BigInt::divMod is TRUNCATED, so a
+// negative coefficient leaves a negative remainder — lift it back into
+// [0, m). Consumers feed possibly-negative symmetric values through
+// here (Hensel state, reconstruction candidates).
 void bpMod(std::vector<BigInt> &a, const BigInt &m)
 {
     for (BigInt &c : a) {
         BigInt q, r;
         BigInt::divMod(c, m, q, r);
+        if (r.isNegative())
+            r = r + m;
         c = r;
     }
 }
@@ -429,9 +435,10 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
                         c = c * d;
                     bpMod(scaled, pk);
                     scaled = bpSymmetric(scaled, pk);
-                    bpNormalize(scaled);
                     std::vector<BigInt> qv;
                     if (bpDivExact(cur, scaled, qv)) {
+                        bpNormalize(scaled); // after division: before it,
+                        // content-stripping destroys the D scale
                         out.push_back(scaled);
                         cur = qv;
                         std::vector<std::size_t> keep;

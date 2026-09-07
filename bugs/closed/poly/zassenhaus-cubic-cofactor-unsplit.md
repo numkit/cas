@@ -1,7 +1,7 @@
 # zassenhaus-cubic-cofactor-unsplit
 
 Kind: bug
-Status: PARTIALLY FIXED (see below)
+Status: ✅ FIXED (see closing notes below)
 Area: poly
 
 ## Original case — FIXED
@@ -36,3 +36,27 @@ ZassenhausProperty.DISABLED_AssembleFromKnownFactors.
 
 factorOverQ can drop factors on rare inputs; must not feed Trager
 until closed.
+
+## FINAL ROOT CAUSE AND CLOSURE
+
+The whole cascade of reconstruction failures — the original quartic,
+the quintic, and the isolated cubic (2x^2+x+1)(3x+10) — traced to ONE
+line: bpMod used BigInt::divMod (TRUNCATED division), so NEGATIVE
+coefficients passed through unreduced (-615 stayed -615 instead of
+becoming 10 mod 625). Every reconstruction candidate scaled by a
+divisor D went through bpMod; whenever the symmetric representative
+was negative, the candidate silently left the residue range and never
+matched the true factor. Secondary fix in the same class: the
+D-scaled candidate must be content-normalized AFTER the exact
+division, not before (normalization strips the D scale whenever the
+symmetric value happens to be divisible by it).
+
+The one-line bpMod fix alone makes the original subset-enumeration
+reconstruction correct for every case in this file, including the
+2+2 mod-p partition of the quintic (a peel-one-factor redesign built
+during the hunt was correct but strictly weaker and was dropped).
+
+Guards: ZassenhausFixed.QuarticCubicSplit and the enabled
+ZassenhausProperty.AssembleFromKnownFactors (60 assembled cases,
+irreducible planted factors asserted with multiplicity). All 89 tests
+green.

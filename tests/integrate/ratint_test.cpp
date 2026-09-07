@@ -379,7 +379,7 @@ TEST_F(RatIntTest, QuadraticResidueDoD)
     }
 }
 
-TEST_F(RatIntTest, DISABLED_MultipleQuadraticResidueFactors) // bugs/opened/integrate/ratint-multi-quadratic-leftover.md
+TEST_F(RatIntTest, MultipleQuadraticResidueFactors) // guard for the closed bug
 {
     // Two IRREDUCIBLE quadratics with NON-square discriminants in the
     // denominator: previously beyond reach (budget/single-quadratic

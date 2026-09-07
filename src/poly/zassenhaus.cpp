@@ -149,6 +149,40 @@ void bpNormalize(std::vector<BigInt> &a)
     bpTrim(a);
 }
 
+// All positive divisors of n by trial division. The loop bound is
+// sqrt of the SHRINKING cofactor (each prime is extracted fully), so
+// smooth leading coefficients finish fast; a large prime factor costs
+// sqrt(P) BigInt divisions — accepted for now, see notes.
+std::vector<BigInt> divisorsOf(const BigInt &n)
+{
+    std::vector<BigInt> divs{B1()};
+    BigInt mm = n;
+    for (BigInt d(2); d * d <= mm; d = d + BigInt(1)) {
+        BigInt q, r;
+        BigInt::divMod(mm, d, q, r);
+        if (!r.isZero())
+            continue;
+        const std::size_t base = divs.size();
+        BigInt pw(1);
+        while (true) {
+            BigInt q2, r2;
+            BigInt::divMod(mm, d, q2, r2);
+            if (!r2.isZero())
+                break;
+            mm = q2;
+            pw = pw * d;
+            for (std::size_t w = 0; w < base; ++w)
+                divs.push_back(divs[w] * pw);
+        }
+    }
+    if (!(mm == BigInt(1))) {
+        const std::size_t base = divs.size();
+        for (std::size_t w = 0; w < base; ++w)
+            divs.push_back(divs[w] * mm);
+    }
+    return divs;
+}
+
 // Symmetric representatives in (-pk/2, pk/2].
 std::vector<BigInt> bpSymmetric(const std::vector<BigInt> &a, const BigInt &pk)
 {
@@ -393,42 +427,12 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
                 if (sym.empty() || sym.size() < 2)
                     continue;
                 // the true divisor is D * sym where D divides lc(cur):
-                // try every positive divisor of the current leading
-                // coefficient (small in practice; capped for safety).
-                std::vector<BigInt> divs;
-                {
-                    BigInt m2 = cur.back().abs();
-                    if (m2.bitLength() <= 40) {
-                        divs.push_back(B1());
-                        BigInt mm = m2;
-                        for (BigInt d(2); d * d <= mm; d = d + BigInt(1)) {
-                            BigInt q4, r4;
-                            BigInt::divMod(mm, d, q4, r4);
-                            if (r4.isZero()) {
-                                const std::size_t base2 = divs.size();
-                                BigInt pk2(1);
-                                while (true) {
-                                    BigInt q5, r5;
-                                    BigInt::divMod(mm, d, q5, r5);
-                                    if (!r5.isZero())
-                                        break;
-                                    mm = q5;
-                                    pk2 = pk2 * d;
-                                    for (std::size_t w = 0; w < base2; ++w)
-                                        divs.push_back(divs[w] * pk2);
-                                }
-                            }
-                        }
-                        if (!(mm == BigInt(1))) {
-                            const std::size_t base2 = divs.size();
-                            for (std::size_t w = 0; w < base2; ++w)
-                                divs.push_back(divs[w] * mm);
-                        }
-                    } else {
-                        divs.push_back(B1());
-                        divs.push_back(m2);
-                    }
-                }
+                // every positive divisor of the current leading
+                // coefficient (NO size cap — the old 40-bit crutch
+                // silently reduced {1, lc} for larger coefficients and
+                // dropped every true factor, returning the polynomial
+                // whole).
+                const std::vector<BigInt> divs = divisorsOf(cur.back().abs());
                 for (const BigInt &d : divs) {
                     std::vector<BigInt> scaled = sym;
                     for (BigInt &c : scaled)

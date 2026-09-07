@@ -1,7 +1,7 @@
 # ratint-multi-quadratic-leftover
 
 Kind: bug
-Status: OPEN
+Status: ✅ FIXED (cee8e9d narrowed, this change closed)
 Area: integrate
 
 ## Description
@@ -62,3 +62,26 @@ extensions".
   gcd(0 - t*S', S) can be nontrivial in Q[t]/(c) and subtracting its
   contribution resurrects a zero numerator, producing garbage leftover
   (a real bug caught by the diagnostics, distinct from the main one).
+
+## CLOSURE
+
+Root cause (found one session after the narrowing): the subset/divisor
+reconstruction enumerated the leading coefficient's divisors under a
+40-BIT CAP — a crutch from the early implementation. The repro's
+leading coefficient 2043157708800 is exactly 41 bits, so the divisor
+list collapsed to {1, lc}, every proper leading-coefficient divisor
+(3, 9, ...) was never tried, no subset divided exactly, and the honest
+fallback returned the whole polynomial — which surfaced upstream as the
+multi-quadratic integrator receiving an unfactored resultant.
+
+Fix: the cap is removed; divisor enumeration is a clean divisorsOf
+helper (trial division against the SHRINKING cofactor, so smooth
+coefficients finish fast). Known cost, documented in notes: a leading
+coefficient with a large prime factor P costs sqrt(P) BigInt
+divisions — acceptable at current scales, Pollard-rho if it ever
+bites.
+
+Guard: ZassenhausFixed.Classics et al. plus the enabled
+RatIntTest.MultipleQuadraticResidueFactors (the 500-case property
+with two irreducible non-square quadratics and mixed linears, all
+PROVED_SYMBOLIC). All 89 tests green.

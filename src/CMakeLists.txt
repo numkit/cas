@@ -3,6 +3,7 @@ add_library(numkit_cas STATIC
     num/rational.cpp
     core/expr.cpp
     core/diff.cpp
+    core/parser.cpp
     poly/upoly.cpp
     poly/sturm.cpp
     poly/algebraic.cpp

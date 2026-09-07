@@ -206,6 +206,20 @@ TEST_F(ExprTest, PrintingPrecedence)
               "x^6");
 }
 
+// Guard for bugs/opened/core/expr-neg-pow-base-print.md: a negative
+// numeric Pow base must keep parens — without them the string means
+// -(base^exp) under the parser's precedence, a different branch.
+TEST_F(ExprTest, NegativePowBaseKeepsParens)
+{
+    const Expr e = c.pow(c.number(Rational(std::int64_t{-9})),
+                         c.number(Rational(BigInt(-1), BigInt(2))));
+    EXPECT_EQ(str(e), "(-9)^(-1/2)");
+    // Positive numeric bases and negative exponents are unaffected.
+    EXPECT_EQ(str(c.pow(c.number(std::int64_t{9}), c.number(half()))),
+              "9^(1/2)");
+    EXPECT_EQ(str(c.pow(x, c.number(std::int64_t{-2}))), "x^-2");
+}
+
 TEST_F(ExprTest, InterningAndDeterminism)
 {
     const Expr a = c.mul({c.add({x, c.one()}), c.add({x, c.one()})});

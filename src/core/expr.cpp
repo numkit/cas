@@ -527,9 +527,19 @@ void Ctx::printPrec(Expr e, std::string &out, int parentPrec) const
     case NodeKind::Pow: {
         if (prec < parentPrec)
             out += '(';
+        // A NEGATIVE numeric base must keep parens: "-9^(1/2)" reads
+        // back as -(9^(1/2)) under the parser's precedence (unary
+        // minus looser than '^') — a different principal branch
+        // (bugs/opened/core/expr-neg-pow-base-print.md).
+        const bool negNumBase = kind(child(e, 0)) == NodeKind::Number &&
+                                numberValue(child(e, 0)).num().isNegative();
+        if (negNumBase)
+            out += '(';
         // 61, not 60: a Pow base that is itself a Pow must keep parens
         // ("(x^2)^3" != "x^(2^3)").
-        printPrec(child(e, 0), out, 61);
+        printPrec(child(e, 0), out, negNumBase ? 0 : 61);
+        if (negNumBase)
+            out += ')';
         out += '^';
         printPrec(child(e, 1), out, 61);
         if (prec < parentPrec)

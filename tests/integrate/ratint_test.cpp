@@ -317,6 +317,68 @@ TEST_F(RatIntTest, ResultantTEvaluationAndResidues)
     }
 }
 
+TEST_F(RatIntTest, QuadraticResidueForms)
+{
+    auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
+        const Expr f = build(P(numCsv), P(denCsv));
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        EXPECT_TRUE(r.proved()) << r.reason;
+        return r.proved() ? c.toString(r.F) : std::string("<failed>");
+    };
+
+    // Complex residue pair, non-square discriminant complement:
+    // int dx/(x^2+2) = atan(x/sqrt(2))/sqrt(2).
+    const std::string s1 = integrate("1", "2,0,1");
+    EXPECT_NE(s1.find("atan"), std::string::npos);
+    // Real residue pair: int dx/(x^2-2) = sqrt2/4 log(x-sqrt2) - sqrt2/4 log(x+sqrt2).
+    const std::string s2 = integrate("1", "-2,0,1");
+    EXPECT_NE(s2.find("log"), std::string::npos);
+    EXPECT_NE(s2.find("2^(1/2)"), std::string::npos);
+    // Mixed linear x quadratic: still fully proved.
+    EXPECT_NE(integrate("1", "-2,-1,1").find("log"), std::string::npos);
+    // Square complement stays rational and clean.
+    EXPECT_EQ(integrate("1", "1,0,1"), "atan(x)");
+    EXPECT_EQ(integrate("1", "1,0,4"), "1/2*atan(2*x)");
+}
+
+TEST_F(RatIntTest, QuadraticResidueDoD)
+{
+    // Any quadratic denominator factor — any discriminant — must now
+    // integrate with a certificate.
+    std::uint64_t state = 0x5AFED00DCAFEULL;
+    for (int iter = 0; iter < 2000; ++iter) {
+        const Rational b = rr(state, 5);
+        Rational cc = rr(state, 5);
+        if (b * b - Rational(std::int64_t{4}) * cc == Rational(std::int64_t{0}))
+            cc = cc + Rational(std::int64_t{1}); // keep squarefree
+        std::vector<Rational> dcs{cc, b, Rational(std::int64_t{1})};
+        if (nextU64(state) % 2 == 0) {
+            const Rational r = rr(state, 5);
+            // (x - r) coprime to the quadratic with high probability;
+            // skip the rare collision by moving r off the roots.
+            dcs = std::vector<Rational>{
+                -r * cc, cc - r * b, b - r, Rational(std::int64_t{1})};
+        }
+        const UPoly den(dcs);
+        if (den.isZero() || den.isConst())
+            continue;
+        const int nn = static_cast<int>(nextU64(state) % den.deg());
+        std::vector<Rational> ncs;
+        for (int i = 0; i <= nn; ++i)
+            ncs.push_back(rr(state, 6));
+        const UPoly num(ncs);
+        if (num.isZero())
+            continue;
+
+        const Expr f = build(num, den);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << "iter " << iter << " reason=" << r.reason
+                                << " f=" << c.toString(f);
+    }
+}
+
 TEST_F(RatIntTest, HonestFailures)
 {
     numkit::cas::RationalIntegral r;
@@ -331,9 +393,9 @@ TEST_F(RatIntTest, HonestFailures)
         c, build(P("1"), P("2,0,0,1")), x);
     EXPECT_FALSE(r.proved());
 
-    // Quadratic with non-square 4c-b^2: x^2+2 -> needs sqrt(8).
+    // Quartic irreducible residues: x^4+1 needs degree-4 algebraics.
     r = numkit::cas::integrateRational(
-        c, build(P("1"), P("2,0,1")), x);
+        c, build(P("1"), P("1,0,0,0,1")), x);
     EXPECT_FALSE(r.proved());
 }
 

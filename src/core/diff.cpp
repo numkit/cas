@@ -87,6 +87,9 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         }
         break;
     }
+    case NodeKind::RootOf:
+        result = zero();
+        break;
     case NodeKind::Func: {
         const Expr u = child(e, 0);
         const Expr du = diffRec(u, var, memo);

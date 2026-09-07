@@ -38,6 +38,7 @@ int precOf(NodeKind k, const Rational &num)
         // so they get a precedence below Pow but above Mul/Add.
         return !(num.den() == BigInt(1)) ? 55 : 100;
     case NodeKind::Symbol:
+    case NodeKind::RootOf:
         return 100;
     case NodeKind::Func:
         return 90;
@@ -86,6 +87,49 @@ Expr Ctx::func(const std::string &name, Expr arg)
 {
     const std::uint32_t id = internName(name, funcIds_, funcNames_);
     return makeNode(NodeKind::Func, id, {arg}, Rational(std::int64_t{0}));
+}
+
+Expr Ctx::rootOf(std::vector<Rational> poly, int index)
+{
+    while (poly.size() > 1 && poly.back().isZero())
+        poly.pop_back();
+    assert(poly.size() >= 3 && "RootOf needs degree >= 2");
+    const Rational lc = poly.back();
+    assert(!(lc == Rational(std::int64_t{0})) && "RootOf of zero polynomial");
+    assert(index >= 0);
+    if (!(lc == Rational(std::int64_t{1})))
+        for (Rational &c : poly)
+            c = c / lc;
+    assert(index < static_cast<int>(poly.size()) - 1);
+
+    std::uint32_t hash = mix32(kFnvOffset, static_cast<std::uint32_t>(NodeKind::RootOf));
+    hash = mix32(hash, static_cast<std::uint32_t>(index));
+    for (const Rational &c : poly) {
+        const std::uint64_t h64 = c.hashBits();
+        hash = mix32(hash, static_cast<std::uint32_t>(h64));
+        hash = mix32(hash, static_cast<std::uint32_t>(h64 >> 32));
+    }
+    for (const RootOfDesc &d : rootofs_) {
+        if (d.index == index && d.poly == poly && d.nodeId != 0)
+            return Expr(this, d.nodeId);
+    }
+    rootofs_.push_back(RootOfDesc{std::move(poly), index, 0});
+    const auto tableIdx = static_cast<std::uint32_t>(rootofs_.size() - 1);
+    const Expr made = makeNode(NodeKind::RootOf, tableIdx, {}, Rational(std::int64_t{0}));
+    rootofs_[tableIdx].nodeId = id(made);
+    return made;
+}
+
+const std::vector<Rational> &Ctx::rootOfPoly(Expr e) const
+{
+    assert(kind(e) == NodeKind::RootOf);
+    return rootofs_[node(e).aux].poly;
+}
+
+int Ctx::rootOfIndex(Expr e) const
+{
+    assert(kind(e) == NodeKind::RootOf);
+    return rootofs_[node(e).aux].index;
 }
 
 Expr Ctx::neg(Expr a)
@@ -378,8 +422,9 @@ int Ctx::kindRank(NodeKind k)
     case NodeKind::Func:   return 3;
     case NodeKind::Add:    return 4;
     case NodeKind::Mul:    return 5;
+    case NodeKind::RootOf: return 6;
     }
-    return 6;
+    return 7;
 }
 
 int Ctx::compare(Expr a, Expr b) const
@@ -406,6 +451,20 @@ int Ctx::compare(Expr a, Expr b) const
         if (byBase != 0)
             return byBase;
         return compare(child(a, 1), child(b, 1));
+    }
+    case NodeKind::RootOf: {
+        if (na.aux != nb.aux) {
+            const RootOfDesc &da = rootofs_[na.aux];
+            const RootOfDesc &db = rootofs_[nb.aux];
+            const std::size_t n = std::min(da.poly.size(), db.poly.size());
+            for (std::size_t i = 0; i < n; ++i)
+                if (!(da.poly[i] == db.poly[i]))
+                    return da.poly[i] < db.poly[i] ? -1 : 1;
+            if (da.poly.size() != db.poly.size())
+                return da.poly.size() < db.poly.size() ? -1 : 1;
+            return da.index < db.index ? -1 : 1;
+        }
+        return 0;
     }
     case NodeKind::Add:
     case NodeKind::Mul: {
@@ -438,6 +497,20 @@ void Ctx::printPrec(Expr e, std::string &out, int parentPrec) const
             out += symbolNames_[n.aux];
         if (prec < parentPrec)
             out += ')';
+        break;
+    }
+    case NodeKind::RootOf: {
+        out += "RootOf(";
+        const RootOfDesc &d = rootofs_[n.aux];
+        for (std::size_t k = d.poly.size(); k-- > 0;) {
+            out += d.poly[k].toString();
+            if (k == 1) {
+                out += "*z + ";
+            } else if (k > 1) {
+                out += "*z^" + std::to_string(k) + " + ";
+            }
+        }
+        out += ", " + std::to_string(d.index) + ")";
         break;
     }
     case NodeKind::Func: {

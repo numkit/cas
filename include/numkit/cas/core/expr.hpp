@@ -20,6 +20,7 @@ enum class NodeKind : std::uint8_t {
     Func,   // Func(name, arg): sin, cos, tan, atan, exp, log, ...
     Add,    // n-ary, AC, children canonical + sorted
     Mul,    // n-ary, AC, children canonical + sorted
+    RootOf, // algebraic number atom: root #index of a monic polynomial
 };
 
 // ============================================================
@@ -90,6 +91,15 @@ public:
     Expr one() { return number(std::int64_t{1}); }
 
     Expr symbol(const std::string &name);
+
+    // Algebraic number atom: the root #index (0-based, in ascending
+    // real order) of a MONIC polynomial of degree >= 2 with rational
+    // coefficients (ascending). The polynomial is stored canonically
+    // (trimmed, monic); identical (poly, index) pairs intern to the
+    // same node. Callers extract rational roots themselves.
+    Expr rootOf(std::vector<Rational> poly, int index);
+    const std::vector<Rational> &rootOfPoly(Expr e) const;
+    int rootOfIndex(Expr e) const;
 
     Expr add(const std::vector<Expr> &children) { return makeAdd(children); }
     Expr mul(const std::vector<Expr> &children) { return makeMul(children); }
@@ -168,6 +178,16 @@ private:
     std::unordered_map<std::string, std::uint32_t> funcIds_;
     std::deque<std::string> symbolNames_;
     std::deque<std::string> funcNames_;
+    // RootOf payload table (index by node aux). Coefficients ascending;
+    // stored as plain vectors to keep the core layer independent of
+    // the poly layer.
+    struct RootOfDesc
+    {
+        std::vector<Rational> poly;
+        int index;
+        std::uint32_t nodeId = 0; // id of the interning node (filled after makeNode)
+    };
+    std::deque<RootOfDesc> rootofs_;
 };
 
 } // namespace numkit::cas

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace numkit::cas {
@@ -70,6 +71,19 @@ public:
     static BigInt gcd(const BigInt &a, const BigInt &b); // non-negative result
     static BigInt powUInt(const BigInt &base, std::uint64_t exp); // 0^0 == 1
     static BigInt lcm(const BigInt &a, const BigInt &b);          // non-negative
+
+    // Primality by Miller-Rabin. Deterministic for n < 2^64 (the
+    // fixed base set {2,...,37} has no strong pseudoprime there);
+    // above 2^64 the same bases plus a fixed pseudo-random stream
+    // make it probabilistic with error < 4^-50 — and a missed factor
+    // can only ever drop divisors from enumeration, never invent
+    // them, so callers stay correct (worst case: less factoring).
+    static bool isPrime(const BigInt &n);
+
+    // Canonical factorization of n >= 1 into (prime, exponent) pairs
+    // with primes ascending. Deterministic (Pollard-Brent rho with a
+    // fixed c-sequence).
+    static std::vector<std::pair<BigInt, int>> factorize(const BigInt &n);
 
     // Exact integer square root (false for negatives and non-squares).
     bool sqrtExact(BigInt &out) const;

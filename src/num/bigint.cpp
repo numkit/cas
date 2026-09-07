@@ -665,4 +665,203 @@ bool BigInt::tryParse(BigInt &out, const std::string &s)
     return true;
 }
 
+// ============================================================
+// Integer factorization: Miller-Rabin + Pollard-Brent rho.
+// ============================================================
+
+namespace {
+
+// Fixed xorshift stream for the above-2^64 probabilistic extension
+// of isPrime (determinism: same input, same bases, every run).
+std::uint64_t factorRngNext(std::uint64_t &state)
+{
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    return state * 0x2545F4914F6CDD1DULL;
+}
+
+BigInt powModBig(const BigInt &base, const BigInt &e, const BigInt &m)
+{
+    BigInt r = BigInt(1) % m;
+    BigInt b = base % m;
+    const int bits = static_cast<int>(e.bitLength());
+    for (int i = bits - 1; i >= 0; --i) {
+        r = r * r % m;
+        if ((e >> static_cast<std::size_t>(i)).lowLimb() & 1)
+            r = r * b % m;
+    }
+    return r;
+}
+
+// Strong probable prime test of n (odd, > 2, a < n) to base a.
+bool strongProbablyPrime(const BigInt &n, const BigInt &a)
+{
+    const BigInt one(1);
+    const BigInt nMinus1 = n - one;
+    BigInt d = nMinus1;
+    int s = 0;
+    while ((d.lowLimb() & 1) == 0) {
+        d = d >> 1;
+        ++s;
+    }
+    BigInt x = powModBig(a, d, n);
+    if (x == one || x == nMinus1)
+        return true;
+    for (int r = 1; r < s; ++r) {
+        x = x * x % n;
+        if (x == nMinus1)
+            return true;
+    }
+    return false;
+}
+
+// Pollard rho with Floyd cycles and batched gcd: one gcd per kBatch
+// steps over the running product of differences. When the batch
+// product jumps straight to n (all prime factors at once) or the walk
+// collides, the batch is replayed step by step from its checkpoint —
+// a NONZERO step difference can never have gcd == n, so the replay
+// returns a proper divisor. Returns n only for a true collision
+// without any factor; the caller retries with the next c (a fresh c
+// changes the whole trajectory, unlike restarting at x = y = 2).
+BigInt pollardRho(const BigInt &n, const BigInt &c)
+{
+    constexpr std::uint64_t kBatch = 96;
+    const BigInt one(1);
+    BigInt x(2), y(2);
+    for (;;) {
+        const BigInt x0 = x, y0 = y;
+        BigInt q(1);
+        bool collided = false;
+        for (std::uint64_t i = 0; i < kBatch; ++i) {
+            x = (x * x + c) % n;
+            y = (y * y + c) % n;
+            y = (y * y + c) % n;
+            const BigInt diff = ((x - y) % n).abs();
+            if (diff.isZero()) {
+                collided = true;
+                break;
+            }
+            q = q * diff % n;
+        }
+        if (!collided) {
+            const BigInt g = BigInt::gcd(q, n);
+            if (g == one)
+                continue; // clean batch, keep walking
+            if (!(g == n))
+                return g; // proper divisor from the batch product
+            // g == n: the product skipped over the divisor — replay.
+        }
+        x = x0;
+        y = y0;
+        for (std::uint64_t i = 0; i < kBatch; ++i) {
+            x = (x * x + c) % n;
+            y = (y * y + c) % n;
+            y = (y * y + c) % n;
+            const BigInt diff = ((x - y) % n).abs();
+            if (diff.isZero())
+                return n; // true collision, no factor for this c
+            const BigInt g = BigInt::gcd(diff, n);
+            if (!(g == one))
+                return g;
+        }
+    }
+}
+
+} // namespace
+
+bool BigInt::isPrime(const BigInt &n)
+{
+    static const std::uint64_t kBases[] = {2,  3,  5,  7,  11, 13, 17,
+                                           19, 23, 29, 31, 37};
+    if (n < BigInt(2))
+        return false;
+    for (std::uint64_t b : kBases) {
+        const BigInt bb(b);
+        if (n == bb)
+            return true;
+        BigInt q, r;
+        divMod(n, bb, q, r);
+        if (r.isZero())
+            return false;
+    }
+    // n is odd, > 37 and coprime to all bases; here n > every base.
+    std::uint64_t fits;
+    const bool below2e64 = n.fitsUint64(fits);
+    for (std::uint64_t b : kBases)
+        if (!strongProbablyPrime(n, BigInt(b)))
+            return false;
+    if (below2e64)
+        return true; // the 12 bases are complete below 2^64
+    // Probabilistic extension: 38 more fixed-stream bases.
+    std::uint64_t rng = 0x9E3779B97F4A7C15ULL;
+    const BigInt span = n - BigInt(2);
+    for (int i = 0; i < 38; ++i) {
+        const BigInt a = BigInt(factorRngNext(rng)) % span + BigInt(2);
+        if (!strongProbablyPrime(n, a))
+            return false;
+    }
+    return true;
+}
+
+std::vector<std::pair<BigInt, int>> BigInt::factorize(const BigInt &nIn)
+{
+    assert(!(nIn < BigInt(1)) && "factorize expects n >= 1");
+    std::vector<std::pair<BigInt, int>> out;
+    if (nIn == BigInt(1))
+        return out;
+    BigInt n = nIn;
+    static const std::uint64_t kSmall[] = {2, 3, 5, 7, 11, 13,
+                                           17, 19, 23, 29, 31, 37};
+    for (std::uint64_t p : kSmall) {
+        int e = 0;
+        for (;;) {
+            BigInt q, r;
+            divMod(n, BigInt(p), q, r);
+            if (!r.isZero())
+                break;
+            n = q;
+            ++e;
+        }
+        if (e != 0)
+            out.emplace_back(BigInt(p), e);
+    }
+    std::vector<BigInt> rest;
+    if (!(n == BigInt(1)))
+        rest.push_back(n);
+    while (!rest.empty()) {
+        const BigInt m = rest.back();
+        rest.pop_back();
+        if (m == BigInt(1))
+            continue;
+        if (isPrime(m)) {
+            bool merged = false;
+            for (auto &pe : out) {
+                if (pe.first == m) {
+                    ++pe.second;
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged)
+                out.emplace_back(m, 1);
+            continue;
+        }
+        BigInt d(1);
+        for (std::uint64_t c = 1;; ++c) {
+            d = pollardRho(m, BigInt(c));
+            if (!(d == BigInt(1)) && !(d == m))
+                break;
+        }
+        rest.push_back(d);
+        rest.push_back(m / d);
+    }
+    std::sort(out.begin(), out.end(),
+              [](const std::pair<BigInt, int> &a,
+                 const std::pair<BigInt, int> &b) {
+                  return a.first < b.first;
+              });
+    return out;
+}
+
 } // namespace numkit::cas

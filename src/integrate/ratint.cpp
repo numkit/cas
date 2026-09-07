@@ -386,7 +386,6 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
 
         std::vector<Rational> res2;
         const std::vector<UPoly> facts2 = factorOverQ(Rsq2);
-        for (const UPoly &fa : facts2)
         for (const UPoly &fact : facts2)
             if (fact.deg() == 1)
                 res2.push_back(fact.coeff(0) * Rational(std::int64_t{-1}));

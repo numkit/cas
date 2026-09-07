@@ -11,6 +11,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(nkcas_gtest
     num/bigint_test.cpp
     num/rational_test.cpp
+    num/ifactor_test.cpp
     core/expr_test.cpp
     core/diff_test.cpp
     core/rootof_test.cpp

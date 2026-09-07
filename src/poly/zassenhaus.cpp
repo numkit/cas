@@ -149,37 +149,25 @@ void bpNormalize(std::vector<BigInt> &a)
     bpTrim(a);
 }
 
-// All positive divisors of n by trial division. The loop bound is
-// sqrt of the SHRINKING cofactor (each prime is extracted fully), so
-// smooth leading coefficients finish fast; a large prime factor costs
-// sqrt(P) BigInt divisions — accepted for now, see notes.
+// All positive divisors of n, ascending, built from the canonical
+// factorization. The old trial-division enumeration walked to
+// sqrt(cofactor) in BigInt steps — a ~2^40 leading coefficient with a
+// large prime factor cost millions of BigInt divisions and dominated
+// the whole integration; see notes/c1-algebraic-layer.md (baseline
+// profiling session).
 std::vector<BigInt> divisorsOf(const BigInt &n)
 {
     std::vector<BigInt> divs{B1()};
-    BigInt mm = n;
-    for (BigInt d(2); d * d <= mm; d = d + BigInt(1)) {
-        BigInt q, r;
-        BigInt::divMod(mm, d, q, r);
-        if (!r.isZero())
-            continue;
+    for (const auto &pe : BigInt::factorize(n)) {
         const std::size_t base = divs.size();
         BigInt pw(1);
-        while (true) {
-            BigInt q2, r2;
-            BigInt::divMod(mm, d, q2, r2);
-            if (!r2.isZero())
-                break;
-            mm = q2;
-            pw = pw * d;
+        for (int e = 1; e <= pe.second; ++e) {
+            pw = pw * pe.first;
             for (std::size_t w = 0; w < base; ++w)
                 divs.push_back(divs[w] * pw);
         }
     }
-    if (!(mm == BigInt(1))) {
-        const std::size_t base = divs.size();
-        for (std::size_t w = 0; w < base; ++w)
-            divs.push_back(divs[w] * mm);
-    }
+    std::sort(divs.begin(), divs.end());
     return divs;
 }
 
@@ -352,8 +340,14 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
     // leading coefficient). The integer leading coefficients are
     // recovered during reconstruction by trying the divisors of lc(f).
 
-    // Mignotte bound: factor coefficients are bounded by 2^deg*||f||inf;
-    // lift until p^k exceeds twice that.
+    // Mignotte bound: factor coefficients are bounded by 2^deg*||f||inf.
+    // Lift until p^k exceeds that bound WITH HEADROOM: the reconstruction
+    // prefilter rejects a candidate when its symmetric representative
+    // escapes `bound`, and that only bites when the representative
+    // range (−pk/2, pk/2] is comfortably wider than the bound — with
+    // pk barely above `bound` every residue formally fits and the
+    // prefilter degenerates to nothing. The extra lifting steps cost
+    // logarithmically little.
     BigInt infNorm = B0();
     for (const BigInt &c : f)
         if (c.abs() > infNorm)
@@ -361,7 +355,7 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
     const BigInt bound =
         (BigInt(1) << static_cast<std::size_t>(fFp.deg())) * infNorm * BigInt(2);
     BigInt pk = BigInt(p);
-    while (pk <= bound)
+    while (pk <= bound * BigInt(32))
         pk = pk * BigInt(p);
 
     std::vector<std::vector<BigInt>> g;
@@ -416,6 +410,14 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
         const std::uint32_t n = static_cast<std::uint32_t>(active.size());
         bool found = false;
         if (n >= 2) {
+            // Every positive divisor of the current leading coefficient
+            // (NO size cap — the old 40-bit crutch silently reduced
+            // {1, lc} for larger coefficients and dropped every true
+            // factor, returning the polynomial whole). Computed ONCE
+            // per while-iteration: `cur` only changes when a factor is
+            // found, and recomputing per subset mask re-factored the
+            // same lc up to 2^n times.
+            const std::vector<BigInt> divs = divisorsOf(cur.back().abs());
             for (std::uint32_t mask : subsetMasks(n)) {
                 std::vector<BigInt> cand{B1()};
                 for (std::uint32_t i = 0; i < n; ++i)
@@ -426,19 +428,30 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
                 std::vector<BigInt> sym = bpSymmetric(cand, pk);
                 if (sym.empty() || sym.size() < 2)
                     continue;
-                // the true divisor is D * sym where D divides lc(cur):
-                // every positive divisor of the current leading
-                // coefficient (NO size cap — the old 40-bit crutch
-                // silently reduced {1, lc} for larger coefficients and
-                // dropped every true factor, returning the polynomial
-                // whole).
-                const std::vector<BigInt> divs = divisorsOf(cur.back().abs());
+                // the true divisor is D * sym where D divides lc(cur)
                 for (const BigInt &d : divs) {
                     std::vector<BigInt> scaled = sym;
                     for (BigInt &c : scaled)
                         c = c * d;
                     bpMod(scaled, pk);
                     scaled = bpSymmetric(scaled, pk);
+                    // Mignotte prefilter: a true factor of f fits
+                    // within `bound` coefficient-wise, and the check
+                    // must happen on the REDUCED representative —
+                    // D * sym as plain integers can be huge while its
+                    // symmetric residue is the small true factor.
+                    // Scalar comparisons here are far cheaper than
+                    // the exact polynomial division below, which
+                    // matters for smooth leading coefficients listing
+                    // tens of thousands of divisors.
+                    bool over = false;
+                    for (const BigInt &c : scaled)
+                        if (c.abs() > bound) {
+                            over = true;
+                            break;
+                        }
+                    if (over)
+                        continue;
                     std::vector<BigInt> qv;
                     if (bpDivExact(cur, scaled, qv)) {
                         bpNormalize(scaled); // after division: before it,

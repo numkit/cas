@@ -1,44 +1,38 @@
 # zassenhaus-cubic-cofactor-unsplit
 
 Kind: bug
-Status: OPEN
+Status: PARTIALLY FIXED (see below)
 Area: poly
 
-## Description
+## Original case — FIXED
 
-`factorOverQ` on 27x^4 - 54x^3 - 144x^2 - 16x + 320 returns
-[x - 4/3] and the whole cubic x^3 - 2/3x^2 - 56/9x - 80/9, but the
-cubic factors further over Q as (x - 10/3)(x^2 + 8/3x + 8/3): over Z,
-9x^3 - 6x^2 - 56x - 80 = (3x - 10)(3x^2 + 8x + 8). The lifted
-subset-reconstruction never finds the (3x-10) divisor, so the
-reducible cofactor is emitted as one "irreducible".
+27x^4-54x^3-144x^2-16x+320 now splits into three factors. Root cause
+(found and fixed in the same session): the mod-p leading coefficient
+was absorbed into ONE lifted factor; corrections have degree below
+their factor, so the product's leading coefficient was FROZEN mod p^k
+and the congruence f = prod g_i mod p^k was structurally impossible
+for k >= 3 (27 - 2 = 25 is not 0 mod 125). Fix: lift the MONIC
+associate of f with monic factors (never absorb lc), and during
+reconstruction try every positive divisor D of the current leading
+coefficient against each subset product, reducing D*G mod p^k into
+the symmetric range BEFORE content normalization (normalization
+otherwise strips the scale factor and the rational-root-sized
+divisors are never seen).
 
-## Repro
+Guard: ZassenhausFixed.QuarticCubicSplit (enabled, green).
 
-```
-UPoly f = parse("320,-16,-144,-54,27");        // 27x^4-54x^3-144x^2-16x+320
-auto fs = factorOverQ(f);
-// expected 3 monic factors: x-4/3, x-10/3, x^2+8/3x+8/3
-// actual:   2 factors, the cubic x^3-2/3x^2-56/9x-80/9 left unsplit
-```
+## Remaining case — OPEN
 
-Trace: f mod 5 = 4x(x^2+x+1) — two mod-p factors {x, x^2+x+1}, lifted
-to p^5 = 3125. The true integer factor (3x-10) corresponds to the
-linear mod-p factor up to a unit, but after lifting, no proper subset
-of the lifted factors divides the remaining cofactor exactly, so the
-reconstruction falls through to "remaining cofactor is irreducible".
-Suspect: the leading-coefficient unit is absorbed into the wrong
-mod-p factor (here it must land so that (3x-10) emerges; the current
-absorption into the first factor by lcMod does not reproduce the
-integer unit split), or the lift converges to the monic representative
-of the wrong side.
+f = 12x^5 + 106x^4 + 316x^3 + 380x^2 + 230x + 100
+  = 2 * (x^2+5x+5)(2x^2+x+1)(3x+10)
+The planted factor 2x^2+x+1 (discriminant -7) is not returned.
+Notable: disc(2x^2+x+1) = -7 = 0 mod 7 — p=7 is rejected by the
+squarefree check, p=3 divides lc, p=5 makes x^2+5x+5 collide; the
+accepted prime forces a specific 5-way split whose reconstruction
+still misses one divisor. Guard:
+ZassenhausProperty.DISABLED_AssembleFromKnownFactors.
 
-## Guard
+## Impact
 
-`ZassenhausDebug.QuarticCubicSplitDisabled` (DISABLED_) in
-tests/poly/zassenhaus_test.cpp.
-
-Impact: Trager's residue factorization of resultants can return
-reducible pieces — residues would still be correct but not minimal,
-and the "irreducible c" check would under-approximate. Must be fixed
-before the C1 Trager step consumes factorOverQ.
+factorOverQ can drop factors on rare inputs; must not feed Trager
+until closed.

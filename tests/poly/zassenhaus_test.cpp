@@ -132,7 +132,7 @@ TEST(ZassenhausFixed, Classics)
 
 // Guard for bugs/opened/poly/zassenhaus-cubic-cofactor-unsplit.md:
 // the cubic cofactor must split into (x-10/3)(x^2+8/3x+8/3).
-TEST(ZassenhausDebug, DISABLED_QuarticCubicSplitDisabled)
+TEST(ZassenhausFixed, QuarticCubicSplit) // guard for the closed bug
 {
     const UPoly f = P("320,-16,-144,-54,27");
     const auto fs = numkit::cas::factorOverQ(f);
@@ -161,6 +161,8 @@ TEST(ZassenhausFixed, RationalFactorization)
 
 // Disabled pending bugs/opened/poly/zassenhaus-cubic-cofactor-unsplit.md:
 // random assemblies hit the unsplit-cofactor shape.
+// Disabled: a deeper reconstruction case remains open (see the bug
+// file); the original quartic guard is fixed and stays enabled.
 TEST(ZassenhausProperty, DISABLED_AssembleFromKnownFactors)
 {
     std::uint64_t state = 0x2A5E11F00DCAULL;

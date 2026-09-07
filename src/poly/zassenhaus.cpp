@@ -180,14 +180,23 @@ void henselStep(const std::vector<BigInt> &target,
     }
     const FpPoly eFp(p, eFpCs);
 
-    // h*u + g*v = e over F_p:  u = (t*e) mod g, v = (e - h*u)/g.
+    // g*v + h*u = e over F_p with BOTH corrections reduced:
+    // u = (t*e) mod g, v = (s*e) mod h. The reduction of v modulo h is
+    // what preserves deg h through the lift (from s*g + t*h = 1:
+    // e - h*u = s*g*e + q*g*h for u = t*e - q*g, so (e - h*u)/g =
+    // s*e + q*h which must be taken mod h).
     const FpPoly u = (tFp * eFp) % gFp;
-    FpPoly vq, vr;
-    FpPoly::divMod(eFp - hFp * u, gFp, vq, vr);
-    assert(vr.isZero() && "henselStep: exact division over F_p failed");
+    const FpPoly v = (sFp * eFp) % hFp;
+    {
+        auto fs = [](const FpPoly &q) {
+            std::string o;
+            for (std::uint64_t c : q.coeffsAll()) o += std::to_string(c) + " ";
+            return o;
+        };
+    }
 
     const std::vector<BigInt> uZ = fromFp(u, p);
-    const std::vector<BigInt> vZ = fromFp(vq, p);
+    const std::vector<BigInt> vZ = fromFp(v, p);
     const auto accumulate = [&](std::vector<BigInt> &dst, const std::vector<BigInt> &d) {
         if (dst.size() < d.size())
             dst.resize(d.size(), B0());
@@ -296,10 +305,12 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
     if (r <= 1)
         return {f}; // irreducible mod p => irreducible over Q
     assert(r < 32 && "subset enumeration limit");
-
-    // Absorb the leading coefficient into the first factor mod p.
-    const std::uint64_t lcMod = modP(f.back(), p);
-    gFp[0] = gFp[0] * lcMod;
+    // All gFp are MONIC: the lift runs against the monic associate of f
+    // (absorbing lc mod p into a factor would freeze the product's
+    // leading coefficient and break the congruence for k >= 3: the
+    // corrections have degree below their factor and never touch the
+    // leading coefficient). The integer leading coefficients are
+    // recovered during reconstruction by trying the divisors of lc(f).
 
     // Mignotte bound: factor coefficients are bounded by 2^deg*||f||inf;
     // lift until p^k exceeds twice that.
@@ -316,8 +327,40 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
     std::vector<std::vector<BigInt>> g;
     for (const FpPoly &gf : gFp)
         g.push_back(fromFp(gf, p));
+    // monic associate of f, reduced mod pk: f/lc * (lc^-1 mod pk exists
+    // because p does not divide lc). Lifting monic target with monic
+    // factors is structurally consistent to any k.
+    const BigInt lcF = f.back();
+    BigInt lcInv, lcRem;
+    // extended-gcd-free inverse: lc * lcInv = 1 mod pk via brute-free
+    // Euclid on BigInt
+    {
+        // solve lc*lcInv + pk*y = gcd (=1) via the same loop as invModP
+        BigInt t0(0), t1(1), r0(pk), r1 = (([&] {
+            BigInt q2, r2;
+            BigInt::divMod(lcF, pk, q2, r2);
+            return r2.isZero() ? BigInt(0) : r2;
+        })());
+        // r1 = lcF mod pk, guaranteed nonzero
+        while (!r1.isZero()) {
+            BigInt q3, r3;
+            BigInt::divMod(r0, r1, q3, r3);
+            BigInt t2 = t0 - q3 * t1;
+            r0 = r1;
+            r1 = r3;
+            t0 = t1;
+            t1 = t2;
+        }
+        // r0 is gcd(lcF, pk) = 1 here (p does not divide lc)
+        lcInv = t0 % pk;
+        if (lcInv.isNegative())
+            lcInv = lcInv + pk;
+    }
+    (void)lcRem;
     std::vector<BigInt> target = f;
     bpMod(target, pk);
+    for (BigInt &c : target)
+        c = (c * lcInv) % pk;
     henselGroup(target, g, 0, r, gFp, p, pk);
 
     // Reconstruction: only divisors found by exact division over Z are
@@ -343,19 +386,65 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
                 std::vector<BigInt> sym = bpSymmetric(cand, pk);
                 if (sym.empty() || sym.size() < 2)
                     continue;
-                bpNormalize(sym);
-                std::vector<BigInt> qv;
-                if (bpDivExact(cur, sym, qv)) {
-                    out.push_back(sym);
-                    cur = qv;
-                    std::vector<std::size_t> keep;
-                    for (std::uint32_t i = 0; i < n; ++i)
-                        if (!(mask & (std::uint32_t{1} << i)))
-                            keep.push_back(active[i]);
-                    active = keep;
-                    found = true;
-                    break;
+                // the true divisor is D * sym where D divides lc(cur):
+                // try every positive divisor of the current leading
+                // coefficient (small in practice; capped for safety).
+                std::vector<BigInt> divs;
+                {
+                    BigInt m2 = cur.back().abs();
+                    if (m2.bitLength() <= 40) {
+                        divs.push_back(B1());
+                        BigInt mm = m2;
+                        for (BigInt d(2); d * d <= mm; d = d + BigInt(1)) {
+                            BigInt q4, r4;
+                            BigInt::divMod(mm, d, q4, r4);
+                            if (r4.isZero()) {
+                                const std::size_t base2 = divs.size();
+                                BigInt pk2(1);
+                                while (true) {
+                                    BigInt q5, r5;
+                                    BigInt::divMod(mm, d, q5, r5);
+                                    if (!r5.isZero())
+                                        break;
+                                    mm = q5;
+                                    pk2 = pk2 * d;
+                                    for (std::size_t w = 0; w < base2; ++w)
+                                        divs.push_back(divs[w] * pk2);
+                                }
+                            }
+                        }
+                        if (!(mm == BigInt(1))) {
+                            const std::size_t base2 = divs.size();
+                            for (std::size_t w = 0; w < base2; ++w)
+                                divs.push_back(divs[w] * mm);
+                        }
+                    } else {
+                        divs.push_back(B1());
+                        divs.push_back(m2);
+                    }
                 }
+                for (const BigInt &d : divs) {
+                    std::vector<BigInt> scaled = sym;
+                    for (BigInt &c : scaled)
+                        c = c * d;
+                    bpMod(scaled, pk);
+                    scaled = bpSymmetric(scaled, pk);
+                    bpNormalize(scaled);
+                    std::vector<BigInt> qv;
+                    if (bpDivExact(cur, scaled, qv)) {
+                        out.push_back(scaled);
+                        cur = qv;
+                        std::vector<std::size_t> keep;
+                        for (std::uint32_t i = 0; i < n; ++i)
+                            if (!(mask & (std::uint32_t{1} << i)))
+                                keep.push_back(active[i]);
+                        active = keep;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found)
+                    break;
             }
         }
         if (!found) {

@@ -7,9 +7,15 @@
 //
 // Exit codes: 0 success (proved / printed), 1 usage or parse error,
 // 2 honest Unevaluated — corpus runs can count the difference.
+//   nkcas corpus <file>   — §7 corpus run: id<TAB>var<TAB>expr lines,
+//                           prints per-task outcomes and the summary
+//                           (pass rate, verification rate, median/p95).
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 
+#include "corpus_runner.hpp"
+
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -99,6 +105,61 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
     return 1;
 }
 
+const char *statusName(nkcorpus::TaskStatus s)
+{
+    switch (s) {
+    case nkcorpus::TaskStatus::Proved: return "PROVED";
+    case nkcorpus::TaskStatus::Unevaluated: return "UNEVALUATED";
+    case nkcorpus::TaskStatus::ParseError: return "PARSE_ERROR";
+    case nkcorpus::TaskStatus::MalformedLine: return "MALFORMED_LINE";
+    }
+    return "?";
+}
+
+int runCorpusFile(const char *path)
+{
+    std::ifstream in(path);
+    if (!in) {
+        std::cout << "cannot open corpus file: " << path << "\n";
+        return 1;
+    }
+    std::vector<nkcorpus::CorpusTask> tasks;
+    std::size_t lineNo = 0, malformed = 0;
+    std::string line;
+    while (std::getline(in, line)) {
+        ++lineNo;
+        nkcorpus::CorpusTask t;
+        if (nkcorpus::parseCorpusLine(line, t)) {
+            tasks.push_back(std::move(t));
+        } else if (nkcorpus::lineKind(line) == nkcorpus::LineKind::Malformed) {
+            ++malformed;
+            std::cout << "line " << lineNo << "\tMALFORMED_LINE\n";
+        }
+    }
+    std::vector<nkcorpus::TaskOutcome> outcomes;
+    const nkcorpus::CorpusReport rep =
+        nkcorpus::runCorpus(tasks, &outcomes);
+    for (const nkcorpus::TaskOutcome &o : outcomes) {
+        std::cout << o.id << '\t' << statusName(o.status) << '\t'
+                  << o.micros << "us\t" << o.answerNodes << "nodes";
+        if (o.status != nkcorpus::TaskStatus::Proved && !o.detail.empty())
+            std::cout << '\t' << o.detail;
+        std::cout << '\n';
+    }
+    std::cout << "----\n"
+              << "tasks: " << rep.total << " (+" << malformed
+              << " malformed lines)\n"
+              << "proved: " << rep.proved << " (" << rep.passRatePct()
+              << "%)\n"
+              << "unevaluated: " << rep.unevaluated << ", parse errors: "
+              << rep.parseErrors << "\n"
+              << "verification rate: " << rep.verificationRatePct()
+              << "% of integrable\n"
+              << "median time: " << rep.medianMicros << "us, p95: "
+              << rep.p95Micros << "us\n";
+    return 0;
+}
+
 void usage()
 {
     std::cout << "usage: nkcas <command> <expr> <var>\n"
@@ -115,6 +176,8 @@ int main(int argc, char **argv)
         return runCommand(argv[1], argv[2], argv[3]);
     if (argc == 3 && std::string(argv[1]) == "print")
         return runCommand(argv[1], argv[2], "");
+    if (argc == 3 && std::string(argv[1]) == "corpus")
+        return runCorpusFile(argv[2]);
     if (argc == 1) {
         std::string line;
         while (std::getline(std::cin, line)) {

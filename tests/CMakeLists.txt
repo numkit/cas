@@ -22,8 +22,11 @@ add_executable(nkcas_gtest
     poly/fppoly_test.cpp
     poly/zassenhaus_test.cpp
     integrate/ratint_test.cpp
+    corpus_runner_test.cpp
+    ../apps/corpus_runner.cpp
 )
 
+target_include_directories(nkcas_gtest PRIVATE ${PROJECT_SOURCE_DIR}/apps)
 target_link_libraries(nkcas_gtest PRIVATE numkit::cas GTest::gtest_main)
 
 include(GoogleTest)

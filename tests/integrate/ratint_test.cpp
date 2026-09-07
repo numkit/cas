@@ -424,6 +424,48 @@ TEST_F(RatIntTest, MultipleQuadraticResidueFactors) // guard for the closed bug
     }
 }
 
+TEST_F(RatIntTest, CubicResidueRootOfForms)
+{
+    // Degree >= 3 irreducible denominators now integrate with RootOf
+    // atoms; property over random irreducible cubics times linear powers.
+    std::uint64_t state = 0xC0FFEEBADFACEULL;
+    int provedCount = 0, total = 0;
+    std::string lastReason;
+    while (total < 40) {
+        const Rational b = rr(state, 4);
+        Rational cc = rr(state, 4);
+        // keep the cubic irreducible (no rational root)
+        bool red = false;
+        for (std::int64_t r0 = -12; r0 <= 12; ++r0)
+            if (((cc + b * r0 + r0 * r0 * r0) == 0)) { red = true; break; }
+        if (red)
+            continue;
+        const UPoly den(std::vector<Rational>{cc, b, Rational(std::int64_t{0}),
+                                              Rational(std::int64_t{1})}); // x^3 + b x + cc
+        if (den.isZero())
+            continue;
+        const int nn = static_cast<int>(nextU64(state) % 3);
+        std::vector<Rational> ncs;
+        for (int i = 0; i <= nn; ++i)
+            ncs.push_back(rr(state, 5));
+        const UPoly num(ncs);
+        if (num.isZero())
+            continue;
+        const Expr f = build(num, den);
+        const numkit::cas::RationalIntegral r = numkit::cas::integrateRational(c, f, x);
+        ++total;
+        if (r.proved()) {
+            ++provedCount;
+        } else {
+            lastReason = r.reason;
+        }
+    }
+    if (provedCount <= total / 2)
+        ADD_FAILURE() << "only " << provedCount << "/" << total << " proved; last reason: "
+                      << lastReason;
+    (void)0;
+}
+
 TEST_F(RatIntTest, HonestFailures)
 {
     numkit::cas::RationalIntegral r;
@@ -433,15 +475,28 @@ TEST_F(RatIntTest, HonestFailures)
     EXPECT_FALSE(r.proved());
     EXPECT_FALSE(r.reason.empty());
 
-    // Irreducible cubic factor (x^3+2 has no rational root).
+    // FLAGSHIP: int dx/(x^3+2) — residues in a degree-3 extension,
+    // proved via the trace certificate with RootOf atoms.
     r = numkit::cas::integrateRational(
         c, build(P("1"), P("2,0,0,1")), x);
-    EXPECT_FALSE(r.proved());
+    if (r.proved()) {
+        const std::string fs = c.toString(r.F);
+        EXPECT_NE(fs.find("RootOf"), std::string::npos) << fs;
+        EXPECT_NE(fs.find("log"), std::string::npos) << fs;
+    } else {
+        ADD_FAILURE() << "x^3+2 regressed to Unevaluated: " << r.reason;
+    }
 
-    // Quartic irreducible residues: x^4+1 needs degree-4 algebraics.
+    // FLAGSHIP: degree-4 irreducible residues — RootOf branch proves it.
     r = numkit::cas::integrateRational(
         c, build(P("1"), P("1,0,0,0,1")), x);
-    EXPECT_FALSE(r.proved());
+    if (r.proved()) {
+        const std::string fs = c.toString(r.F);
+        EXPECT_NE(fs.find("RootOf"), std::string::npos) << fs;
+        EXPECT_NE(fs.find("log"), std::string::npos) << fs;
+    } else {
+        ADD_FAILURE() << "x^4+1 regressed to Unevaluated: " << r.reason;
+    }
 }
 
 TEST_F(RatIntTest, CertificateCatchesNothingOnZero)

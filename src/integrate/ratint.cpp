@@ -446,8 +446,9 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                                           : UPoly(q.coeff(i)));
                     return ModCPoly(ring, std::move(cs));
                 };
-                const ModCPoly v = ModCPoly::gcd(lift(leftN, false) - lift(dLpair, true),
-                                                  lift(leftD, false));
+                const ModCPoly v =
+                    ModCPoly::gcd(lift(leftN, false) - lift(dLpair, true),
+                                  lift(leftD, false));
                 std::vector<Rational> aCs, bCs;
                 if (v.deg() >= 1) {
                     for (std::size_t i = 0; i <= static_cast<std::size_t>(v.deg()); ++i) {

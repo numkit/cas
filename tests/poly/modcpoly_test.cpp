@@ -172,6 +172,44 @@ TEST(ModCRingProperty, FieldAxioms)
     }
 }
 
+TEST(ModCRingProperty, QuadraticFastPathsMatchGenericReduction)
+{
+    // mul()/inv() take closed-form paths for quadratic moduli; sweep
+    // random rational elements of BOTH oracle rings and require the
+    // fast results to agree with the generic division-based reduce()
+    // everywhere, plus the inverse identity with fractional entries.
+    std::uint64_t state = 0x20C0FFEE0DD5EEDULL;
+    const char *mods[] = {"-2,0,1", "1,1,1"};
+    for (const char *mc : mods) {
+        const ModCRing ring(P(mc));
+        for (int iter = 0; iter < 4000; ++iter) {
+            auto randElem = [&]() {
+                const long p = static_cast<long>(nextU64(state) % 17) - 8;
+                const long q = 1 + static_cast<long>(nextU64(state) % 5);
+                const long r = static_cast<long>(nextU64(state) % 17) - 8;
+                const long s = 1 + static_cast<long>(nextU64(state) % 5);
+                return ring.reduce(P(std::to_string(p) + "/" + std::to_string(q) +
+                                     "," + std::to_string(r) + "/" +
+                                     std::to_string(s)));
+            };
+            const UPoly a = randElem();
+            const UPoly b = randElem();
+            if (a.isZero())
+                continue;
+            // fast mul == generic mul (reduce of the plain product)
+            EXPECT_EQ(ring.mul(a, b), ring.reduce(a * b));
+            // inverse identity and inv(inv(a)) == a
+            EXPECT_EQ(ring.mul(a, ring.inv(a)), ring.one());
+            EXPECT_EQ(ring.inv(ring.inv(a)), a);
+            // zero and constant edges through the fast path
+            EXPECT_TRUE(ring.mul(a, ring.zero()).isZero());
+            EXPECT_EQ(ring.mul(a, ring.one()), a);
+            const UPoly k = ring.reduce(P("3/7"));
+            EXPECT_EQ(ring.mul(k, ring.inv(k)), ring.one());
+        }
+    }
+}
+
 TEST(ModCPolyProperty, RingAndDivision)
 {
     std::uint64_t state = 0xABCDEF0123456789ULL;

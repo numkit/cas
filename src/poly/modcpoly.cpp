@@ -54,6 +54,23 @@ UPoly ModCRing::neg(const UPoly &a) const
 
 UPoly ModCRing::mul(const UPoly &a, const UPoly &b) const
 {
+    if (c_.deg() == 2) {
+        // Closed form for the quadratic modulus t^2 = -p*t - q: no
+        // division-based reduction inside the hot Euclidean loops
+        // (thousands of ring multiplications per gcd, each formerly
+        // paying a full polynomial division in reduce()).
+        assert(a.deg() < 2 && b.deg() < 2 && "ring element out of normal form");
+        const Rational &p = c_.coeff(1);
+        const Rational &q = c_.coeff(0);
+        const Rational &a0 = a.coeff(0);
+        const Rational a1 = a.coeff(1);
+        const Rational &b0 = b.coeff(0);
+        const Rational b1 = b.coeff(1);
+        const Rational t2 = a1 * b1; // coefficient of t^2 before reduction
+        const Rational m0 = a0 * b0 - q * t2;
+        const Rational m1 = a0 * b1 + a1 * b0 - p * t2;
+        return UPoly(std::vector<Rational>{m0, m1});
+    }
     return reduce(a * b);
 }
 
@@ -65,6 +82,22 @@ UPoly ModCRing::div(const UPoly &a, const UPoly &b) const
 UPoly ModCRing::inv(const UPoly &a) const
 {
     assert(!a.isZero());
+    if (c_.deg() == 2) {
+        // Quadratic conjugate t -> -p - t: (a0 + a1*t) * conj(a) is
+        // the rational norm N = a0^2 - p*a0*a1 + q*a1^2, nonzero for
+        // a != 0 because c is irreducible (the ring is a field), so
+        // the inverse is conj(a)/N — no extended Euclid.
+        assert(a.deg() < 2 && "ring element out of normal form");
+        const Rational &p = c_.coeff(1);
+        const Rational &q = c_.coeff(0);
+        const Rational &a0 = a.coeff(0);
+        const Rational a1 = a.coeff(1);
+        const Rational n = a0 * a0 - p * a0 * a1 + q * a1 * a1;
+        assert(!n.isZero() && "nonzero element has zero norm: c reducible?");
+        const Rational i0 = (a0 - p * a1) / n;
+        const Rational i1 = Rational(std::int64_t{-1}) * a1 / n;
+        return UPoly(std::vector<Rational>{i0, i1});
+    }
     return UPoly::invMod(a, c_);
 }
 

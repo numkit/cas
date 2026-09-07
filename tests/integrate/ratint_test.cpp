@@ -379,6 +379,51 @@ TEST_F(RatIntTest, QuadraticResidueDoD)
     }
 }
 
+TEST_F(RatIntTest, DISABLED_MultipleQuadraticResidueFactors) // bugs/opened/integrate/ratint-multi-quadratic-leftover.md
+{
+    // Two IRREDUCIBLE quadratics with NON-square discriminants in the
+    // denominator: previously beyond reach (budget/single-quadratic
+    // limits), now handled by the factorized residue pipeline.
+    auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
+        const Expr f = build(P(numCsv), P(denCsv));
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        EXPECT_TRUE(r.proved()) << r.reason;
+        return r.proved() ? c.toString(r.F) : std::string("<failed>");
+    };
+    // 1/((x^2+2)(x^2+3)): residues involve sqrt(2), sqrt(3) — real
+    // quadratic residue pairs on BOTH factors.
+    EXPECT_NE(integrate("1", "6,0,5,0,1").find("atan"), std::string::npos);
+    // DoD-style: linear x two different quadratics with multiplicities.
+    std::uint64_t state = 0x51CE0FFEE42ULL;
+    for (int iter = 0; iter < 500; ++iter) {
+        const Rational b1 = rr(state, 4), c1v = rr(state, 4);
+        const Rational b2 = rr(state, 4), c2v = rr(state, 4);
+        // require irreducible quadratics with negative discriminants
+        if (b1 * b1 - 4 * c1v >= 0 || b2 * b2 - 4 * c2v >= 0)
+            continue;
+        const UPoly q1(std::vector<Rational>{c1v, b1, Rational(std::int64_t{1})});
+        const UPoly q2(std::vector<Rational>{c2v, b2, Rational(std::int64_t{1})});
+        const Rational r = rr(state, 4);
+        const UPoly lin(std::vector<Rational>{Rational(-r), Rational(std::int64_t{1})});
+        UPoly den = q1 * q2;
+        if (nextU64(state) % 2 == 0)
+            den = den * lin;
+        const int nn = static_cast<int>(nextU64(state) % den.deg());
+        std::vector<Rational> ncs;
+        for (int i = 0; i <= nn; ++i)
+            ncs.push_back(rr(state, 5));
+        const UPoly num(ncs);
+        if (num.isZero())
+            continue;
+        const Expr f = build(num, den);
+        const numkit::cas::RationalIntegral ri =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(ri.proved()) << "iter " << iter << " reason=" << ri.reason
+                                 << " f=" << c.toString(f);
+    }
+}
+
 TEST_F(RatIntTest, HonestFailures)
 {
     numkit::cas::RationalIntegral r;

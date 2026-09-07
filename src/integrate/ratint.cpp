@@ -1,6 +1,7 @@
 #include <numkit/cas/integrate/ratint.hpp>
 
 #include <numkit/cas/poly/modcpoly.hpp>
+#include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <cassert>
 #include <vector>
@@ -287,29 +288,12 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
     const UPoly R = resultantT(A, dF, F);
     const UPoly Rsq = R.squarefreePart();
 
+    // Rational residues from the FULL factorization of the squarefree
+    // resultant (Zassenhaus): no search budget, nothing missed.
     std::vector<Rational> residues;
-    if (!Rsq.isConst()) {
-        UPoly rest = Rsq;
-        while (!rest.isConst()) {
-            Rational rt;
-            bool ok = false;
-            if (rest.coeff(0).isZero()) {
-                rt = R0();
-                ok = true;
-            } else if (!findOneRationalRoot(rest, rt, ok)) {
-                // Budget exceeded: the unfound (possibly rational) residues
-                // fall through to the per-root splitting path below — no
-                // grouping, but full correctness.
-                break;
-            }
-            residues.push_back(rt);
-            UPoly q, r;
-            UPoly::divMod(rest,
-                          UPoly(std::vector<Rational>{Rational(-rt), R1()}), q, r);
-            assert(r.isZero());
-            rest = q;
-        }
-    }
+    for (const UPoly &fact : factorOverQ(Rsq))
+        if (fact.deg() == 1)
+            residues.push_back(fact.coeff(0) * Rational(std::int64_t{-1}));
 
     UPoly leftN = A, leftD = F;
     for (const Rational &res : residues) {
@@ -347,24 +331,10 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
         UPoly Rsq2 = resultantT(n0, dL, d0).squarefreePart();
 
         std::vector<Rational> res2;
-        bool sweepComplete = true;
-        while (!Rsq2.isConst()) {
-            Rational rt;
-            bool ok = false;
-            if (Rsq2.coeff(0).isZero()) {
-                rt = R0();
-                ok = true;
-            } else if (!findOneRationalRoot(Rsq2, rt, ok)) {
-                sweepComplete = ok; // budget exhausted: no irreducibility claim
-                break;
-            }
-            res2.push_back(rt);
-            UPoly q, r;
-            UPoly::divMod(Rsq2,
-                          UPoly(std::vector<Rational>{Rational(-rt), R1()}), q, r);
-            assert(r.isZero());
-            Rsq2 = q;
-        }
+        const std::vector<UPoly> facts2 = factorOverQ(Rsq2);
+        for (const UPoly &fact : facts2)
+            if (fact.deg() == 1)
+                res2.push_back(fact.coeff(0) * Rational(std::int64_t{-1}));
         for (const Rational &res : res2) {
             if (res.isZero())
                 continue;
@@ -394,33 +364,42 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
         if (leftN.isZero())
             return true;
 
-        bool quad = sweepComplete && Rsq2.deg() == 2;
-        if (quad) {
-            Rsq2.makeMonic(); // t^2 + p t + q below
-            const Rational pc = Rsq2.coeff(1);
-            const Rational qc = Rsq2.coeff(0);
-            const Rational D = pc * pc - Rational(std::int64_t{4}) * qc;
-            const UPoly dLpair = leftD.derivative(); // reduced denominator
-            const ModCRing ring(Rsq2);
-            const UPoly tEl = ring.reduce(UPoly(std::vector<Rational>{R0(), R1()}));
-            const auto lift = [&](const UPoly &q, bool mulT) {
-                std::vector<UPoly> cs;
-                for (std::size_t i = 0; i < q.coeffs().size(); ++i)
-                    cs.push_back(mulT ? ring.mul(tEl, UPoly(q.coeff(i)))
-                                      : UPoly(q.coeff(i)));
-                return ModCPoly(ring, std::move(cs));
-            };
-            const ModCPoly v =
-                ModCPoly::gcd(lift(leftN, false) - lift(dLpair, true), lift(leftD, false));
-            std::vector<Rational> aCs, bCs;
-            if (v.deg() >= 1) {
-                for (std::size_t i = 0; i <= static_cast<std::size_t>(v.deg()); ++i) {
-                    aCs.push_back(v.coeff(i).coeff(0));
-                    bCs.push_back(v.coeff(i).coeff(1));
+        // Quadratic residue pairs (modular Trager), one per irreducible
+        // quadratic factor of Rsq2. The gcd over Q[t]/(c_i) captures
+        // only the poles whose residues are roots of c_i, so factors of
+        // other degrees never interfere; degree >= 3 residues need
+        // RootOf atoms (item 6c) and are left to the final fallback.
+        {
+            for (const UPoly &fact : facts2) {
+                if (fact.deg() != 2)
+                    continue;
+                UPoly c2 = fact;
+                c2.makeMonic();
+                const Rational pc = c2.coeff(1);
+                const Rational qc = c2.coeff(0);
+                const Rational D = pc * pc - Rational(std::int64_t{4}) * qc;
+                const UPoly dLpair = leftD.derivative();
+                const ModCRing ring(c2);
+                const UPoly tEl = ring.reduce(UPoly(std::vector<Rational>{R0(), R1()}));
+                const auto lift = [&](const UPoly &q, bool mulT) {
+                    std::vector<UPoly> cs;
+                    for (std::size_t i = 0; i < q.coeffs().size(); ++i)
+                        cs.push_back(mulT ? ring.mul(tEl, UPoly(q.coeff(i)))
+                                          : UPoly(q.coeff(i)));
+                    return ModCPoly(ring, std::move(cs));
+                };
+                const ModCPoly v = ModCPoly::gcd(lift(leftN, false) - lift(dLpair, true),
+                                                  lift(leftD, false));
+                std::vector<Rational> aCs, bCs;
+                if (v.deg() >= 1) {
+                    for (std::size_t i = 0; i <= static_cast<std::size_t>(v.deg()); ++i) {
+                        aCs.push_back(v.coeff(i).coeff(0));
+                        bCs.push_back(v.coeff(i).coeff(1));
+                    }
                 }
-            }
-            const UPoly Aq(aCs), Bq(bCs);
-            if (v.deg() >= 1 && !Bq.isZero()) {
+                const UPoly Aq(aCs), Bq(bCs);
+                if (v.deg() < 1 || Bq.isZero())
+                    continue;
                 const UPoly dA = Aq.derivative(), dB = Bq.derivative();
                 if (D.signum() > 0) {
                     // Real pair alpha = u +- sqrt(D)/2, u = -p/2:
@@ -443,10 +422,10 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                         (pc * pc - Rational(std::int64_t{2}) * qc) * Aq * dB -
                         pc * qc * dB * Bq;
                     fracAdd(certN, certD, num, W);
+                    fracAdd(leftN, leftD, num * Rational(std::int64_t{-1}), W);
                 } else {
                     // Complex pair alpha = u +- i*w, w^2 = -D/4:
-                    // contribution = u*log(W) + sqrt(-D)*atan(X/Y),
-                    // X = A + uB, Y = wB, W = X^2 + w^2 B^2 — rational.
+                    // u*log(W) + sqrt(-D)*atan(X/Y), X = A + uB, Y = wB.
                     const Rational u = pc * Rational(std::int64_t{-1}, BigInt(2));
                     const Rational w2 = D * Rational(std::int64_t{-1}, BigInt(4));
                     const UPoly X = Aq + u * Bq;
@@ -465,9 +444,11 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                         w2 * Rational(std::int64_t{2}) *
                             (X.derivative() * Bq - X * Bq.derivative());
                     fracAdd(certN, certD, num, W);
+                    fracAdd(leftN, leftD, num * Rational(std::int64_t{-1}), W);
                 }
-                return true; // the pair consumes every remaining residue
             }
+            if (leftN.isZero())
+                return true;
         }
     }
     return integrateSplitting(leftN, leftD, pieces, reason);

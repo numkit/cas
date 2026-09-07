@@ -41,3 +41,24 @@ Impact: coverage regression risk is none vs main (main could not
 produce these answers at all); the bug blocks the C1 completion
 criterion "any rational function with residues in quadratic
 extensions".
+
+## 2026-09-08 session findings (precise narrowing)
+
+- The integrator-side machinery is NOT the cause: the quadratic loop
+  never even ran for the repro — factorOverQ(Rsq2) returned the
+  degree-5 squarefree resultant WHOLE (single factor), so no quadratic
+  factors were ever presented to the loop.
+- FpPoly::factor is correct on the mod-19 image (roots {3,7,18};
+  factors d1 d1 d1 d2 — verified by an isolated debug test).
+- Hensel invariants hold (Debug run of the repro: no assert fired).
+- Remaining suspect: the subset/divisor reconstruction inside
+  factorPrimitiveInteger for THIS input — integer primitive poly
+  [-10389627032015, 0, 23275963107408, -988346505344,
+  -18826327357440, 2043157708800], p = 19, 4 lifted factors,
+  lc = 2043157708800. Next session: dump divisorsOf(lc) and each
+  subset-divisor candidate for this exact case.
+- Additionally fixed this session (kept): the integrator's quadratic
+  loop now breaks when the running numerator hits zero mid-loop —
+  gcd(0 - t*S', S) can be nontrivial in Q[t]/(c) and subtracting its
+  contribution resurrects a zero numerator, producing garbage leftover
+  (a real bug caught by the diagnostics, distinct from the main one).

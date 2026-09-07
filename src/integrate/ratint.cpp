@@ -332,6 +332,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
 
         std::vector<Rational> res2;
         const std::vector<UPoly> facts2 = factorOverQ(Rsq2);
+        for (const UPoly &fa : facts2)
         for (const UPoly &fact : facts2)
             if (fact.deg() == 1)
                 res2.push_back(fact.coeff(0) * Rational(std::int64_t{-1}));
@@ -371,6 +372,10 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
         // RootOf atoms (item 6c) and are left to the final fallback.
         {
             for (const UPoly &fact : facts2) {
+                if (leftN.isZero())
+                    break; // everything consumed: further gcd(0 - tS', S)
+                           // can be nontrivial in the ring and would
+                           // subtract garbage, resurrecting the numerator
                 if (fact.deg() != 2)
                     continue;
                 UPoly c2 = fact;
@@ -398,6 +403,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                     }
                 }
                 const UPoly Aq(aCs), Bq(bCs);
+                if (v.deg() >= 1)
                 if (v.deg() < 1 || Bq.isZero())
                     continue;
                 const UPoly dA = Aq.derivative(), dB = Bq.derivative();

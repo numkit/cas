@@ -542,11 +542,16 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             if (v.deg() < 1)
                 continue;
 
-            // deg_x(v) <= deg leftD = nD; deg Q = d * v.deg; deg P <=
-            // 2*d*nD + nD + 2. Interpolate Q and P from point values.
-            const int nD = leftD.deg();
+            // Interpolation degrees, tight: Q = Norm(v) has
+            // deg_x Q = d * deg_x v, and the numerator P = T*Q where
+            // every summand of T = Tr(t*v'*v^-1) has degree
+            // (deg v - 1) + (d-1)*deg v = d*deg v - 1, so
+            // deg P <= 2*d*deg v - 1. The old bound 2*d*deg(leftD) + ...
+            // paid for the WHOLE denominator even when v captures a
+            // single pole — 24 interpolation points where 7 suffice,
+            // each point costing a Q-resultant plus a ring inversion.
             const int qDeg = d * v.deg();
-            const int pDeg = 2 * d * nD + nD + 2;
+            const int pDeg = 2 * d * v.deg() - 1;
             const int need = (qDeg > pDeg ? qDeg : pDeg) + 1;
             std::vector<Rational> xs, qs, ps;
             for (int x0 = 1; static_cast<int>(xs.size()) < need && x0 < 6 * need + 10; ++x0) {
@@ -637,7 +642,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
         if (leftN.isZero())
             return true;
     }
-    return integrateSplitting(leftN, leftD, pieces, reason);    return integrateSplitting(leftN, leftD, pieces, reason);
+    return integrateSplitting(leftN, leftD, pieces, reason);
 }
 
 } // namespace

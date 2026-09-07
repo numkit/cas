@@ -74,9 +74,14 @@ int main()
     integrate("(3x+1)/(1+x^2)^2",
               c.div(c.add({c.one(), c.mul({c.number(std::int64_t{3}), x})}),
                     c.pow(q1, c.number(std::int64_t{2}))));
-    // Outside the M0 splitting scope: honest refusals with reasons.
+    // Algebraic residues of any degree — RootOf atoms with proofs
+    // (all three were honest Unevaluated in the M0 demo).
     integrate("1/(x^3+2)", c.div(c.one(), c.add({c.number(std::int64_t{2}), x3})));
     integrate("1/(2+x^2)", c.div(c.one(), c.add({c.number(std::int64_t{2}), x2})));
+    integrate("1/(x^4+1)", c.div(c.one(), c.add({c.one(), x2, x2})));
+    integrate("1/((x^3+2)(x^3+3))",
+              c.div(c.one(), c.mul({c.add({c.number(std::int64_t{2}), x3}),
+                                    c.add({c.number(std::int64_t{3}), x3})})));
 
     header("the verification loop closes (diff of an integral)");
     const RationalIntegral r0 = integrateRational(c, c.div(c.one(), q1), x);

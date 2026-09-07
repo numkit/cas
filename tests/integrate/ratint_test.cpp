@@ -517,6 +517,76 @@ TEST_F(RatIntTest, TwoCubicResidueFactors)
     EXPECT_GT(proved, total / 2) << "only " << proved << "/" << total << " proved";
 }
 
+TEST_F(RatIntTest, C1CompletenessDoD)
+{
+    // THE C1 capstone property: random products of linear, irreducible
+    // quadratic (any discriminant) and irreducible cubic factors with
+    // multiplicities — every integration must return PROVED_SYMBOLIC.
+    // Covers all three residue classes in one denominator.
+    std::uint64_t state = 0xC1C0FFEE5EE0DULL;
+    for (int iter = 0; iter < 200; ++iter) {
+        UPoly den(Rational(std::int64_t{1}));
+        const int nLin = static_cast<int>(nextU64(state) % 3);
+        const int nQuad = static_cast<int>(nextU64(state) % 2);
+        const int nCub = static_cast<int>(nextU64(state) % 2);
+        for (int i = 0; i < nLin; ++i) {
+            Rational r = rr(state, 5);
+            if (r.isZero())
+                r = Rational(std::int64_t{1});
+            const int m = 1 + static_cast<int>(nextU64(state) % 3);
+            den = den * UPoly(std::vector<Rational>{Rational(-r),
+                Rational(std::int64_t{1})}).powUInt(m);
+        }
+        for (int i = 0; i < nQuad; ++i) {
+            // random monic quadratic, no rational root
+            while (true) {
+                const Rational b = rr(state, 4);
+                const Rational cc = rr(state, 4);
+                bool red = false;
+                for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+                    if (cc + b * r0 + r0 * r0 == 0)
+                        red = true;
+                if (!red) {
+                    const int m = 1 + static_cast<int>(nextU64(state) % 2);
+                    den = den * UPoly(std::vector<Rational>{cc, b,
+                        Rational(std::int64_t{1})}).powUInt(m);
+                    break;
+                }
+            }
+        }
+        for (int i = 0; i < nCub; ++i) {
+            while (true) {
+                const Rational b = rr(state, 3);
+                const Rational cc = rr(state, 3);
+                bool red = false;
+                for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+                    if (cc + b * r0 + r0 * r0 * r0 == 0)
+                        red = true;
+                if (!red) {
+                    den = den * UPoly(std::vector<Rational>{cc, b,
+                        Rational(std::int64_t{0}), Rational(std::int64_t{1})});
+                    break;
+                }
+            }
+        }
+        if (den.isConst() || den.deg() < 3)
+            continue; // want genuinely mixed denominators
+        const int nn = static_cast<int>(nextU64(state) % den.deg());
+        std::vector<Rational> ncs;
+        for (int i = 0; i <= nn; ++i)
+            ncs.push_back(rr(state, 5));
+        const UPoly num(ncs);
+        if (num.isZero())
+            continue;
+
+        const Expr f = build(num, den);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << "iter " << iter << " reason=" << r.reason
+                                << " f=" << c.toString(f);
+    }
+}
+
 TEST_F(RatIntTest, HonestFailures)
 {
     numkit::cas::RationalIntegral r;

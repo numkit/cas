@@ -65,6 +65,31 @@ Rational fieldTrace(const UPoly &p, const std::vector<Rational> &s)
     return acc;
 }
 
+// Exact Lagrange interpolation over the rationals: the unique
+// polynomial of degree < xs.size() through the given points.
+UPoly interpolateRational(const std::vector<Rational> &xs,
+                          const std::vector<Rational> &ys)
+{
+    assert(xs.size() == ys.size());
+    std::vector<Rational> coeffs(xs.size(), R0());
+    for (std::size_t i = 0; i < xs.size(); ++i) {
+        if (ys[i].isZero())
+            continue;
+        Rational den(R1());
+        UPoly num(R1());
+        for (std::size_t j = 0; j < xs.size(); ++j) {
+            if (j == i)
+                continue;
+            num = num * UPoly(std::vector<Rational>{Rational(-xs[j]), R1()});
+            den = den * (xs[i] - xs[j]);
+        }
+        const Rational scale = ys[i] / den;
+        for (std::size_t k = 0; k < num.coeffs().size() && k < coeffs.size(); ++k)
+            coeffs[k] = coeffs[k] + num.coeff(k) * scale;
+    }
+    return UPoly(coeffs);
+}
+
 UPoly pmod(const UPoly &a, const UPoly &b)
 {
     UPoly q, r;
@@ -308,8 +333,7 @@ bool integrateSplitting(const UPoly &A, const UPoly &F,
 // per-root/quadratic splitting path.
 bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                          std::vector<Piece> &pieces, std::vector<Expr> &extraTerms,
-                         UPoly &certN, UPoly &certD, bool &gateProven,
-                         std::string &reason)
+                         UPoly &certN, UPoly &certD, std::string &reason)
 {
     if (A.isZero())
         return true;
@@ -487,126 +511,134 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 return true;
         }
 
-        // Trager over RootOf atoms: exactly ONE irreducible factor c of
-        // degree >= 3 carrying all remaining residues. The contribution
-        // sum_i alpha_i log v(x, alpha_i) has a RATIONAL derivative
-        // equal to the field trace Tr(t * v' * v^-1) in Q[t]/(c),
-        // computed through Newton power sums, so the certificate stays
-        // in exact rational arithmetic. The proof evaluates the trace
-        // identity at bound+1 rational points (interpolation
-        // uniqueness) and subsumes the final arithmetic gate, which
-        // cannot see RootOf atoms.
-        if (!leftN.isZero()) {
-            const UPoly *c3 = nullptr;
-            bool multiple = false;
-            for (const UPoly &fact : facts2) {
-                if (fact.deg() < 3)
-                    continue;
-                if (c3 != nullptr) {
-                    multiple = true;
-                    break;
+        // Trager over RootOf atoms: EVERY irreducible factor c of degree
+        // >= 3. For each: v = gcd(A - t*S', S) over Q[t]/(c) captures the
+        // poles with residues among c's conjugate roots; conjugate
+        // evaluation of the same v yields every pole's factor via the
+        // Galois automorphism. The answer terms are
+        // RootOf(c, i) * log(v(x, RootOf(c, i))) with integer powers of
+        // the atom. The contribution's derivative is the field trace
+        // Tr(t * v' * v^-1) = P(x)/Q(x) with Q = Norm(v) — BOTH
+        // reconstructed by exact rational interpolation in x, so
+        // subtracting P/Q from the running fraction and adding it to
+        // the certificate keeps the STANDARD arithmetic gate
+        // sufficient (no gateProven bypass needed).
+        for (const UPoly &fact : facts2) {
+            if (fact.deg() < 3 || leftN.isZero())
+                continue;
+            const int d = fact.deg();
+            const std::vector<Rational> s = newtonPowerSums(fact.coeffs());
+            const ModCRing ring(fact);
+            const UPoly tEl = ring.reduce(UPoly(std::vector<Rational>{R0(), R1()}));
+            const auto lift = [&](const UPoly &q, bool mulT) {
+                std::vector<UPoly> cs;
+                for (std::size_t i = 0; i < q.coeffs().size(); ++i)
+                    cs.push_back(mulT ? ring.mul(tEl, UPoly(q.coeff(i)))
+                                      : UPoly(q.coeff(i)));
+                return ModCPoly(ring, std::move(cs));
+            };
+            const UPoly dL3 = leftD.derivative();
+            const ModCPoly v =
+                ModCPoly::gcd(lift(leftN, false) - lift(dL3, true), lift(leftD, false));
+            if (v.deg() < 1)
+                continue;
+
+            // deg_x(v) <= deg leftD = nD; deg Q = d * v.deg; deg P <=
+            // 2*d*nD + nD + 2. Interpolate Q and P from point values.
+            const int nD = leftD.deg();
+            const int qDeg = d * v.deg();
+            const int pDeg = 2 * d * nD + nD + 2;
+            const int need = (qDeg > pDeg ? qDeg : pDeg) + 1;
+            std::vector<Rational> xs, qs, ps;
+            for (int x0 = 1; static_cast<int>(xs.size()) < need && x0 < 6 * need + 10; ++x0) {
+                const Rational x0r(static_cast<std::int64_t>(x0));
+                // v(x0, t) as a plain Q[t] polynomial (degree < d in t)
+                UPoly uPlain = ring.zero();
+                Rational pw(1);
+                for (std::size_t k = 0; k <= static_cast<std::size_t>(v.deg()); ++k) {
+                    const UPoly rk = v.coeff(k);
+                    if (!rk.isZero())
+                        uPlain = uPlain + rk * UPoly(pw);
+                    pw = pw * x0r;
                 }
-                c3 = &fact;
+                // Q(x0) = Norm = res_t(v(x0,t), c)
+                const Rational qv = UPoly::resultant(uPlain, fact);
+                if (qv.isZero())
+                    continue; // v(x0,t) shares a root with c: skip
+                // T(x0) = Tr(t * v'(x0,t) / v(x0,t))
+                const UPoly u = ring.reduce(uPlain);
+                UPoly du = ring.zero();
+                pw = Rational(1);
+                for (std::size_t k = 0; k <= static_cast<std::size_t>(v.deg()); ++k) {
+                    const UPoly rk = v.coeff(k);
+                    if (!rk.isZero() && k >= 1)
+                        du = ring.add(du, ring.mul(rk, UPoly(Rational(
+                            static_cast<std::int64_t>(k) * pw / x0r))));
+                    pw = pw * x0r;
+                }
+                const UPoly q3 = ring.mul(tEl, ring.mul(du, ring.inv(u)));
+                const Rational tTrace = fieldTrace(q3, s);
+                xs.push_back(x0r);
+                qs.push_back(qv);
+                ps.push_back(tTrace * qv);
             }
-            if (c3 != nullptr && !multiple) {
-                const int d = c3->deg();
-                const std::vector<Rational> s = newtonPowerSums(c3->coeffs());
-                const ModCRing ring(*c3);
-                const UPoly tEl = ring.reduce(UPoly(std::vector<Rational>{R0(), R1()}));
-                const auto lift = [&](const UPoly &q, bool mulT) {
-                    std::vector<UPoly> cs;
-                    for (std::size_t i = 0; i < q.coeffs().size(); ++i)
-                        cs.push_back(mulT ? ring.mul(tEl, UPoly(q.coeff(i)))
-                                          : UPoly(q.coeff(i)));
-                    return ModCPoly(ring, std::move(cs));
-                };
-                const UPoly dL3 = leftD.derivative();
-                const ModCPoly v =
-                    ModCPoly::gcd(lift(leftN, false) - lift(dL3, true), lift(leftD, false));
-                if (v.deg() >= 1) {
-                    const int bound = 2 * d * (leftD.deg() + 1) + leftN.deg() + 6;
-                    bool proven = true;
-                    int used = 0;
-                    for (int x0 = 1; used < bound && x0 < 4 * bound + 8; ++x0) {
-                        const Rational x0r(static_cast<std::int64_t>(x0));
-                        if (leftD.eval(x0r).isZero())
+            if (static_cast<int>(xs.size()) < need) {
+                reason = "degree >= 3 factor: not enough interpolation points";
+                return false;
+            }
+            const UPoly Qpoly = interpolateRational(xs, qs);
+            const UPoly Ppoly = interpolateRational(xs, ps);
+            if (Qpoly.isZero()) {
+                reason = "degree >= 3 factor: vanishing norm";
+                return false;
+            }
+
+            fracAdd(certN, certD, Ppoly, Qpoly);
+            fracAdd(leftN, leftD, Ppoly * Rational(std::int64_t{-1}), Qpoly);
+
+            // emit sum_i RootOf(c, i) * log(v(x, RootOf(c, i)))
+            for (int i = 0; i < d; ++i) {
+                const Expr rootExpr = c.rootOf(fact.coeffs(), i);
+                std::vector<Expr> argTerms;
+                for (std::size_t k = 0; k <= static_cast<std::size_t>(v.deg()); ++k) {
+                    const UPoly rk = v.coeff(k);
+                    if (rk.isZero())
+                        continue;
+                    std::vector<Expr> coeffTerms;
+                    for (std::size_t j = 0; j < rk.coeffs().size(); ++j) {
+                        if (rk.coeff(j).isZero())
                             continue;
-                        UPoly u = ring.zero(), du = ring.zero();
-                        Rational pw(1);
-                        for (std::size_t k = 0; k <= static_cast<std::size_t>(v.deg()); ++k) {
-                            const UPoly rk = v.coeff(k);
-                            if (!rk.isZero()) {
-                                u = ring.add(u, ring.mul(rk, UPoly(pw)));
-                                if (k >= 1)
-                                    du = ring.add(du, ring.mul(rk, UPoly(Rational(
-                                        static_cast<std::int64_t>(k) * pw / x0r))));
-                            }
-                            pw = pw * x0r;
-                        }
-                        if (u.isZero())
-                            continue;
-                        const UPoly q3 = ring.mul(tEl, ring.mul(du, ring.inv(u)));
-                        const Rational trace = fieldTrace(q3, s);
-                        const Rational rhs = leftN.eval(x0r) / leftD.eval(x0r);
-                        if (!(trace == rhs)) {
-                            proven = false;
-                            break;
-                        }
-                        ++used;
+                        if (j == 0)
+                            coeffTerms.push_back(c.number(rk.coeff(j)));
+                        else
+                            coeffTerms.push_back(c.mul({c.number(rk.coeff(j)),
+                                                        c.pow(rootExpr,
+                                                              c.number(static_cast<std::int64_t>(j)))}));
                     }
-                    if (proven && used >= bound) {
-                        for (int i = 0; i < d; ++i) {
-                            const Expr rootExpr = c.rootOf(c3->coeffs(), i);
-                            std::vector<Expr> argTerms;
-                            for (std::size_t k = 0; k <= static_cast<std::size_t>(v.deg()); ++k) {
-                                const UPoly rk = v.coeff(k);
-                                if (rk.isZero())
-                                    continue;
-                                std::vector<Expr> coeffTerms;
-                                for (std::size_t j = 0; j < rk.coeffs().size(); ++j) {
-                                    if (rk.coeff(j).isZero())
-                                        continue;
-                                    if (j == 0)
-                                        coeffTerms.push_back(c.number(rk.coeff(j)));
-                                    else
-                                        coeffTerms.push_back(c.mul({c.number(rk.coeff(j)),
-                                                                    c.pow(rootExpr,
-                                                                          c.number(
-                                                                              static_cast<std::int64_t>(j)))}));
-                                }
-                                if (coeffTerms.empty())
-                                    continue;
-                                const Expr coeff = c.add(coeffTerms);
-                                if (k == 0)
-                                    argTerms.push_back(coeff);
-                                else
-                                    argTerms.push_back(c.mul({coeff,
-                                        c.pow(var, c.number(static_cast<std::int64_t>(k)))}));
-                            }
-                            const Expr arg = c.add(argTerms);
-                            // only log terms with genuine x-dependence;
-                            // a constant log drops into C
-                            bool hasVar = c.kind(arg) == NodeKind::Symbol;
-                            for (std::size_t ai = 0; ai < c.childCount(arg); ++ai)
-                                if (c.kind(c.child(arg, ai)) != NodeKind::Number &&
-                                    c.kind(c.child(arg, ai)) != NodeKind::RootOf)
-                                    hasVar = true;
-                            if (!hasVar)
-                                continue;
-                            extraTerms.push_back(c.mul({rootExpr, c.func("log", arg)}));
-                        }
-                        gateProven = true;
-                        return true;
-                    }
-                    reason = "degree >= 3 factor verification failed (mixed residues)";
+                    if (coeffTerms.empty())
+                        continue;
+                    const Expr coeff = c.add(coeffTerms);
+                    if (k == 0)
+                        argTerms.push_back(coeff);
+                    else
+                        argTerms.push_back(c.mul({coeff,
+                            c.pow(var, c.number(static_cast<std::int64_t>(k)))}));
                 }
-            } else if (multiple) {
-                reason = "multiple degree >= 3 irreducible residue factors "
-                         "(Norm-subtraction not implemented)";
+                const Expr arg = c.add(argTerms);
+                bool hasVar = c.kind(arg) == NodeKind::Symbol;
+                for (std::size_t ai = 0; ai < c.childCount(arg); ++ai)
+                    if (c.kind(c.child(arg, ai)) != NodeKind::Number &&
+                        c.kind(c.child(arg, ai)) != NodeKind::RootOf)
+                        hasVar = true;
+                if (!hasVar)
+                    continue; // constant log drops into C
+                extraTerms.push_back(c.mul({rootExpr, c.func("log", arg)}));
             }
         }
+        if (leftN.isZero())
+            return true;
     }
-    return integrateSplitting(leftN, leftD, pieces, reason);
+    return integrateSplitting(leftN, leftD, pieces, reason);    return integrateSplitting(leftN, leftD, pieces, reason);
 }
 
 } // namespace
@@ -840,12 +872,11 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
     std::vector<Piece> pieces;
     std::vector<Expr> extraTerms;
     UPoly qcertN, qcertD(R1());
-    bool gateProven = false;
     for (std::size_t i = 0; i < sq.size(); ++i) {
         if (gs[i].isZero())
             continue;
         if (!integrateSquarefree(c, var, gs[i], sq[i], pieces, extraTerms,
-                                 qcertN, qcertD, gateProven, out.reason))
+                                 qcertN, qcertD, out.reason))
             return out;
     }
 
@@ -861,10 +892,7 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
                     p.v * p.v + UPoly(p.scale * p.scale));
     }
     fracAdd(vn, vd, qcertN, qcertD);
-    // gateProven: the RootOf branch proved the full integrand identity by
-    // an exact rational trace evaluation at bound+1 points; the arithmetic
-    // gate below cannot see RootOf atoms and is subsumed by that proof.
-    if (!gateProven && !(vn * D == vd * N)) {
+    if (!(vn * D == vd * N)) {
         out.reason = "internal certificate check failed";
         return out;
     }

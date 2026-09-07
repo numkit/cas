@@ -466,6 +466,57 @@ TEST_F(RatIntTest, CubicResidueRootOfForms)
     (void)0;
 }
 
+TEST_F(RatIntTest, TwoCubicResidueFactors)
+{
+    // TWO different irreducible cubics in the denominator — the
+    // Norm-subtraction loop must process both factors and leave nothing.
+    auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
+        const Expr f = build(P(numCsv), P(denCsv));
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        EXPECT_TRUE(r.proved()) << r.reason;
+        return r.proved() ? c.toString(r.F) : std::string("<failed>");
+    };
+    // (x^3+2)(x^3+3): both irreducible, residues in two different
+    // degree-3 extensions.
+    EXPECT_NE(integrate("1", "6,0,0,5,0,0,1").find("RootOf"), std::string::npos);
+    // Property: random pairs of irreducible cubics with random numerators.
+    std::uint64_t state = 0xB16C0FFEE5A11ULL;
+    int proved = 0, total = 0;
+    while (total < 15) {
+        auto irred = [&]() {
+            while (true) {
+                const Rational b = rr(state, 3);
+                const Rational cc = rr(state, 3);
+                bool red = false;
+                for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+                    if (cc + b * r0 + r0 * r0 * r0 == 0)
+                        red = true;
+                if (!red)
+                    return UPoly(std::vector<Rational>{cc, b,
+                        Rational(std::int64_t{0}), Rational(std::int64_t{1})});
+            }
+        };
+        const UPoly q1 = irred(), q2 = irred();
+        if (q1 == q2)
+            continue;
+        const UPoly den = q1 * q2;
+        const int nn = static_cast<int>(nextU64(state) % 3);
+        std::vector<Rational> ncs;
+        for (int i = 0; i <= nn; ++i)
+            ncs.push_back(rr(state, 4));
+        const UPoly num(ncs);
+        if (num.isZero())
+            continue;
+        const Expr f = build(num, den);
+        const numkit::cas::RationalIntegral r = numkit::cas::integrateRational(c, f, x);
+        ++total;
+        if (r.proved())
+            ++proved;
+    }
+    EXPECT_GT(proved, total / 2) << "only " << proved << "/" << total << " proved";
+}
+
 TEST_F(RatIntTest, HonestFailures)
 {
     numkit::cas::RationalIntegral r;

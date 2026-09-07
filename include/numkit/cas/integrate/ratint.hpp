@@ -56,6 +56,12 @@ struct HermiteResult
 };
 HermiteResult hermiteReduce(const UPoly &N, const UPoly &D);
 
+// res_x(P - t*Q, M) as an exact polynomial in t (degree <= deg M),
+// computed by evaluation-interpolation: specialization commutes with
+// the resultant, so deg M + 1 rational evaluations of the ordinary
+// Q[x] resultant plus Lagrange interpolation suffice.
+UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M);
+
 RationalIntegral integrateRational(Ctx &c, Expr f, Expr var);
 
 } // namespace numkit::cas

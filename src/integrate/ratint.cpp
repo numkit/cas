@@ -179,10 +179,11 @@ struct Piece
     Rational scale; // Atan only: s
 };
 
-// Integrate A/F (F squarefree) into pieces; false with a reason when
-// F has a factor outside the M0 splitting scope.
-bool integrateSquarefree(const UPoly &A, const UPoly &F,
-                         std::vector<Piece> &pieces, std::string &reason)
+// Splitting fallback: integrate A/F (F squarefree, denominator already
+// reduced to the leftover factors) over rational roots and at most one
+// monic quadratic; false with a reason outside that scope.
+bool integrateSplitting(const UPoly &A, const UPoly &F,
+                        std::vector<Piece> &pieces, std::string &reason)
 {
     // Strip rational roots one by one.
     std::vector<Rational> roots;
@@ -273,7 +274,101 @@ bool integrateSquarefree(const UPoly &A, const UPoly &F,
     return true;
 }
 
+// Integrate A/F (F squarefree): Trager's rational residues first — the
+// residues are the rational roots of res(A - t*F', F), and each residue
+// r contributes ONE grouped logarithm r*log(gcd(A - r*F', F)) covering
+// all poles with that residue. Whatever is left falls through to the
+// per-root/quadratic splitting path.
+bool integrateSquarefree(const UPoly &A, const UPoly &F,
+                         std::vector<Piece> &pieces, std::string &reason)
+{
+    if (A.isZero())
+        return true;
+
+    const UPoly dF = F.derivative();
+    const UPoly R = resultantT(A, dF, F);
+    const UPoly Rsq = R.squarefreePart();
+
+    std::vector<Rational> residues;
+    if (!Rsq.isConst()) {
+        UPoly rest = Rsq;
+        while (!rest.isConst()) {
+            Rational rt;
+            bool ok = false;
+            if (rest.coeff(0).isZero()) {
+                rt = R0();
+                ok = true;
+            } else if (!findOneRationalRoot(rest, rt, ok)) {
+                // Budget exceeded: the unfound (possibly rational) residues
+                // fall through to the per-root splitting path below — no
+                // grouping, but full correctness.
+                break;
+            }
+            residues.push_back(rt);
+            UPoly q, r;
+            UPoly::divMod(rest,
+                          UPoly(std::vector<Rational>{Rational(-rt), R1()}), q, r);
+            assert(r.isZero());
+            rest = q;
+        }
+    }
+
+    UPoly leftN = A, leftD = F;
+    for (const Rational &res : residues) {
+        if (res.isZero())
+            continue; // zero-residue poles contribute nothing
+        const UPoly v = UPoly::gcd(A - res * dF, F);
+        if (v.isConst())
+            continue;
+        Piece p;
+        p.kind = Piece::Log;
+        p.coeff = res;
+        p.v = v;
+        p.scale = R1();
+        pieces.push_back(p);
+        // left -= res * v'/v
+        fracAdd(leftN, leftD, res * Rational(std::int64_t{-1}) * v.derivative(), v);
+    }
+    if (leftN.isZero())
+        return true;
+    return integrateSplitting(leftN, leftD, pieces, reason);
+}
+
 } // namespace
+
+// ── Trager resultant by evaluation-interpolation ──────────────
+
+UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M)
+{
+    assert(!M.isZero());
+    const int n = M.deg();
+    if (n < 1)
+        return UPoly(R1()); // res of anything with a constant is 1 by convention
+
+    std::vector<Rational> ys;
+    for (int i = 0; i <= n; ++i) {
+        const Rational t(static_cast<std::int64_t>(i));
+        ys.push_back(UPoly::resultant(P - t * Q, M));
+    }
+
+    // Lagrange interpolation over t = 0..n.
+    std::vector<Rational> coeffs(static_cast<std::size_t>(n) + 1, R0());
+    for (int i = 0; i <= n; ++i) {
+        UPoly num(R1());
+        Rational den(R1());
+        for (int j = 0; j <= n; ++j) {
+            if (j == i)
+                continue;
+            num = num * UPoly(std::vector<Rational>{
+                            Rational(-static_cast<std::int64_t>(j)), R1()});
+            den = den * Rational(static_cast<std::int64_t>(i - j));
+        }
+        const Rational scale = ys[static_cast<std::size_t>(i)] / den;
+        for (std::size_t k = 0; k < num.coeffs().size(); ++k)
+            coeffs[k] += num.coeff(k) * scale;
+    }
+    return UPoly(coeffs);
+}
 
 // ── Expr <-> Q(x) ─────────────────────────────────────────────
 

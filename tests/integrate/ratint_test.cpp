@@ -231,6 +231,92 @@ TEST_F(RatIntTest, FixedDemos)
     EXPECT_EQ(integrate("1", "1,0,4"), "1/2*atan(2*x)");
 }
 
+TEST_F(RatIntTest, GroupedLogsByResidue)
+{
+    auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
+        const Expr f = build(P(numCsv), P(denCsv));
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        EXPECT_TRUE(r.proved()) << r.reason;
+        return r.proved() ? c.toString(r.F) : std::string("<failed>");
+    };
+
+    // Equal residues at both poles group into one logarithm.
+    EXPECT_EQ(integrate("3,2", "2,3,1"), "log(2 + x^2 + 3*x)");
+    EXPECT_EQ(integrate("0,2", "-1,0,1"), "log(-1 + x^2)");
+    // Rational residues over cubic denominators with a quadratic part.
+    EXPECT_EQ(integrate("1", "0,1,0,1"), "log(x) + -1/2*log(1 + x^2)");
+}
+
+TEST_F(RatIntTest, ResultantTEvaluationAndResidues)
+{
+    std::uint64_t state = 0x7EA15EEDBEEFCAULL;
+    for (int iter = 0; iter < 2000; ++iter) {
+        // Build S with distinct rational roots and chosen residues c_i:
+        // A = sum c_i * S/(x - r_i) has residue c_i at r_i, so
+        // squarefreePart(res(A - t*S', S)) is prod (t - c_i) over the
+        // DISTINCT residues, up to a scalar.
+        const int k = 1 + static_cast<int>(nextU64(state) % 3);
+        std::vector<Rational> roots, res;
+        UPoly S(Rational(std::int64_t{1}));
+        for (int i = 0; i < k; ++i) {
+            Rational r = rr(state, 6);
+            Rational m = rr(state, 4);
+            if (r.isZero())
+                r = Rational(std::int64_t{1});
+            bool dup = false;
+            for (const Rational &w : roots)
+                if (w == r)
+                    dup = true;
+            if (dup)
+                continue;
+            roots.push_back(r);
+            res.push_back(m);
+            S = S * UPoly(std::vector<Rational>{Rational(-r), Rational(std::int64_t{1})});
+        }
+        if (roots.empty())
+            continue;
+
+        UPoly A;
+        for (std::size_t i = 0; i < roots.size(); ++i) {
+            UPoly q, r2;
+            UPoly::divMod(S, UPoly(std::vector<Rational>{Rational(-roots[i]),
+                                                Rational(std::int64_t{1})}),
+                          q, r2);
+            A = A + res[i] * q;
+        }
+        // Proper fraction (deg A < deg S by construction).
+
+        const UPoly R = numkit::cas::resultantT(A, S.derivative(), S);
+
+        // Evaluation identity at fresh points.
+        for (int probe = 0; probe < 3; ++probe) {
+            const Rational t = rr(state, 20);
+            EXPECT_EQ(R.eval(t), UPoly::resultant(A - t * S.derivative(), S));
+        }
+
+        // Residue oracle: expected = prod over distinct residues (t - c).
+        UPoly expected(Rational(std::int64_t{1}));
+        for (std::size_t i = 0; i < roots.size(); ++i) {
+            bool seen = false;
+            for (std::size_t j = 0; j < i; ++j)
+                if (res[j] == res[i])
+                    seen = true;
+            if (seen)
+                continue;
+            expected = expected * UPoly(std::vector<Rational>{
+                Rational(-res[i]), Rational(std::int64_t{1})});
+        }
+        const UPoly Rsq = R.squarefreePart();
+        if (expected.isConst()) {
+            EXPECT_TRUE(Rsq.isConst());
+        } else {
+            ASSERT_EQ(Rsq * expected.lc(), expected * Rsq.lc())
+                << "R=" << R.toString() << " expected=" << expected.toString();
+        }
+    }
+}
+
 TEST_F(RatIntTest, HonestFailures)
 {
     numkit::cas::RationalIntegral r;

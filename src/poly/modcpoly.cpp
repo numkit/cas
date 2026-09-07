@@ -71,6 +71,28 @@ UPoly ModCRing::mul(const UPoly &a, const UPoly &b) const
         const Rational m1 = a0 * b1 + a1 * b0 - p * t2;
         return UPoly(std::vector<Rational>{m0, m1});
     }
+    if (c_.deg() == 3) {
+        // Closed form for the cubic modulus t^3 = -k2*t^2 - k1*t - k0
+        // (same rationale as the quadratic case: the RootOf branch's
+        // per-point loops pay thousands of ring multiplications, and
+        // reduce() is a division there).
+        assert(a.deg() < 3 && b.deg() < 3 && "ring element out of normal form");
+        const Rational &k2 = c_.coeff(2);
+        const Rational &k1 = c_.coeff(1);
+        const Rational &k0 = c_.coeff(0);
+        const Rational a0 = a.coeff(0), a1 = a.coeff(1), a2 = a.coeff(2);
+        const Rational b0 = b.coeff(0), b1 = b.coeff(1), b2 = b.coeff(2);
+        const Rational p0 = a0 * b0;
+        const Rational p1 = a0 * b1 + a1 * b0;
+        const Rational p2 = a0 * b2 + a1 * b1 + a2 * b0;
+        const Rational p3 = a1 * b2 + a2 * b1;
+        const Rational p4 = a2 * b2;
+        // t^4 = t*t^3 -> (k2^2 - k1)t^2 + (k2*k1 - k0)t + k2*k0
+        const Rational m0 = p0 - k0 * p3 + k0 * k2 * p4;
+        const Rational m1 = p1 - k1 * p3 + (k2 * k1 - k0) * p4;
+        const Rational m2 = p2 - k2 * p3 + (k2 * k2 - k1) * p4;
+        return UPoly(std::vector<Rational>{m0, m1, m2});
+    }
     return reduce(a * b);
 }
 

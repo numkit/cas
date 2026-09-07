@@ -524,22 +524,11 @@ std::vector<UPoly> factorOverQ(const UPoly &f)
     if (f.isZero() || f.deg() < 1)
         return out;
 
-    // Clear denominators and strip the content.
-    BigInt denLcm(1);
-    for (const Rational &c : f.coeffs())
-        denLcm = BigInt::lcm(denLcm, c.den());
-    std::vector<BigInt> ipoly;
-    for (const Rational &c : f.coeffs()) {
-        BigInt q, r;
-        BigInt::divMod(denLcm, c.den(), q, r);
-        ipoly.push_back(c.num() * q);
-    }
-    bpNormalize(ipoly);
-    if (ipoly.size() < 2)
-        return out;
-
     // Multiplicity-aware: Yun's decomposition over Q, distinct factors
-    // of each squarefree component, emitted with their powers.
+    // of each squarefree component, emitted with their powers. The
+    // components are monic, so clearing their denominators by the lcm
+    // already yields a primitive integer polynomial (minimality of the
+    // lcm: any common prime factor would contradict it).
     const std::vector<UPoly> comps = f.squarefreeDecomposition();
     for (std::size_t i = 0; i < comps.size(); ++i) {
         const UPoly &comp = comps[i];

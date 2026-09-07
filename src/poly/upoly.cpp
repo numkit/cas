@@ -144,19 +144,37 @@ UPoly operator%(const UPoly &a, const UPoly &b)
 UPoly UPoly::invMod(const UPoly &u, const UPoly &m)
 {
     assert(!m.isZero());
-    UPoly r0 = m, r1 = u % m;
+    // Monic extended Euclid: normalizing the remainder chain keeps the
+    // cofactor coefficients at polynomial growth instead of the
+    // exponential blow-up of the raw PRS (the quadratic/cubic ring
+    // inversions sit inside every ModCPoly division). The ideal (m)
+    // is unchanged by taking the monic associate, and each
+    // normalization of r is compensated in the s cofactor so the
+    // Bezout identity s*u = r (mod m) holds throughout.
+    UPoly mm = m;
+    mm.makeMonic();
+    UPoly r0 = mm;
+    UPoly r1 = u % mm;
     UPoly s0, s1(Rational(std::int64_t{1}));
+    if (!r1.isZero()) {
+        s1 = s1 * (Rational(std::int64_t{1}) / r1.lc());
+        r1.makeMonic();
+    }
     while (!r1.isZero()) {
         UPoly q, r;
         UPoly::divMod(r0, r1, q, r);
         UPoly s2 = s0 - q * s1;
         r0 = r1;
-        r1 = r;
         s0 = s1;
         s1 = s2;
+        if (!r.isZero()) {
+            s1 = s1 * (Rational(std::int64_t{1}) / r.lc());
+            r.makeMonic();
+        }
+        r1 = r;
     }
     assert(r0.isConst() && !r0.isZero() && "invMod: gcd is not a constant");
-    return s0 * (Rational(std::int64_t{1}) / r0.lc());
+    return s0; // r0 is the monic constant 1, so s0*u == 1 (mod m)
 }
 
 UPoly UPoly::derivative() const
@@ -187,12 +205,20 @@ UPoly UPoly::powUInt(std::uint64_t n) const
 
 UPoly UPoly::gcd(const UPoly &a, const UPoly &b)
 {
+    // Monic Euclidean loop: normalizing every remainder keeps the
+    // rational coefficients at polynomial growth instead of the
+    // exponential blow-up of the raw PRS — the residue sweeps call
+    // this gcd once per rational residue with big fractional inputs.
     UPoly x = a, y = b;
+    if (!y.isZero())
+        y.makeMonic();
     while (!y.isZero()) {
         UPoly q, r;
         divMod(x, y, q, r);
         x = y;
         y = r;
+        if (!y.isZero())
+            y.makeMonic();
     }
     if (!x.isZero())
         x.makeMonic();

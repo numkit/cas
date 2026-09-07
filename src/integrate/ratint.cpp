@@ -539,7 +539,8 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             };
             const UPoly dL3 = leftD.derivative();
             const ModCPoly v =
-                ModCPoly::gcd(lift(leftN, false) - lift(dL3, true), lift(leftD, false));
+                ModCPoly::gcd(lift(leftN, false) - lift(dL3, true),
+                              lift(leftD, false));
             if (v.deg() < 1)
                 continue;
 
@@ -558,12 +559,19 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             for (int x0 = 1; static_cast<int>(xs.size()) < need && x0 < 6 * need + 10; ++x0) {
                 const Rational x0r(static_cast<std::int64_t>(x0));
                 // v(x0, t) as a plain Q[t] polynomial (degree < d in t)
+                // for the norm resultant, and simultaneously as a ring
+                // element u: v's coefficients are already in normal
+                // form, so scaling by x0^k and adding stays there — no
+                // Euclidean reduction of the tall uPlain needed.
                 UPoly uPlain = ring.zero();
+                UPoly u = ring.zero();
                 Rational pw(1);
                 for (std::size_t k = 0; k <= static_cast<std::size_t>(v.deg()); ++k) {
                     const UPoly rk = v.coeff(k);
-                    if (!rk.isZero())
+                    if (!rk.isZero()) {
                         uPlain = uPlain + rk * UPoly(pw);
+                        u = ring.add(u, ring.mul(rk, UPoly(pw)));
+                    }
                     pw = pw * x0r;
                 }
                 // Q(x0) = Norm = res_t(v(x0,t), c)
@@ -571,7 +579,6 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 if (qv.isZero())
                     continue; // v(x0,t) shares a root with c: skip
                 // T(x0) = Tr(t * v'(x0,t) / v(x0,t))
-                const UPoly u = ring.reduce(uPlain);
                 UPoly du = ring.zero();
                 pw = Rational(1);
                 for (std::size_t k = 0; k <= static_cast<std::size_t>(v.deg()); ++k) {

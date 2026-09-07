@@ -57,6 +57,9 @@ public:
     // Monic greatest common divisor (Euclid over Q).
     static UPoly gcd(const UPoly &a, const UPoly &b);
 
+    // Divide by the leading coefficient (no-op for the zero polynomial).
+    void makeMonic();
+
     // A / gcd(A, A'), up to a rational scalar.
     UPoly squarefreePart() const;
 
@@ -77,7 +80,6 @@ public:
 
 private:
     void trim();
-    void makeMonic();
 
     std::vector<Rational> c_;
 };

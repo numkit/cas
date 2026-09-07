@@ -254,13 +254,21 @@ void ModCPoly::makeMonic()
 
 ModCPoly ModCPoly::gcd(const ModCPoly &a, const ModCPoly &b)
 {
+    // Monic Euclidean loop, same rationale as UPoly::gcd: normalizing
+    // every remainder keeps the ring-coefficient fractions at
+    // polynomial growth (the raw loop let them explode - the second
+    // divMod alone cost 3x the first on the profile task).
     ModCPoly::checkSameRing(a, b);
     ModCPoly x = a, y = b;
+    if (!y.isZero())
+        y.makeMonic();
     while (!y.isZero()) {
         ModCPoly q, r;
         divMod(x, y, q, r);
         x = y;
         y = r;
+        if (!y.isZero())
+            y.makeMonic();
     }
     if (!x.isZero())
         x.makeMonic();

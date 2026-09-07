@@ -1,6 +1,9 @@
 #include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/core/parser.hpp>
 
 #include <gtest/gtest.h>
+
+#include <functional>
 
 namespace {
 
@@ -626,4 +629,103 @@ TEST_F(RatIntTest, CertificateCatchesNothingOnZero)
         numkit::cas::integrateRational(c, c.zero(), x);
     EXPECT_TRUE(r.proved());
     EXPECT_EQ(c.toString(r.F), "0");
+}
+
+// ── C3 spike: rational functions of exp (t = e^x substitution) ──
+
+TEST_F(RatIntTest, ExpRationalFixedVectors)
+{
+    struct Case
+    {
+        const char *f;
+        const char *F;
+    };
+    const Case cases[] = {
+        {"1/(exp(x)+1)", "log(exp(x)) + -log(1 + exp(x))"},
+        {"1/(exp(x)^2+1)", "log(exp(x)) + -1/2*log(1 + exp(x)^2)"},
+        {"exp(x)/(exp(x)^2+1)", "atan(exp(x))"},
+        {"1/(exp(x)+exp(-x))", "atan(exp(x))"},
+        {"exp(x)", "exp(x)"},
+        {"exp(-2*x)", "-1/2*exp(x)^-2"},
+    };
+    for (const Case &k : cases) {
+        const Expr f = numkit::cas::parseExpr(c, k.f);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << k.f << ": " << r.reason;
+        EXPECT_EQ(c.toString(r.F), k.F) << k.f;
+    }
+}
+
+TEST_F(RatIntTest, ExpRationalHonestFailures)
+{
+    const char *bad[] = {
+        "x*exp(x)",       // var outside exp
+        "exp(x^2)",       // non-linear exponent
+        "1/(exp(x/2)+1)", // fractional k: t^(1/2) not rational
+        "exp(x)+x",
+        "sin(x)",
+        "log(exp(x)+1)+exp(x)",
+    };
+    for (const char *s : bad) {
+        const Expr f = numkit::cas::parseExpr(c, s);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        EXPECT_FALSE(r.proved()) << s;
+        EXPECT_FALSE(r.reason.empty()) << s;
+    }
+}
+
+TEST_F(RatIntTest, ExpRationalProperty)
+{
+    // Random rational R(t) -> R(e^x) integrates PROVED: the whole
+    // rational kernel (Hermite/Trager/certificates) is exercised in
+    // the t-world and the gate is the polynomial identity.
+    std::uint64_t st = 0xE9AC5EEDC0DEULL;
+    for (int iter = 0; iter < 120; ++iter) {
+        auto rr = [&](int lim) {
+            const std::int64_t q = 1 + static_cast<std::int64_t>(nextU64(st) % 3);
+            const std::int64_t p =
+                static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            return Rational(BigInt(p), BigInt(q));
+        };
+        const int dn = 1 + static_cast<int>(nextU64(st) % 3);
+        std::vector<Rational> dcs;
+        for (int i = 0; i <= dn; ++i)
+            dcs.push_back(rr(4));
+        if (dcs.back().isZero())
+            dcs.back() = Rational(std::int64_t{1});
+        const int nn = static_cast<int>(nextU64(st) % (dn + 1));
+        std::vector<Rational> ncs;
+        for (int i = 0; i <= nn; ++i)
+            ncs.push_back(rr(4));
+        const UPoly num(ncs), den(dcs);
+        const Expr R = build(num, den); // rational in x = a stand-in for t
+        // rebuild R with x -> exp(x)
+        const Expr expVar = c.func("exp", x);
+        std::function<Expr(Expr)> sub = [&](Expr e) -> Expr {
+            if (e == x)
+                return expVar;
+            switch (c.kind(e)) {
+            case NodeKind::Number:
+            case NodeKind::Symbol:
+            case NodeKind::RootOf:
+                return e;
+            case NodeKind::Func:
+                return c.func(c.funcName(e), sub(c.child(e, 0)));
+            case NodeKind::Pow:
+                return c.pow(sub(c.child(e, 0)), sub(c.child(e, 1)));
+            default: {
+                std::vector<Expr> kids;
+                for (std::size_t i = 0; i < c.childCount(e); ++i)
+                    kids.push_back(sub(c.child(e, i)));
+                return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
+            }
+            }
+        };
+        const Expr f = sub(R);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << c.toString(f) << ": " << r.reason;
+    }
 }

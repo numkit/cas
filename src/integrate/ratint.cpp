@@ -4,6 +4,7 @@
 #include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <cassert>
+#include <cstdio>
 #include <vector>
 
 namespace numkit::cas {
@@ -852,14 +853,144 @@ HermiteResult hermiteReduce(const UPoly &N0, const UPoly &D0)
 
 // ── Full integration with certificate ─────────────────────────
 
+// ── Rational functions of exp: the first Liouvillian step (C3 spike)
+//
+// Integrand rational in exp(x) integrates via t = e^x: dx = dt/t,
+// so integral of R(e^x) dx becomes integral of R(t)/t dt — the whole
+// rational kernel (Hermite, Trager, certificates) is reused verbatim
+// in the t-world, the antiderivative is back-substituted t -> exp(x),
+// and the gate is exact: d/dx of the answer must equal the integrand
+// node-for-node (hash-consing makes the comparison structural).
+
+namespace {
+
+// Rebuild `e` replacing every exp(var) node with the symbol `t`.
+// Sets ok = false on a bare `var` occurrence (the integrand then
+// mixes x outside exp and is not rational in e^x).
+Expr substituteExpVar(Ctx &c, Expr e, Expr var, Expr t, bool &ok)
+{
+    if (e == var) {
+        ok = false;
+        return e;
+    }
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func:
+        if (c.funcName(e) == "exp") {
+            const Expr arg = c.child(e, 0);
+            if (arg == var)
+                return t;
+            // exp(k*x) with an INTEGER k is t^k (rational in t);
+            // anything else (k*x + b, fractional k, x^2) leaves var
+            // in the tree and fails the substitution honestly.
+            UPoly an, ad;
+            if (toRational(c, arg, var, an, ad) && an.deg() == 1 &&
+                an.coeff(0).isZero() && ad.isConst()) {
+                const Rational k = an.lc() / ad.coeff(0);
+                if (k.den() == BigInt(1))
+                    return c.pow(t, c.number(k));
+            }
+        }
+        return c.func(c.funcName(e),
+                      substituteExpVar(c, c.child(e, 0), var, t, ok));
+    case NodeKind::Pow:
+        return c.pow(substituteExpVar(c, c.child(e, 0), var, t, ok),
+                     substituteExpVar(c, c.child(e, 1), var, t, ok));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> kids;
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            kids.push_back(substituteExpVar(c, c.child(e, i), var, t, ok));
+        return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
+    }
+    }
+    return e;
+}
+
+// Rebuild `e` replacing the symbol `t` with exp(var).
+Expr substituteBack(Ctx &c, Expr e, Expr t, Expr expVar)
+{
+    if (e == t)
+        return expVar;
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func:
+        return c.func(c.funcName(e),
+                      substituteBack(c, c.child(e, 0), t, expVar));
+    case NodeKind::Pow:
+        return c.pow(substituteBack(c, c.child(e, 0), t, expVar),
+                     substituteBack(c, c.child(e, 1), t, expVar));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> kids;
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            kids.push_back(substituteBack(c, c.child(e, i), t, expVar));
+        return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
+    }
+    }
+    return e;
+}
+
+} // namespace
+
+static RationalIntegral integrateExpRational(Ctx &c, Expr f, Expr var)
+{
+    RationalIntegral out;
+    // The '#e' name is unreachable from the parser grammar, so the
+    // substitution symbol can never collide with user symbols.
+    const Expr t = c.symbol("#e");
+    bool ok = true;
+    const Expr g = substituteExpVar(c, f, var, t, ok);
+    if (!ok) {
+        out.reason = "integrand mixes the variable outside exp(var)";
+        return out;
+    }
+    const RationalIntegral r = integrateRational(c, c.div(g, t), t);
+    if (!r.proved()) {
+        out.reason = "exp substitution: " + r.reason;
+        return out;
+    }
+    const Expr expVar = c.func("exp", var);
+    const Expr F = substituteBack(c, r.F, t, expVar);
+    // Primary gate: d/dx F(e^x) is rational in t = e^x, so exact
+    // verification rationalizes both sides and compares POLYNOMIALS
+    // (structural Expr equality is too weak: the derivative comes
+    // back as 1 - t/(1+t), canonically unequal to 1/(1+t) until put
+    // over a common denominator). Atan answers carry IRRATIONAL
+    // constants (sqrt of the pair discriminant) which toRational
+    // cannot swallow; there the fallback gate is the exact structural
+    // ROUND-TRIP — exp-substituting F must return r.F — while the
+    // t-world identity d/dt r.F = g/t is the kernel's own Tier-1
+    // certificate and the chain rule closes d/dx F(e^x) = f.
+    UPoly n1, d1, n2, d2;
+    const Expr dFT = substituteExpVar(c, c.diff(F, var), var, t, ok);
+    const bool polyGate =
+        ok && toRational(c, dFT, t, n1, d1) && toRational(c, g, t, n2, d2) &&
+        n1 == n2 && d1 == d2;
+    if (!polyGate) {
+        bool ok2 = true;
+        if (substituteExpVar(c, F, var, t, ok2) != r.F || !ok2) {
+            out.reason = "exp substitution certificate failed";
+            return out;
+        }
+    }
+    out.F = F;
+    out.status = RationalIntegral::Status::ProvedSymbolic;
+    return out;
+}
+
 RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
 {
     RationalIntegral out;
     UPoly N, D;
-    if (!toRational(c, f, var, N, D)) {
-        out.reason = "integrand is not a rational function of the variable";
-        return out;
-    }
+    if (!toRational(c, f, var, N, D))
+        return integrateExpRational(c, f, var);
     if (D.isZero()) {
         out.reason = "zero denominator";
         return out;

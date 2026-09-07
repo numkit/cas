@@ -47,6 +47,10 @@ public:
 
     static FpPoly gcd(const FpPoly &a, const FpPoly &b); // monic gcd
 
+    // Extended gcd: s*a + t*b == gcd(a, b) (monic gcd), for coprime
+    // inputs the Bezout pair of the lifted Hensel step.
+    static void extGcd(const FpPoly &a, const FpPoly &b, FpPoly &s, FpPoly &t);
+
     // this^e mod m (m nonzero), square-and-multiply over the BigInt
     // exponent so p^d-scale exponents work.
     FpPoly powMod(const BigInt &e, const FpPoly &m) const;

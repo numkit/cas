@@ -18,6 +18,7 @@ add_executable(nkcas_gtest
     poly/algebraic_test.cpp
     poly/modcpoly_test.cpp
     poly/fppoly_test.cpp
+    poly/zassenhaus_test.cpp
     integrate/ratint_test.cpp
 )
 

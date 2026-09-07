@@ -8,6 +8,7 @@ add_library(numkit_cas STATIC
     poly/algebraic.cpp
     poly/modcpoly.cpp
     poly/fppoly.cpp
+    poly/zassenhaus.cpp
     integrate/ratint.cpp
 )
 

@@ -77,6 +77,27 @@ TEST(FpPolyBasics, DivisionAndGcd)
     EXPECT_EQ(FpPoly::gcd(P(p, {2, 1}), P(p, {4, 2})), P(p, {2, 1}));
 }
 
+TEST(FpPolyFixed, ExtGcdIdentity)
+{
+    std::uint64_t state = 0xE7C0FFEE42ULL;
+    for (int iter = 0; iter < 500; ++iter) {
+        const std::uint64_t p = 7;
+        const int da = 1 + static_cast<int>(nextU64(state) % 4);
+        const int db = 1 + static_cast<int>(nextU64(state) % 3);
+        std::vector<std::uint64_t> ca, cb;
+        for (int i = 0; i < da; ++i) ca.push_back(nextU64(state) % p);
+        ca.push_back(1 + nextU64(state) % (p - 1));
+        for (int i = 0; i < db; ++i) cb.push_back(nextU64(state) % p);
+        cb.push_back(1 + nextU64(state) % (p - 1));
+        const FpPoly a(p, ca), b(p, cb);
+        if (FpPoly::gcd(a, b).deg() != 0)
+            continue; // need coprime
+        FpPoly s, t;
+        FpPoly::extGcd(a, b, s, t);
+        ASSERT_TRUE((s * a + t * b).isOne()) << "extGcd identity broken";
+    }
+}
+
 TEST(FpPolyFixed, ClassicFactorizations)
 {
     // x^5 - 1 = (x-1)(x^4+x^3+x^2+x+1) mod 3; the quartic is

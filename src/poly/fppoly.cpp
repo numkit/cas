@@ -225,6 +225,35 @@ FpPoly FpPoly::gcd(const FpPoly &a, const FpPoly &b)
     return x;
 }
 
+void FpPoly::extGcd(const FpPoly &a, const FpPoly &b, FpPoly &s, FpPoly &t)
+{
+    checkSameField(a, b);
+    const std::uint64_t p = a.hasP() ? a.p_ : b.p_;
+    FpPoly r0 = a, r1 = b;
+    r0.p_ = p;
+    r1.p_ = p;
+    // Invariant s_i*a + t_i*b == r_i: (r0, s0, t0) = (a, 1, 0),
+    // (r1, s1, t1) = (b, 0, 1).
+    FpPoly s0 = constant(p, 1), s1 = constant(p, 0);
+    FpPoly t0 = constant(p, 0), t1 = constant(p, 1);
+    while (!r1.isZero()) {
+        FpPoly q, r;
+        divMod(r0, r1, q, r);
+        FpPoly s2 = s0 - q * s1;
+        FpPoly t2 = t0 - q * t1;
+        r0 = r1;
+        r1 = r;
+        s0 = s1;
+        s1 = s2;
+        t0 = t1;
+        t1 = t2;
+    }
+    assert(!r0.isZero());
+    const std::uint64_t inv = invModP(r0.lc(), p);
+    s = s0 * inv;
+    t = t0 * inv;
+}
+
 FpPoly FpPoly::powMod(const BigInt &e, const FpPoly &m) const
 {
     assert(!m.isZero() && m.hasP());

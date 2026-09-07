@@ -1,7 +1,7 @@
 # expr-neg-pow-base-print
 
 Kind: bug
-Status: 🐛 OPENED (fix landing in the same change)
+Status: ✅ FIXED (6a3d85e)
 Area: core
 
 ## Description

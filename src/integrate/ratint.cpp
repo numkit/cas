@@ -901,7 +901,6 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
         out.reason = "internal certificate check failed";
         return out;
     }
-
     // Assemble the antiderivative.
     std::vector<Expr> terms;
     if (!h.rn.isZero())

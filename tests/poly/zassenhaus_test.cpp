@@ -139,6 +139,22 @@ TEST(ZassenhausFixed, QuarticCubicSplit) // guard for the closed bug
     ASSERT_EQ(fs.size(), 3u);
 }
 
+// Constant-term sieve edges: factors with a ZERO constant term make
+// the sieve inapplicable (F(0) = 0 divides nothing) and it must turn
+// itself off; the reconstruction still has to split the polynomial.
+TEST(ZassenhausFixed, ZeroConstantTermFactors)
+{
+    // x*(x+2)*(x-3) = x^3 - x^2 - 6x
+    const auto f = numkit::cas::factorPrimitiveInteger(IB({0, -6, -1, 1}));
+    ASSERT_EQ(f.size(), 3u);
+    verifyReconstruction(IB({0, -6, -1, 1}), f);
+
+    // (2x)*(3x^2+5) = 6x^3 + 10x: non-monic with a zero const term.
+    const auto g = numkit::cas::factorPrimitiveInteger(IB({0, 10, 0, 6}));
+    ASSERT_EQ(g.size(), 2u);
+    verifyReconstruction(IB({0, 10, 0, 6}), g);
+}
+
 TEST(ZassenhausFixed, RationalFactorization)
 {
     // Monic rational input.

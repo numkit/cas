@@ -428,8 +428,32 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
                 std::vector<BigInt> sym = bpSymmetric(cand, pk);
                 if (sym.empty() || sym.size() < 2)
                     continue;
-                // the true divisor is D * sym where D divides lc(cur)
+                // the true divisor is D * sym where D divides lc(cur).
+                // Constant-term sieve FIRST: a true factor F divides
+                // cur, so F(0) divides cur(0) whenever both are
+                // nonzero; F(0) is the symmetric representative of
+                // D*sym[0] mod pk, so a wrong D dies on ONE scalar
+                // multiply+divide instead of scaling and reducing the
+                // whole candidate polynomial. With smooth leading
+                // coefficients listing tens of thousands of divisors
+                // this is the difference between sieving and grinding.
+                const BigInt &curConst = cur[0];
+                const BigInt &sym0 = sym[0];
+                const BigInt halfConst = pk >> 1;
                 for (const BigInt &d : divs) {
+                    if (!curConst.isZero() && !sym0.isZero()) {
+                        BigInt rep0 = (d * sym0) % pk;
+                        if (rep0.isNegative())
+                            rep0 = rep0 + pk;
+                        if (rep0 > halfConst)
+                            rep0 = rep0 - pk;
+                        if (rep0.abs() > bound)
+                            continue;
+                        BigInt q0, r0;
+                        BigInt::divMod(curConst, rep0, q0, r0);
+                        if (!r0.isZero())
+                            continue;
+                    }
                     std::vector<BigInt> scaled = sym;
                     for (BigInt &c : scaled)
                         c = c * d;

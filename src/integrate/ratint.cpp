@@ -939,6 +939,95 @@ Expr substituteBack(Ctx &c, Expr e, Expr t, Expr expVar)
 
 } // namespace
 
+// ── Rational functions of log: the second Liouvillian storey ──
+//
+// t = log x gives dt = dx/x, so integral of R(log x)/x dx becomes
+// integral of R(t) dt — again the whole rational kernel in the
+// t-world. Legality check is canonical: after replacing log(x)
+// nodes with t, the product f*x must not mention x anymore (then
+// f = R(t)/x exactly; anything else mixes x beyond the Jacobian and
+// this storey declines). The gate is the structural ROUND-TRIP: the
+// answer F = r.F(log x) contains no bare x by construction, so
+// log-substituting it must return r.F; the t-derivative identity is
+// the kernel's own Tier-1 certificate and the chain rule closes
+// d/dx F = R(log x)/x = f. (No polynomial-gate level here: the x-
+// derivative necessarily carries the 1/x factor and is not
+// rational in t.)
+
+namespace {
+
+// Rebuild `e` replacing every log(var) node with the symbol `t`.
+// Bare `var` occurrences SURVIVE (the 1/x Jacobian needs x); the
+// caller checks they cancel.
+Expr substituteLogVar(Ctx &c, Expr e, Expr var, Expr t)
+{
+    if (c.kind(e) == NodeKind::Func && c.funcName(e) == "log" &&
+        c.child(e, 0) == var)
+        return t;
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func:
+        return c.func(c.funcName(e),
+                      substituteLogVar(c, c.child(e, 0), var, t));
+    case NodeKind::Pow:
+        return c.pow(substituteLogVar(c, c.child(e, 0), var, t),
+                     substituteLogVar(c, c.child(e, 1), var, t));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> kids;
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            kids.push_back(substituteLogVar(c, c.child(e, i), var, t));
+        return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
+    }
+    }
+    return e;
+}
+
+bool mentionsVar(const Ctx &c, Expr e, Expr var)
+{
+    if (e == var)
+        return true;
+    for (std::size_t i = 0; i < c.childCount(e); ++i)
+        if (mentionsVar(c, c.child(e, i), var))
+            return true;
+    return false;
+}
+
+} // namespace
+
+static RationalIntegral integrateLogRational(Ctx &c, Expr f, Expr var)
+{
+    RationalIntegral out;
+    const Expr t = c.symbol("#l");
+    const Expr g = substituteLogVar(c, f, var, t);
+    const Expr gx = c.mul({g, var}); // canonical: x*x^-1 folds away
+    if (mentionsVar(c, gx, var)) {
+        out.reason = "integrand is not R(log(var))/var";
+        return out;
+    }
+    const RationalIntegral r = integrateRational(c, gx, t);
+    if (!r.proved()) {
+        out.reason = "log substitution: " + r.reason;
+        return out;
+    }
+    const Expr logVar = c.func("log", var);
+    const Expr F = substituteBack(c, r.F, t, logVar);
+    bool ok = true;
+    // F has no bare x (r.F is rational in t only), so this forward
+    // substitution is exact and must reconstruct the kernel answer.
+    if (substituteLogVar(c, F, var, t) != r.F) {
+        out.reason = "log substitution certificate failed";
+        return out;
+    }
+    (void)ok;
+    out.F = F;
+    out.status = RationalIntegral::Status::ProvedSymbolic;
+    return out;
+}
+
 static RationalIntegral integrateExpRational(Ctx &c, Expr f, Expr var)
 {
     RationalIntegral out;
@@ -989,8 +1078,26 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
 {
     RationalIntegral out;
     UPoly N, D;
-    if (!toRational(c, f, var, N, D))
-        return integrateExpRational(c, f, var);
+    if (!toRational(c, f, var, N, D)) {
+        // Substitution storeys must only fire on integrands that
+        // actually depend on the variable: a foreign-symbol constant
+        // (say 1/y) would otherwise ping-pong exp->log->exp through
+        // fresh substitution symbols forever (f*t cancels the symbol
+        // again) until the stack dies.
+        if (!mentionsVar(c, f, var)) {
+            out.reason = "integrand does not depend on the variable";
+            return out;
+        }
+        RationalIntegral r = integrateExpRational(c, f, var);
+        if (r.proved())
+            return r;
+        const std::string why = r.reason;
+        r = integrateLogRational(c, f, var);
+        if (r.proved())
+            return r;
+        r.reason = why + "; " + r.reason;
+        return r;
+    }
     if (D.isZero()) {
         out.reason = "zero denominator";
         return out;

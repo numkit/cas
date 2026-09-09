@@ -729,3 +729,106 @@ TEST_F(RatIntTest, ExpRationalProperty)
         ASSERT_TRUE(r.proved()) << c.toString(f) << ": " << r.reason;
     }
 }
+
+// ── Second Liouvillian storey: rational functions of log ──
+
+TEST_F(RatIntTest, LogRationalFixedVectors)
+{
+    struct Case
+    {
+        const char *f;
+        const char *F;
+    };
+    const Case cases[] = {
+        {"log(x)/x", "1/2*log(x)^2"},
+        {"1/(x*log(x))", "log(log(x))"},
+        {"1/(x*(1+log(x)))", "log(1 + log(x))"},
+        {"(log(x))^3/x", "1/4*log(x)^4"},
+        {"1/(x*(log(x)^2+1))", "atan(log(x))"},
+    };
+    for (const Case &k : cases) {
+        const Expr f = numkit::cas::parseExpr(c, k.f);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << k.f << ": " << r.reason;
+        EXPECT_EQ(c.toString(r.F), k.F) << k.f;
+    }
+}
+
+TEST_F(RatIntTest, LogRationalHonestFailures)
+{
+    const char *bad[] = {
+        "log(x)",          // no 1/x Jacobian: not this storey
+        "1/(x^2*log(x))",  // x beyond the Jacobian
+        "log(x^2)",        // log of non-var: x survives
+        "log(x)/x^2",
+        "exp(x)+log(x)",   // genuinely mixed storeys
+        "sin(x)+log(x)/x",
+    };
+    for (const char *s : bad) {
+        const Expr f = numkit::cas::parseExpr(c, s);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        EXPECT_FALSE(r.proved()) << s;
+        EXPECT_FALSE(r.reason.empty()) << s;
+    }
+    // A nested-storey case that DOES integrate legitimately:
+    // exp(log(x))/x == 1, and the composed substitution returns
+    // exp(log(x)) whose derivative is exactly the integrand.
+    const Expr nested = numkit::cas::parseExpr(c, "exp(log(x))/x");
+    const numkit::cas::RationalIntegral nr =
+        numkit::cas::integrateRational(c, nested, x);
+    EXPECT_TRUE(nr.proved()) << nr.reason;
+    EXPECT_EQ(c.toString(nr.F), "exp(log(x))");
+}
+
+TEST_F(RatIntTest, LogRationalProperty)
+{
+    // Random rational R(t); f = R(log x)/x must integrate PROVED via
+    // the t = log x storey (kernel certificate + round-trip gate).
+    std::uint64_t st = 0x10CC0DE5EEDULL;
+    for (int iter = 0; iter < 120; ++iter) {
+        auto rr = [&](int lim) {
+            const std::int64_t q = 1 + static_cast<std::int64_t>(nextU64(st) % 3);
+            const std::int64_t p =
+                static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            return Rational(BigInt(p), BigInt(q));
+        };
+        const int dn = 1 + static_cast<int>(nextU64(st) % 3);
+        std::vector<Rational> dcs;
+        for (int i = 0; i <= dn; ++i)
+            dcs.push_back(rr(4));
+        if (dcs.back().isZero())
+            dcs.back() = Rational(std::int64_t{1});
+        const int nn = static_cast<int>(nextU64(st) % (dn + 1));
+        std::vector<Rational> ncs;
+        for (int i = 0; i <= nn; ++i)
+            ncs.push_back(rr(4));
+        const Expr R = build(UPoly(ncs), UPoly(dcs)); // rational in x = t stand-in
+        const Expr logVar = c.func("log", x);
+        std::function<Expr(Expr)> sub = [&](Expr e) -> Expr {
+            if (e == x)
+                return logVar;
+            switch (c.kind(e)) {
+            case NodeKind::Number:
+            case NodeKind::Symbol:
+            case NodeKind::RootOf:
+                return e;
+            case NodeKind::Func:
+                return c.func(c.funcName(e), sub(c.child(e, 0)));
+            case NodeKind::Pow:
+                return c.pow(sub(c.child(e, 0)), sub(c.child(e, 1)));
+            default: {
+                std::vector<Expr> kids;
+                for (std::size_t i = 0; i < c.childCount(e); ++i)
+                    kids.push_back(sub(c.child(e, i)));
+                return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
+            }
+            }
+        };
+        const Expr f = c.div(sub(R), x);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << c.toString(f) << ": " << r.reason;
+    }
+}

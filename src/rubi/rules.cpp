@@ -81,29 +81,37 @@ std::int32_t tryOptionalProduct(const RuleTables &t, Ctx &c,
         const std::int32_t valId = t.edgeRow(ei, 1);
         const std::int32_t next = t.edgeRow(ei, 2);
         const std::int32_t arity = t.edgeRow(ei, 3);
-        const std::int32_t opt = t.edgeRow(ei, 4);
         if (t.edgeRow(ei, 0) != kTagOp ||
-            std::string(t.str(valId)) != "*" || arity != 2 || !opt)
+            std::string(t.str(valId)) != "*" || arity != 2)
             continue;
-        // Child 0 must be the optional wildcard v_., child 1 the
-        // factor (a symbol like x, or a wildcard like u_).
+        // The OPTIONAL flag lives on the CHILD wildcard v_., not on
+        // the * term itself; the factor position (child 1) may carry
+        // MULTIPLE edge alternatives from different rules sharing
+        // this prefix - delegate the choice to the general matcher,
+        // whose edge order already encodes specificity.
         const std::int32_t vEdge = t.nodeRow(next, 2);
-        if (t.nodeRow(next, 3) != 1 || t.edgeRow(vEdge, 0) != kTagAny ||
-            !t.edgeRow(vEdge, 4))
+        bool hasOpt = false;
+        std::int32_t afterV = -1;
+        std::string vName;
+        for (int ve = t.nodeRow(next, 2);
+             ve < t.nodeRow(next, 2) + t.nodeRow(next, 3); ++ve) {
+            if (t.edgeRow(ve, 0) == kTagAny && t.edgeRow(ve, 4)) {
+                hasOpt = true;
+                afterV = t.edgeRow(ve, 2);
+                vName = t.str(t.edgeRow(ve, 1));
+                break;
+            }
+        }
+        if (!hasOpt)
             continue;
-        const std::int32_t afterV = t.edgeRow(vEdge, 2);
-        const std::int32_t wEdge = t.nodeRow(afterV, 2);
-        if (t.nodeRow(afterV, 3) != 1)
-            continue;
-        // Position after the whole *[v_., w] subtree.
-        const std::int32_t afterW = t.edgeRow(wEdge, 2);
         const std::size_t mark = acc.size();
-        acc.push_back(Binding{t.str(t.edgeRow(vEdge, 1)),
-                              c.number(std::int64_t{1})});
-        const std::int32_t res =
-            matchAt(t, c, afterV, e, acc); // w matches the bare expr
+        acc.push_back(Binding{vName, c.number(std::int64_t{1})});
+        // w matches the bare expression; the position after w IS the
+        // position after the whole *[v_., w] subtree (w is its last
+        // term), so the matcher's return value continues the chain.
+        const std::int32_t res = matchAt(t, c, afterV, e, acc);
         if (res >= 0)
-            return afterW;
+            return res;
         acc.resize(mark);
     }
     return -1;
@@ -289,6 +297,31 @@ Expr buildReplacement(const RuleTables &t, Ctx &c,
                 return Expr();
             return c.func("log", arg);
         }
+        if (nkids == 1 && head == "ArcTan") {
+            const Expr arg =
+                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+            if (arg.isNull())
+                return Expr();
+            return c.func("atan", arg);
+        }
+        if (nkids == 2 && head == "Rt") {
+            // Rubi's Rt[q, n]: the REAL n-th root - the sign rides
+            // along (Rt[-a, 2] = -Rt[a, 2]). Step scope: n == 2.
+            const Expr q =
+                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+            const Expr n =
+                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 1));
+            if (q.isNull() || c.kind(q) != NodeKind::Number ||
+                c.kind(n) != NodeKind::Number ||
+                !(c.numberValue(n) == Rational(std::int64_t{2})))
+                return Expr();
+            const Rational v = c.numberValue(q);
+            if (v.signum() >= 0)
+                return c.pow(c.number(v),
+                             c.number(Rational(BigInt(1), BigInt(2))));
+            return c.neg(c.pow(c.number(-v),
+                               c.number(Rational(BigInt(1), BigInt(2)))));
+        }
         if (nkids == 2 && head == "RemoveContent") {
             // Rubi's RemoveContent[u, x]: strip the RATIONAL CONTENT
             // of u as a polynomial in x - u = content * primitive,
@@ -372,8 +405,8 @@ bool evalCondition(const RuleTables &t, Ctx &c, Expr var,
         }
         return false;
     }
-    if (tag != kTagHead || nkids != 2)
-        return false;
+    if (tag != kTagHead || nkids < 1 || nkids > 2)
+        return false; // unary PosQ/NegQ and binary predicates alike
     const std::string pred = t.str(valId);
     if (pred == "FreeQ") {
         // FreeQ[name-or-{names...}, x]: no bound value mentions x.
@@ -402,16 +435,31 @@ bool evalCondition(const RuleTables &t, Ctx &c, Expr var,
                     return false;
         return true;
     }
-    if (pred == "NeQ" || pred == "EqQ") {
-        // compare a bound value against a rational literal
+    if (pred == "NeQ" || pred == "EqQ" || pred == "GtQ" || pred == "LtQ" ||
+        pred == "PosQ" || pred == "NegQ") {
+        // numeric comparisons over the bound values; PosQ/NegQ take
+        // one argument (compare against zero implicitly)
         const Expr a = buildReplacementCond(t, c, bnd, childOf(ct, term, 0));
+        if (a.isNull() || c.kind(a) != NodeKind::Number) {
+            return false;
+        }
+        const Rational va = c.numberValue(a);
+        if (pred == "PosQ") {
+            return va.signum() > 0;
+        }
+        if (pred == "NegQ")
+            return va.signum() < 0;
         const Expr bb = buildReplacementCond(t, c, bnd, childOf(ct, term, 1));
-        if (a.isNull() || bb.isNull())
+        if (bb.isNull() || c.kind(bb) != NodeKind::Number)
             return false;
-        if (c.kind(a) != NodeKind::Number || c.kind(bb) != NodeKind::Number)
-            return false;
-        const bool eq = c.numberValue(a) == c.numberValue(bb);
-        return pred == "EqQ" ? eq : !eq;
+        const Rational vb = c.numberValue(bb);
+        if (pred == "EqQ")
+            return va == vb;
+        if (pred == "NeQ")
+            return !(va == vb);
+        if (pred == "GtQ")
+            return va > vb;
+        return va < vb; // LtQ
     }
     return false;
 }
@@ -476,32 +524,41 @@ Expr buildReplacementCond(const RuleTables &t, Ctx &c,
 Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var)
 {
     std::vector<Binding> bnd;
-    const int rule = matchFirst(t, c, e, bnd);
-    if (rule < 0)
-        return Expr();
-    const std::int32_t repOff = t.ruleRow(rule, 0);
-    const std::int32_t condOff = t.ruleRow(rule, 1);
-    if (condOff >= 0 && !evalCondition(t, c, var, bnd, condOff))
-        return Expr(); // condition declines the rule
-    const Expr F = buildReplacement(t, c, bnd, repOff);
-    if (F.isNull())
-        return Expr(); // replacement outside the step-3a subset
-    // Tier-1 certificate, two grades: POLYNOMIAL when both sides are
-    // rational in var (cross-multiplied in Q(var) - node identity is
-    // too weak: d(log(1+2x)/4) is (1/2)(1+2x)^-1, structurally unlike
-    // 1/(2+4x) yet equal); STRUCTURAL fallback when they are not
-    // rational (fractional powers of the variable), where the exact
-    // node identity is the strongest available check.
-    UPoly n1, d1, n2, d2;
-    const bool rational = toRational(c, c.diff(F, var), var, n1, d1) &&
-                          toRational(c, e, var, n2, d2);
-    if (rational) {
-        if (!(n1 * d2 == n2 * d1))
-            return Expr();
-    } else if (c.diff(F, var) != e) {
+    int rule = matchFirst(t, c, e, bnd);
+    if (rule < 0) {
         return Expr();
     }
-    return F;
+    // Rubi's IDENTICAL-PATTERN sign variants share one trie leaf and
+    // try in chain (file) order: a declined condition falls through
+    // to the twin.
+    for (; rule >= 0; rule = t.ruleRow(rule, 3)) {
+        const std::int32_t repOff = t.ruleRow(rule, 0);
+        const std::int32_t condOff = t.ruleRow(rule, 1);
+        if (condOff >= 0 && !evalCondition(t, c, var, bnd, condOff))
+            continue; // condition declines - try the chain twin
+        const Expr F = buildReplacement(t, c, bnd, repOff);
+        if (F.isNull())
+            continue; // replacement outside the subset - next twin
+        // Tier-1 certificate, two grades: POLYNOMIAL when both sides
+        // are rational in var (cross-multiplied in Q(var) - node
+        // identity is too weak: d(log(1+2x)/4) is (1/2)(1+2x)^-1,
+        // structurally unlike 1/(2+4x) yet equal); STRUCTURAL
+        // fallback when they are not rational (fractional powers of
+        // the variable), where exact node identity is the strongest
+        // available check.
+        UPoly n1, d1, n2, d2;
+        const bool rational =
+            toRational(c, c.diff(F, var), var, n1, d1) &&
+            toRational(c, e, var, n2, d2);
+        if (rational) {
+            if (n1 * d2 == n2 * d1)
+                return F;
+        } else if (c.diff(F, var) == e) {
+            return F;
+        }
+        // certificate rejected - try the chain twin
+    }
+    return Expr();
 }
 
 } // namespace numkit::cas::rubi

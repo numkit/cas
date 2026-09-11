@@ -46,7 +46,9 @@ struct RuleTables
     // terms: tag, valId, childOff, childCount
     const std::int32_t *repTerms = nullptr;
     const std::int32_t *condTerms = nullptr;
-    // rules: repTermOff, condTermOff (-1 = none), patternLeafNode
+    // rules: repTermOff, condTermOff (-1 = none), patternLeafNode,
+    // nextRuleWithSamePattern (-1 = end of chain) - Rubi's identical-
+    // pattern sign variants try in chain (file) order
     const std::int32_t *rules = nullptr;
     const std::int32_t *ruleCount = nullptr;
 
@@ -69,7 +71,7 @@ struct RuleTables
     }
     std::int32_t ruleRow(std::int32_t r, int col) const
     {
-        return rules[r * 3 + col];
+        return rules[r * 4 + col];
     }
 };
 

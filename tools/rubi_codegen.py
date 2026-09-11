@@ -160,11 +160,20 @@ class Codegen:
                     nodes.append([tag, vid, 0, 0, -1])
                     node_edges[nxt] = []
                 node = nxt
-            nodes[node][4] = rid
+            # The leaf carries the FIRST rule of its chain (identical
+            # patterns overwrite otherwise and the earlier twins -
+            # e.g. the PosQ variant before NegQ - become unreachable;
+            # the chain's next column walks the rest).
+            if nodes[node][4] == -1:
+                nodes[node][4] = rid
         # flatten: REORDER the edges contiguously per node (depth-
         # first interleaved insertion leaves them mixed) and set the
         # nodes' firstEdge/nEdges accordingly.
         flat_edges = []
+        # rules sharing one trie leaf (identical patterns), in chain
+        # order: leaf -> [rid, rid, ...]; each rule row's column 3
+        # points to the NEXT rule of the chain (-1 = end)
+        leaf_rules = {}
         off = 0
         for i, nd in enumerate(nodes):
             nd[2] = off
@@ -207,7 +216,11 @@ class Codegen:
                     if et == tag and ev == vid:
                         node = en
                         break
-            rule_rows.append((rep_off, cond_off, node))
+            rule_rows.append([rep_off, cond_off, node, -1])
+            # IDENTICAL patterns from different rules (Rubi's
+            # sign-variant twins) share ONE leaf; chain them in
+            # stable (file) order so condition fallback works.
+            leaf_rules.setdefault(node, []).append(rid)
 
         def rows_int(name, rows):
             body = ",\n".join("    " + ", ".join(str(v) for v in r)
@@ -231,6 +244,11 @@ class Codegen:
         out.append(rows_int("kEdges", edges))
         out.append(rows_int("kRepTerms", rep_terms))
         out.append(rows_int("kCondTerms", cond_terms))
+        # link the leaf chains: column 3 = next rule with the SAME
+        # pattern (identical leaf), stable file order
+        for chain in leaf_rules.values():
+            for k in range(len(chain) - 1):
+                rule_rows[chain[k]][3] = chain[k + 1]
         out.append(rows_int("kRules", rule_rows))
         out.append(f"static const int32_t kRuleCount = {len(rule_rows)};")
         return "\n".join(out) + "\n", len(nodes), len(edges)

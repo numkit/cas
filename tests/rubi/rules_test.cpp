@@ -41,8 +41,9 @@ TEST(RubiMatcher, FixedVectors)
         std::vector<Binding> b;
         const int r = matchFirst(t, c, c.pow(x, c.number(std::int64_t{7})), b);
         // specificity ordering: x_^m_. is the LEAST specific ^-rule
-        // -> last index after the generator's sort
-        ASSERT_EQ(r, 4);
+        // -> last index after the generator's sort (37 with the
+        // quadratic slice loaded)
+        ASSERT_EQ(r, 37);
         ASSERT_EQ(b.size(), 2u);
         EXPECT_EQ(b[0].name, "x");
         EXPECT_EQ(b[0].value, x);
@@ -59,7 +60,7 @@ TEST(RubiMatcher, FixedVectors)
             c.number(std::int64_t{4}));
         std::vector<Binding> b;
         const int r = matchFirst(t, c, e, b);
-        ASSERT_EQ(r, 1); // the (a+b x)^m rule leads among ^-shapes
+        ASSERT_EQ(r, 34); // the (a+b x)^m rule leads among ^-shapes
         ASSERT_EQ(b.size(), 4u);
         EXPECT_EQ(b[0].name, "a");
         EXPECT_EQ(b[1].name, "b");
@@ -83,7 +84,7 @@ TEST(RubiMatcher, BoundaryDeclines)
     // Pow[x,-1] with pattern x_^m_. matching! It selects rule 1.
     const Expr oneOver = c.pow(x, c.number(std::int64_t{-1}));
     // the div-twin of 1/x_ (now Pow[ANY, -1]) beats x_^m_.
-    EXPECT_EQ(matchFirst(t, c, oneOver, b), 3);
+    EXPECT_EQ(matchFirst(t, c, oneOver, b), 36);
     EXPECT_EQ(b.size(), 1u);
     EXPECT_EQ(b[0].name, "x");
 
@@ -144,7 +145,7 @@ TEST(RubiMatcher, Property)
         const Expr e = c.pow(base, c.number(Rational(BigInt(m), BigInt(3))));
         std::vector<Binding> bs;
         const int r = matchFirst(t, c, e, bs);
-        ASSERT_EQ(r, 1) << "iter " << iter << " e=" << c.toString(e);
+        ASSERT_EQ(r, 34) << "iter " << iter << " e=" << c.toString(e);
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull()) << "iter " << iter << " e=" << c.toString(e);
         ASSERT_EQ(c.diff(F, x), e) << "iter " << iter;
@@ -174,6 +175,16 @@ TEST(RubiApply, BoundaryAndGuards)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
+
+    // 1/(1+x^2): the QUADRATIC slice rule - atan(x), the textbook
+    // arctangent integral, straight from Rubi (Rt[1,2] folds to 1).
+    {
+        const Expr F = rubiApply(
+            t, c, c.pow(c.add({c.one(), c.pow(x, c.number(std::int64_t{2}))}),
+                        c.number(std::int64_t{-1})), x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "atan(x)");
+    }
 
     // 1/(2+3*x): the div-twin of the 1/(a+b x) rule fires, the
     // replacement Log[RemoveContent[...]]/b executes with content 1.

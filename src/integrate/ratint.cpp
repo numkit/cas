@@ -3,8 +3,8 @@
 #include <numkit/cas/poly/modcpoly.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
+#include <algorithm>
 #include <cassert>
-#include <cstdio>
 #include <vector>
 
 namespace numkit::cas {
@@ -1290,6 +1290,61 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
     out.status = RationalIntegral::Status::ProvedSymbolic;
     out.reason.clear();
     return out;
+}
+
+bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out)
+{
+    UPoly N, D;
+    if (!toRational(c, e, var, N, D) || D.isZero())
+        return false;
+
+    // Monic factor powers of N and D plus the rational content:
+    // e = (n_c / d_c) * prod f_i^m_i / prod g_j^e_j.
+    const auto build = [&c, &var](const UPoly &p,
+                                  std::vector<Expr> &factors) -> Rational {
+        Rational content = p.lc();
+        std::vector<UPoly> fs = factorOverQ(p);
+        for (const UPoly &f : fs)
+            factors.push_back(toExpr(c, f, var));
+        return content;
+    };
+    std::vector<Expr> numFactors, denFactors;
+    const Rational numContent = build(N, numFactors);
+    const Rational denContent = build(D, denFactors);
+    // Multiplicities: count equal factors (factorOverQ emits each
+    // multiplicity copy separately).
+    const auto withPowers = [&c](std::vector<Expr> &fs) {
+        std::vector<Expr> out;
+        std::sort(fs.begin(), fs.end(), [&c](Expr a, Expr b) {
+            return c.compare(a, b) < 0;
+        });
+        for (std::size_t i = 0; i < fs.size();) {
+            std::size_t j = i;
+            while (j < fs.size() && fs[j] == fs[i])
+                ++j;
+            const Expr f = fs[i];
+            out.push_back(j - i == 1
+                              ? f
+                              : c.pow(f, c.number(static_cast<std::int64_t>(j - i))));
+            i = j;
+        }
+        return out;
+    };
+    std::vector<Expr> numP = withPowers(numFactors);
+    std::vector<Expr> denP = withPowers(denFactors);
+
+    // Assemble: content * prod(num) / prod(den).
+    std::vector<Expr> prod{c.number(numContent)};
+    for (Expr &f : numP)
+        prod.push_back(f);
+    if (!denP.empty()) {
+        std::vector<Expr> den{c.number(denContent)};
+        for (Expr &f : denP)
+            den.push_back(f);
+        prod.push_back(c.pow(c.mul(den), c.number(std::int64_t{-1})));
+    }
+    out = c.mul(prod);
+    return true;
 }
 
 } // namespace numkit::cas

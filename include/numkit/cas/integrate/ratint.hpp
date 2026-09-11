@@ -64,4 +64,11 @@ UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M);
 
 RationalIntegral integrateRational(Ctx &c, Expr f, Expr var);
 
+// Factor the rational function e(var) over Q: returns the factored
+// canonical product (content coefficients in front, irreducible
+// factors with multiplicities as integer powers). Returns false when
+// e is not a rational function of var (nothing factored, `out`
+// untouched).
+bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out);
+
 } // namespace numkit::cas

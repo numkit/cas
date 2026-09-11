@@ -58,7 +58,7 @@ bool splitLine(const std::string &line, std::string &cmd,
     if (words.empty())
         return false;
     cmd = words.front();
-    if (cmd == "print") {
+    if (cmd == "print" || cmd == "expand") {
         exprSrc = trim(line.substr(cmd.size()));
         return !exprSrc.empty();
     }
@@ -122,6 +122,10 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         std::cout << ctx.toString(f) << "\n";
         return 0;
     }
+    if (cmd == "expand") {
+        std::cout << ctx.toString(ctx.expand(f)) << "\n";
+        return 0;
+    }
     const numkit::cas::Expr var = ctx.symbol(varName);
     if (cmd == "diff") {
         std::cout << ctx.toString(ctx.diff(f, var)) << "\n";
@@ -161,6 +165,15 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
                           << s.interval.hi.toString() << "]\n";
             }
         }
+        return 0;
+    }
+    if (cmd == "factor") {
+        numkit::cas::Expr factored;
+        if (!numkit::cas::factorExpr(ctx, f, var, factored)) {
+            std::cout << "not a rational function of " << varName << "\n";
+            return 1;
+        }
+        std::cout << ctx.toString(factored) << "\n";
         return 0;
     }
     std::cout << "unknown command '" << cmd << "' (integrate, diff, subs, print)\n";
@@ -239,6 +252,8 @@ int main(int argc, char **argv)
     if (argc == 4)
         return runCommand(argv[1], argv[2], argv[3]);
     if (argc == 3 && std::string(argv[1]) == "print")
+        return runCommand(argv[1], argv[2], "");
+    if (argc == 3 && std::string(argv[1]) == "expand")
         return runCommand(argv[1], argv[2], "");
     if (argc == 3 && std::string(argv[1]) == "corpus")
         return runCorpusFile(argv[2]);

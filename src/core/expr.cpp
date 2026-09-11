@@ -655,6 +655,84 @@ bool Ctx::evalExact(
     return false;
 }
 
+namespace {
+
+// Sum-of-terms view of an expression for the distributive step:
+// an Add contributes its children, everything else is one term.
+void pushSumTerms(const Ctx &c, Expr e, std::vector<Expr> &out)
+{
+    if (c.kind(e) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            out.push_back(c.child(e, i));
+    } else {
+        out.push_back(e);
+    }
+}
+
+} // namespace
+
+Expr Ctx::expand(Expr e)
+{
+    switch (kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func:
+        return func(funcName(e), expand(child(e, 0)));
+    case NodeKind::Pow: {
+        const Expr base = expand(child(e, 0));
+        const Expr exp = child(e, 1);
+        std::int64_t k = 0;
+        const bool intExp = kind(exp) == NodeKind::Number &&
+                            numberValue(exp).den() == BigInt(1) &&
+                            numberValue(exp).num().fitsInt64(k);
+        if (!intExp)
+            return pow(base, exp);
+        // (sum)^k with k >= 2: distribute by iterated multiplication;
+        // k <= 1 canonicalizes away already. Negative k distributes
+        // multiplicatively over the base factors instead.
+        if (k <= 1)
+            return pow(base, exp);
+        std::vector<Expr> terms{one()};
+        std::vector<Expr> factors;
+        for (int i = 0; i < k; ++i) {
+            factors.clear();
+            pushSumTerms(*this, base, factors);
+            std::vector<Expr> next;
+            next.reserve(terms.size() * factors.size());
+            for (const Expr &t : terms)
+                for (const Expr &f : factors)
+                    next.push_back(mul({t, f}));
+            terms = std::move(next);
+        }
+        return add(terms);
+    }
+    case NodeKind::Add: {
+        std::vector<Expr> kids;
+        for (std::size_t i = 0; i < childCount(e); ++i)
+            pushSumTerms(*this, expand(child(e, i)), kids);
+        return add(kids);
+    }
+    case NodeKind::Mul: {
+        // Multiply out the sum-views of the expanded factors.
+        std::vector<Expr> terms{one()};
+        for (std::size_t i = 0; i < childCount(e); ++i) {
+            std::vector<Expr> factors;
+            pushSumTerms(*this, expand(child(e, i)), factors);
+            std::vector<Expr> next;
+            next.reserve(terms.size() * factors.size());
+            for (const Expr &t : terms)
+                for (const Expr &f : factors)
+                    next.push_back(mul({t, f}));
+            terms = std::move(next);
+        }
+        return add(terms);
+    }
+    }
+    return e;
+}
+
 Expr Ctx::subs(Expr e, Expr from, Expr to)
 {
     if (e == from)

@@ -914,3 +914,66 @@ TEST_F(RatIntTest, TanRationalProperty)
         ASSERT_TRUE(r.proved()) << c.toString(f) << ": " << r.reason;
     }
 }
+
+// ── factorExpr: factored canonical form of a rational function ──
+
+TEST_F(RatIntTest, FactorExprVectors)
+{
+    struct Case
+    {
+        const char *f;
+        const char *want;
+    };
+    const Case cases[] = {
+        {"x^2-1", "(-1 + x)*(1 + x)"},
+        {"2*x^2-8", "2*(-2 + x)*(2 + x)"}, // integer content in front
+        {"(x^2+1)^2*(x-1/2)", "(1 + x^2)^2*(-1/2 + x)"}, // Pow < Add order
+        {"x^2-2", "-2 + x^2"}, // irreducible: content 1, single factor
+        {"(x-1)^3", "(-1 + x)^3"},
+    };
+    for (const Case &k : cases) {
+        const Expr f = numkit::cas::parseExpr(c, k.f);
+        Expr out;
+        ASSERT_TRUE(numkit::cas::factorExpr(c, f, x, out)) << k.f;
+        EXPECT_EQ(c.toString(out), k.want) << k.f;
+    }
+    // Non-rational input declines.
+    Expr out;
+    EXPECT_FALSE(numkit::cas::factorExpr(
+        c, numkit::cas::parseExpr(c, "sin(x)"), x, out));
+    EXPECT_FALSE(numkit::cas::factorExpr(
+        c, numkit::cas::parseExpr(c, "1/(x+x^2) + sin(x)"), x, out));
+}
+
+TEST_F(RatIntTest, FactorExprRoundTripProperty)
+{
+    // Factoring a product of random irreducible-ish factors and
+    // multiplying the result back must equal the input EXACTLY
+    // (node identity through the canonical constructors).
+    std::uint64_t st = 0xFADEC0DE42ULL;
+    for (int iter = 0; iter < 300; ++iter) {
+        const int nf = 1 + static_cast<int>(nextU64(st) % 3);
+        Expr e = c.number(Rational(
+            BigInt(static_cast<std::int64_t>(nextU64(st) % 5) + 1),
+            BigInt(1)));
+        for (int i = 0; i < nf; ++i) {
+            const std::int64_t a =
+                static_cast<std::int64_t>(nextU64(st) % 11) - 5;
+            const std::int64_t b =
+                static_cast<std::int64_t>(nextU64(st) % 11) - 5;
+            e = c.mul({e, c.add({c.pow(x, c.number(std::int64_t{2})),
+                                 c.mul({c.number(a), x}),
+                                 c.number(b)})});
+        }
+        Expr out;
+        ASSERT_TRUE(numkit::cas::factorExpr(c, e, x, out)) << c.toString(e);
+        // Value identity: factor(e) evaluates to the same number.
+        const Rational q(
+            BigInt(static_cast<std::int64_t>(nextU64(st) % 9) - 4),
+            BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 4)));
+        Rational v1, v2;
+        ASSERT_TRUE(c.evalExact(e, {{"x", q}}, v1));
+        ASSERT_TRUE(c.evalExact(out, {{"x", q}}, v2));
+        EXPECT_EQ(v1, v2) << c.toString(e);
+    }
+}

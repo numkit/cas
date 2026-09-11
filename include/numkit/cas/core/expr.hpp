@@ -141,6 +141,14 @@ public:
     // x -> 2 in x^2 yields the number 4.
     Expr subs(Expr e, Expr from, Expr to);
 
+    // Distribute products and integer powers over sums: a fully
+    // expanded canonical polynomial-form expression (like terms
+    // collected by the Add/Mul canonicalization). Fractional powers
+    // stay as powers; negative integer powers distribute
+    // multiplicatively over the expanded base. Blow-up is the
+    // caller's responsibility (as in MATLAB's expand).
+    Expr expand(Expr e);
+
     // Exact rational evaluation of e with the given symbol values.
     // Returns false when any intermediate leaves Q: unresolved
     // symbols, RootOf atoms, fractional powers, transcendental

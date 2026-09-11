@@ -39,8 +39,9 @@ struct RuleTables
     const std::int32_t *stringCount = nullptr;
     // nodes: tag, valId, firstEdge, nEdges, ruleId (-1 = inner)
     const std::int32_t *nodes = nullptr;
-    // edges: tag, valId, next, arity (pattern-term child count;
-    // step-2 matching requires the expression arity to equal it)
+    // edges: tag, valId, next, arity, optional - arity is the
+    // pattern-term child count (exact-arity matching), optional=1
+    // marks an `_.` blank eligible for default synthesis
     const std::int32_t *edges = nullptr;
     // terms: tag, valId, childOff, childCount
     const std::int32_t *repTerms = nullptr;
@@ -59,7 +60,7 @@ struct RuleTables
     }
     std::int32_t edgeRow(std::int32_t e, int col) const
     {
-        return edges[e * 4 + col];
+        return edges[e * 5 + col];
     }
     std::int32_t termRow(const std::int32_t *table, std::int32_t t,
                          int col) const

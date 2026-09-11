@@ -113,7 +113,7 @@ class Codegen:
 
         # ---- pattern trie ----
         nodes = [[0, -1, 0, 0, -1]]  # tag, valId, firstEdge, nEdges, rule
-        edges = []                    # tag, valId, next, arity
+        edges = []  # tag, valId, next, arity, optional(blank `_.`)
         node_edges = {0: []}
         for rid, rule in enumerate(self.rules):
             node = 0
@@ -121,14 +121,15 @@ class Codegen:
                 tag, val = term_tag(t)
                 vid = self.sid(val) if val else -1
                 arity = len(t.get("args", []))
+                opt = 1 if "pattern_var" in t and t.get("blank") == "_." else 0
                 nxt = None
                 for e in node_edges[node]:
-                    et, ev, en, ea = edges[e]
+                    et, ev, en, ea, eo = edges[e]
                     if et == tag and ev == vid:
                         nxt = en
                         break
                 if nxt is None:
-                    edges.append((tag, vid, len(nodes), arity))
+                    edges.append((tag, vid, len(nodes), arity, opt))
                     node_edges[node].append(len(edges) - 1)
                     nxt = len(nodes)
                     nodes.append([tag, vid, 0, 0, -1])
@@ -177,7 +178,7 @@ class Codegen:
                 tag, val = term_tag(t)
                 vid = self.sid(val) if val else -1
                 for e in range(nodes[node][2], nodes[node][2] + nodes[node][3]):
-                    et, ev, en, _ = edges[e]
+                    et, ev, en, _, _ = edges[e]
                     if et == tag and ev == vid:
                         node = en
                         break

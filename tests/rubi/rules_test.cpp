@@ -173,6 +173,19 @@ TEST(RubiApply, BoundaryAndGuards)
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
 
+    // (2 + x)^4: the coefficient b folded away (1*x = x); the
+    // optional-product synthesis binds b := 1 and the (a+b x)^m
+    // rule certifies (2+x)^5/5.
+    {
+        const Expr e = c.pow(
+            c.add({c.number(std::int64_t{2}), x}),
+            c.number(std::int64_t{4}));
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "1/5*(2 + x)^5");
+        EXPECT_EQ(c.diff(F, x), e);
+    }
+
     // x^(-1): the matched rule's NeQ[m, -1] declines - honest null.
     EXPECT_TRUE(
         rubiApply(t, c, c.pow(x, c.number(std::int64_t{-1})), x).isNull());

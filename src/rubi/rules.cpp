@@ -58,6 +58,54 @@ bool exprMatchesTerm(const RuleTables &t, Ctx &c, Expr e,
 // caller retries other edges (the pushed bindings of a failed branch
 // are dropped by retrying from `acc.size()` snapshot).
 std::int32_t matchAt(const RuleTables &t, Ctx &c, std::int32_t node,
+                     Expr e, std::vector<Binding> &acc);
+
+// Optional-product default synthesis (Mathematica's `_.`): the
+// pattern *[v_., w] against an expression WITHOUT a Mul node means
+// the coefficient folded away - v := 1 and w must match the bare
+// expression itself. Covers the canonicalizer's 1*x = x (so
+// (2 + x)^4 reaches the (a + b x)^m rule with b := 1).
+std::int32_t tryOptionalProduct(const RuleTables &t, Ctx &c,
+                                std::int32_t node, Expr e,
+                                std::vector<Binding> &acc)
+{
+    if (c.kind(e) == NodeKind::Mul)
+        return -1; // a real Mul goes through the structural branch
+    const std::int32_t nEdges = t.nodeRow(node, 3);
+    const std::int32_t first = t.nodeRow(node, 2);
+    for (int ei = first; ei < first + nEdges; ++ei) {
+        const std::int32_t valId = t.edgeRow(ei, 1);
+        const std::int32_t next = t.edgeRow(ei, 2);
+        const std::int32_t arity = t.edgeRow(ei, 3);
+        const std::int32_t opt = t.edgeRow(ei, 4);
+        if (t.edgeRow(ei, 0) != kTagOp ||
+            std::string(t.str(valId)) != "*" || arity != 2 || !opt)
+            continue;
+        // Child 0 must be the optional wildcard v_., child 1 the
+        // factor (a symbol like x, or a wildcard like u_).
+        const std::int32_t vEdge = t.nodeRow(next, 2);
+        if (t.nodeRow(next, 3) != 1 || t.edgeRow(vEdge, 0) != kTagAny ||
+            !t.edgeRow(vEdge, 4))
+            continue;
+        const std::int32_t afterV = t.edgeRow(vEdge, 2);
+        const std::int32_t wEdge = t.nodeRow(afterV, 2);
+        if (t.nodeRow(afterV, 3) != 1)
+            continue;
+        // Position after the whole *[v_., w] subtree.
+        const std::int32_t afterW = t.edgeRow(wEdge, 2);
+        const std::size_t mark = acc.size();
+        acc.push_back(Binding{t.str(t.edgeRow(vEdge, 1)),
+                              c.number(std::int64_t{1})});
+        const std::int32_t res =
+            matchAt(t, c, afterV, e, acc); // w matches the bare expr
+        if (res >= 0)
+            return afterW;
+        acc.resize(mark);
+    }
+    return -1;
+}
+
+std::int32_t matchAt(const RuleTables &t, Ctx &c, std::int32_t node,
                      Expr e, std::vector<Binding> &acc)
 {
     const std::int32_t nEdges = t.nodeRow(node, 3);
@@ -72,10 +120,20 @@ std::int32_t matchAt(const RuleTables &t, Ctx &c, std::int32_t node,
             acc.push_back(Binding{t.str(valId), e});
             return next;
         }
-        if (!exprMatchesTerm(t, c, e, tag, valId))
+        if (!exprMatchesTerm(t, c, e, tag, valId)) {
+            // Fall through to the optional-product synthesis below;
+            // a structural mismatch here might be a folded 1*x.
+            const std::int32_t opt = tryOptionalProduct(t, c, node, e, acc);
+            if (opt >= 0)
+                return opt;
             continue;
-        if (static_cast<std::int32_t>(c.childCount(e)) != arity)
+        }
+        if (static_cast<std::int32_t>(c.childCount(e)) != arity) {
+            const std::int32_t opt = tryOptionalProduct(t, c, node, e, acc);
+            if (opt >= 0)
+                return opt;
             continue; // exact-arity step-2 semantics
+        }
         std::int32_t cur = next;
         bool ok = true;
         for (std::size_t ci = 0; ci < c.childCount(e); ++ci) {

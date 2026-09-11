@@ -1,8 +1,29 @@
 #include <numkit/cas/num/rational.hpp>
 
 #include <cassert>
+#include <cmath>
 
 namespace numkit::cas {
+
+Rational Rational::fromDoubleBits(double v)
+{
+    assert(std::isfinite(v) && "fromDoubleBits: non-finite double");
+    int e = 0;
+    const double f = std::frexp(v, &e); // v == f * 2^e, f in [0.5, 1)
+    // f has at most 53 significand bits (incl. the hidden one), so
+    // f * 2^53 is an exact integer that itself fits a double.
+    const std::int64_t m = static_cast<std::int64_t>(f * 9007199254740992.0);
+    if (m == 0)
+        return Rational(); // +-0.0
+    const int shift = e - 53;
+    if (shift >= 0)
+        return Rational(BigInt(m) * BigInt::powUInt(BigInt(2),
+                                                    static_cast<std::uint64_t>(shift)),
+                        BigInt(1));
+    return Rational(BigInt(m),
+                    BigInt::powUInt(BigInt(2),
+                                    static_cast<std::uint64_t>(-shift)));
+}
 
 Rational::Rational(std::int64_t v) : num_(v), den_(1) {}
 

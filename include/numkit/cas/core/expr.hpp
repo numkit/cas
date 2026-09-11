@@ -9,6 +9,7 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace numkit::cas {
@@ -139,6 +140,18 @@ public:
     // through the canonicalizing constructors, so e.g. substituting
     // x -> 2 in x^2 yields the number 4.
     Expr subs(Expr e, Expr from, Expr to);
+
+    // Exact rational evaluation of e with the given symbol values.
+    // Returns false when any intermediate leaves Q: unresolved
+    // symbols, RootOf atoms, fractional powers, transcendental
+    // functions at non-trivial points (the trivial identities
+    // exp(0)=1, log(1)=0, sin/tan/atan(0)=0, cos(0)=1 do evaluate).
+    // This is the vpa groundwork: exact when possible, honest
+    // decline otherwise.
+    bool evalExact(
+        Expr e,
+        const std::vector<std::pair<std::string, Rational>> &vals,
+        Rational &out);
 
     std::string toString(Expr e) const;
 

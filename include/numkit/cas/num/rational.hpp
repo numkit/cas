@@ -32,6 +32,13 @@ public:
     // Denominator zero or malformed input returns false.
     static bool tryParse(Rational &out, const std::string &s);
 
+    // Exact rational value of a FINITE IEEE double: every double is
+    // m * 2^e with an integer 53-bit mantissa, so the conversion is
+    // lossless by construction. User-facing decimals that are not
+    // dyadic (0.1) route through the string constructor instead -
+    // the sym() layer contract in notes/integration-model.md.
+    static Rational fromDoubleBits(double v);
+
     bool isZero() const { return num_.isZero(); }
     int signum() const { return num_.signum(); }
     const BigInt &num() const { return num_; }

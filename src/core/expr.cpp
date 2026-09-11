@@ -584,6 +584,77 @@ void Ctx::print(Expr e, std::string &out) const
     printPrec(e, out, 0);
 }
 
+bool Ctx::evalExact(
+    Expr e, const std::vector<std::pair<std::string, Rational>> &vals,
+    Rational &out)
+{
+    switch (kind(e)) {
+    case NodeKind::Number:
+        out = numberValue(e);
+        return true;
+    case NodeKind::Symbol: {
+        const std::string &name = symbolName(e);
+        for (const auto &kv : vals)
+            if (kv.first == name) {
+                out = kv.second;
+                return true;
+            }
+        return false;
+    }
+    case NodeKind::RootOf:
+        return false; // algebraic, not rational (interval refinement
+                      // is the future numeric layer's business)
+    case NodeKind::Func: {
+        Rational a;
+        if (!evalExact(child(e, 0), vals, a))
+            return false;
+        const std::string &name = funcName(e);
+        const Rational zero(0), one(1);
+        if (name == "exp" && a == zero) { out = one; return true; }
+        if (name == "log" && a == one) { out = zero; return true; }
+        if ((name == "sin" || name == "tan" || name == "atan") && a == zero) {
+            out = zero;
+            return true;
+        }
+        if (name == "cos" && a == zero) { out = one; return true; }
+        return false;
+    }
+    case NodeKind::Pow: {
+        Rational base, ex;
+        if (!evalExact(child(e, 0), vals, base) ||
+            !evalExact(child(e, 1), vals, ex))
+            return false;
+        std::int64_t k = 0;
+        if (!(ex.den() == BigInt(1)) || !ex.num().fitsInt64(k))
+            return false; // fractional or huge exponent: irrational
+        if (k >= 0) {
+            out = Rational::powUInt(base, static_cast<std::uint64_t>(k));
+            return true;
+        }
+        if (base.isZero())
+            return false; // 0^negative
+        out = Rational(BigInt(1), BigInt(1)) /
+              Rational::powUInt(base, static_cast<std::uint64_t>(-k));
+        return true;
+    }
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        Rational acc = kind(e) == NodeKind::Add
+                           ? Rational(std::int64_t{0})
+                           : Rational(std::int64_t{1});
+        for (std::size_t i = 0; i < childCount(e); ++i) {
+            Rational t;
+            if (!evalExact(child(e, i), vals, t))
+                return false;
+            acc = kind(e) == NodeKind::Add ? acc + t : acc * t;
+        }
+        out = acc;
+        return true;
+    }
+    }
+    return false;
+}
+
 Expr Ctx::subs(Expr e, Expr from, Expr to)
 {
     if (e == from)

@@ -977,3 +977,84 @@ TEST_F(RatIntTest, FactorExprRoundTripProperty)
         EXPECT_EQ(v1, v2) << c.toString(e);
     }
 }
+
+// ── Radical storey: rational functions of x^(p/q), t = x^(1/L) ──
+
+TEST_F(RatIntTest, RadicalFixedVectors)
+{
+    struct Case
+    {
+        const char *f;
+        const char *F;
+    };
+    const Case cases[] = {
+        {"x^(1/2)", "2/3*x^(3/2)"},
+        {"1/(1+x^(1/3))",
+         "-3*x^(1/3) + 3/2*x^(2/3) + 3*log(1 + x^(1/3))"},
+        {"1/(x+x^(1/2))", "2*log(1 + x^(1/2))"},
+    };
+    for (const Case &k : cases) {
+        const Expr f = numkit::cas::parseExpr(c, k.f);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << k.f << ": " << r.reason;
+        EXPECT_EQ(c.toString(r.F), k.F) << k.f;
+    }
+}
+
+TEST_F(RatIntTest, RadicalHonestFailures)
+{
+    const char *bad[] = {
+        "x^x",            // variable exponent
+        "sin(x)^(1/2)",   // function base is not the variable
+        "sin(x^(1/2))",   // var inside a function
+        "x^(1/2)+log(x)", // mixed storeys
+    };
+    for (const char *s : bad) {
+        const Expr f = numkit::cas::parseExpr(c, s);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        EXPECT_FALSE(r.proved()) << s;
+        EXPECT_FALSE(r.reason.empty()) << s;
+    }
+}
+
+TEST_F(RatIntTest, RadicalProperty)
+{
+    // Random rational R(t) with small degrees; f = R(x^(1/q)) for a
+    // random q in {2,3,4,6} must integrate PROVED via t = x^(1/q).
+    std::uint64_t st = 0xAD1CA1BEEF5ULL;
+    for (int iter = 0; iter < 60; ++iter) {
+        const int q = 2 + static_cast<int>(nextU64(st) % 4); // 2..5
+        const Expr t = c.pow(x, c.number(
+                                    Rational(BigInt(1),
+                                             BigInt(static_cast<std::int64_t>(q)))));
+        auto rr = [&](int lim) {
+            int64_t p = static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            if (p == 0)
+                p = 1; // non-zero numerators: a zero leading term would
+                       // degenerate the test fraction
+            return Rational(
+                BigInt(p),
+                BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 3)));
+        };
+        const int dd = 1 + static_cast<int>(nextU64(st) % 2);
+        std::vector<Expr> den;
+        for (int i = 0; i <= dd; ++i)
+            den.push_back(c.mul({c.number(rr(3)),
+                                 c.pow(t, c.number(
+                                              static_cast<std::int64_t>(i)))}));
+        den.push_back(c.number(std::int64_t{1}));
+        const int nn = static_cast<int>(nextU64(st) % (dd + 1));
+        std::vector<Expr> num;
+        for (int i = 0; i <= nn; ++i)
+            num.push_back(c.mul({c.number(rr(3)),
+                                 c.pow(t, c.number(
+                                              static_cast<std::int64_t>(i)))}));
+        const Expr f = c.div(c.add(num), c.add(den));
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << "q=" << q << " " << c.toString(f)
+                                << ": " << r.reason;
+    }
+}

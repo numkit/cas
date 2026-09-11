@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <numeric>
 #include <vector>
 
 namespace numkit::cas {
@@ -1152,6 +1153,150 @@ Expr substituteTangent(Ctx &c, Expr e, Expr var, Expr t, bool &ok)
 
 } // namespace
 
+// ── Radical storey: rational functions of x^(p/q) ──
+//
+// t = x^(1/L) with L the lcm of all fractional exponents of the
+// variable: every x^(p/q) becomes t^(p*L/q) with an INTEGER power
+// and bare x becomes t^L, so the integrand turns into a rational
+// function of t; the Jacobian dx = L*t^(L-1) dt attaches as a
+// factor, the rational kernel runs in the t-world and the answer is
+// back-substituted t -> x^(1/L).
+
+namespace {
+
+// First pass: the lcm L of the denominators of all rational
+// exponents on Pow(var, r) nodes. Bare var counts as exponent 1/1.
+// Returns -1 when var appears anywhere else (inside functions, as
+// an exponent itself, under a non-Number power like x^x) or when L
+// would exceed 60 (degree blow-up guard): the storey declines.
+int radicalIndex(const Ctx &c, Expr e, Expr var)
+{
+    if (e == var)
+        return 1; // x = x^(1/1): legal, no fractional contribution
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return 1;
+    case NodeKind::Pow: {
+        if (c.child(e, 0) == var) {
+            if (c.kind(c.child(e, 1)) != NodeKind::Number)
+                return -1; // x^(non-number): x^x, x^sin(x)...
+            std::int64_t q64 = 0;
+            if (!c.numberValue(c.child(e, 1)).den().fitsInt64(q64) ||
+                q64 <= 0 || q64 > 60)
+                return -1;
+            return static_cast<int>(q64);
+        }
+        // Other bases may themselves carry radicals (the base is
+        // recursed and contributes its lcm); the EXPONENT must not
+        // mention the variable at all.
+        if (mentionsVar(c, c.child(e, 1), var))
+            return -1;
+        return radicalIndex(c, c.child(e, 0), var);
+    }
+    case NodeKind::Func:
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        int l = 1;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const int q = radicalIndex(c, c.child(e, i), var);
+            if (q < 0)
+                return -1;
+            const int64_t lcm64 = std::lcm(static_cast<int64_t>(l),
+                                           static_cast<int64_t>(q));
+            if (lcm64 > 60)
+                return -1;
+            l = static_cast<int>(lcm64);
+        }
+        return l;
+    }
+    }
+    return -1;
+}
+
+// Second pass: rebuild with t = var^(1/L): Pow(var, p/q) maps to
+// t^(p*L/q) (integer exponent), bare var to t^L.
+Expr radicalRebuild(Ctx &c, Expr e, Expr var, Expr t, int L)
+{
+    if (e == var)
+        return c.pow(t, c.number(static_cast<std::int64_t>(L)));
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Pow: {
+        if (c.child(e, 0) == var &&
+            c.kind(c.child(e, 1)) == NodeKind::Number) {
+            const Rational &r = c.numberValue(c.child(e, 1));
+            std::int64_t q64 = 0;
+            r.den().fitsInt64(q64);
+            const Rational total =
+                r * Rational(BigInt(static_cast<std::int64_t>(L)), BigInt(1));
+            return c.pow(t, c.number(total)); // total has denominator 1
+        }
+        return c.pow(radicalRebuild(c, c.child(e, 0), var, t, L),
+                     radicalRebuild(c, c.child(e, 1), var, t, L));
+    }
+    case NodeKind::Func:
+        return c.func(c.funcName(e),
+                      radicalRebuild(c, c.child(e, 0), var, t, L));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> kids;
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            kids.push_back(radicalRebuild(c, c.child(e, i), var, t, L));
+        return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
+    }
+    }
+    return e;
+}
+
+} // namespace
+
+static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var)
+{
+    RationalIntegral out;
+    const int L = radicalIndex(c, f, var);
+    if (L < 2) {
+        // L == 1: a plain rational (the old path owns it); L < 0:
+        // the variable escapes the x^(p/q) shape.
+        out.reason = L < 0
+                         ? "integrand is not rational in a fractional power of the variable"
+                         : "integrand has no fractional powers";
+        return out;
+    }
+    const Expr t = c.symbol("#r");
+    const Expr g = radicalRebuild(c, f, var, t, L);
+    // Jacobian dx = L * t^(L-1) dt.
+    const RationalIntegral r = integrateRational(
+        c, c.mul({c.number(Rational(
+                            BigInt(static_cast<std::int64_t>(L)), BigInt(1))),
+                  c.pow(t, c.number(static_cast<std::int64_t>(L - 1))), g}),
+        t);
+    if (!r.proved()) {
+        out.reason = "radical substitution: " + r.reason;
+        return out;
+    }
+    const Expr root = c.pow(var, c.number(
+                                  Rational(BigInt(1),
+                                           BigInt(static_cast<std::int64_t>(L)))));
+    const Expr F = substituteBack(c, r.F, t, root);
+    // Gate: structural round-trip. The x-derivative necessarily
+    // carries the fractional Jacobian x^(1/L - 1), so no polynomial
+    // gate exists in one coordinate; the t-identity d/dt r.F = G is
+    // the kernel's own certificate, the Jacobian was attached
+    // exactly, and rebuilding F with the SAME L must return r.F.
+    if (radicalRebuild(c, F, var, t, L) != r.F) {
+        out.reason = "radical substitution certificate failed";
+        return out;
+    }
+    out.F = F;
+    out.status = RationalIntegral::Status::ProvedSymbolic;
+    return out;
+}
+
 static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var)
 {
     RationalIntegral out;
@@ -1216,6 +1361,10 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
             return r;
         why += "; " + r.reason;
         r = integrateTanRational(c, f, var);
+        if (r.proved())
+            return r;
+        why += "; " + r.reason;
+        r = integrateRadicalRational(c, f, var);
         if (r.proved())
             return r;
         r.reason = why + "; " + r.reason;

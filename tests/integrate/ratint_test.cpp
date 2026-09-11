@@ -5,6 +5,9 @@
 
 #include <functional>
 
+#include <cassert>
+#include <cmath>
+
 namespace {
 
 using numkit::cas::BigInt;
@@ -1057,4 +1060,146 @@ TEST_F(RatIntTest, RadicalProperty)
         ASSERT_TRUE(r.proved()) << "q=" << q << " " << c.toString(f)
                                 << ": " << r.reason;
     }
+}
+
+// ── Rioboo real forms (item 7, phase A): cubic fields ─────────
+
+namespace {
+
+// Test-only double evaluator: RootOf bisected on its isolating
+// bracket (these tests use cubics with exactly one real root, so a
+// sign-change scan on the Cauchy bound finds it uniquely).
+double evalDouble(const Ctx &c, Expr e, double x)
+{
+    switch (c.kind(e)) {
+    case NodeKind::Number: {
+        return std::stod(c.numberValue(e).num().toString()) /
+               std::stod(c.numberValue(e).den().toString());
+    }
+    case NodeKind::Symbol:
+        assert(c.symbolName(e) == "x");
+        return x;
+    case NodeKind::RootOf: {
+        const auto &poly = c.rootOfPoly(e);
+        auto pv = [&](double z) {
+            double acc = 0, pw = 1;
+            for (std::size_t i = 0; i < poly.size(); ++i) {
+                acc += std::stod(poly[i].num().toString()) /
+                       std::stod(poly[i].den().toString()) * pw;
+                pw *= z;
+            }
+            return acc;
+        };
+        double lo = -1e6, hi = 1e6;
+        while (pv(lo) > 0)
+            lo *= 2;
+        while (pv(hi) < 0)
+            hi *= 2;
+        while (hi - lo > 1e-14 * std::max(1.0, std::abs(lo))) {
+            const double mid = (lo + hi) / 2;
+            (pv(mid) < 0 ? lo : hi) = mid;
+        }
+        return (lo + hi) / 2;
+    }
+    case NodeKind::Pow: {
+        const double b = evalDouble(c, c.child(e, 0), x);
+        const double p = evalDouble(c, c.child(e, 1), x);
+        return std::pow(b, p);
+    }
+    case NodeKind::Func: {
+        const double a = evalDouble(c, c.child(e, 0), x);
+        const std::string &n = c.funcName(e);
+        if (n == "log")
+            return std::log(a);
+        if (n == "atan")
+            return std::atan(a);
+        if (n == "exp")
+            return std::exp(a);
+        if (n == "sin")
+            return std::sin(a);
+        if (n == "cos")
+            return std::cos(a);
+        if (n == "tan")
+            return std::tan(a);
+        ADD_FAILURE() << "no double eval for " << n;
+        return 0.0;
+    }
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        double acc = c.kind(e) == NodeKind::Add ? 0.0 : 1.0;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const double v = evalDouble(c, c.child(e, i), x);
+            acc = c.kind(e) == NodeKind::Add ? acc + v : acc * v;
+        }
+        return acc;
+    }
+    }
+    ADD_FAILURE() << "unevaluable node";
+    return 0.0;
+}
+
+// NUMERIC DERIVATIVE CHECK of the emitted FORM (the Tier-1 gate
+// certifies the rational Norm part; the FORM itself is checked
+// here): central difference vs the integrand, relative tolerance.
+void expectFormDerivativeMatches(const Ctx &c, Expr F, Expr f, double x0)
+{
+    const double h = 1e-6;
+    const double dF = (evalDouble(c, F, x0 + h) - evalDouble(c, F, x0 - h)) /
+                      (2 * h);
+    const double fv = evalDouble(c, f, x0);
+    EXPECT_NEAR(dF, fv, 1e-4 * std::max(1.0, std::abs(fv)))
+        << "x0=" << x0;
+}
+
+} // namespace
+
+TEST_F(RatIntTest, RiobooCubicOneRealRoot)
+{
+    // int dx/(x^3+2): the flagship - real form with atan, PROVED,
+    // and the form differentiates back to the integrand numerically.
+    const Expr f = build(P("1"), P("2,0,0,1"));
+    const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
+    ASSERT_TRUE(r.proved()) << r.reason;
+    const std::string form = c.toString(r.F);
+    EXPECT_NE(form.find("atan"), std::string::npos)
+        << "Rioboo form must carry an atan term";
+    // No complex-pair RootOf atoms remain: exactly ONE RootOf index
+    // (the real root) may appear.
+    EXPECT_EQ(form.find("RootOf(1*z^3 + 0*z^2 + 0*z + -1/108, 1)"),
+              std::string::npos);
+    EXPECT_EQ(form.find("RootOf(1*z^3 + 0*z^2 + 0*z + -1/108, 2)"),
+              std::string::npos);
+    expectFormDerivativeMatches(c, r.F, f, 0.7);
+    expectFormDerivativeMatches(c, r.F, f, 1.9);
+    expectFormDerivativeMatches(c, r.F, f, 4.2);
+}
+
+TEST_F(RatIntTest, RiobooCubicVariant)
+{
+    // int dx/(x^3+3x+5): irreducible (no rational root), one real
+    // root (discriminant -783 < 0) - the Rioboo path.
+    const Expr f = build(P("1"), P("5,3,0,1"));
+    const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
+    ASSERT_TRUE(r.proved()) << r.reason;
+    EXPECT_NE(c.toString(r.F).find("atan"), std::string::npos);
+    expectFormDerivativeMatches(c, r.F, f, 0.5);
+    expectFormDerivativeMatches(c, r.F, f, 2.1);
+}
+
+TEST_F(RatIntTest, RiobooCubicThreeRealRootsUnchanged)
+{
+    // x^3-3x+1: irreducible with THREE real roots (disc 81 > 0) -
+    // no pair to rewrite; the general emission stays (already real).
+    const Expr f = build(P("1"), P("1,-3,0,1"));
+    const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
+    ASSERT_TRUE(r.proved()) << r.reason;
+    // all three RootOf indices of the RESIDUE polynomial appear
+    // (all roots real; the residue poly here is z^3 - z/9 + 1/81)
+    const std::string form = c.toString(r.F);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_NE(form.find("RootOf(1*z^3 + 0*z^2 + -1/9*z + 1/81, " +
+                            std::to_string(i) + ")"),
+                  std::string::npos);
+    }
+    EXPECT_EQ(form.find("atan"), std::string::npos);
 }

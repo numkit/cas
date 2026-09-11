@@ -1,6 +1,7 @@
 #include <numkit/cas/integrate/ratint.hpp>
 
 #include <numkit/cas/poly/modcpoly.hpp>
+#include <numkit/cas/poly/sturm.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <algorithm>
@@ -610,43 +611,175 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             fracAdd(certN, certD, Ppoly, Qpoly);
             fracAdd(leftN, leftD, Ppoly * Rational(std::int64_t{-1}), Qpoly);
 
-            // emit sum_i RootOf(c, i) * log(v(x, RootOf(c, i)))
-            for (int i = 0; i < d; ++i) {
-                const Expr rootExpr = c.rootOf(fact.coeffs(), i);
-                std::vector<Expr> argTerms;
-                for (std::size_t k = 0; k <= static_cast<std::size_t>(v.deg()); ++k) {
-                    const UPoly rk = v.coeff(k);
-                    if (rk.isZero())
+            // Emission. Rioboo real forms, phase A (item 7): for an
+            // irreducible CUBIC with exactly one real root rho, the
+            // conjugate pair alpha, alpha-bar of the two complex
+            // roots contributes, with s1 = alpha+alpha-bar = -p-rho,
+            // s2 = alpha*alpha-bar = -s/rho (both in Q[rho]) and
+            // w2 = (4 s2 - s1^2)/4 > 0, b = sqrt(w2):
+            //   alpha*log v(x,alpha) + conjugate
+            //     = (s1/2)*log(R^2 + w2*I^2) - 2b*atan(b*I/R),
+            // where v(x,alpha) = R(x) + i*b*I(x) and R, I lie in
+            // Q[rho][x]: with w_k(t) = a2 t^2 + a1 t + a0 (the
+            // x^k coefficient of v), Re(w_k(alpha)) =
+            // a2(s1^2-2s2)/2 + a1 s1/2 + a0 and
+            // Im(w_k(alpha)) = b*(a2 s1 + a1) - both in Q[rho].
+            // No Q-bar layer: everything is Q[t]/(c) ring arithmetic
+            // plus a Sturm root count. The certificate stays the
+            // rational Norm/Trace subtraction above (the trace of
+            // the WHOLE contribution); the form merely becomes real.
+            bool riobooPair = false;
+            if (d == 3) {
+                const std::vector<RootInterval> rts =
+                    isolateRealRoots(fact);
+                if (rts.size() == 1)
+                    riobooPair = true;
+            }
+            const auto ringToExpr = [&](const UPoly &e, const Expr &atom) {
+                std::vector<Expr> terms;
+                for (std::size_t j = 0; j < e.coeffs().size(); ++j)
+                    if (!e.coeff(j).isZero())
+                        terms.push_back(j == 0
+                            ? c.number(e.coeff(j))
+                            : c.mul({c.number(e.coeff(j)),
+                                     c.pow(atom, c.number(
+                                         static_cast<std::int64_t>(j)))}));
+                if (terms.empty())
+                    return c.zero();
+                return c.add(terms);
+            };
+            const auto polyInXExpr =
+                [&](const std::vector<UPoly> &ringCoeffs, const Expr &atom) {
+                std::vector<Expr> terms;
+                for (std::size_t k = 0; k < ringCoeffs.size(); ++k) {
+                    if (ringCoeffs[k].isZero())
                         continue;
-                    std::vector<Expr> coeffTerms;
-                    for (std::size_t j = 0; j < rk.coeffs().size(); ++j) {
-                        if (rk.coeff(j).isZero())
-                            continue;
-                        if (j == 0)
-                            coeffTerms.push_back(c.number(rk.coeff(j)));
-                        else
-                            coeffTerms.push_back(c.mul({c.number(rk.coeff(j)),
-                                                        c.pow(rootExpr,
-                                                              c.number(static_cast<std::int64_t>(j)))}));
-                    }
-                    if (coeffTerms.empty())
-                        continue;
-                    const Expr coeff = c.add(coeffTerms);
+                    const Expr ck = ringToExpr(ringCoeffs[k], atom);
                     if (k == 0)
-                        argTerms.push_back(coeff);
+                        terms.push_back(ck);
                     else
-                        argTerms.push_back(c.mul({coeff,
-                            c.pow(var, c.number(static_cast<std::int64_t>(k)))}));
+                        terms.push_back(c.mul({ck, c.pow(var, c.number(
+                            static_cast<std::int64_t>(k)))}));
                 }
-                const Expr arg = c.add(argTerms);
-                bool hasVar = c.kind(arg) == NodeKind::Symbol;
+                if (terms.empty())
+                    return c.zero();
+                return c.add(terms);
+            };
+            const auto mentionsNonConst = [&](const Expr &arg) {
+                if (c.kind(arg) == NodeKind::Symbol)
+                    return true;
                 for (std::size_t ai = 0; ai < c.childCount(arg); ++ai)
                     if (c.kind(c.child(arg, ai)) != NodeKind::Number &&
                         c.kind(c.child(arg, ai)) != NodeKind::RootOf)
-                        hasVar = true;
-                if (!hasVar)
-                    continue; // constant log drops into C
-                extraTerms.push_back(c.mul({rootExpr, c.func("log", arg)}));
+                        return true;
+                return false;
+            };
+
+            if (riobooPair) {
+                const Expr rho = c.rootOf(fact.coeffs(), 0); // unique
+                const Rational cp = fact.coeff(2), cs = fact.coeff(0);
+                // ring elements of Q[rho]: s1 = -p - rho, s2 = -s/rho
+                const UPoly s1({Rational(-cp), Rational(std::int64_t{-1})});
+                const UPoly tEl2 = ring.reduce(
+                    UPoly(std::vector<Rational>{R0(), R1()}));
+                const UPoly s2 = ring.mul(UPoly(Rational(-cs)),
+                                           ring.inv(tEl2));
+                const UPoly half(Rational(std::int64_t{1}, BigInt(2)));
+                const UPoly quarter(Rational(std::int64_t{1}, BigInt(4)));
+                const UPoly four(Rational(std::int64_t{4}));
+                const UPoly two(Rational(std::int64_t{2}));
+                const UPoly w2 = ring.mul(
+                    ring.add(ring.mul(four, s2), ring.neg(ring.mul(s1, s1))),
+                    quarter);
+                // R(x), I(x) with Q[rho] coefficients:
+                // Re(w_k) = a2*(s1^2-2s2)/2 + a1*s1/2 + a0
+                // Im(w_k)/b = a2*s1 + a1
+                std::vector<UPoly> Rk(v.deg() + 1), Ik(v.deg() + 1);
+                for (int k = 0; k <= v.deg(); ++k) {
+                    const UPoly wk = v.coeff(static_cast<std::size_t>(k));
+                    const UPoly wa2(wk.coeff(2)), wa1(wk.coeff(1));
+                    const UPoly term1 = ring.mul(
+                        wa2, ring.mul(half, ring.sub(ring.mul(s1, s1),
+                                                     ring.mul(two, s2))));
+                    const UPoly term2 = ring.mul(wa1,
+                                                 ring.mul(half, s1));
+                    Rk[k] = ring.add(ring.add(term1, term2),
+                                     UPoly(wk.coeff(0)));
+                    Ik[k] = ring.add(ring.mul(wa2, s1), wa1);
+                }
+                // real-root term rho * log(v(x, rho))
+                std::vector<Expr> argTerms;
+                for (int k = 0; k <= v.deg(); ++k) {
+                    const UPoly rk = v.coeff(static_cast<std::size_t>(k));
+                    if (rk.isZero())
+                        continue;
+                    const Expr ck = ringToExpr(rk, rho);
+                    if (k == 0)
+                        argTerms.push_back(ck);
+                    else
+                        argTerms.push_back(c.mul({ck, c.pow(var,
+                            c.number(static_cast<std::int64_t>(k)))}));
+                }
+                if (!argTerms.empty()) {
+                    const Expr arg = c.add(argTerms);
+                    if (mentionsNonConst(arg))
+                        extraTerms.push_back(
+                            c.mul({rho, c.func("log", arg)}));
+                }
+                // N2 = R^2 + w2 I^2 (convolution in the ring)
+                std::vector<UPoly> N2(2 * v.deg() + 1, ring.zero());
+                for (int i = 0; i <= v.deg(); ++i)
+                    for (int j = 0; j <= v.deg(); ++j) {
+                        N2[i + j] = ring.add(N2[i + j],
+                                             ring.add(ring.mul(Rk[i], Rk[j]),
+                                                      ring.mul(w2,
+                                                          ring.mul(Ik[i],
+                                                                   Ik[j]))));
+                    }
+                const Expr n2Expr = polyInXExpr(N2, rho);
+                if (mentionsNonConst(n2Expr))
+                    extraTerms.push_back(c.mul(
+                        {ringToExpr(ring.mul(s1, half), rho),
+                         c.func("log", n2Expr)}));
+                // -2 b atan(b I / R), b = sqrt(w2)
+                const Expr rExpr = polyInXExpr(Rk, rho);
+                const Expr iExpr = polyInXExpr(Ik, rho);
+                const Expr bExpr = c.pow(ringToExpr(w2, rho),
+                                         c.number(Rational(
+                                             std::int64_t{1}, BigInt(2))));
+                if (mentionsNonConst(rExpr) && !c.isZero(rExpr)) {
+                    const Expr atanArg = c.mul({bExpr, c.mul(
+                        {iExpr, c.pow(rExpr, c.number(std::int64_t{-1}))})});
+                    extraTerms.push_back(c.mul(
+                        {c.number(std::int64_t{-2}), bExpr,
+                         c.func("atan", atanArg)}));
+                }
+            } else {
+                // general d: emit sum_i RootOf(c, i) * log(v(x, ...))
+                for (int i = 0; i < d; ++i) {
+                    const Expr rootExpr = c.rootOf(fact.coeffs(), i);
+                    std::vector<Expr> argTerms;
+                    for (std::size_t k = 0;
+                         k <= static_cast<std::size_t>(v.deg()); ++k) {
+                        const UPoly rk = v.coeff(k);
+                        if (rk.isZero())
+                            continue;
+                        const Expr ck = ringToExpr(rk, rootExpr);
+                        if (k == 0)
+                            argTerms.push_back(ck);
+                        else
+                            argTerms.push_back(c.mul({ck,
+                                c.pow(var, c.number(
+                                    static_cast<std::int64_t>(k)))}));
+                    }
+                    if (argTerms.empty())
+                        continue;
+                    const Expr arg = c.add(argTerms);
+                    if (!mentionsNonConst(arg))
+                        continue; // constant log drops into C
+                    extraTerms.push_back(
+                        c.mul({rootExpr, c.func("log", arg)}));
+                }
             }
         }
         if (leftN.isZero())

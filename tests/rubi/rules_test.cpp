@@ -82,8 +82,10 @@ TEST(RubiMatcher, BoundaryDeclines)
     // DAG has no /); the ^-chain expects arity-2 shapes, x^-1 IS
     // Pow[x,-1] with pattern x_^m_. matching! It selects rule 1.
     const Expr oneOver = c.pow(x, c.number(std::int64_t{-1}));
-    EXPECT_EQ(matchFirst(t, c, oneOver, b), 4);
-    EXPECT_EQ(b.size(), 2u);
+    // the div-twin of 1/x_ (now Pow[ANY, -1]) beats x_^m_.
+    EXPECT_EQ(matchFirst(t, c, oneOver, b), 3);
+    EXPECT_EQ(b.size(), 1u);
+    EXPECT_EQ(b[0].name, "x");
 
     // sin(x): no rule in the slice starts with a Func head.
     b.clear();
@@ -186,9 +188,16 @@ TEST(RubiApply, BoundaryAndGuards)
         EXPECT_EQ(c.diff(F, x), e);
     }
 
-    // x^(-1): the matched rule's NeQ[m, -1] declines - honest null.
-    EXPECT_TRUE(
-        rubiApply(t, c, c.pow(x, c.number(std::int64_t{-1})), x).isNull());
+    // x^(-1): the DIVISION-TWIN rewrite matches the 1/x_ rule
+    // (canonical Pow[x,-1]) and Log[x] certifies - the textbook
+    // integral of 1/x, straight from Rubi.
+    {
+        const Expr F =
+            rubiApply(t, c, c.pow(x, c.number(std::int64_t{-1})), x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "log(x)");
+        EXPECT_EQ(c.diff(F, x), c.pow(x, c.number(std::int64_t{-1})));
+    }
 
     // sin(x): nothing in the slice matches.
     EXPECT_TRUE(rubiApply(t, c, c.func("sin", x), x).isNull());

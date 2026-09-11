@@ -54,6 +54,27 @@ def prefix_terms(node):
     return out
 
 
+def rewrite_div(node):
+    """Canonicalize DIVISION out of a PATTERN: the expression DAG
+    stores a/b as a*b^-1 (and 1/u folds to u^-1), so a pattern
+    written with an explicit / could never match. Rewritten:
+        / [1, d]        ->  ^ [d, -1]          (the folded twin)
+        / [a, b]        ->  * [a, ^ [b, -1]]
+    Children are rewritten recursively. REPLACEMENTS keep their
+    spelling (the replacement builder evaluates / through div)."""
+    if "args" not in node:
+        return node
+    args = [rewrite_div(a) for a in node["args"]]
+    if node.get("op") == "/":
+        num, den = args
+        if num.get("num") == "1":
+            return {"op": "^", "args": [den, {"num": "-1"}]}
+        return {"op": "*", "args": [num, {"op": "^", "args": [den, {"num": "-1"}]}]}
+    out = dict(node)
+    out["args"] = args
+    return out
+
+
 def subtree_sizes(terms):
     """sizes[i] = number of terms in the subtree rooted at terms[i]
     (prefix layout: children follow immediately, sequentially)."""
@@ -110,6 +131,10 @@ class Codegen:
                        if term_tag(t)[0] != TAG_ANY)
 
         self.rules.sort(key=specificity, reverse=True)
+        # Canonical-twin rewrite of the patterns: division must go,
+        # or /-rules could never match the DAG (see rewrite_div).
+        self.rules = [dict(r, pattern=rewrite_div(r["pattern"]))
+                      for r in self.rules]
 
         # ---- pattern trie ----
         nodes = [[0, -1, 0, 0, -1]]  # tag, valId, firstEdge, nEdges, rule

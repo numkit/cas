@@ -1,7 +1,7 @@
 # div-zero-denominator-release-node
 
 Kind: bug
-Status: ✅ FIXED (this change; hash recorded on close)
+Status: ✅ FIXED (97c0bac)
 Area: core
 
 ## Description

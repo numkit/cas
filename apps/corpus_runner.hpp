@@ -13,11 +13,14 @@
 
 namespace nkcorpus {
 
-// One corpus task, parsed from a line "id<TAB>var<TAB>expr".
+// One corpus task, parsed from "id<TAB>var<TAB>expr" or the
+// 4-column form "id<TAB>var<TAB>op<TAB>expr" (op: integrate | rubi;
+// blank/unknown defaults to integrate).
 struct CorpusTask {
     std::string id;
     std::string var;
     std::string expr;
+    std::string op; // "rubi" routes through the rule engine
 };
 
 enum class TaskStatus {

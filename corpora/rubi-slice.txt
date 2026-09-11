@@ -1,0 +1,120 @@
+rs0001	x	rubi	1/(5 + 3*x)
+rs0002	x	rubi	(2 + 1*x^2)^1
+rs0003	x	rubi	x^6
+rs0004	x	rubi	1/(3 + 6*x^2)
+rs0005	x	rubi	(6 + 4*x^2)^4
+rs0006	x	rubi	(1 + 2*x)^(1/3)
+rs0007	x	rubi	1/(3 + 4*x)
+rs0008	x	rubi	1/(3 + 2*x)
+rs0009	x	rubi	x^6
+rs0010	x	rubi	1/(5 + 6*x)
+rs0011	x	rubi	1/(6 + 4*x^2)
+rs0012	x	rubi	(1 + 6*x)^(-2/3)
+rs0013	x	rubi	1/(2 + 4*x^2)
+rs0014	x	rubi	1/(3 + 3*x^2)
+rs0015	x	rubi	(3 + 1*x)^(5/2)
+rs0016	x	rubi	x^2
+rs0017	x	rubi	(1 + 6*x^2)^2
+rs0018	x	rubi	1/(4 + 5*x^2)
+rs0019	x	rubi	x^2
+rs0020	x	rubi	1/(3 + 3*x^2)
+rs0021	x	rubi	1/(3 + 3*x^2)
+rs0022	x	rubi	1/(2 + 1*x)
+rs0023	x	rubi	x^7
+rs0024	x	rubi	x^7
+rs0025	x	rubi	x^9
+rs0026	x	rubi	(2 + 3*x)^(1/3)
+rs0027	x	rubi	1/(6 + 3*x^2)
+rs0028	x	rubi	1/(5 + 6*x^2)
+rs0029	x	rubi	1/(1 + 5*x^2)
+rs0030	x	rubi	x^4
+rs0031	x	rubi	1/(3 + 3*x)
+rs0032	x	rubi	1/(2 + 2*x^2)
+rs0033	x	rubi	1/(5 + 5*x^2)
+rs0034	x	rubi	(6 + 4*x^2)^1
+rs0035	x	rubi	(3 + 2*x^2)^1
+rs0036	x	rubi	1/(3 + 2*x^2)
+rs0037	x	rubi	(4 + 3*x^2)^4
+rs0038	x	rubi	1/(3 + 1*x)
+rs0039	x	rubi	1/(2 + 3*x)
+rs0040	x	rubi	(3 + 1*x^2)^4
+rs0041	x	rubi	(6 + 6*x^2)^3
+rs0042	x	rubi	1/(4 + 1*x^2)
+rs0043	x	rubi	1/(1 + 1*x^2)
+rs0044	x	rubi	1/(4 + 1*x^2)
+rs0045	x	rubi	1/(3 + 4*x^2)
+rs0046	x	rubi	x^3
+rs0047	x	rubi	1/(4 + 4*x)
+rs0048	x	rubi	1/(3 + 6*x)
+rs0049	x	rubi	x^5
+rs0050	x	rubi	1/(4 + 4*x^2)
+rs0051	x	rubi	(5 + 4*x^2)^2
+rs0052	x	rubi	1/(6 + 6*x^2)
+rs0053	x	rubi	(4 + 6*x^2)^3
+rs0054	x	rubi	x^2
+rs0055	x	rubi	1/(3 + 6*x^2)
+rs0056	x	rubi	x^9
+rs0057	x	rubi	1/(4 + 6*x)
+rs0058	x	rubi	(1 + 3*x^2)^3
+rs0059	x	rubi	1/(5 + 2*x)
+rs0060	x	rubi	(3 + 6*x)^(-1/2)
+rs0061	x	rubi	1/(4 + 4*x^2)
+rs0062	x	rubi	1/(1 + 6*x^2)
+rs0063	x	rubi	1/(4 + 2*x^2)
+rs0064	x	rubi	1/(3 + 2*x^2)
+rs0065	x	rubi	1/(6 + 3*x^2)
+rs0066	x	rubi	x^8
+rs0067	x	rubi	x^2
+rs0068	x	rubi	x^9
+rs0069	x	rubi	x^9
+rs0070	x	rubi	(2 + 4*x^2)^2
+rs0071	x	rubi	x^3
+rs0072	x	rubi	(3 + 2*x)^(-4/3)
+rs0073	x	rubi	1/(5 + 4*x)
+rs0074	x	rubi	(1 + 1*x^2)^1
+rs0075	x	rubi	(5 + 1*x)^(1/3)
+rs0076	x	rubi	1/(1 + 4*x)
+rs0077	x	rubi	x^6
+rs0078	x	rubi	(2 + 3*x^2)^3
+rs0079	x	rubi	1/(1 + 6*x)
+rs0080	x	rubi	(2 + 2*x)^(-2/1)
+rs0081	x	rubi	1/(6 + 4*x)
+rs0082	x	rubi	(5 + 3*x^2)^4
+rs0083	x	rubi	(4 + 6*x^2)^4
+rs0084	x	rubi	1/(4 + 2*x^2)
+rs0085	x	rubi	(6 + 2*x^2)^4
+rs0086	x	rubi	x^9
+rs0087	x	rubi	(1 + 1*x^2)^4
+rs0088	x	rubi	1/(1 + 1*x^2)
+rs0089	x	rubi	(4 + 1*x^2)^2
+rs0090	x	rubi	x^6
+rs0091	x	rubi	1/(6 + 1*x)
+rs0092	x	rubi	1/(1 + 3*x)
+rs0093	x	rubi	1/(1 + 2*x^2)
+rs0094	x	rubi	(5 + 5*x)^(-4/3)
+rs0095	x	rubi	x^2
+rs0096	x	rubi	1/(2 + 4*x)
+rs0097	x	rubi	(5 + 5*x^2)^1
+rs0098	x	rubi	(5 + 5*x^2)^4
+rs0099	x	rubi	(2 + 2*x)^(1/3)
+rs0100	x	rubi	1/(2 + 3*x)
+rs0101	x	rubi	1/(4 + 2*x)
+rs0102	x	rubi	(1 + 2*x^2)^2
+rs0103	x	rubi	x^7
+rs0104	x	rubi	(2 + 1*x)^(2/1)
+rs0105	x	rubi	x^6
+rs0106	x	rubi	(5 + 6*x)^(-2/3)
+rs0107	x	rubi	1/(2 + 2*x^2)
+rs0108	x	rubi	1/(2 + 4*x^2)
+rs0109	x	rubi	1/(2 + 1*x^2)
+rs0110	x	rubi	x^9
+rs0111	x	rubi	1/(3 + 6*x^2)
+rs0112	x	rubi	(6 + 2*x)^(1/3)
+rs0113	x	rubi	(5 + 2*x)^(5/2)
+rs0114	x	rubi	1/(3 + 3*x)
+rs0115	x	rubi	x^9
+rs0116	x	rubi	1/(2 + 6*x^2)
+rs0117	x	rubi	1/(6 + 6*x^2)
+rs0118	x	rubi	1/(4 + 1*x^2)
+rs0119	x	rubi	1/(6 + 1*x)
+rs0120	x	rubi	1/(6 + 4*x)

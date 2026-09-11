@@ -64,17 +64,21 @@ TEST(CorpusLine, RejectsMalformed)
     const char *bad[] = {
         "no tabs at all",
         "only\tone tab",
-        "a\tb\tc\td",
+        "a\tb\tc\td\te",     // five columns (four are legal now)
         "\tx\t1/x",          // empty id
         "id\t\t1/x",         // empty var
         "id\tx\t",           // empty expr
         "id\tx\t   ",        // whitespace-only expr
+        "a\tx\tb\t",         // four columns, empty expr
     };
     for (const char *s : bad) {
         CorpusTask t;
         EXPECT_FALSE(parseCorpusLine(s, t)) << "line: '" << s << "'";
         EXPECT_EQ(lineKind(s), LineKind::Malformed) << "line: '" << s << "'";
     }
+    // Four columns are the rubi-op form: legal.
+    CorpusTask t;
+    EXPECT_TRUE(parseCorpusLine("a\tx\trubi\tx^2", t));
 }
 
 TEST(CorpusStats, MedianVectors)
@@ -268,3 +272,79 @@ TEST(CorpusBoundary, ConstAndDeepTasks)
 }
 
 } // namespace
+
+// ── Rubi-op routing (C2 metrics groundwork) ────────────────────
+
+TEST(CorpusLine, ParsesFourColumnRubiOp)
+{
+    CorpusTask t;
+    EXPECT_TRUE(parseCorpusLine("rs1\tx\trubi\tx^7", t));
+    EXPECT_EQ(t.id, "rs1");
+    EXPECT_EQ(t.var, "x");
+    EXPECT_EQ(t.op, "rubi");
+    EXPECT_EQ(t.expr, "x^7");
+    // Legacy 3-column lines keep working (op empty -> integrate).
+    EXPECT_TRUE(parseCorpusLine("r1\tx\t1/x", t));
+    EXPECT_EQ(t.op, "");
+    EXPECT_EQ(t.expr, "1/x");
+    // Five columns stay malformed.
+    CorpusTask t5;
+    EXPECT_FALSE(parseCorpusLine("a\tx\trubi\tb\tc", t5));
+}
+
+TEST(CorpusTask, RubiRoutingStatuses)
+{
+    const TaskOutcome proved = runTask(task("t1", "x", "x^7"));
+    (void)proved;
+    // op lives on the task; helper constructs without op, so build
+    // the 4-column path through parseCorpusLine for the rubi route.
+    CorpusTask t;
+    ASSERT_TRUE(parseCorpusLine("t1\tx\trubi\tx^7", t));
+    const TaskOutcome p = runTask(t);
+    EXPECT_EQ(p.status, TaskStatus::Proved);
+    EXPECT_GT(p.answerNodes, 0u);
+
+    ASSERT_TRUE(parseCorpusLine("t2\tx\trubi\tsin(x)", t));
+    const TaskOutcome u = runTask(t);
+    EXPECT_EQ(u.status, TaskStatus::Unevaluated);
+    EXPECT_FALSE(u.detail.empty());
+}
+
+TEST(CorpusProperty, RubiSliceShapesCoverage)
+{
+    // The shapes of the committed slices: all certify through the
+    // rule engine; anything the slice cannot serve declines
+    // honestly (Sum-based rules are outside step 3 by design).
+    std::uint64_t st = 0x5EED202610ULL;
+    std::size_t proved = 0, total = 0;
+    for (int iter = 0; iter < 300; ++iter) {
+        const int a = 1 + static_cast<int>(nextU64(st) % 6);
+        const int b = 1 + static_cast<int>(nextU64(st) % 6);
+        std::string expr;
+        switch (nextU64(st) % 3) {
+        case 0: {
+            const int m = 2 + static_cast<int>(nextU64(st) % 8);
+            expr = "x^" + std::to_string(m);
+            break;
+        }
+        case 1:
+            expr = "1/(" + std::to_string(a) + " + " +
+                   std::to_string(b) + "*x)";
+            break;
+        default:
+            expr = "1/(" + std::to_string(a) + " + " +
+                   std::to_string(b) + "*x^2)";
+            break;
+        }
+        CorpusTask t;
+        ASSERT_TRUE(parseCorpusLine(
+            "p\tx\trubi\t" + expr, t));
+        const TaskOutcome o = runTask(t);
+        ++total;
+        if (o.status == TaskStatus::Proved)
+            ++proved;
+        else
+            ADD_FAILURE() << "shape declined: " << expr;
+    }
+    EXPECT_EQ(proved, total);
+}

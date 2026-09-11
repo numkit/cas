@@ -3,6 +3,7 @@
 
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/rubi/rules.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -46,19 +47,29 @@ bool parseCorpusLine(const std::string &line, CorpusTask &out)
 {
     if (isBlankOrComment(line))
         return false;
-    // Exactly two TABs: id<TAB>var<TAB>expr (expr may contain spaces,
-    // but never a TAB — that is what separates the columns).
+    // Two TABs: id<TAB>var<TAB>expr; three TABs:
+    // id<TAB>var<TAB>op<TAB>expr (op: integrate | rubi). The expr
+    // may contain spaces, but never a TAB.
     const std::size_t t1 = line.find('\t');
     if (t1 == std::string::npos)
         return false;
     const std::size_t t2 = line.find('\t', t1 + 1);
     if (t2 == std::string::npos)
         return false;
-    if (line.find('\t', t2 + 1) != std::string::npos)
-        return false;
-    out.id = trim(line.substr(0, t1));
-    out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
-    out.expr = trim(line.substr(t2 + 1));
+    const std::size_t t3 = line.find('\t', t2 + 1);
+    if (t3 == std::string::npos) {
+        out.id = trim(line.substr(0, t1));
+        out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
+        out.expr = trim(line.substr(t2 + 1));
+        out.op.clear();
+    } else {
+        if (line.find('\t', t3 + 1) != std::string::npos)
+            return false;
+        out.id = trim(line.substr(0, t1));
+        out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
+        out.op = trim(line.substr(t2 + 1, t3 - t2 - 1));
+        out.expr = trim(line.substr(t3 + 1));
+    }
     return !out.id.empty() && !out.var.empty() && !out.expr.empty();
 }
 
@@ -94,18 +105,28 @@ TaskOutcome runTask(const CorpusTask &t)
     const auto start = Clock::now();
     try {
         const numkit::cas::Expr f = numkit::cas::parseExpr(ctx, t.expr);
-        const numkit::cas::RationalIntegral r = numkit::cas::integrateRational(
-            ctx, f, ctx.symbol(t.var));
+        const numkit::cas::Expr var = ctx.symbol(t.var);
+        bool proved = false;
+        if (t.op == "rubi") {
+            // The C2 rule engine: one certified rule application of
+            // the committed slice (single-shot, no simplification).
+            const numkit::cas::Expr F = numkit::cas::rubi::rubiApply(
+                numkit::cas::rubi::sliceTables(), ctx, f, var);
+            proved = !F.isNull();
+        } else {
+            proved = numkit::cas::integrateRational(ctx, f, var).proved();
+        }
         const auto stop = Clock::now();
         o.micros = static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
                 .count());
-        if (r.proved()) {
+        if (proved) {
             o.status = TaskStatus::Proved;
             o.answerNodes = ctx.nodeCount();
         } else {
             o.status = TaskStatus::Unevaluated;
-            o.detail = r.reason;
+            o.detail = t.op == "rubi" ? "no certified rule application"
+                                       : "declined";
         }
     } catch (const numkit::cas::ParseError &e) {
         const auto stop = Clock::now();

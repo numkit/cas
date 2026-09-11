@@ -141,17 +141,20 @@ class Codegen:
         for rid, rule in enumerate(self.rules):
             rts = prefix_terms(rule["replacement"])
             rep_off = len(rep_terms)
+            # childOff must be GLOBAL (absolute index into the whole
+            # term table) - the runtime indexes terms by rule offset
+            # plus nothing else.
             for t, (co, cn) in zip(rts, child_offsets(rts)):
                 tag, val = term_tag(t)
                 rep_terms.append((tag, self.sid(val) if val else -1,
-                                  co, cn))
+                                  rep_off + co, cn))
             if rule["conditions"]:
                 cts = prefix_terms(rule["conditions"])
                 cond_off = len(cond_terms)
                 for t, (co, cn) in zip(cts, child_offsets(cts)):
                     tag, val = term_tag(t)
                     cond_terms.append((tag, self.sid(val) if val else -1,
-                                       co, cn))
+                                       cond_off + co, cn))
             else:
                 cond_off = -1
             # leaf of this rule's pattern

@@ -75,6 +75,19 @@ struct RuleTables
 // The committed generated slice (currently 1.1.1.1 (a+b x)^m).
 RuleTables sliceTables();
 
+// Apply the FIRST matching rule of the slice to e and return its
+// replacement with the bindings substituted. STEP-3A SCOPE:
+//  - replacements execute over the bound names plus rational
+//    literals and the Log head;
+//  - conditions: FreeQ[name-list, var], NeQ[expr, rational] and
+//    EqQ evaluate; anything else declines the rule (honest null);
+//  - the answer is CERTIFIED by the caller-grade check dF/dvar == e
+//    (the Tier-1 gate of the core, reused verbatim) - a rule answer
+//    is only returned when it differentiates back to the integrand.
+// Returns a null Expr when no rule matches, conditions fail, or the
+// certificate rejects the result.
+Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var);
+
 // One wildcard binding: the pattern variable name (from the string
 // table at generation time, recorded per rule) and the matched Expr.
 struct Binding

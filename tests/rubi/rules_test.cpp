@@ -144,3 +144,73 @@ TEST(RubiMatcher, Property)
 }
 
 } // namespace
+
+
+// ── Step 3a: rule execution with certification ─────────────────
+
+TEST(RubiApply, FirstCertifiedApplication)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // int x^7 dx = x^8/8 via x_^m_. with NeQ[m, -1] holding.
+    const Expr F = rubiApply(t, c, c.pow(x, c.number(std::int64_t{7})), x);
+    ASSERT_FALSE(F.isNull());
+    EXPECT_EQ(c.toString(F), "1/8*x^8");
+    EXPECT_EQ(c.diff(F, x), c.pow(x, c.number(std::int64_t{7})));
+}
+
+TEST(RubiApply, BoundaryAndGuards)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // x^(-1): the matched rule's NeQ[m, -1] declines - honest null.
+    EXPECT_TRUE(
+        rubiApply(t, c, c.pow(x, c.number(std::int64_t{-1})), x).isNull());
+
+    // sin(x): nothing in the slice matches.
+    EXPECT_TRUE(rubiApply(t, c, c.func("sin", x), x).isNull());
+
+    // (2+3*x)^4: the LINEAR order picks x_^m_., whose answer
+    // (2+3x)^5/5 differentiates to 3*(2+3x)^4 - the CERTIFICATE
+    // rejects it. This is the specificity gap made visible: the
+    // correct (a_.+b_.*x_)^m_ twin needs the step-3 matcher.
+    const Expr e = c.pow(
+        c.add({c.number(std::int64_t{2}),
+               c.mul({c.number(std::int64_t{3}), x})}),
+        c.number(std::int64_t{4}));
+    EXPECT_TRUE(rubiApply(t, c, e, x).isNull());
+}
+
+TEST(RubiApply, PropertyIntegerPowers)
+{
+    // Random integer exponents m in [-6..8] \ {-1, 0}: x^m -> x^(m+1)
+    // /(m+1), certified. m = 0 canonicalizes x^0 to 1 (no Pow) and
+    // m = -1 is declined by the rule itself.
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+    std::uint64_t st = 0x3A3A5EEDULL;
+    for (int iter = 0; iter < 2000; ++iter) {
+        std::int64_t m = static_cast<std::int64_t>(nextU64(st) % 15) - 6;
+        // m = 0, 1 canonicalize the power away (x^0 = 1, x^1 = x);
+        // m = -1 is declined by the rule's own NeQ.
+        if (m >= -1 && m <= 1)
+            m = 2;
+        const Expr e = c.pow(x, c.number(m));
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull()) << "m=" << m;
+        ASSERT_EQ(c.diff(F, x), e) << "m=" << m;
+        // The certificate (the diff identity above) is the real
+        // check; the printed-form check covers positive exponents
+        // only (negative ones canonicalize signs differently).
+        if (m + 1 > 1)
+            EXPECT_EQ(c.toString(F),
+                      "1/" + std::to_string(m + 1) + "*x^" +
+                          std::to_string(m + 1))
+                << "m=" << m;
+    }
+}

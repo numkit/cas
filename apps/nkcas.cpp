@@ -13,6 +13,7 @@
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/poly/solve.hpp>
+#include <numkit/cas/rubi/rules.hpp>
 
 #include "corpus_runner.hpp"
 
@@ -174,6 +175,20 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
             return 1;
         }
         std::cout << ctx.toString(factored) << "\n";
+        return 0;
+    }
+    if (cmd == "rubi") {
+        // Apply the first matching Rubi rule of the committed slice,
+        // certified by the Tier-1 gate (dF/dx == integrand).
+        const numkit::cas::Expr F =
+            numkit::cas::rubi::rubiApply(numkit::cas::rubi::sliceTables(),
+                                         ctx, f, var);
+        if (F.isNull()) {
+            std::cout << "no certified rule application\n";
+            return 2;
+        }
+        std::cout << ctx.toString(F) << "\n";
+        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
         return 0;
     }
     std::cout << "unknown command '" << cmd << "' (integrate, diff, subs, print)\n";

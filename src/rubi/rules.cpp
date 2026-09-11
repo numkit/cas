@@ -144,4 +144,259 @@ RuleTables sliceTables()
     return t;
 }
 
+// ── Step 3a: rule execution with certification ────────────────
+
+namespace {
+
+bool mentionsVarRec(Ctx &c, Expr e, Expr var)
+{
+    if (e == var)
+        return true;
+    for (std::size_t i = 0; i < c.childCount(e); ++i)
+        if (mentionsVarRec(c, c.child(e, i), var))
+            return true;
+    return false;
+}
+
+} // namespace
+
+namespace {
+
+// Prefix-layout child addressing: child k of a term sits at
+// childOff + (sum of the first k children's SUBTREE sizes); a
+// subtree size is itself 1 + its children's sizes (induction on the
+// same rule). Every consumer MUST go through child(), never
+// childOff + k.
+std::int32_t subtreeSize(const std::int32_t *terms, std::int32_t term);
+
+std::int32_t childOf(const std::int32_t *terms, std::int32_t term, int k)
+{
+    const std::int32_t childOff = terms[term * 4 + 2];
+    std::int32_t pos = childOff;
+    for (int i = 0; i < k; ++i)
+        pos += subtreeSize(terms, pos);
+    return pos;
+}
+
+std::int32_t subtreeSize(const std::int32_t *terms, std::int32_t term)
+{
+    std::int32_t total = 1;
+    const std::int32_t nkids = terms[term * 4 + 3];
+    for (int i = 0; i < nkids; ++i)
+        total += subtreeSize(terms, childOf(terms, term, i));
+    return total;
+}
+
+// conditions live in their own forest with the SAME row layout
+Expr buildReplacementCond(const RuleTables &t, Ctx &c,
+                          const std::vector<Binding> &bnd, std::int32_t term);
+
+// Evaluate a replacement term forest into an Expr, resolving the
+// bound pattern names; heads (Log...), operators and rational
+// literals rebuild through the canonical constructors. Returns a
+// null Expr for anything outside the step-3a subset (Subst, Int,
+// Coefficient, RemoveContent, bind, list, ...).
+Expr buildReplacement(const RuleTables &t, Ctx &c,
+                      const std::vector<Binding> &bnd,
+                      std::int32_t term)
+{
+    const std::int32_t tag = t.termRow(t.repTerms, term, 0);
+    const std::int32_t valId = t.termRow(t.repTerms, term, 1);
+    const std::int32_t childOff = t.termRow(t.repTerms, term, 2);
+    const std::int32_t nkids = t.termRow(t.repTerms, term, 3);
+    switch (tag) {
+    case kTagNum: {
+        Rational r;
+        if (!Rational::tryParse(r, t.str(valId)))
+            return Expr();
+        return c.number(r);
+    }
+    case kTagSym: {
+        const std::string s = t.str(valId);
+        for (const Binding &b : bnd)
+            if (b.name == s)
+                return b.value;
+        return Expr(); // unbound symbol (should not happen)
+    }
+    case kTagHead: {
+        if (nkids != 1 || std::string(t.str(valId)) != "Log")
+            return Expr(); // step-3a: Log only
+        const Expr arg =
+            buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+        if (arg.isNull())
+            return Expr();
+        return c.func("log", arg);
+    }
+    case kTagOp: {
+        const std::string op = t.str(valId);
+        if (nkids == 1 && op == "neg") {
+            const Expr a =
+                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+            return a.isNull() ? Expr() : c.neg(a);
+        }
+        if (nkids != 2)
+            return Expr();
+        const Expr a =
+            buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+        const Expr bb =
+            buildReplacement(t, c, bnd, childOf(t.repTerms, term, 1));
+        if (a.isNull() || bb.isNull())
+            return Expr();
+        if (op == "+")
+            return c.add({a, bb});
+        if (op == "*")
+            return c.mul({a, bb});
+        if (op == "/")
+            return c.div(a, bb);
+        if (op == "^")
+            return c.pow(a, bb);
+        return Expr();
+    }
+    default:
+        return Expr();
+    }
+}
+
+// Step-3a condition evaluation: FreeQ[list, x], NeQ[a, r], EqQ.
+// Returns false on UNKNOWN predicates (the rule then declines).
+bool evalCondition(const RuleTables &t, Ctx &c, Expr var,
+                   const std::vector<Binding> &bnd, std::int32_t term)
+{
+    const std::int32_t tag = t.termRow(t.condTerms, term, 0);
+    const std::int32_t valId = t.termRow(t.condTerms, term, 1);
+    const std::int32_t nkids = t.termRow(t.condTerms, term, 3);
+    const std::int32_t *ct = t.condTerms;
+    if (tag == kTagOp) {
+        const std::string op = t.str(valId);
+        if ((op == "&&" || op == "||") && nkids == 2) {
+            const bool l = evalCondition(t, c, var, bnd, childOf(ct, term, 0));
+            if (op == "&&" && !l)
+                return false;
+            if (op == "||" && l)
+                return true;
+            return evalCondition(t, c, var, bnd, childOf(ct, term, 1));
+        }
+        return false;
+    }
+    if (tag != kTagHead || nkids != 2)
+        return false;
+    const std::string pred = t.str(valId);
+    if (pred == "FreeQ") {
+        // FreeQ[name-or-{names...}, x]: no bound value mentions x.
+        // Rubi writes both FreeQ[m, x] and FreeQ[{a, b}, x].
+        const std::int32_t lt = childOf(ct, term, 0);
+        const std::int32_t ltTag = t.termRow(ct, lt, 0);
+        const std::int32_t ltVal = t.termRow(ct, lt, 1);
+        std::vector<std::string> names;
+        if (ltTag == kTagSym) {
+            names.push_back(t.str(ltVal));
+        } else if (ltTag == kTagOp &&
+                   std::string(t.str(ltVal)) == "list") {
+            const std::int32_t ln = t.termRow(ct, lt, 3);
+            for (int i = 0; i < ln; ++i) {
+                const std::int32_t st = childOf(ct, lt, i);
+                if (t.termRow(ct, st, 0) != kTagSym)
+                    return false;
+                names.push_back(t.str(t.termRow(ct, st, 1)));
+            }
+        } else {
+            return false;
+        }
+        for (const std::string &nm : names)
+            for (const Binding &b : bnd)
+                if (b.name == nm && mentionsVarRec(c, b.value, var))
+                    return false;
+        return true;
+    }
+    if (pred == "NeQ" || pred == "EqQ") {
+        // compare a bound value against a rational literal
+        const Expr a = buildReplacementCond(t, c, bnd, childOf(ct, term, 0));
+        const Expr bb = buildReplacementCond(t, c, bnd, childOf(ct, term, 1));
+        if (a.isNull() || bb.isNull())
+            return false;
+        if (c.kind(a) != NodeKind::Number || c.kind(bb) != NodeKind::Number)
+            return false;
+        const bool eq = c.numberValue(a) == c.numberValue(bb);
+        return pred == "EqQ" ? eq : !eq;
+    }
+    return false;
+}
+
+// conditions live in their own forest with the SAME row layout
+// (buildReplacement reads repTerms rows; this mirrors it for
+// kCondTerms)
+Expr buildReplacementCond(const RuleTables &t, Ctx &c,
+                          const std::vector<Binding> &bnd, std::int32_t term)
+{
+    // mirror of buildReplacement over kCondTerms
+    const std::int32_t tag = t.termRow(t.condTerms, term, 0);
+    const std::int32_t valId = t.termRow(t.condTerms, term, 1);
+    const std::int32_t nkids = t.termRow(t.condTerms, term, 3);
+    const std::int32_t *ct = t.condTerms;
+    switch (tag) {
+    case kTagNum: {
+        Rational r;
+        if (!Rational::tryParse(r, t.str(valId)))
+            return Expr();
+        return c.number(r);
+    }
+    case kTagSym: {
+        const std::string s = t.str(valId);
+        for (const Binding &b : bnd)
+            if (b.name == s)
+                return b.value;
+        return Expr();
+    }
+    case kTagOp: {
+        const std::string op = t.str(valId);
+        if (nkids == 1 && op == "neg") {
+            const Expr a = buildReplacementCond(t, c, bnd,
+                                                childOf(ct, term, 0));
+            return a.isNull() ? Expr() : c.neg(a);
+        }
+        if (nkids != 2)
+            return Expr();
+        const Expr a = buildReplacementCond(t, c, bnd, childOf(ct, term, 0));
+        const Expr bb = buildReplacementCond(t, c, bnd, childOf(ct, term, 1));
+        if (a.isNull() || bb.isNull())
+            return Expr();
+        if (op == "+")
+            return c.add({a, bb});
+        if (op == "*")
+            return c.mul({a, bb});
+        if (op == "-")
+            return c.add({a, c.neg(bb)});
+        if (op == "/")
+            return c.div(a, bb);
+        if (op == "^")
+            return c.pow(a, bb);
+        return Expr();
+    }
+    default:
+        return Expr();
+    }
+}
+
+} // namespace
+
+Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var)
+{
+    std::vector<Binding> bnd;
+    const int rule = matchFirst(t, c, e, bnd);
+    if (rule < 0)
+        return Expr();
+    const std::int32_t repOff = t.ruleRow(rule, 0);
+    const std::int32_t condOff = t.ruleRow(rule, 1);
+    if (condOff >= 0 && !evalCondition(t, c, var, bnd, condOff))
+        return Expr(); // condition declines the rule
+    const Expr F = buildReplacement(t, c, bnd, repOff);
+    if (F.isNull())
+        return Expr(); // replacement outside the step-3a subset
+    // Tier-1 certificate reused verbatim: the rule's answer is only
+    // real if it differentiates back to the integrand.
+    if (c.diff(F, var) != e)
+        return Expr();
+    return F;
+}
+
 } // namespace numkit::cas::rubi

@@ -36,6 +36,7 @@ HEADERS = [
     "include/numkit/cas/poly/fppoly.hpp",
     "include/numkit/cas/poly/zassenhaus.hpp",
     "include/numkit/cas/poly/solve.hpp",
+    "include/numkit/cas/rubi/rules.hpp",
 ]
 
 SOURCES = [
@@ -52,6 +53,8 @@ SOURCES = [
     "src/poly/fppoly.cpp",
     "src/poly/zassenhaus.cpp",
     "src/poly/solve.cpp",
+    "src/rubi/rules.cpp",
+    "src/rubi/rubi_tables_1111.inc",
 ]
 
 CMAKE_TEMPLATE = """\

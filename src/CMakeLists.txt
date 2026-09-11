@@ -12,6 +12,7 @@ add_library(numkit_cas STATIC
     poly/fppoly.cpp
     poly/zassenhaus.cpp
     integrate/ratint.cpp
+    rubi/rules.cpp
 )
 
 add_library(numkit::cas ALIAS numkit_cas)

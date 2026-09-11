@@ -1074,6 +1074,125 @@ static RationalIntegral integrateExpRational(Ctx &c, Expr f, Expr var)
     return out;
 }
 
+// ── Rational functions of sin/cos: the trigonometric storey ──
+//
+// The universal substitution t = tan(x/2) rationalizes any rational
+// function of sin x and cos x: sin = 2t/(1+t^2), cos = (1-t^2)/(1+t^2),
+// dx = 2 dt/(1+t^2). The rational kernel runs in the t-world, the
+// answer goes back as t -> tan(x/2). Gate mirrors the exp storey:
+// the x-derivative stays rational in t (the Jacobian is rational),
+// so the primary check is the POLYNOMIAL identity after forward
+// substitution, with the structural round-trip as fallback.
+
+namespace {
+
+// Two-letter trig shorthands keep the table below readable.
+Expr halfArg(Ctx &c, Expr var)
+{
+    return c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))), var});
+}
+
+// Rebuild `e` with trig nodes of the variable replaced by rational
+// expressions in t = tan(x/2). tan(var/2) itself maps to t — that is
+// the substitution point, and recognizing it on the way back is what
+// makes the round-trip gate exact. Anything else mentioning var
+// (sin(2x), sin(x^2), bare x) sets ok = false: this storey only
+// takes integrands rational in sin(x)/cos(x)/tan(x) etc.
+Expr substituteTangent(Ctx &c, Expr e, Expr var, Expr t, bool &ok)
+{
+    if (e == var) {
+        ok = false; // bare x: not rational in sin/cos alone
+        return e;
+    }
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func: {
+        const std::string &name = c.funcName(e);
+        const Expr arg = c.child(e, 0);
+        if (arg == var) {
+            const Expr one = c.one();
+            const Expr t2 = c.add({one, c.pow(t, c.number(std::int64_t{2}))});
+            const Expr one_t2 =
+                c.add({c.one(), c.neg(c.pow(t, c.number(std::int64_t{2})))});
+            const Expr twoT = c.mul({c.number(std::int64_t{2}), t});
+            if (name == "sin")
+                return c.div(twoT, t2);
+            if (name == "cos")
+                return c.div(one_t2, t2);
+            if (name == "tan")
+                return c.div(twoT, one_t2);
+            if (name == "cot")
+                return c.div(one_t2, twoT);
+            if (name == "sec")
+                return c.div(t2, one_t2);
+            if (name == "csc")
+                return c.div(t2, twoT);
+        }
+        // tan(x/2) IS the substitution variable.
+        if (name == "tan" && arg == halfArg(c, var))
+            return t;
+        return c.func(name, substituteTangent(c, arg, var, t, ok));
+    }
+    case NodeKind::Pow:
+        return c.pow(substituteTangent(c, c.child(e, 0), var, t, ok),
+                     substituteTangent(c, c.child(e, 1), var, t, ok));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> kids;
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            kids.push_back(substituteTangent(c, c.child(e, i), var, t, ok));
+        return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
+    }
+    }
+    return e;
+}
+
+} // namespace
+
+static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var)
+{
+    RationalIntegral out;
+    const Expr t = c.symbol("#t");
+    bool ok = true;
+    const Expr g = substituteTangent(c, f, var, t, ok);
+    if (!ok) {
+        out.reason = "integrand is not rational in sin/cos of the variable";
+        return out;
+    }
+    // Jacobian dx = 2 dt / (1 + t^2).
+    const Expr t2p1 =
+        c.add({c.one(), c.pow(t, c.number(std::int64_t{2}))});
+    const RationalIntegral r =
+        integrateRational(c, c.div(c.mul({c.number(std::int64_t{2}), g}), t2p1), t);
+    if (!r.proved()) {
+        out.reason = "tan substitution: " + r.reason;
+        return out;
+    }
+    const Expr halfTan = c.func("tan", halfArg(c, var));
+    const Expr F = substituteBack(c, r.F, t, halfTan);
+    // Primary gate: rationalize dF/dx in the t-world and compare
+    // polynomials against the substituted integrand times the
+    // Jacobian; fallback: the structural round-trip.
+    const Expr dFT = substituteTangent(c, c.diff(F, var), var, t, ok);
+    UPoly n1, d1, n2, d2;
+    const bool polyGate =
+        ok && toRational(c, dFT, t, n1, d1) && toRational(c, g, t, n2, d2) &&
+        n1 == n2 && d1 == d2;
+    if (!polyGate) {
+        bool ok2 = true;
+        if (substituteTangent(c, F, var, t, ok2) != r.F || !ok2) {
+            out.reason = "tan substitution certificate failed";
+            return out;
+        }
+    }
+    out.F = F;
+    out.status = RationalIntegral::Status::ProvedSymbolic;
+    return out;
+}
+
 RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
 {
     RationalIntegral out;
@@ -1091,8 +1210,12 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
         RationalIntegral r = integrateExpRational(c, f, var);
         if (r.proved())
             return r;
-        const std::string why = r.reason;
+        std::string why = r.reason;
         r = integrateLogRational(c, f, var);
+        if (r.proved())
+            return r;
+        why += "; " + r.reason;
+        r = integrateTanRational(c, f, var);
         if (r.proved())
             return r;
         r.reason = why + "; " + r.reason;

@@ -124,8 +124,11 @@ TEST(CorpusTask, StatusesOnFixedInputs)
 TEST(CorpusReport, CountsAndRates)
 {
     std::vector<TaskOutcome> o;
+    // sin(x)/x stays Unevaluated (bare x outside trig: the sine
+    // integral), keeping the 1/1/1 status mix intact now that plain
+    // sin(x) integrates via the trig storey.
     const CorpusReport rep = runCorpus(
-        {task("a", "x", "1/x"), task("b", "x", "sin(x)"),
+        {task("a", "x", "1/x"), task("b", "x", "sin(x)/x"),
          task("c", "x", "1/(")},
         &o);
     EXPECT_EQ(rep.total, 3u);

@@ -594,8 +594,9 @@ TEST_F(RatIntTest, HonestFailures)
 {
     numkit::cas::RationalIntegral r;
 
-    // Not rational in x.
-    r = numkit::cas::integrateRational(c, c.func("sin", x), x);
+    // Not rational in x, exp(x), log(x)/x or sin/cos: sin(x)/x mixes
+    // a bare x with trig (the sine integral, non-elementary).
+    r = numkit::cas::integrateRational(c, c.div(c.func("sin", x), x), x);
     EXPECT_FALSE(r.proved());
     EXPECT_FALSE(r.reason.empty());
 
@@ -664,7 +665,7 @@ TEST_F(RatIntTest, ExpRationalHonestFailures)
         "exp(x^2)",       // non-linear exponent
         "1/(exp(x/2)+1)", // fractional k: t^(1/2) not rational
         "exp(x)+x",
-        "sin(x)",
+        "sin(x)/x",       // sine integral: bare x outside trig
         "log(exp(x)+1)+exp(x)",
     };
     for (const char *s : bad) {
@@ -827,6 +828,87 @@ TEST_F(RatIntTest, LogRationalProperty)
             }
         };
         const Expr f = c.div(sub(R), x);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << c.toString(f) << ": " << r.reason;
+    }
+}
+
+// ── Trigonometric storey: rational functions of sin/cos (t = tan(x/2)) ──
+
+TEST_F(RatIntTest, TanRationalFixedVectors)
+{
+    struct Case
+    {
+        const char *f;
+        const char *F;
+    };
+    // The answers come back in tan(x/2) terms: the certificate is
+    // exact (d/dx of the answer IS the integrand), while prettier
+    // sin/cos/x forms are simplify's business, not the integrator's.
+    const Case cases[] = {
+        {"sin(x)", "-2*(1 + tan(1/2*x)^2)^-1"},
+        {"tan(x)", "log(1 + tan(1/2*x)^2) + -log(-1 + tan(1/2*x)^2)"},
+        {"1/(3+5*cos(x))",
+         "-1/4*log(-2 + tan(1/2*x)) + 1/4*log(2 + tan(1/2*x))"},
+        {"1/(1+sin(x))", "-2*(1 + tan(1/2*x))^-1"},
+    };
+    for (const Case &k : cases) {
+        const Expr f = numkit::cas::parseExpr(c, k.f);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << k.f << ": " << r.reason;
+        EXPECT_EQ(c.toString(r.F), k.F) << k.f;
+    }
+}
+
+TEST_F(RatIntTest, TanRationalHonestFailures)
+{
+    const char *bad[] = {
+        "sin(2*x)",   // multiple angle: no rationalizing rewrite here
+        "sin(x^2)",   // non-linear argument
+        "x*sin(x)",   // bare x outside trig
+        "exp(x)*sin(x)", // mixed storeys
+        "asin(x)",    // inverse trig is a different storey
+    };
+    for (const char *s : bad) {
+        const Expr f = numkit::cas::parseExpr(c, s);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrateRational(c, f, x);
+        EXPECT_FALSE(r.proved()) << s;
+        EXPECT_FALSE(r.reason.empty()) << s;
+    }
+}
+
+TEST_F(RatIntTest, TanRationalProperty)
+{
+    // Random rational R(sin x, cos x): build as polynomials in two
+    // atoms, substitute into the integrand, expect PROVED.
+    std::uint64_t st = 0x7A0C5EEDULL;
+    const Expr s = c.func("sin", x);
+    const Expr co = c.func("cos", x);
+    for (int iter = 0; iter < 100; ++iter) {
+        auto rr = [&](int lim) {
+            const std::int64_t q = 1 + static_cast<std::int64_t>(nextU64(st) % 3);
+            const std::int64_t p =
+                static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            return Rational(BigInt(p), BigInt(q));
+        };
+        // num and den as polys in sin (outer) of poly in cos (inner),
+        // small degrees to keep the t-degrees bounded.
+        auto smallPoly = [&](const Expr &atom) {
+            const int d = static_cast<int>(nextU64(st) % 3);
+            std::vector<Expr> terms;
+            for (int i = 0; i <= d; ++i)
+                terms.push_back(c.mul({c.number(rr(3)),
+                                       c.pow(atom, c.number(
+                                           static_cast<std::int64_t>(i)))}));
+            return c.add(terms);
+        };
+        const Expr num = c.mul({smallPoly(s), smallPoly(co)});
+        const Expr den = c.add({smallPoly(s), smallPoly(co),
+                                c.number(std::int64_t{2})});
+        const Expr f = c.div(num, den);
         const numkit::cas::RationalIntegral r =
             numkit::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << c.toString(f) << ": " << r.reason;

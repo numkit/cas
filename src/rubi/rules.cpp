@@ -11,6 +11,10 @@
 // DAG canonicalizes division away - their step-3 matcher twin will
 // handle that).
 #include <numkit/cas/rubi/rules.hpp>
+#include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/poly/upoly.hpp>
+
+#include <vector>
 
 #include "rubi_tables_1111.inc"
 
@@ -277,13 +281,45 @@ Expr buildReplacement(const RuleTables &t, Ctx &c,
         return Expr(); // unbound symbol (should not happen)
     }
     case kTagHead: {
-        if (nkids != 1 || std::string(t.str(valId)) != "Log")
-            return Expr(); // step-3a: Log only
-        const Expr arg =
-            buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
-        if (arg.isNull())
-            return Expr();
-        return c.func("log", arg);
+        const std::string head = t.str(valId);
+        if (nkids == 1 && head == "Log") {
+            const Expr arg =
+                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+            if (arg.isNull())
+                return Expr();
+            return c.func("log", arg);
+        }
+        if (nkids == 2 && head == "RemoveContent") {
+            // Rubi's RemoveContent[u, x]: strip the RATIONAL CONTENT
+            // of u as a polynomial in x - u = content * primitive,
+            // return the primitive (2+4x -> 1+2x; 2+3x stays - its
+            // content is 1). This normalizes Log arguments.
+            const Expr u =
+                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+            const Expr xArg =
+                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 1));
+            if (u.isNull() || xArg.isNull() ||
+                c.kind(xArg) != NodeKind::Symbol)
+                return Expr();
+            UPoly N, D;
+            if (!toRational(c, u, xArg, N, D) || !D.isConst() ||
+                N.isZero())
+                return Expr();
+            // content = gcd(numerators) / lcm(denominators)
+            BigInt numGcd(0), denLcm(1);
+            for (const Rational &q : N.coeffs()) {
+                numGcd = BigInt::gcd(numGcd, q.num());
+                denLcm = BigInt::lcm(denLcm, q.den());
+            }
+            const Rational content(numGcd, denLcm);
+            if (content.isZero())
+                return u; // constant input: nothing to strip
+            std::vector<Rational> prim;
+            for (const Rational &q : N.coeffs())
+                prim.push_back(q / content);
+            return toExpr(c, UPoly(prim), xArg);
+        }
+        return Expr(); // other heads: step-3b remainder
     }
     case kTagOp: {
         const std::string op = t.str(valId);
@@ -450,10 +486,21 @@ Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var)
     const Expr F = buildReplacement(t, c, bnd, repOff);
     if (F.isNull())
         return Expr(); // replacement outside the step-3a subset
-    // Tier-1 certificate reused verbatim: the rule's answer is only
-    // real if it differentiates back to the integrand.
-    if (c.diff(F, var) != e)
+    // Tier-1 certificate, two grades: POLYNOMIAL when both sides are
+    // rational in var (cross-multiplied in Q(var) - node identity is
+    // too weak: d(log(1+2x)/4) is (1/2)(1+2x)^-1, structurally unlike
+    // 1/(2+4x) yet equal); STRUCTURAL fallback when they are not
+    // rational (fractional powers of the variable), where the exact
+    // node identity is the strongest available check.
+    UPoly n1, d1, n2, d2;
+    const bool rational = toRational(c, c.diff(F, var), var, n1, d1) &&
+                          toRational(c, e, var, n2, d2);
+    if (rational) {
+        if (!(n1 * d2 == n2 * d1))
+            return Expr();
+    } else if (c.diff(F, var) != e) {
         return Expr();
+    }
     return F;
 }
 

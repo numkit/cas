@@ -175,6 +175,39 @@ TEST(RubiApply, BoundaryAndGuards)
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
 
+    // 1/(2+3*x): the div-twin of the 1/(a+b x) rule fires, the
+    // replacement Log[RemoveContent[...]]/b executes with content 1.
+    {
+        const Expr F = rubiApply(
+            t, c, c.pow(c.add({c.number(std::int64_t{2}),
+                               c.mul({c.number(std::int64_t{3}), x})}),
+                        c.number(std::int64_t{-1})), x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "1/3*log(2 + 3*x)");
+    }
+    // 1/(2+4*x): RemoveContent STRIPS the content 2 - the answer
+    // log(1+2x)/4 differentiates to (1/2)(1+2x)^-1, equal to
+    // 1/(2+4x) only in Q(x): the POLYNOMIAL-grade gate.
+    {
+        const Expr F = rubiApply(
+            t, c, c.pow(c.add({c.number(std::int64_t{2}),
+                               c.mul({c.number(std::int64_t{4}), x})}),
+                        c.number(std::int64_t{-1})), x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "1/4*log(1 + 2*x)");
+    }
+    // sqrt(2+3*x): fractional power - outside Q(x); the STRUCTURAL
+    // fallback of the gate certifies (2/9)(2+3x)^(3/2).
+    {
+        const Expr e = c.pow(
+            c.add({c.number(std::int64_t{2}),
+                   c.mul({c.number(std::int64_t{3}), x})}),
+            c.number(Rational(BigInt(1), BigInt(2))));
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "2/9*(2 + 3*x)^(3/2)");
+    }
+
     // (2 + x)^4: the coefficient b folded away (1*x = x); the
     // optional-product synthesis binds b := 1 and the (a+b x)^m
     // rule certifies (2+x)^5/5.

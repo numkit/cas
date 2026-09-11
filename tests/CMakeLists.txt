@@ -20,6 +20,7 @@ add_executable(nkcas_gtest
     core/eval_test.cpp
     poly/upoly_test.cpp
     poly/sturm_test.cpp
+    poly/solve_test.cpp
     poly/algebraic_test.cpp
     poly/modcpoly_test.cpp
     poly/fppoly_test.cpp

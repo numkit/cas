@@ -12,6 +12,7 @@
 //                           (pass rate, verification rate, median/p95).
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/poly/solve.hpp>
 
 #include "corpus_runner.hpp"
 
@@ -136,6 +137,31 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         }
         std::cout << "Unevaluated: " << r.reason << "\n";
         return 2;
+    }
+    if (cmd == "solve") {
+        numkit::cas::UPoly N, D;
+        if (!numkit::cas::toRational(ctx, f, var, N, D) || !D.isConst()) {
+            std::cout << "not a polynomial in " << varName << "\n";
+            return 1;
+        }
+        if (N.isZero()) {
+            std::cout << "every point (zero polynomial)\n";
+            return 0;
+        }
+        const auto roots = numkit::cas::solveRealRoots(N);
+        if (roots.empty())
+            std::cout << "no real roots\n";
+        for (const auto &s : roots) {
+            if (s.isRational) {
+                std::cout << "root #" << s.realIndex << " = "
+                          << s.value.toString() << "\n";
+            } else {
+                std::cout << "root #" << s.realIndex << " in ("
+                          << s.interval.lo.toString() << ", "
+                          << s.interval.hi.toString() << "]\n";
+            }
+        }
+        return 0;
     }
     std::cout << "unknown command '" << cmd << "' (integrate, diff, subs, print)\n";
     return 1;

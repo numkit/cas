@@ -141,6 +141,8 @@ Expr Ctx::div(Expr a, Expr b)
 {
     if (kind(b) == NodeKind::Number) {
         assert(!numberValue(b).isZero() && "division by zero constant");
+        if (numberValue(b).isZero())
+            return Expr(); // null in Release: no 0^-1 garbage nodes
     }
     return mul({a, pow(b, number(std::int64_t{-1}))});
 }
@@ -175,7 +177,7 @@ Expr Ctx::pow(Expr base, Expr exp)
             }
             if (b.isZero()) {
                 assert(!"zero raised to a negative power");
-                return makeNode(NodeKind::Pow, 0, {base, exp}, Rational(std::int64_t{0}));
+                return Expr(); // null in Release: no 0^-k garbage nodes
             }
             // b != 0, n < 0: (p/q)^n = q^|n| / p^|n|
             Rational r(BigInt::powUInt(b.den(), static_cast<std::uint64_t>(-n)),

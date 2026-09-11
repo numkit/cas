@@ -357,3 +357,19 @@ TEST_F(RandomExprTest, RepeatedBuildIsIdentical)
         ASSERT_EQ(e1, e2) << c.toString(e1) << " vs " << c.toString(e2);
     }
 }
+
+// Guard for bugs/opened/core/div-zero-denominator-release-node.md:
+// a numeric-zero denominator / zero-to-negative-power must never
+// produce a live node in Release (the Debug assert is the contract
+// there; this guard runs the NDEBUG semantics).
+TEST_F(ExprTest, ZeroDenominatorIsNullInRelease)
+{
+#ifdef NDEBUG
+    const Expr e = c.div(x, c.zero());
+    EXPECT_TRUE(e.isNull());
+    const Expr p = c.pow(c.zero(), c.number(std::int64_t{-2}));
+    EXPECT_TRUE(p.isNull());
+#else
+    GTEST_SKIP() << "Debug: the assert is the contract";
+#endif
+}

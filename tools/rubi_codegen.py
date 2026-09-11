@@ -97,6 +97,20 @@ class Codegen:
         return self.string_ids[s]
 
     def emit(self):
+        # ---- specificity ordering ----
+        # Mathematica dispatches rules by pattern specificity, not by
+        # file order: (a_.+b_.*x_)^m_ must beat x_^m_. on non-bare
+        # bases. A computable approximation for the trie: the more
+        # STRUCTURAL (non-wildcard) terms a pattern's prefix
+        # serialization carries, the more specific it is; stable
+        # sort keeps the file order among equals (Rubi lists the
+        # x-forms before the u-forms, which is the right tie-break).
+        def specificity(rule):
+            return sum(1 for t in prefix_terms(rule["pattern"])
+                       if term_tag(t)[0] != TAG_ANY)
+
+        self.rules.sort(key=specificity, reverse=True)
+
         # ---- pattern trie ----
         nodes = [[0, -1, 0, 0, -1]]  # tag, valId, firstEdge, nEdges, rule
         edges = []                    # tag, valId, next, arity

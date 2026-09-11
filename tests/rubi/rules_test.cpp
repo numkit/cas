@@ -40,18 +40,18 @@ TEST(RubiMatcher, FixedVectors)
     {
         std::vector<Binding> b;
         const int r = matchFirst(t, c, c.pow(x, c.number(std::int64_t{7})), b);
-        ASSERT_EQ(r, 1);
+        // specificity ordering: x_^m_. is the LEAST specific ^-rule
+        // -> last index after the generator's sort
+        ASSERT_EQ(r, 4);
         ASSERT_EQ(b.size(), 2u);
         EXPECT_EQ(b[0].name, "x");
         EXPECT_EQ(b[0].value, x);
         EXPECT_EQ(b[1].name, "m");
         EXPECT_EQ(b[1].value, c.number(std::int64_t{7}));
     }
-    // (2 + 3*x)^4: step-2 semantics is LINEAR rule order - the
-    // wildcard x_ of rule 1 binds the whole base (Mathematically the
-    // answer (a+b x)^(m+1)/(m+1) is still correct; Mathematica's
-    // SPECIFICITY ordering that would prefer the (a_.+b_.*x_)^m_
-    // shape is step-3 business).
+    // (2 + 3*x)^4: SPECIFICITY ordering (step 3b) prefers the
+    // structural (a_.+b_.*x_)^m_ shape over the bare x_^m_. - the
+    // Add base binds a, b, x individually.
     {
         const Expr e = c.pow(
             c.add({c.number(std::int64_t{2}),
@@ -59,11 +59,14 @@ TEST(RubiMatcher, FixedVectors)
             c.number(std::int64_t{4}));
         std::vector<Binding> b;
         const int r = matchFirst(t, c, e, b);
-        ASSERT_EQ(r, 1);
-        ASSERT_EQ(b.size(), 2u);
-        EXPECT_EQ(b[0].name, "x"); // the wildcard bound the Add base
-        EXPECT_EQ(b[1].name, "m");
-        EXPECT_EQ(b[1].value, c.number(std::int64_t{4}));
+        ASSERT_EQ(r, 1); // the (a+b x)^m rule leads among ^-shapes
+        ASSERT_EQ(b.size(), 4u);
+        EXPECT_EQ(b[0].name, "a");
+        EXPECT_EQ(b[1].name, "b");
+        EXPECT_EQ(b[2].name, "x");
+        EXPECT_EQ(b[3].name, "m");
+        EXPECT_EQ(b[0].value, c.number(std::int64_t{2}));
+        EXPECT_EQ(b[3].value, c.number(std::int64_t{4}));
     }
 }
 
@@ -79,7 +82,7 @@ TEST(RubiMatcher, BoundaryDeclines)
     // DAG has no /); the ^-chain expects arity-2 shapes, x^-1 IS
     // Pow[x,-1] with pattern x_^m_. matching! It selects rule 1.
     const Expr oneOver = c.pow(x, c.number(std::int64_t{-1}));
-    EXPECT_EQ(matchFirst(t, c, oneOver, b), 1);
+    EXPECT_EQ(matchFirst(t, c, oneOver, b), 4);
     EXPECT_EQ(b.size(), 2u);
 
     // sin(x): no rule in the slice starts with a Func head.
@@ -111,18 +114,23 @@ TEST(RubiMatcher, BoundaryDeclines)
 
 TEST(RubiMatcher, Property)
 {
-    // Random (a+b*x)^m always matches under the LINEAR step-2
-    // semantics: the x_^m_. rule (index 1) grabs the base; the
-    // bindings record exactly that (x := the Add, m := the exponent).
+    // Random (a+b*x)^(m/3) with a,b non-zero: the specificity order
+    // must pick the STRUCTURAL (a+b x)^m rule and the certified
+    // answer (a+bx)^(m+1)/(b(m+1)) differentiates back exactly.
+    // (Rule indices are an implementation detail of the generator's
+    // sort; the certificate is the durable invariant.)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
     std::uint64_t st = 0x2B1B4E5EEDULL;
     for (int iter = 0; iter < 3000; ++iter) {
-        const std::int64_t a =
-            static_cast<std::int64_t>(nextU64(st) % 13) - 6;
-        const std::int64_t b =
-            static_cast<std::int64_t>(nextU64(st) % 13) - 6;
+        std::int64_t a = static_cast<std::int64_t>(nextU64(st) % 13) - 6;
+        std::int64_t b = static_cast<std::int64_t>(nextU64(st) % 13) - 6;
+        if (a == 0)
+            a = 1; // a=0 collapses the two-term Add away; b=3 makes
+        if (b == 0 || b == 3)
+            b = 2; // the coefficient b/3 fold to 1*x = x; both leave
+                   // the bare x_^m_. rule the legitimate winner
         std::int64_t m = static_cast<std::int64_t>(nextU64(st) % 9) - 4;
         // m/3 must stay fractional: an integer exponent folds
         // Number^m away entirely, leaving no Pow for the ^-rules.
@@ -134,12 +142,10 @@ TEST(RubiMatcher, Property)
         const Expr e = c.pow(base, c.number(Rational(BigInt(m), BigInt(3))));
         std::vector<Binding> bs;
         const int r = matchFirst(t, c, e, bs);
-        ASSERT_EQ(r, 1) << "iter " << iter;
-        ASSERT_EQ(bs.size(), 2u);
-        EXPECT_EQ(bs[0].name, "x");
-        EXPECT_EQ(bs[0].value, base);
-        EXPECT_EQ(bs[1].name, "m");
-        EXPECT_EQ(bs[1].value, c.number(Rational(BigInt(m), BigInt(3))));
+        ASSERT_EQ(r, 1) << "iter " << iter << " e=" << c.toString(e);
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull()) << "iter " << iter << " e=" << c.toString(e);
+        ASSERT_EQ(c.diff(F, x), e) << "iter " << iter;
     }
 }
 
@@ -174,15 +180,17 @@ TEST(RubiApply, BoundaryAndGuards)
     // sin(x): nothing in the slice matches.
     EXPECT_TRUE(rubiApply(t, c, c.func("sin", x), x).isNull());
 
-    // (2+3*x)^4: the LINEAR order picks x_^m_., whose answer
-    // (2+3x)^5/5 differentiates to 3*(2+3x)^4 - the CERTIFICATE
-    // rejects it. This is the specificity gap made visible: the
-    // correct (a_.+b_.*x_)^m_ twin needs the step-3 matcher.
+    // (2+3*x)^4: SPECIFICITY (step 3b) picks the (a+b x)^m rule and
+    // the certificate PASSES: (2+3x)^5/15 differentiates back to
+    // (2+3x)^4 exactly.
     const Expr e = c.pow(
         c.add({c.number(std::int64_t{2}),
                c.mul({c.number(std::int64_t{3}), x})}),
         c.number(std::int64_t{4}));
-    EXPECT_TRUE(rubiApply(t, c, e, x).isNull());
+    const Expr F = rubiApply(t, c, e, x);
+    ASSERT_FALSE(F.isNull());
+    EXPECT_EQ(c.toString(F), "1/15*(2 + 3*x)^5");
+    EXPECT_EQ(c.diff(F, x), e);
 }
 
 TEST(RubiApply, PropertyIntegerPowers)

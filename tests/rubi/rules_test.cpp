@@ -41,14 +41,13 @@ TEST(RubiMatcher, FixedVectors)
         std::vector<Binding> b;
         const int r = matchFirst(t, c, c.pow(x, c.number(std::int64_t{7})), b);
         // specificity ordering: x_^m_. is the LEAST specific ^-rule
-        // -> last index after the generator's sort (37 with the
-        // quadratic slice loaded)
-        ASSERT_EQ(r, 37);
-        ASSERT_EQ(b.size(), 2u);
-        EXPECT_EQ(b[0].name, "x");
-        EXPECT_EQ(b[0].value, x);
-        EXPECT_EQ(b[1].name, "m");
-        EXPECT_EQ(b[1].value, c.number(std::int64_t{7}));
+        // -> last index after the generator's sort (77 with both new
+        // slices loaded). The x_ literal binds nothing (Symbol edge);
+        // only m is bound.
+        ASSERT_EQ(r, 77);
+        ASSERT_EQ(b.size(), 1u);
+        EXPECT_EQ(b[0].name, "m");
+        EXPECT_EQ(b[0].value, c.number(std::int64_t{7}));
     }
     // (2 + 3*x)^4: SPECIFICITY ordering (step 3b) prefers the
     // structural (a_.+b_.*x_)^m_ shape over the bare x_^m_. - the
@@ -60,14 +59,14 @@ TEST(RubiMatcher, FixedVectors)
             c.number(std::int64_t{4}));
         std::vector<Binding> b;
         const int r = matchFirst(t, c, e, b);
-        ASSERT_EQ(r, 34); // the (a+b x)^m rule leads among ^-shapes
-        ASSERT_EQ(b.size(), 4u);
+        ASSERT_EQ(r, 74); // the (a+b x)^m rule leads among ^-shapes
+        // x_ binds nothing (Symbol edge); a, b, m remain.
+        ASSERT_EQ(b.size(), 3u);
         EXPECT_EQ(b[0].name, "a");
         EXPECT_EQ(b[1].name, "b");
-        EXPECT_EQ(b[2].name, "x");
-        EXPECT_EQ(b[3].name, "m");
+        EXPECT_EQ(b[2].name, "m");
         EXPECT_EQ(b[0].value, c.number(std::int64_t{2}));
-        EXPECT_EQ(b[3].value, c.number(std::int64_t{4}));
+        EXPECT_EQ(b[2].value, c.number(std::int64_t{4}));
     }
 }
 
@@ -84,9 +83,10 @@ TEST(RubiMatcher, BoundaryDeclines)
     // Pow[x,-1] with pattern x_^m_. matching! It selects rule 1.
     const Expr oneOver = c.pow(x, c.number(std::int64_t{-1}));
     // the div-twin of 1/x_ (now Pow[ANY, -1]) beats x_^m_.
-    EXPECT_EQ(matchFirst(t, c, oneOver, b), 36);
-    EXPECT_EQ(b.size(), 1u);
-    EXPECT_EQ(b[0].name, "x");
+    EXPECT_EQ(matchFirst(t, c, oneOver, b), 76);
+    // x_-literals bind NOTHING by design (Symbol edges) - only the
+    // rule identity remains.
+    EXPECT_EQ(b.size(), 0u);
 
     // sin(x): no rule in the slice starts with a Func head.
     b.clear();
@@ -145,7 +145,7 @@ TEST(RubiMatcher, Property)
         const Expr e = c.pow(base, c.number(Rational(BigInt(m), BigInt(3))));
         std::vector<Binding> bs;
         const int r = matchFirst(t, c, e, bs);
-        ASSERT_EQ(r, 34) << "iter " << iter << " e=" << c.toString(e);
+        ASSERT_EQ(r, 74) << "iter " << iter << " e=" << c.toString(e);
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull()) << "iter " << iter << " e=" << c.toString(e);
         ASSERT_EQ(c.diff(F, x), e) << "iter " << iter;
@@ -175,6 +175,25 @@ TEST(RubiApply, BoundaryAndGuards)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
+
+    // 1/((1+x)*(1-x)): the TWO-FACTOR slice - textbook partial
+    // fractions through the RECURSIVE Int cascade (each inner
+    // 1/(a+b x) lands on the log rule; the outer certificate
+    // checks the assembled sum).
+    {
+        const Expr F = rubiApply(
+            t, c,
+            c.mul({c.pow(c.add({c.one(), x}), c.number(std::int64_t{-1})),
+                   c.pow(c.add({c.one(), c.neg(x)}),
+                         c.number(std::int64_t{-1}))}),
+            x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "-1/2*log(1 + -x) + 1/2*log(1 + x)");
+        // the POLYNOMIAL-grade certificate inside rubiApply already
+        // verified dF == 1/((1+x)(1-x)) in Q(x) - no need (and no
+        // way) to re-check structurally: the derivative prints as a
+        // sum, the integrand as a product.
+    }
 
     // 1/(1+x^2): the QUADRATIC slice rule - atan(x), the textbook
     // arctangent integral, straight from Rubi (Rt[1,2] folds to 1).
@@ -288,3 +307,5 @@ TEST(RubiApply, PropertyIntegerPowers)
                 << "m=" << m;
     }
 }
+
+

@@ -122,42 +122,51 @@ std::int32_t matchAt(const RuleTables &t, Ctx &c, std::int32_t node,
 {
     const std::int32_t nEdges = t.nodeRow(node, 3);
     const std::int32_t first = t.nodeRow(node, 2);
+    // SPECIFICITY LADDER at every trie position:
+    //   1. structural edges (exact tag/value, insertion order);
+    //   2. optional-product synthesis (a folded 1*x reading - still
+    //      structural, but with a synthesized default, so it sits
+    //      BELOW the direct structural edges: firing it inside pass
+    //      1's edge loop let it jump ahead of later structural edges
+    //      like a literal Symbol x);
+    //   3. wildcard edges (match everything - always last).
     for (int ei = first; ei < first + nEdges; ++ei) {
-        const std::int32_t tag = t.edgeRow(ei, 0);
-        const std::int32_t valId = t.edgeRow(ei, 1);
-        const std::int32_t next = t.edgeRow(ei, 2);
-        const std::int32_t arity = t.edgeRow(ei, 3);
-        const std::size_t mark = acc.size();
-        if (tag == kTagAny) {
-            acc.push_back(Binding{t.str(valId), e});
-            return next;
-        }
-        if (!exprMatchesTerm(t, c, e, tag, valId)) {
-            // Fall through to the optional-product synthesis below;
-            // a structural mismatch here might be a folded 1*x.
-            const std::int32_t opt = tryOptionalProduct(t, c, node, e, acc);
-            if (opt >= 0)
-                return opt;
+        if (t.edgeRow(ei, 0) == kTagAny)
             continue;
-        }
-        if (static_cast<std::int32_t>(c.childCount(e)) != arity) {
-            const std::int32_t opt = tryOptionalProduct(t, c, node, e, acc);
-            if (opt >= 0)
-                return opt;
-            continue; // exact-arity step-2 semantics
-        }
-        std::int32_t cur = next;
-        bool ok = true;
-        for (std::size_t ci = 0; ci < c.childCount(e); ++ci) {
-            cur = matchAt(t, c, cur, c.child(e, ci), acc);
-            if (cur < 0) {
-                ok = false;
-                break;
+        const std::size_t mark = acc.size();
+        const std::int32_t next = t.edgeRow(ei, 2);
+        if (exprMatchesTerm(t, c, e, t.edgeRow(ei, 0), t.edgeRow(ei, 1)) &&
+            static_cast<std::int32_t>(c.childCount(e)) ==
+                t.edgeRow(ei, 3)) {
+            std::int32_t cur = next;
+            bool ok = true;
+            for (std::size_t ci = 0; ci < c.childCount(e); ++ci) {
+                cur = matchAt(t, c, cur, c.child(e, ci), acc);
+                if (cur < 0) {
+                    ok = false;
+                    break;
+                }
             }
+            if (ok)
+                return cur;
+            acc.resize(mark); // drop the failed branch's bindings
         }
-        if (ok)
-            return cur;
-        acc.resize(mark); // drop the failed branch's bindings
+    }
+    {
+        const std::int32_t opt = tryOptionalProduct(t, c, node, e, acc);
+        if (opt >= 0)
+            return opt;
+    }
+    for (int ei = first; ei < first + nEdges; ++ei) {
+        if (t.edgeRow(ei, 0) != kTagAny)
+            continue;
+        // A wildcard consumes the whole subtree. Multiple wildcard
+        // edges at one node are different pattern NAMES; the trie
+        // merges continuations only for equal (tag, value), so the
+        // first edge commits (pre-existing step-3 semantics - the
+        // rule-level specificity sort put the winning name first).
+        acc.push_back(Binding{t.str(t.edgeRow(ei, 1)), e});
+        return t.edgeRow(ei, 2);
     }
     return -1;
 }
@@ -265,8 +274,10 @@ Expr buildReplacementCond(const RuleTables &t, Ctx &c,
 // bound pattern names; heads (Log...), operators and rational
 // literals rebuild through the canonical constructors. Returns a
 // null Expr for anything outside the step-3a subset (Subst, Int,
-// Coefficient, RemoveContent, bind, list, ...).
-Expr buildReplacement(const RuleTables &t, Ctx &c,
+// Coefficient, RemoveContent, bind, list, ...). An unbound symbol
+// that names the rule's integration variable resolves to `var` -
+// the x_-literals in patterns bind nothing by design.
+Expr buildReplacement(const RuleTables &t, Ctx &c, Expr var,
                       const std::vector<Binding> &bnd,
                       std::int32_t term)
 {
@@ -286,31 +297,56 @@ Expr buildReplacement(const RuleTables &t, Ctx &c,
         for (const Binding &b : bnd)
             if (b.name == s)
                 return b.value;
-        return Expr(); // unbound symbol (should not happen)
+        if (c.kind(var) == NodeKind::Symbol && c.symbolName(var) == s)
+            return var; // the integration variable itself
+        return Expr(); // genuinely unbound
     }
     case kTagHead: {
         const std::string head = t.str(valId);
         if (nkids == 1 && head == "Log") {
             const Expr arg =
-                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 0));
             if (arg.isNull())
                 return Expr();
             return c.func("log", arg);
         }
         if (nkids == 1 && head == "ArcTan") {
             const Expr arg =
-                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 0));
             if (arg.isNull())
                 return Expr();
             return c.func("atan", arg);
+        }
+        if (nkids == 1 && head == "Sqrt") {
+            const Expr arg =
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 0));
+            if (arg.isNull())
+                return Expr();
+            return c.pow(arg,
+                         c.number(Rational(BigInt(1), BigInt(2))));
+        }
+        if (nkids == 2 && head == "Int") {
+            // Recursive rule application: Rubi cascades into a new
+            // integral (e.g. 1/((a+b x)(c+d x)) -> Int[1/(a c +
+            // b d x^2)] when b c+a d==0 - landing on the atan rule).
+            // The inner answer carries its own certificate and the
+            // OUTER gate re-checks the final assembled derivative,
+            // so a bad cascade cannot slip through.
+            const Expr integrand =
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 0));
+            const Expr iVar =
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 1));
+            if (integrand.isNull() || c.kind(iVar) != NodeKind::Symbol)
+                return Expr();
+            return rubiApply(t, c, integrand, iVar);
         }
         if (nkids == 2 && head == "Rt") {
             // Rubi's Rt[q, n]: the REAL n-th root - the sign rides
             // along (Rt[-a, 2] = -Rt[a, 2]). Step scope: n == 2.
             const Expr q =
-                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 0));
             const Expr n =
-                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 1));
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 1));
             if (q.isNull() || c.kind(q) != NodeKind::Number ||
                 c.kind(n) != NodeKind::Number ||
                 !(c.numberValue(n) == Rational(std::int64_t{2})))
@@ -328,9 +364,9 @@ Expr buildReplacement(const RuleTables &t, Ctx &c,
             // return the primitive (2+4x -> 1+2x; 2+3x stays - its
             // content is 1). This normalizes Log arguments.
             const Expr u =
-                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 0));
             const Expr xArg =
-                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 1));
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 1));
             if (u.isNull() || xArg.isNull() ||
                 c.kind(xArg) != NodeKind::Symbol)
                 return Expr();
@@ -358,19 +394,21 @@ Expr buildReplacement(const RuleTables &t, Ctx &c,
         const std::string op = t.str(valId);
         if (nkids == 1 && op == "neg") {
             const Expr a =
-                buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+                buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 0));
             return a.isNull() ? Expr() : c.neg(a);
         }
         if (nkids != 2)
             return Expr();
         const Expr a =
-            buildReplacement(t, c, bnd, childOf(t.repTerms, term, 0));
+            buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 0));
         const Expr bb =
-            buildReplacement(t, c, bnd, childOf(t.repTerms, term, 1));
+            buildReplacement(t, c, var, bnd, childOf(t.repTerms, term, 1));
         if (a.isNull() || bb.isNull())
             return Expr();
         if (op == "+")
             return c.add({a, bb});
+        if (op == "-")
+            return c.add({a, c.neg(bb)});
         if (op == "*")
             return c.mul({a, bb});
         if (op == "/")
@@ -536,7 +574,7 @@ Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var)
         const std::int32_t condOff = t.ruleRow(rule, 1);
         if (condOff >= 0 && !evalCondition(t, c, var, bnd, condOff))
             continue; // condition declines - try the chain twin
-        const Expr F = buildReplacement(t, c, bnd, repOff);
+        const Expr F = buildReplacement(t, c, var, bnd, repOff);
         if (F.isNull())
             continue; // replacement outside the subset - next twin
         // Tier-1 certificate, two grades: POLYNOMIAL when both sides

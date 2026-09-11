@@ -68,6 +68,13 @@ def rewrite_div(node):
     if node.get("op") == "/":
         num, den = args
         if num.get("num") == "1":
+            # 1/(p*q*...) DISTRIBUTES in the canonical DAG into a
+            # flat Mul of negative powers - mirror that here so the
+            # twin matches what the canonicalizer actually builds.
+            if den.get("op") == "*":
+                factors = [{"op": "^", "args": [f, {"num": "-1"}]}
+                           for f in den["args"]]
+                return {"op": "*", "args": factors}
             return {"op": "^", "args": [den, {"num": "-1"}]}
         return {"op": "*", "args": [num, {"op": "^", "args": [den, {"num": "-1"}]}]}
     out = dict(node)
@@ -144,6 +151,16 @@ class Codegen:
             node = 0
             for t in prefix_terms(rule["pattern"]):
                 tag, val = term_tag(t)
+                # A pattern variable NAMED like the rule's integration
+                # variable (x_ in Int[..., x_Symbol]) is Rubi's way of
+                # writing the LITERAL variable - x_ must not swallow
+                # arbitrary subtrees (it grabbed whole Adds through
+                # the optional-product delegation otherwise). Encode
+                # it as a Symbol edge; plain wildcards (u_, m_, ...)
+                # stay kTagAny.
+                if tag == TAG_ANY and t.get("pattern_var") == rule.get("var"):
+                    tag = TAG_SYM
+                    val = t["pattern_var"]
                 vid = self.sid(val) if val else -1
                 arity = len(t.get("args", []))
                 opt = 1 if "pattern_var" in t and t.get("blank") == "_." else 0
@@ -206,10 +223,14 @@ class Codegen:
                                        cond_off + co, cn))
             else:
                 cond_off = -1
-            # leaf of this rule's pattern
+            # leaf of this rule's pattern (same x_->Symbol encoding
+            # as the insertion pass above)
             node = 0
             for t in prefix_terms(rule["pattern"]):
                 tag, val = term_tag(t)
+                if tag == TAG_ANY and t.get("pattern_var") == rule.get("var"):
+                    tag = TAG_SYM
+                    val = t["pattern_var"]
                 vid = self.sid(val) if val else -1
                 for e in range(nodes[node][2], nodes[node][2] + nodes[node][3]):
                     et, ev, en, _, _ = edges[e]

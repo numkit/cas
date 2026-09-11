@@ -61,6 +61,19 @@ bool splitLine(const std::string &line, std::string &cmd,
         exprSrc = trim(line.substr(cmd.size()));
         return !exprSrc.empty();
     }
+    if (cmd == "subs") {
+        // "subs <expr...> <from> <to>": the last two tokens are the
+        // substitution pair, everything between is the expression.
+        if (words.size() < 4)
+            return false;
+        const std::string &to = words.back();
+        const std::string &from = words[words.size() - 2];
+        const std::size_t toOff = line.rfind(to);
+        const std::size_t fromOff = line.rfind(from, toOff);
+        exprSrc = trim(line.substr(cmd.size(), fromOff - cmd.size()));
+        var = from + "\t" + to; // caller splits on the tab
+        return !exprSrc.empty();
+    }
     if (words.size() < 3)
         return false;
     var = words.back();
@@ -69,9 +82,32 @@ bool splitLine(const std::string &line, std::string &cmd,
     return !exprSrc.empty();
 }
 
+int runSubs(const std::string &exprSrc, const std::string &fromSrc,
+            const std::string &toSrc)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f, from, to;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+        from = numkit::cas::parseExpr(ctx, fromSrc);
+        to = numkit::cas::parseExpr(ctx, toSrc);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    std::cout << ctx.toString(ctx.subs(f, from, to)) << "\n";
+    return 0;
+}
+
 int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
+    if (cmd == "subs") {
+        // splitLine packed "from\tto" into varName
+        const std::size_t tab = varName.find('\t');
+        return runSubs(exprSrc, varName.substr(0, tab), varName.substr(tab + 1));
+    }
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f;
     try {
@@ -101,7 +137,7 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         std::cout << "Unevaluated: " << r.reason << "\n";
         return 2;
     }
-    std::cout << "unknown command '" << cmd << "' (integrate, diff, print)\n";
+    std::cout << "unknown command '" << cmd << "' (integrate, diff, subs, print)\n";
     return 1;
 }
 
@@ -172,6 +208,8 @@ void usage()
 
 int main(int argc, char **argv)
 {
+    if (argc == 5 && std::string(argv[1]) == "subs")
+        return runSubs(argv[2], argv[3], argv[4]);
     if (argc == 4)
         return runCommand(argv[1], argv[2], argv[3]);
     if (argc == 3 && std::string(argv[1]) == "print")

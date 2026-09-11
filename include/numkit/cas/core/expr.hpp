@@ -133,6 +133,13 @@ public:
     // asserts in debug and returns a null Expr in release.
     Expr diff(Expr e, Expr var);
 
+    // Substitute: rebuild e with every occurrence of the subtree
+    // `from` replaced by `to` (comparison is node identity, i.e.
+    // structural equality via hash-consing). The rebuilt nodes go
+    // through the canonicalizing constructors, so e.g. substituting
+    // x -> 2 in x^2 yields the number 4.
+    Expr subs(Expr e, Expr from, Expr to);
+
     std::string toString(Expr e) const;
 
     std::size_t nodeCount() const { return nodes_.size(); }

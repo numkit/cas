@@ -16,6 +16,7 @@ add_executable(nkcas_gtest
     core/diff_test.cpp
     core/rootof_test.cpp
     core/parser_test.cpp
+    core/subs_test.cpp
     poly/upoly_test.cpp
     poly/sturm_test.cpp
     poly/algebraic_test.cpp

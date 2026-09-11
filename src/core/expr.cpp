@@ -584,6 +584,32 @@ void Ctx::print(Expr e, std::string &out) const
     printPrec(e, out, 0);
 }
 
+Expr Ctx::subs(Expr e, Expr from, Expr to)
+{
+    if (e == from)
+        return to;
+    switch (kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e; // atoms: no children to descend into
+    case NodeKind::Func:
+        return func(funcName(e), subs(child(e, 0), from, to));
+    case NodeKind::Pow:
+        return pow(subs(child(e, 0), from, to),
+                   subs(child(e, 1), from, to));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> kids;
+        kids.reserve(childCount(e));
+        for (std::size_t i = 0; i < childCount(e); ++i)
+            kids.push_back(subs(child(e, i), from, to));
+        return kind(e) == NodeKind::Add ? add(kids) : mul(kids);
+    }
+    }
+    return e;
+}
+
 std::string Ctx::toString(Expr e) const
 {
     std::string out;

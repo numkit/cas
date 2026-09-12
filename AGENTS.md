@@ -5,6 +5,11 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
+- **Working goal: v0.1.0 first working release** — acceptance criteria in
+  `notes/first-working-version.md` (standalone certified integrator core;
+  the Numkit vendoring spike is NOT part of v0.1.0 and waits for the
+  user's explicit command). Remaining: roadmap items 30–31 in
+  `notes/c1-algebraic-layer.md`.
 - **Integration contract is BINDING for all code** (the core is vendored into
   the Numkit tree later; see `notes/integration-model.md`):
   - C++17 strict — no C++20/23 features;

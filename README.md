@@ -9,6 +9,10 @@ Designed to be vendored into the Numkit tree as the `symbolic` toolbox core;
 integration constraints (C++17, no deps, single-threaded base, PMR) are
 binding for all code in this repository.
 
+**Current release: v0.1.0** — the standalone certified integrator
+core. Declared class, corpus metrics and the honest incompleteness
+list: `CHANGELOG.md`.
+
 Specification: `notes/cas-integrator-plan.md` (v0.4).
 
 ## Layout
@@ -16,7 +20,12 @@ Specification: `notes/cas-integrator-plan.md` (v0.4).
 ```
 include/numkit/cas/...   public headers
 src/...                  implementation (one .cpp per header)
+apps/                    nkcas CLI + section-7 corpus runner
+corpora/                 benchmark corpora (rational-baseline, rubi-slice)
 tests/...                gtest suite (nkcas_gtest)
+tools/, scripts/         offline build tooling (Rubi parser/codegen,
+                         corpus generators, vendor sync)
+third_party/rubi-snapshot/  upstream Rubi rule files (MIT)
 ```
 
 ## Build & test
@@ -26,6 +35,23 @@ cmake -S . -B build/msvc -G "Visual Studio 17 2022" -A x64
 cmake --build build/msvc --config Release
 ctest --test-dir build/msvc -C Release --output-on-failure
 ```
+
+## CLI
+
+```
+build/msvc/apps/Release/nkcas.exe integrate "(expr)" x   # certified int
+build/msvc/apps/Release/nkcas.exe rubi "(expr)" x        # fast path only
+build/msvc/apps/Release/nkcas.exe diff "(expr)" x
+build/msvc/apps/Release/nkcas.exe solve "x^2-2" x        # exact real roots
+build/msvc/apps/Release/nkcas.exe expand|factor|subs "(expr)" ...
+build/msvc/apps/Release/nkcas.exe corpus corpora/rubi-slice.txt
+```
+
+`integrate` prints the antiderivative plus its certificate verdict
+(`PROVED_SYMBOLIC` / `PROVED_NUMERIC`); a failed verification is an
+honest `UNEVALUATED`, never a silent wrong answer. `corpus` runs a
+`id<TAB>var<TAB>[op<TAB>]expr` file and reports the section-7
+metrics: pass rate, verification rate, median and p95 time.
 
 ## API surface (by layer)
 
@@ -53,11 +79,22 @@ values, irrationals as isolating brackets); `factorOverQ` — full
 Zassenhaus factorization.
 
 **Integration** (`integrate/`): `integrateRational(Ctx&, f, var)` —
-the proof-carrying integrator: any rational function (Trager
-residues incl. RootOf atoms), plus the Liouvillian storeys for
-rational functions of exp(x), log(x)/x and sin/cos(x); every answer
-carries a Tier-1 certificate or is an honest `Unevaluated`.
-`factorExpr` gives the factored form.
+the proof-carrying integrator: rational functions (Trager residues,
+quadratic and cubic Rioboo-phase-A residues as real atan/log forms,
+RootOf atoms where unavoidable) plus the Liouvillian storeys for
+R(e^x), R(log x)/x, R(sin,cos) via t=tan(x/2) and R(x^(p/q)); every
+answer passes a Tier-1 polynomial certificate AND a Tier-2a
+certified interval audit of the form (a wrong form is structurally
+impossible — it becomes an honest `Unevaluated`). `factorExpr`
+gives the factored form.
+
+**Rubi fast path** (`rubi/`): `rubiApply(tables, Ctx&, f, var)` —
+the compiled discrimination-tree matcher over committed upstream
+rule slices (1.1.1.1, 1.1.1.2, 1.1.2.1; 78 rules) with recursive
+Int cascades and mirrors of Rubi's 9.1 utility identities
+(constant, constant factor, IntSum); every replacement passes the
+same certificate. `tools/rubi_parse.py` + `tools/rubi_codegen.py`
+regenerate the committed tables from `third_party/rubi-snapshot/`.
 
 **Cancellation** (`core/budget.hpp`): `Budget` token, the day-one
 plumbing for the future speculative cascade.

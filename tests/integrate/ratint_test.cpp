@@ -1207,6 +1207,49 @@ TEST_F(RatIntTest, RiobooCubicThreeRealRootsUnchanged)
 
 // ── Tier-2a: certified interval audit of the form ──────────────
 
+TEST_F(RatIntTest, Tier2aTinyBaseFractionalPower)
+{
+    // Guard for bugs (closed with v0.1.0):
+    // tier2a-zero-divisor-fractional-pow. Two defects interacted
+    // here: (1) qRoot bisected toward the root of r/r.den^(q-1) for
+    // non-integer rationals (wrong root), and (2) a negative
+    // fractional power divided by a zero-lower-end root enclosure
+    // (Debug assert / Release UB). Shapes: f = x^(k-1) * (x^k)^(-1/2),
+    // F = (2/k) * (x^k)^(1/2) - exact derivative pair.
+    const auto build = [](Ctx &cx, int k) {
+        const Expr v = cx.symbol("x");
+        const Expr f =
+            cx.mul({cx.pow(v, cx.number(std::int64_t{k - 1})),
+                    cx.pow(cx.pow(v, cx.number(std::int64_t{k})),
+                           cx.number(Rational(std::int64_t{-1}, BigInt(2))))});
+        const Expr F =
+            cx.mul({cx.number(Rational(std::int64_t{2}, BigInt(k))),
+                    cx.pow(cx.pow(v, cx.number(std::int64_t{k})),
+                           cx.number(Rational(std::int64_t{1}, BigInt(2))))});
+        return std::make_pair(f, F);
+    };
+    // k = 30: every sample point's base has its root reachable
+    // within the 24 bisection steps -> the corrected qRoot yields
+    // proper enclosures and the exact pair must be Match (with the
+    // old wrong-root comparison this collapsed to Unknown).
+    {
+        Ctx c3;
+        const auto [f3, F3] = build(c3, 30);
+        EXPECT_EQ(numkit::cas::tier2aFormCheck(c3, F3, f3, c3.symbol("x")),
+                  numkit::cas::Tier2aStatus::Match);
+    }
+    // k = 60: bases at x0 = 1/2 (2^-60), 3, 17/6 and 9/2 have roots
+    // beyond the 24-step reach -> those points are SKIPPED (only 5/4
+    // and 3/2 stay usable -> Unknown). Before the guard this was the
+    // division-by-zero-enclosure crash in Debug.
+    {
+        Ctx c3;
+        const auto [f3, F3] = build(c3, 60);
+        EXPECT_EQ(numkit::cas::tier2aFormCheck(c3, F3, f3, c3.symbol("x")),
+                  numkit::cas::Tier2aStatus::Unknown);
+    }
+}
+
 TEST_F(RatIntTest, Tier2aStatuses)
 {
     Ctx c2;

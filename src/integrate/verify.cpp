@@ -80,8 +80,12 @@ RIval qRoot(const Rational &r, std::int64_t q)
     // (real form bugs differ by >= 2x, not in the 7th decimal).
     for (int i = 0; i < 24; ++i) {
         const Rational mid = (lo + hi) * Rational(std::int64_t{1}, BigInt(2));
-        // mid^q <= r  <=>  mid.num^q * r.den^q <= r.num * mid.den^q
-        if (BigInt::powUInt(mid.num(), qe) * BigInt::powUInt(r.den(), qe) <=
+        // mid^q <= r  <=>  mid.num^q * r.den <= r.num * mid.den^q
+        // (r.den to the FIRST power - r.den^q here would bisect
+        // toward the root of r/r.den^(q-1), wrong for every
+        // non-integer rational; see
+        // bugs/../tier2a-zero-divisor-fractional-pow)
+        if (BigInt::powUInt(mid.num(), qe) * r.den() <=
             r.num() * BigInt::powUInt(mid.den(), qe))
             lo = mid;
         else
@@ -91,8 +95,13 @@ RIval qRoot(const Rational &r, std::int64_t q)
 }
 
 // (p/q)-th power of a non-negative interval (x^(p/q) is monotone
-// on x >= 0; a zero lower end with positive p stays zero).
-RIval iPowRatPos(const RIval &a, std::int64_t p, std::int64_t q)
+// on x >= 0; a zero lower end with positive p stays zero). FALSE
+// when p < 0 and the powered enclosure has a zero lower end: qRoot
+// keeps lo = 0 whenever the true q-th root sits below the 24-step
+// bisection resolution, and dividing by that enclosure would be a
+// division by a zero-containing interval - the caller must skip
+// the sample point (the honest-decline flow), not assert/UB.
+bool iPowRatPos(const RIval &a, std::int64_t p, std::int64_t q, RIval &out)
 {
     const std::uint64_t pe = static_cast<std::uint64_t>(p < 0 ? -p : p);
     const bool zeroLo = a.lo == Rational(std::int64_t{0});
@@ -103,9 +112,14 @@ RIval iPowRatPos(const RIval &a, std::int64_t p, std::int64_t q)
                         BigInt::powUInt(x.den(), e));
     };
     RIval base{fracPow(rl.lo, pe), fracPow(rh.hi, pe)};
-    if (p >= 0)
-        return base;
-    return iDiv({Rational(std::int64_t{1}), Rational(std::int64_t{1})}, base);
+    if (p >= 0) {
+        out = base;
+        return true;
+    }
+    if (base.lo == Rational(std::int64_t{0}))
+        return false;
+    out = iDiv({Rational(std::int64_t{1}), Rational(std::int64_t{1})}, base);
+    return true;
 }
 
 // Per-check cache: the SAME RootOf atom appears many times in a form
@@ -181,8 +195,7 @@ bool evalIval(const Ctx &c, Expr e, Expr var, const Rational &x0,
         if (base.lo < Rational(std::int64_t{0}) ||
             (base.lo == Rational(std::int64_t{0}) && p < 0))
             return false; // fractional power needs x >= 0 here
-        out = iPowRatPos(base, p, q);
-        return true;
+        return iPowRatPos(base, p, q, out);
     }
     case NodeKind::Add:
     case NodeKind::Mul: {

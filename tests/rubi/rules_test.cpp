@@ -6,6 +6,7 @@
 //   3. boundary: shapes outside the slice decline (-1), arity
 //      mismatches decline, no bindings leak on failure.
 #include <numkit/cas/rubi/rules.hpp>
+#include <numkit/cas/core/parser.hpp>
 
 #include <gtest/gtest.h>
 
@@ -305,6 +306,142 @@ TEST(RubiApply, PropertyIntegerPowers)
                       "1/" + std::to_string(m + 1) + "*x^" +
                           std::to_string(m + 1))
                 << "m=" << m;
+    }
+}
+
+// ── Positive powers (a+b x²)^p: reduction cascade + 9.1 utilities ──
+
+TEST(RubiApply, PositivePowersQuadratic)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // p = 1: the canonical DAG folds (a+b*x^2)^1 to the bare Add; the
+    // IntSum mirror splits it into the 9.1 constant rule and the
+    // factor pull-out onto x^m.
+    {
+        const Expr e = c.add({c.number(std::int64_t{2}),
+                              c.mul({c.number(std::int64_t{1}),
+                                     c.pow(x, c.number(std::int64_t{2}))})});
+        const Expr e2 = c.add({c.number(std::int64_t{2}), c.pow(x, c.number(std::int64_t{2}))});
+        EXPECT_EQ(e, e2); // 1*x^2 folds - the two spellings agree
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "1/3*x^3 + 2*x");
+        EXPECT_EQ(c.diff(F, x), e);
+    }
+    // p >= 2: the 1.1.2.1 reduction rule (GtQ[p,0] && IntegerQ[4*p])
+    // cascades down to the p=1 bare Add; IntegerQ is the predicate
+    // this cascade was blocked on before item 30.
+    {
+        const Expr e = c.pow(
+            c.add({c.number(std::int64_t{6}),
+                   c.mul({c.number(std::int64_t{4}),
+                          c.pow(x, c.number(std::int64_t{2}))})}),
+            c.number(std::int64_t{2}));
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        // the reduction form: x(6+4x²)²/5 + (24/5)(4/3x³ + 6x)
+        EXPECT_EQ(c.toString(F),
+                  "1/5*x*(6 + 4*x^2)^2 + 24/5*(4/3*x^3 + 6*x)");
+    }
+    // p = 4, b folded to 1: deepest cascade of the corpus slice. The
+    // certificate inside rubiApply is polynomial-grade (dF equals the
+    // integrand in Q(x), NOT structurally - the expanded derivative
+    // does not refold to (1+x^2)^4), so the durable assertions are
+    // the exact cascade form and its round-trip.
+    {
+        const Expr e = c.pow(
+            c.add({c.one(), c.pow(x, c.number(std::int64_t{2}))}),
+            c.number(std::int64_t{4}));
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F),
+                  "1/9*x*(1 + x^2)^4 + 8/9*(1/7*x*(1 + x^2)^3 + 6/7*"
+                  "(1/5*x*(1 + x^2)^2 + 4/5*(x + 1/3*x^3)))");
+    }
+}
+
+TEST(RubiApply, LinearityFallbacks)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // Rubi 9.1 constant rule: Int[5, x] = 5*x - no table rule can
+    // match a Number; the utility mirror carries it.
+    {
+        const Expr F = rubiApply(t, c, c.number(std::int64_t{5}), x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "5*x");
+    }
+    // Factor pull-out: Int[4*x^2, x] = 4*(x^3/3) - the canonical Mul
+    // sorts its numeric factor first; the rest lands on x^m.
+    {
+        const Expr F = rubiApply(
+            t, c, c.mul({c.number(std::int64_t{4}),
+                         c.pow(x, c.number(std::int64_t{2}))}), x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "4/3*x^3");
+    }
+    // Negative factor: -x^2 -> -(x^3/3).
+    {
+        const Expr F = rubiApply(
+            t, c, c.neg(c.pow(x, c.number(std::int64_t{2}))), x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "-1/3*x^3");
+    }
+    // IntSum honesty: ONE unintegrable term declines the whole sum -
+    // 2 + sin(x) stays Unevaluated rather than half-integrating.
+    EXPECT_TRUE(rubiApply(
+                    t, c,
+                    c.add({c.number(std::int64_t{2}), c.func("sin", x)}), x)
+                    .isNull());
+    // Three-term Add (arity 3): every term integrates. NB a bare
+    // linear term x or c*x does NOT (the matcher requires a Pow node
+    // for x_^m_., unlike Mathematica's OneIdentity elision) - a known
+    // limitation, honest Unevaluated.
+    {
+        const Expr e = c.add(
+            {c.number(std::int64_t{3}), c.pow(x, c.number(std::int64_t{2})),
+             c.mul({c.number(std::int64_t{2}),
+                    c.pow(x, c.number(std::int64_t{5}))})});
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "1/3*x^3 + 1/3*x^6 + 3*x");
+        EXPECT_EQ(c.diff(F, x), e);
+    }
+}
+
+TEST(RubiApply, PropertyPositivePowers)
+{
+    // Random (a+b*x^2)^p, p in [1..6], a,b in [-6..6]\\{0}: the
+    // reduction cascade must always produce a CERTIFIED answer
+    // (rubiApply already gates on the polynomial certificate) that
+    // survives print/parse round-trip.
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+    std::uint64_t st = 0x5EED30A11ULL;
+    for (int iter = 0; iter < 2000; ++iter) {
+        std::int64_t a = static_cast<std::int64_t>(nextU64(st) % 13) - 6;
+        std::int64_t b = static_cast<std::int64_t>(nextU64(st) % 13) - 6;
+        std::int64_t p = static_cast<std::int64_t>(nextU64(st) % 6) + 1;
+        if (a == 0)
+            a = 7; // a=0 collapses the Add; b=0 collapses the Mul -
+        if (b == 0)  // both degeneracies are OTHER (still passing)
+            b = 5;  // shapes: keep the two-term binomial here.
+        const Expr e = c.pow(
+            c.add({c.number(a),
+                   c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
+            c.number(p));
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull()) << "a=" << a << " b=" << b << " p=" << p;
+        // round-trip: the printed form parses back to the same DAG.
+        const Expr back = numkit::cas::parseExpr(c, c.toString(F));
+        ASSERT_FALSE(back.isNull()) << c.toString(F);
+        ASSERT_EQ(back, F) << c.toString(F);
     }
 }
 

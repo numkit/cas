@@ -474,9 +474,9 @@ bool evalCondition(const RuleTables &t, Ctx &c, Expr var,
         return true;
     }
     if (pred == "NeQ" || pred == "EqQ" || pred == "GtQ" || pred == "LtQ" ||
-        pred == "PosQ" || pred == "NegQ") {
-        // numeric comparisons over the bound values; PosQ/NegQ take
-        // one argument (compare against zero implicitly)
+        pred == "PosQ" || pred == "NegQ" || pred == "IntegerQ") {
+        // numeric comparisons over the bound values; PosQ/NegQ/IntegerQ
+        // take one argument (compare against zero / denominator one)
         const Expr a = buildReplacementCond(t, c, bnd, childOf(ct, term, 0));
         if (a.isNull() || c.kind(a) != NodeKind::Number) {
             return false;
@@ -487,6 +487,8 @@ bool evalCondition(const RuleTables &t, Ctx &c, Expr var,
         }
         if (pred == "NegQ")
             return va.signum() < 0;
+        if (pred == "IntegerQ")
+            return va.den() == BigInt(1);
         const Expr bb = buildReplacementCond(t, c, bnd, childOf(ct, term, 1));
         if (bb.isNull() || c.kind(bb) != NodeKind::Number)
             return false;
@@ -559,12 +561,73 @@ Expr buildReplacementCond(const RuleTables &t, Ctx &c,
 
 } // namespace
 
+namespace {
+
+// Tier-1 certificate, two grades: POLYNOMIAL when both sides are
+// rational in var (cross-multiplied in Q(var) - node identity is too
+// weak: d(log(1+2x)/4) is (1/2)(1+2x)^-1, structurally unlike
+// 1/(2+4x) yet equal); STRUCTURAL fallback when they are not rational
+// (fractional powers of the variable), where exact node identity is
+// the strongest available check.
+bool certificateHolds(Ctx &c, Expr F, Expr e, Expr var)
+{
+    UPoly n1, d1, n2, d2;
+    const bool rational = toRational(c, c.diff(F, var), var, n1, d1) &&
+                          toRational(c, e, var, n2, d2);
+    if (rational)
+        return n1 * d2 == n2 * d1;
+    return c.diff(F, var) == e;
+}
+
+// Mirrors of Rubi's utility-tier identities (upstream implements
+// them as helper code, not table rules; so do we): 9.1's constant
+// rule Int[a_,x] := a*x and constant-factor pull-out Int[a_*u_,x] :=
+// a*Int[u,x], plus IntSum's additivity over sums. They fire only
+// after every table rule has declined, and the assembled answer
+// passes the same certificate as a rule's replacement.
+Expr rubiLinearityFallback(const RuleTables &t, Ctx &c, Expr e, Expr var)
+{
+    Expr F;
+    if (c.kind(e) == NodeKind::Number) {
+        // Rubi 9.1: Int[a_, x_Symbol] := a*x /; FreeQ[a, x] - a bare
+        // Number is free of var by construction.
+        F = c.mul({e, var});
+    } else if (c.kind(e) == NodeKind::Mul &&
+               c.kind(c.child(e, 0)) == NodeKind::Number) {
+        // Rubi 9.1: Int[a_*u_, x_Symbol] := a*Int[u, x] /; FreeQ[a, x].
+        // The canonical Mul sorts its lone numeric factor first.
+        std::vector<Expr> rest;
+        for (std::size_t i = 1; i < c.childCount(e); ++i)
+            rest.push_back(c.child(e, i));
+        const Expr inner = rubiApply(t, c, c.mul(rest), var);
+        if (inner.isNull())
+            return Expr();
+        F = c.mul({c.child(e, 0), inner});
+    } else if (c.kind(e) == NodeKind::Add) {
+        // Rubi's IntSum: Int[u_+v_+...] := Int[u]+Int[v]+... - every
+        // term must integrate or the whole sum declines (honesty).
+        std::vector<Expr> pieces;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const Expr p = rubiApply(t, c, c.child(e, i), var);
+            if (p.isNull())
+                return Expr();
+            pieces.push_back(p);
+        }
+        F = c.add(pieces);
+    } else {
+        return Expr();
+    }
+    return certificateHolds(c, F, e, var) ? F : Expr();
+}
+
+} // namespace
+
 Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var)
 {
     std::vector<Binding> bnd;
     int rule = matchFirst(t, c, e, bnd);
     if (rule < 0) {
-        return Expr();
+        return rubiLinearityFallback(t, c, e, var);
     }
     // Rubi's IDENTICAL-PATTERN sign variants share one trie leaf and
     // try in chain (file) order: a declined condition falls through
@@ -577,26 +640,11 @@ Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var)
         const Expr F = buildReplacement(t, c, var, bnd, repOff);
         if (F.isNull())
             continue; // replacement outside the subset - next twin
-        // Tier-1 certificate, two grades: POLYNOMIAL when both sides
-        // are rational in var (cross-multiplied in Q(var) - node
-        // identity is too weak: d(log(1+2x)/4) is (1/2)(1+2x)^-1,
-        // structurally unlike 1/(2+4x) yet equal); STRUCTURAL
-        // fallback when they are not rational (fractional powers of
-        // the variable), where exact node identity is the strongest
-        // available check.
-        UPoly n1, d1, n2, d2;
-        const bool rational =
-            toRational(c, c.diff(F, var), var, n1, d1) &&
-            toRational(c, e, var, n2, d2);
-        if (rational) {
-            if (n1 * d2 == n2 * d1)
-                return F;
-        } else if (c.diff(F, var) == e) {
+        if (certificateHolds(c, F, e, var))
             return F;
-        }
         // certificate rejected - try the chain twin
     }
-    return Expr();
+    return rubiLinearityFallback(t, c, e, var);
 }
 
 } // namespace numkit::cas::rubi

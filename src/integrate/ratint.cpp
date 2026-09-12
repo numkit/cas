@@ -1,4 +1,5 @@
 #include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/integrate/verify.hpp>
 
 #include <numkit/cas/poly/modcpoly.hpp>
 #include <numkit/cas/poly/sturm.hpp>
@@ -1569,6 +1570,24 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
     for (const Expr &t : extraTerms)
         terms.push_back(t);
     out.F = c.add(terms);
+
+    // Tier-2a certified interval audit of the FORM (plan D-series).
+    // The Tier-1 certificate above proves the SUM OF PIECE
+    // DERIVATIVES equals the integrand in Q(x); the extraTerms
+    // (RootOf/Rioboo emissions, transcendental storeys) are NOT in
+    // that loop, so the printed form itself is audited here:
+    // diff(F) and the integrand compared as exact rational
+    // enclosures at sample points (RootOf via isolating intervals).
+    // A disjoint pair is CERTIFIED form error -> honest Unevaluated;
+    // transcendental inputs are Unknown and pass (their storeys
+    // carry their own gates).
+    if (tier2aFormCheck(c, out.F, f, var) == Tier2aStatus::Mismatch) {
+        out.F = Expr();
+        out.status = RationalIntegral::Status::Unevaluated;
+        out.reason = "internal interval form check failed";
+        return out;
+    }
+
     out.status = RationalIntegral::Status::ProvedSymbolic;
     out.reason.clear();
     return out;

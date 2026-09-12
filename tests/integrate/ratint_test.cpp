@@ -1,4 +1,5 @@
 #include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/integrate/verify.hpp>
 #include <numkit/cas/core/parser.hpp>
 
 #include <gtest/gtest.h>
@@ -1203,3 +1204,73 @@ TEST_F(RatIntTest, RiobooCubicThreeRealRootsUnchanged)
     }
     EXPECT_EQ(form.find("atan"), std::string::npos);
 }
+
+// ── Tier-2a: certified interval audit of the form ──────────────
+
+TEST_F(RatIntTest, Tier2aStatuses)
+{
+    Ctx c2;
+    const Expr v2 = c2.symbol("x");
+    // Match: F = atan(x), F' = 1/(1+x^2) == f.
+    {
+        const Expr f = c2.div(c2.number(std::int64_t{1}),
+                              c2.add({c2.pow(v2, c2.number(std::int64_t{2})),
+                                      c2.number(std::int64_t{1})}));
+        const Expr F = c2.func("atan", v2);
+        EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2),
+                  numkit::cas::Tier2aStatus::Match);
+    }
+    // Mismatch: F' = 1/(2(1+x^2)) against 2/(1+x^2) - factor 4.
+    {
+        const Expr f = c2.div(c2.number(std::int64_t{2}),
+                              c2.add({c2.pow(v2, c2.number(std::int64_t{2})),
+                                      c2.number(std::int64_t{1})}));
+        const Expr F = c2.mul({c2.number(Rational(std::int64_t{1}, BigInt(2))),
+                               c2.func("atan", v2)});
+        EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2),
+                  numkit::cas::Tier2aStatus::Mismatch);
+    }
+    // Unknown: transcendental integrand (Func outside the fragment).
+    {
+        const Expr f = c2.func("exp", v2);
+        const Expr F = c2.func("exp", v2);
+        EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2), numkit::cas::Tier2aStatus::Unknown);
+    }
+    // Algebraic fragment with sqrt: F = sqrt(x) vs f = 1/(2 sqrt(x)).
+    {
+        const Expr F = c2.pow(v2, c2.number(Rational(std::int64_t{1}, BigInt(2))));
+        const Expr f = c2.mul({c2.number(Rational(std::int64_t{1}, BigInt(2))),
+                               c2.pow(v2, c2.number(Rational(std::int64_t{-1},
+                                                             BigInt(2))))});
+        EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2), numkit::cas::Tier2aStatus::Match);
+    }
+}
+
+TEST_F(RatIntTest, Tier2aRealFormsProperty)
+{
+    // Every PROVED Rioboo form must be interval-audited Match: the
+    // runtime gate already refuses Mismatch (an honest Unevaluated),
+    // so proved() here implies the audit passed; this property makes
+    // the implication explicit over random cubics.
+    std::uint64_t st = 0x7192A5EEDULL;
+    for (int iter = 0; iter < 100; ++iter) {
+        const Rational b = rr(st, 4);
+        const Rational cc = rr(st, 4);
+        // irreducible (no rational root among small candidates)
+        bool red = false;
+        for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+            if (cc + b * Rational(r0) + Rational(r0 * r0 * r0) == 0)
+                red = true;
+        if (red)
+            continue;
+        const UPoly den({cc, b, Rational(std::int64_t{0}),
+                         Rational(std::int64_t{1})});
+        const Expr f = build(P("1"), den);
+        const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
+        ASSERT_TRUE(r.proved()) << r.reason;
+        // Tier-2a re-run explicitly (Match for the algebraic form).
+        EXPECT_EQ(numkit::cas::tier2aFormCheck(c, r.F, f, x), numkit::cas::Tier2aStatus::Match)
+            << c.toString(f);
+    }
+}
+

@@ -11,12 +11,14 @@
 //                           prints per-task outcomes and the summary
 //                           (pass rate, verification rate, median/p95).
 #include <numkit/cas/core/parser.hpp>
+#include <numkit/cas/core/series.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/rubi/rules.hpp>
 
 #include "corpus_runner.hpp"
 
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -147,6 +149,56 @@ int runEval(const std::string &exprSrc, const std::string &varName,
     return 0;
 }
 
+int runTaylor(const std::string &exprSrc, const std::string &varName,
+              const std::string &x0Src, int order)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f, x0;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+        x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr var = ctx.symbol(varName);
+    const numkit::cas::Expr out = numkit::cas::taylor(ctx, f, var, x0, order);
+    if (out.isNull()) {
+        std::cout << "Unevaluated (pole, branch point, or beyond series domain)\n";
+        return 2;
+    }
+    std::cout << ctx.toString(out) << "\n";
+    return 0;
+}
+
+int runLimit(const std::string &exprSrc, const std::string &varName,
+             const std::string &x0Src)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f, x0;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+        x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr var = ctx.symbol(varName);
+    const numkit::cas::LimitResult r = numkit::cas::limit(ctx, f, var, x0);
+    if (r.proved()) {
+        std::cout << ctx.toString(r.value) << "\n";
+        return 0;
+    }
+    if (r.status == numkit::cas::LimitResult::Status::Divergent) {
+        std::cout << "Divergent (pole of order " << r.poleOrder << ")\n";
+        return 2;
+    }
+    std::cout << "Unevaluated: " << r.reason << "\n";
+    return 2;
+}
+
 int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
@@ -183,6 +235,10 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         std::cout << ctx.toString(ctx.diff(f, var)) << "\n";
         return 0;
     }
+    if (cmd == "taylor")
+        return runTaylor(exprSrc, varName, "", 6);
+    if (cmd == "limit")
+        return runLimit(exprSrc, varName, "");
     if (cmd == "integrate") {
         const numkit::cas::RationalIntegral r =
             numkit::cas::integrate(ctx, f, var);
@@ -317,6 +373,12 @@ void usage()
 
 int main(int argc, char **argv)
 {
+    if (argc == 6 && std::string(argv[1]) == "taylor")
+        return runTaylor(argv[2], argv[3], argv[4], std::atoi(argv[5]));
+    if (argc == 5 && std::string(argv[1]) == "taylor")
+        return runTaylor(argv[2], argv[3], "", std::atoi(argv[4]));
+    if (argc == 5 && std::string(argv[1]) == "limit")
+        return runLimit(argv[2], argv[3], argv[4]);
     if (argc == 5 && std::string(argv[1]) == "subs")
         return runSubs(argv[2], argv[3], argv[4]);
     if (argc == 5 && std::string(argv[1]) == "eval")

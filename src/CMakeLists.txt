@@ -4,6 +4,7 @@ add_library(numkit_cas STATIC
     core/expr.cpp
     core/diff.cpp
     core/parser.cpp
+    core/series.cpp
     poly/upoly.cpp
     poly/sturm.cpp
     poly/solve.cpp

@@ -118,6 +118,23 @@ TEST_F(DiffTest, TranscendentalFunctions)
     EXPECT_EQ(dstr(c.func("asinh", x)), "(1 + x^2)^(-1/2)");
     EXPECT_EQ(dstr(c.func("acosh", x)), "(-1 + x^2)^(-1/2)");
     EXPECT_EQ(dstr(c.func("atanh", x)), "(1 + -x^2)^-1");
+    EXPECT_EQ(dstr(c.func("sqrt", x)), "1/2*x^(-1/2)");
+}
+
+TEST_F(DiffTest, SqrtAndNullPropagationInRelease)
+{
+    const Expr f = c.mul({c.func("sqrt", c.add({c.one(), x})),
+                          c.func("exp", c.neg(x))});
+    const Expr df = c.diff(f, x);
+    ASSERT_FALSE(df.isNull());
+#ifdef NDEBUG
+    // Guard for bugs/closed/core/diff-null-child-and-sqrt.md:
+    // an unsupported function inside a Mul/Add/Pow/Func must return
+    // null Expr cleanly in Release instead of dereferencing node(0).
+    const Expr bad = c.mul({c.func("unknown_fn", x), x});
+    EXPECT_TRUE(c.diff(bad, x).isNull());
+    EXPECT_TRUE(c.diff(c.add({c.func("unknown_fn", x), x}), x).isNull());
+#endif
 }
 
 TEST_F(DiffTest, ProductAndChainRules)

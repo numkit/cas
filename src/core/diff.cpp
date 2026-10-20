@@ -6,6 +6,8 @@ namespace numkit::cas {
 
 Expr Ctx::diff(Expr e, Expr var)
 {
+    if (e.isNull() || var.isNull())
+        return Expr();
     assert(kind(var) == NodeKind::Symbol && "diff variable must be a Symbol");
     std::unordered_map<std::uint32_t, Expr> memo;
     return diffRec(e, var, memo);
@@ -13,6 +15,8 @@ Expr Ctx::diff(Expr e, Expr var)
 
 Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &memo)
 {
+    if (e.isNull())
+        return Expr();
     const auto cached = memo.find(id(e));
     if (cached != memo.end())
         return cached->second;
@@ -27,24 +31,39 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         break;
     case NodeKind::Add: {
         std::vector<Expr> ds;
-        for (std::size_t i = 0; i < childCount(e); ++i)
-            ds.push_back(diffRec(child(e, i), var, memo));
-        result = add(ds);
+        bool failed = false;
+        for (std::size_t i = 0; i < childCount(e); ++i) {
+            const Expr di = diffRec(child(e, i), var, memo);
+            if (di.isNull()) {
+                failed = true;
+                break;
+            }
+            ds.push_back(di);
+        }
+        if (!failed)
+            result = add(ds);
         break;
     }
     case NodeKind::Mul: {
         // n-ary product rule: sum_i (d(fi) * prod_{j != i} fj).
         const std::size_t n = childCount(e);
         std::vector<Expr> terms;
+        bool failed = false;
         for (std::size_t i = 0; i < n; ++i) {
+            const Expr di = diffRec(child(e, i), var, memo);
+            if (di.isNull()) {
+                failed = true;
+                break;
+            }
             std::vector<Expr> factors;
-            factors.push_back(diffRec(child(e, i), var, memo));
+            factors.push_back(di);
             for (std::size_t j = 0; j < n; ++j)
                 if (j != i)
                     factors.push_back(child(e, j));
             terms.push_back(mul(factors));
         }
-        result = add(terms);
+        if (!failed)
+            result = add(terms);
         break;
     }
     case NodeKind::Pow: {
@@ -53,6 +72,8 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         if (kind(v) == NodeKind::Number) {
             // d(u^c) = c * u^(c-1) * u'
             const Expr du = diffRec(u, var, memo);
+            if (du.isNull())
+                break;
             if (isZero(du)) {
                 result = zero();
                 break;
@@ -64,6 +85,8 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         } else if (kind(u) == NodeKind::Number) {
             // d(a^v) = a^v * log(a) * v'
             const Expr dv = diffRec(v, var, memo);
+            if (dv.isNull())
+                break;
             if (isZero(dv)) {
                 result = zero();
                 break;
@@ -75,6 +98,8 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             // evaluation could be singular, e.g. log(0)).
             const Expr du = diffRec(u, var, memo);
             const Expr dv = diffRec(v, var, memo);
+            if (du.isNull() || dv.isNull())
+                break;
             if (isZero(du) && isZero(dv)) {
                 result = zero();
             } else if (isZero(du)) {
@@ -93,12 +118,18 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
     case NodeKind::Func: {
         const Expr u = child(e, 0);
         const Expr du = diffRec(u, var, memo);
+        if (du.isNull())
+            break;
         if (isZero(du)) {
             result = zero();
             break;
         }
         const std::string &name = funcName(e);
-        if (name == "exp")
+        if (name == "sqrt")
+            result = mul({number(Rational(std::int64_t{1}, BigInt(2))),
+                          pow(u, number(Rational(std::int64_t{-1}, BigInt(2)))),
+                          du});
+        else if (name == "exp")
             result = mul({e, du});
         else if (name == "log")
             result = mul({du, pow(u, number(std::int64_t{-1}))});

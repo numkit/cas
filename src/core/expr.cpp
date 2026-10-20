@@ -617,6 +617,7 @@ bool Ctx::evalExact(
             return false;
         const std::string &name = funcName(e);
         const Rational zero(0), one(1);
+        if (name == "sqrt" && (a == zero || a == one)) { out = a; return true; }
         if (name == "exp" && a == zero) { out = one; return true; }
         if (name == "log" && a == one) { out = zero; return true; }
         if ((name == "sin" || name == "tan" || name == "atan" ||

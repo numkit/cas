@@ -106,6 +106,18 @@ TEST(EvalExact, FixedVectors)
     EXPECT_EQ(out, Rational(std::int64_t{1}));
     ASSERT_TRUE(c.evalExact(c.func("sin", c.zero()), env, out));
     EXPECT_EQ(out, Rational(std::int64_t{0}));
+    ASSERT_TRUE(c.evalExact(c.func("asin", c.zero()), env, out));
+    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    ASSERT_TRUE(c.evalExact(c.func("asinh", c.zero()), env, out));
+    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    ASSERT_TRUE(c.evalExact(c.func("atanh", c.zero()), env, out));
+    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    ASSERT_TRUE(c.evalExact(c.func("cosh", c.zero()), env, out));
+    EXPECT_EQ(out, Rational(std::int64_t{1}));
+    ASSERT_TRUE(c.evalExact(c.func("acos", c.one()), env, out));
+    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    ASSERT_TRUE(c.evalExact(c.func("acosh", c.one()), env, out));
+    EXPECT_EQ(out, Rational(std::int64_t{0}));
 
     // Honest declines.
     EXPECT_FALSE(c.evalExact(c.func("sin", x), env, out));      // sin(3)

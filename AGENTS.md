@@ -5,13 +5,15 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
-- **Working goal: v0.1.0 first working release** — acceptance criteria in
-  `notes/first-working-version.md` (standalone certified integrator
-  core; the Numkit vendoring spike is NOT part of v0.1.0 and waits for
-  the user's explicit command). Remaining: roadmap items 30–31 in
-  `notes/c1-algebraic-layer.md`; the full version ladder (v0.2.0
-  Toolbox-in-Numkit, v0.3.0 non-elementarity proofs, v0.4+) is at the
-  bottom of the same goal note. Items 32–33 (v0.2 pool) follow 30–31.
+- **Released: v0.1.0** (standalone certified integrator core; criteria and
+  metrics in `CHANGELOG.md` and `notes/first-working-version.md`).
+- **Working goal: v0.2.0 "Symbolic Toolbox in Numkit" + SMT capability track** —
+  autonomous pool: items 32–37 in `notes/c1-algebraic-layer.md` (staged Rubi
+  scaling R1–R6, Mean Leaf Ratio, unified `integrate` cascade, and practical
+  MATLAB Symbolic Math Toolbox capabilities: numeric evaluation/`vpa` basis,
+  `taylor`/`limit`, symbolic matrices `jacobian`/`det`/`inv`/`linsolve`). The
+  Numkit vendoring spike (item 23 remainder) waits for the user's explicit
+  command.
 - **Integration contract is BINDING for all code** (the core is vendored into
   the Numkit tree later; see `notes/integration-model.md`):
   - C++17 strict — no C++20/23 features;

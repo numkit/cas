@@ -111,6 +111,27 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         else if (name == "atan")
             result = mul({du, pow(add({one(), pow(u, number(std::int64_t{2}))}),
                                   number(std::int64_t{-1}))});
+        else if (name == "asin")
+            result = mul({du, pow(add({one(), neg(pow(u, number(std::int64_t{2})))}),
+                                  number(Rational(std::int64_t{-1}, BigInt(2))))});
+        else if (name == "acos")
+            result = neg(mul({du, pow(add({one(), neg(pow(u, number(std::int64_t{2})))}),
+                                      number(Rational(std::int64_t{-1}, BigInt(2))))}));
+        else if (name == "sinh")
+            result = mul({func("cosh", u), du});
+        else if (name == "cosh")
+            result = mul({func("sinh", u), du});
+        else if (name == "tanh")
+            result = mul({du, add({one(), neg(pow(e, number(std::int64_t{2})))})});
+        else if (name == "asinh")
+            result = mul({du, pow(add({one(), pow(u, number(std::int64_t{2}))}),
+                                  number(Rational(std::int64_t{-1}, BigInt(2))))});
+        else if (name == "acosh")
+            result = mul({du, pow(add({number(std::int64_t{-1}), pow(u, number(std::int64_t{2}))}),
+                                  number(Rational(std::int64_t{-1}, BigInt(2))))});
+        else if (name == "atanh")
+            result = mul({du, pow(add({one(), neg(pow(u, number(std::int64_t{2})))}),
+                                  number(std::int64_t{-1}))});
         else {
             assert(!"diff: unsupported function");
             result = Expr();

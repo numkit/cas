@@ -110,6 +110,14 @@ TEST_F(DiffTest, TranscendentalFunctions)
     EXPECT_EQ(dstr(c.func("cos", x)), "-sin(x)");
     EXPECT_EQ(dstr(c.func("tan", x)), "1 + tan(x)^2");
     EXPECT_EQ(dstr(c.func("atan", x)), "(1 + x^2)^-1");
+    EXPECT_EQ(dstr(c.func("asin", x)), "(1 + -x^2)^(-1/2)");
+    EXPECT_EQ(dstr(c.func("acos", x)), "-(1 + -x^2)^(-1/2)");
+    EXPECT_EQ(dstr(c.func("sinh", x)), "cosh(x)");
+    EXPECT_EQ(dstr(c.func("cosh", x)), "sinh(x)");
+    EXPECT_EQ(dstr(c.func("tanh", x)), "1 + -tanh(x)^2");
+    EXPECT_EQ(dstr(c.func("asinh", x)), "(1 + x^2)^(-1/2)");
+    EXPECT_EQ(dstr(c.func("acosh", x)), "(-1 + x^2)^(-1/2)");
+    EXPECT_EQ(dstr(c.func("atanh", x)), "(1 + -x^2)^-1");
 }
 
 TEST_F(DiffTest, ProductAndChainRules)

@@ -164,6 +164,9 @@ Expr Ctx::pow(Expr base, Expr exp)
             return one();
         if (e == Rational(std::int64_t{1}))
             return base;
+        if (kind(base) == NodeKind::Number &&
+            numberValue(base) == Rational(std::int64_t{1}))
+            return one();
 
         std::int64_t n = 0;
         const bool isSmallInt = smallInteger(e, n);
@@ -614,11 +617,20 @@ bool Ctx::evalExact(
         const Rational zero(0), one(1);
         if (name == "exp" && a == zero) { out = one; return true; }
         if (name == "log" && a == one) { out = zero; return true; }
-        if ((name == "sin" || name == "tan" || name == "atan") && a == zero) {
+        if ((name == "sin" || name == "tan" || name == "atan" ||
+             name == "asin" || name == "sinh" || name == "tanh" ||
+             name == "asinh" || name == "atanh") && a == zero) {
             out = zero;
             return true;
         }
-        if (name == "cos" && a == zero) { out = one; return true; }
+        if ((name == "cos" || name == "cosh") && a == zero) {
+            out = one;
+            return true;
+        }
+        if ((name == "acos" || name == "acosh") && a == one) {
+            out = zero;
+            return true;
+        }
         return false;
     }
     case NodeKind::Pow: {

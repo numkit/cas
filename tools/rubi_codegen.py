@@ -19,6 +19,7 @@ tools invocation:
     python tools/rubi_codegen.py rules.json rubi_tables.inc
 """
 
+from fractions import Fraction
 import json
 import sys
 
@@ -54,29 +55,59 @@ def prefix_terms(node):
     return out
 
 
+def fmt_frac(f):
+    return (f"{f.numerator}/{f.denominator}"
+            if f.denominator != 1 else str(f.numerator))
+
+
+def make_pow(base, exp):
+    """Canonicalize (u^r)^n -> u^(r*n) for numeric r and integer n,
+    mirroring Ctx::pow (src/core/expr.cpp)."""
+    if (base.get("op") == "^" and "num" in base["args"][1]
+            and "num" in exp):
+        n = Fraction(exp["num"])
+        if n.denominator == 1:
+            r = Fraction(base["args"][1]["num"])
+            return {"op": "^", "args": [base["args"][0],
+                                        {"num": fmt_frac(r * n)}]}
+    return {"op": "^", "args": [base, exp]}
+
+
 def rewrite_div(node):
-    """Canonicalize DIVISION out of a PATTERN: the expression DAG
-    stores a/b as a*b^-1 (and 1/u folds to u^-1), so a pattern
-    written with an explicit / could never match. Rewritten:
-        / [1, d]        ->  ^ [d, -1]          (the folded twin)
+    """Canonicalize a PATTERN into the shapes the expression DAG
+    actually builds:
+        neg[num]        ->  num (-r)
+        / [num, num]    ->  num (p/q)
+        Sqrt[u]         ->  ^ [u, 1/2]
+        ^ [^[u, r], n]  ->  ^ [u, r*n]  (integer n, numeric r)
+        / [1, d]        ->  ^ [d, -1]   (distributed over * factors)
         / [a, b]        ->  * [a, ^ [b, -1]]
     Children are rewritten recursively. REPLACEMENTS keep their
     spelling (the replacement builder evaluates / through div)."""
     if "args" not in node:
         return node
     args = [rewrite_div(a) for a in node["args"]]
+    if node.get("op") == "neg" and len(args) == 1 and "num" in args[0]:
+        return {"num": fmt_frac(-Fraction(args[0]["num"]))}
+    if node.get("head") == "Sqrt" and len(args) == 1:
+        return make_pow(args[0], {"num": "1/2"})
+    if node.get("op") == "^" and len(args) == 2:
+        return make_pow(args[0], args[1])
     if node.get("op") == "/":
         num, den = args
+        if "num" in num and "num" in den:
+            return {"num": fmt_frac(
+                Fraction(num["num"]) / Fraction(den["num"]))}
         if num.get("num") == "1":
             # 1/(p*q*...) DISTRIBUTES in the canonical DAG into a
             # flat Mul of negative powers - mirror that here so the
             # twin matches what the canonicalizer actually builds.
             if den.get("op") == "*":
-                factors = [{"op": "^", "args": [f, {"num": "-1"}]}
+                factors = [make_pow(f, {"num": "-1"})
                            for f in den["args"]]
                 return {"op": "*", "args": factors}
-            return {"op": "^", "args": [den, {"num": "-1"}]}
-        return {"op": "*", "args": [num, {"op": "^", "args": [den, {"num": "-1"}]}]}
+            return make_pow(den, {"num": "-1"})
+        return {"op": "*", "args": [num, make_pow(den, {"num": "-1"})]}
     out = dict(node)
     out["args"] = args
     return out

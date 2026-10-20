@@ -130,7 +130,8 @@ public:
     }
 
     // Symbolic derivative d/de of e. var must be a Symbol node.
-    // Supported functions: exp, log, sin, cos, tan, atan; anything else
+    // Supported functions: exp, log, sin, cos, tan, atan, asin, acos,
+    // sinh, cosh, tanh, asinh, acosh, atanh; anything else
     // asserts in debug and returns a null Expr in release.
     Expr diff(Expr e, Expr var);
 

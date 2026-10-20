@@ -177,10 +177,8 @@ TEST(RubiApply, BoundaryAndGuards)
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
 
-    // 1/((1+x)*(1-x)): the TWO-FACTOR slice - textbook partial
-    // fractions through the RECURSIVE Int cascade (each inner
-    // 1/(a+b x) lands on the log rule; the outer certificate
-    // checks the assembled sum).
+    // 1/((1+x)*(1-x)): b*c + a*d == 0, so Rubi's primary rule 2 in
+    // 1.1.1.2 cascades into Int[1/(1 - x^2), x] -> atanh(x).
     {
         const Expr F = rubiApply(
             t, c,
@@ -189,11 +187,20 @@ TEST(RubiApply, BoundaryAndGuards)
                          c.number(std::int64_t{-1}))}),
             x);
         ASSERT_FALSE(F.isNull());
-        EXPECT_EQ(c.toString(F), "-1/2*log(1 + -x) + 1/2*log(1 + x)");
-        // the POLYNOMIAL-grade certificate inside rubiApply already
-        // verified dF == 1/((1+x)(1-x)) in Q(x) - no need (and no
-        // way) to re-check structurally: the derivative prints as a
-        // sum, the integrand as a product.
+        EXPECT_EQ(c.toString(F), "atanh(x)");
+    }
+
+    // 1/((1+x)*(2-x)): b*c + a*d != 0, so rule 2 declines and rule 3
+    // of 1.1.1.2 splits into two logarithms via recursive Int.
+    {
+        const Expr F = rubiApply(
+            t, c,
+            c.mul({c.pow(c.add({c.one(), x}), c.number(std::int64_t{-1})),
+                   c.pow(c.add({c.number(std::int64_t{2}), c.neg(x)}),
+                         c.number(std::int64_t{-1}))}),
+            x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "-1/3*log(2 + -x) + 1/3*log(1 + x)");
     }
 
     // 1/(1+x^2): the QUADRATIC slice rule - atan(x), the textbook
@@ -398,10 +405,20 @@ TEST(RubiApply, LinearityFallbacks)
                     t, c,
                     c.add({c.number(std::int64_t{2}), c.func("sin", x)}), x)
                     .isNull());
-    // Three-term Add (arity 3): every term integrates. NB a bare
-    // linear term x or c*x does NOT (the matcher requires a Pow node
-    // for x_^m_., unlike Mathematica's OneIdentity elision) - a known
-    // limitation, honest Unevaluated.
+    // Bare linear monomials x and c*x (OneIdentity m=1 mirror):
+    {
+        const Expr F1 = rubiApply(t, c, x, x);
+        ASSERT_FALSE(F1.isNull());
+        EXPECT_EQ(c.toString(F1), "1/2*x^2");
+        EXPECT_EQ(c.diff(F1, x), x);
+
+        const Expr cx = c.mul({c.number(std::int64_t{4}), x});
+        const Expr F2 = rubiApply(t, c, cx, x);
+        ASSERT_FALSE(F2.isNull());
+        EXPECT_EQ(c.toString(F2), "2*x^2");
+        EXPECT_EQ(c.diff(F2, x), cx);
+    }
+    // Three-term Add (arity 3) including a linear term: every term integrates.
     {
         const Expr e = c.add(
             {c.number(std::int64_t{3}), c.pow(x, c.number(std::int64_t{2})),
@@ -442,6 +459,223 @@ TEST(RubiApply, PropertyPositivePowers)
         const Expr back = numkit::cas::parseExpr(c, c.toString(F));
         ASSERT_FALSE(back.isNull()) << c.toString(F);
         ASSERT_EQ(back, F) << c.toString(F);
+    }
+}
+
+// ── Stage R1a: canonical pattern rewrites, non-linear bindings, ────
+// ── inverse trig/hyperbolic heads, and radical quotient gate    ────
+
+TEST(RubiMatcher, NonlinearPatternRequiresEqualBindings)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // Equal exponents m == 2: matches the non-linear pattern
+    // (a_ + b_.*x_)^m_ * (c_ + d_.*x_)^m_ first (bound wildcard "m"
+    // beats fresh wildcard "n"), with a single binding for "m".
+    {
+        const Expr e = c.mul({
+            c.pow(c.add({c.one(), x}), c.number(std::int64_t{2})),
+            c.pow(c.add({c.one(), c.neg(x)}), c.number(std::int64_t{2})),
+        });
+        std::vector<Binding> b;
+        const int r = matchFirst(t, c, e, b);
+        ASSERT_GE(r, 0);
+        int mCount = 0, nCount = 0;
+        for (const Binding &bi : b) {
+            if (bi.name == "m") ++mCount;
+            if (bi.name == "n") ++nCount;
+        }
+        EXPECT_EQ(mCount, 1);
+        EXPECT_EQ(nCount, 0);
+    }
+
+    // Distinct exponents 2 != 3: must NOT match the non-linear m_..m_
+    // leaf; falls through to (a+b*x)^m_ * (c+d*x)^n_ and binds m=2, n=3.
+    {
+        const Expr e = c.mul({
+            c.pow(c.add({c.one(), x}), c.number(std::int64_t{2})),
+            c.pow(c.add({c.one(), c.neg(x)}), c.number(std::int64_t{3})),
+        });
+        std::vector<Binding> b;
+        const int r = matchFirst(t, c, e, b);
+        ASSERT_GE(r, 0);
+        int mCount = 0, nCount = 0;
+        for (const Binding &bi : b) {
+            if (bi.name == "m") {
+                ++mCount;
+                EXPECT_EQ(bi.value, c.number(std::int64_t{2}));
+            }
+            if (bi.name == "n") {
+                ++nCount;
+                EXPECT_EQ(bi.value, c.number(std::int64_t{3}));
+            }
+        }
+        EXPECT_EQ(mCount, 1);
+        EXPECT_EQ(nCount, 1);
+    }
+}
+
+TEST(RubiApply, R1aInverseTrigAndHyperbolic)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // 1/(1 - x^2) -> atanh(x)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "1/(1 - x^2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "atanh(x)");
+    }
+    // 1/(2 - 3*x^2) -> 2^(-1/2)*3^(-1/2)*atanh(x*2^(-1/2)*3^(1/2))
+    {
+        const Expr e = numkit::cas::parseExpr(c, "1/(2 - 3*x^2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F),
+                  "2^(-1/2)*3^(-1/2)*atanh(x*2^(-1/2)*3^(1/2))");
+    }
+    // 1/sqrt(1 + x^2) -> asinh(x) (pattern 1/Sqrt[a+b*x^2] canonicalized)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x^2)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "asinh(x)");
+    }
+    // 1/sqrt(2 + 3*x^2) -> 3^(-1/2)*asinh(x*2^(-1/2)*3^(1/2))
+    // Certified by Grade 1d (algebraic radical quotient Q^2 == 1 in Q(x)).
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(2 + 3*x^2)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "3^(-1/2)*asinh(x*2^(-1/2)*3^(1/2))");
+    }
+    // 1/sqrt(1 - x^2) -> asin(x)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 - x^2)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "asin(x)");
+    }
+    // 1/sqrt(2 - 9*x^2) -> 9^(-1/2)*asin(x*2^(-1/2)*9^(1/2))
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(2 - 9*x^2)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "9^(-1/2)*asin(x*2^(-1/2)*9^(1/2))");
+    }
+    // 1/(sqrt(2 + 3*x)*sqrt(-2 + 3*x)) -> 1/3*acosh(3/2*x)
+    {
+        const Expr e =
+            numkit::cas::parseExpr(c, "(2 + 3*x)^(-1/2)*(-2 + 3*x)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "1/3*acosh(3/2*x)");
+    }
+}
+
+TEST(RubiApply, R1aFractionalAndNegativePowers)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // 1/(2 + 3*x^2)^(3/2) -> 1/2*x*(2 + 3*x^2)^(-1/2)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(2 + 3*x^2)^(-3/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "1/2*x*(2 + 3*x^2)^(-1/2)");
+    }
+    // (2 + 3*x^2)^(-5/2): ILtQ[p + 3/2, 0] reduction to (-3/2)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(2 + 3*x^2)^(-5/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F),
+                  "1/6*x*(2 + 3*x^2)^(-3/2) + 1/6*x*(2 + 3*x^2)^(-1/2)");
+    }
+    // 1/(1 + x^2)^2: negative integer power reduction -> 1/2*x*(1+x^2)^-1 + 1/2*atan(x)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x^2)^-2");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_EQ(c.toString(F), "1/2*x*(1 + x^2)^-1 + 1/2*atan(x)");
+    }
+    // Elliptic-only fractional power (1 + x^2)^(1/4): EllipticE rules
+    // decline honestly and self-recursion / bounded-depth guards prevent
+    // normalization rules (a=1 -> Int[(1+b*x^2/a)^(1/4), x]) from looping.
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x^2)^(1/4)");
+        EXPECT_TRUE(rubiApply(t, c, e, x).isNull());
+    }
+    // (3*x^2)^(3/2): IntPart / FracPart rule in 1.1.2.1
+    {
+        const Expr e = c.pow(
+            c.mul({c.number(std::int64_t{3}), c.pow(x, c.number(std::int64_t{2}))}),
+            c.number(Rational(std::int64_t{3}, BigInt(2))));
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // Two-factor reduction with binary Mul commutativity and IntLinearQ:
+    // (1 + x)^-2 * (2 + x)^-2 -> rational + logs
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x)^-2*(2 + x)^-2");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // Equal-exponent two-factor rule (1 + x)^2 * (1 - x)^2 -> Int[(1 - x^2)^2, x]
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x)^2*(1 - x)^2");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+}
+
+TEST(RubiApply, PropertyR1aShapes)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+    std::uint64_t st = 0x71A2026ULL;
+    for (int iter = 0; iter < 1000; ++iter) {
+        const std::int64_t a = 1 + static_cast<std::int64_t>(nextU64(st) % 6);
+        const std::int64_t bMag = 1 + static_cast<std::int64_t>(nextU64(st) % 6);
+        const std::int64_t b = (nextU64(st) % 2 == 0) ? bMag : -bMag;
+        const int shape = static_cast<int>(nextU64(st) % 4);
+        Expr e;
+        if (shape == 0) {
+            // 1/(a + b*x^2) with both positive and negative b (atan & atanh)
+            e = c.pow(c.add({c.number(a),
+                             c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
+                      c.number(std::int64_t{-1}));
+        } else if (shape == 1) {
+            // 1/sqrt(a + b*x^2) with a > 0 and both signs of b (asinh & asin)
+            e = c.pow(c.add({c.number(a),
+                             c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
+                      c.number(Rational(std::int64_t{-1}, BigInt(2))));
+        } else if (shape == 2) {
+            // (a + b*x^2)^(-3/2) and (-5/2)
+            const std::int64_t num = (nextU64(st) % 2 == 0) ? -3 : -5;
+            e = c.pow(c.add({c.number(a),
+                             c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
+                      c.number(Rational(num, BigInt(2))));
+        } else {
+            // 1/(a + b*x^2)^2
+            e = c.pow(c.add({c.number(a),
+                             c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
+                      c.number(std::int64_t{-2}));
+        }
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull())
+            << "shape=" << shape << " a=" << a << " b=" << b
+            << " e=" << c.toString(e);
+        const Expr back = numkit::cas::parseExpr(c, c.toString(F));
+        ASSERT_FALSE(back.isNull()) << c.toString(F);
+        ASSERT_EQ(back, F);
     }
 }
 

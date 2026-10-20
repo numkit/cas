@@ -366,12 +366,16 @@
     `tools/vendor_sync.py` (`integrate/verify.hpp` + `verify.cpp`), обновление
     `CHANGELOG.md`, `CMakeLists.txt` (`VERSION 0.3.0`), `README.md`, `AGENTS.md`,
     236/236 тестов Release за 27.5 с, аннотированный тег `v0.3.0`.
-44. 🔶 (v0.4-пул, Эшелон 4) Определённое интегрирование и пределы на бесконечности
-    (`definiteIntegrate` + `limitAtInfinity` в `core/series` и `integrate/ratint`,
-    формула Ньютона–Лейбница с контролем непрерывности и внутренних полюсов на
-    $(a, b)$, несобственные интегралы на $\pm\infty$ и в особых точках через
-    пределы; CLI `nkcas defint`).
-45. ⬜ (v0.4-пул, Эшелон 4) Система предположений о символах (`AssumeDomain`:
+44. ✅ (v0.4-пул, Эшелон 4) Определённое интегрирование и пределы на бесконечности
+    (`definiteIntegrate` в `integrate/ratint`, `limitOneSided` и `limitAtInfinity`
+    в `core/series` с поддержкой символьных `inf`/`oo`/`infinity` и `-inf`,
+    точная таблица тригонометрических и обратных тригонометрических функций на
+    рациональных долях $\pi$ в `core/simplify`, формула Ньютона–Лейбница с
+    контролем внутренних полюсов на $(a, b)$ через `solveRealRoots` и
+    распознаванием устранимых особенностей, вещественная ветвь $\log|u|$ на
+    границах и несобственные интегралы на $\pm\infty$ и в слабо сингулярных
+    концах через односторонние пределы и подстановку Пюизё; CLI `nkcas defint`).
+45. 🔶 (v0.4-пул, Эшелон 4) Система предположений о символах (`AssumeDomain`:
     `Any`, `Real`, `Positive`, `Negative`, `NonNegative`, `Integer` в `Ctx`),
     вывод знака и вещественности подвыражений, учёт предположений в `simplify`
     ($\sqrt{u^2} \to u$ при $u > 0$, $\log(u^p) \to p\log u$) и в предикатах
@@ -2438,3 +2442,25 @@ MATLAB Symbolic Math Toolbox (три эшелона):
      `tests/rubi/rules_test.cpp` + расширен `UnifiedIntegrateCascade` в
      `tests/integrate/ratint_test.cpp`. Все **236/236 тестов Release** проходят за
      27.5 с.
+
+## 2026-10-21: Реализация пункта 44 — `definiteIntegrate`, `limitAtInfinity`, `limitOneSided` и точная тригонометрия специальных углов
+
+Реализован первый пакет Эшелона 4 (пул `v0.4.0`):
+
+1. **Точные значения тригонометрических и обратных тригонометрических функций (`src/core/simplify.cpp`)**:
+   - В `simplifyFuncNode` добавлено точное вычисление `sin`, `cos`, `tan`, `cot`, `sec`, `csc` в рациональных кратных $\pi$ со знаменателями $q \in \{1, 2, 3, 4, 6\}$ через редукцию показателя по модулю $2\pi$ ($m = p \bmod 2q$), а также специальных значений `asin`, `acos`, `atan`, `acot` в точках $0, \pm 1, \pm 1/2, \pm\sqrt{3}, \pm 1/\sqrt{3}$.
+   - В `foldConst` (`src/core/series.cpp`) вызов `c.simplify(fn)` на константных аргументах автоматически сворачивает $\sin(\pi) \to 0$, $\cos(\pi/2) \to 0$, $\arctan(1) \to \pi/4$ при вычислении пределов и подстановке границ интегрирования.
+
+2. **Односторонние пределы и пределы на бесконечности (`include/numkit/cas/core/series.hpp`, `src/core/series.cpp`)**:
+   - Добавлены `limitOneSided(c, f, var, x0, dir, budget)` ($x = x_0 \pm t, t \to 0^+$ с автоматическим фоллбэком Пюизё $x = x_0 \pm t^2$ для корневых точек ветвления вроде $\sqrt{x}$ и $\sqrt{1-x}$) и `limitAtInfinity(c, f, var, dir, budget)` ($x = \pm 1/t, t \to 0^+$), а также распознавание символьных границ `inf`/`oo`/`infinity` и `-inf` в `limit`.
+   - В `evalFuncSeries` при `positiveT = true` и отрицательной валюации аргумента (`arg.val < 0`, т.е. $u(t) \to \pm\infty$) реализованы:
+     - полное асимптотическое разложение $\arctan(u) = \operatorname{sgn}(c_0)\frac{\pi}{2} - \arctan(1/u)$ и $\operatorname{acot}(u) = \frac{1-\operatorname{sgn}(c_0)}{2}\pi + \arctan(1/u)$ (благодаря чему автоматически берутся и старшие неопределённости вида $\lim_{x\to\infty} x(\pi/2 - \arctan x) = 1$);
+     - экспоненциальное убывание $\exp(u) = 0 + O(t^N)$ при $c_0 < 0$ (позволяющее брать $\lim_{x\to\infty} x^k e^{-\alpha x} = 0$ прямо в кольце рядов Лорана);
+     - асимптотика гиперболических функций $\tanh(u), \operatorname{coth}(u) \to \operatorname{sgn}(c_0)$ и $\operatorname{sech}(u), \operatorname{csch}(u) \to 0$.
+   - Добавлены: группировка логарифмов с рациональными коэффициентами `combineLogsForLimit` ($\sum r_i \log u_i \to \frac{1}{q}\log\prod u_i^{q r_i}$ для раскрытия $\infty - \infty$), теорема о зажатой функции для ограниченных осциллирующих множителей $\sin/\cos$, аддитивный фоллбэк и детектор логарифмических/степенных/экспоненциальных расходимостей в `limitDepth`.
+
+3. **Определённое и несобственное интегрирование (`include/numkit/cas/integrate/ratint.hpp`, `src/integrate/ratint.cpp`, `apps/nkcas.cpp`)**:
+   - Добавлены структура `DefiniteIntegral` (`Status::{Unevaluated, ProvedSymbolic, Divergent}`, `value`, `F`, `reason`) и функция `definiteIntegrate(c, f, var, a, b, budget)`.
+   - Контроль внутренних полюсов на интервале $(\min(a,b), \max(a,b))$: извлечение полиномиальных знаменателей, изоляция вещественных корней через `solveRealRoots` + `refineRoot` и отсеивание устранимых особенностей через `limit(c, f, var, root)` (например, $\int_0^2 \frac{x^2-1}{x-1}\,dx = 4$ проходит, а $\int_{-1}^1 x^{-2}\,dx$ и $\int_{-1}^1 x^{-1}\,dx$ возвращают `Divergent`).
+   - Вещественная ветвь $\log|u(x)|$ (`realizeLogAbsAtEndpoint`): при подстановке конечной границы, в которой аргумент логарифма в первообразной отрицателен, $\log(u)$ заменяется на $\log(-u)$ (например, $\int_{-2}^{-1} \frac{1}{x}\,dx = -\log 2$).
+   - Команда CLI `nkcas defint "<expr>" <var> <a> <b>`.

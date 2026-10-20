@@ -77,6 +77,33 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var,
 RationalIntegral integrate(Ctx &c, Expr f, Expr var,
                            Budget *budget = nullptr);
 
+struct DefiniteIntegral
+{
+    enum class Status
+    {
+        Unevaluated,
+        ProvedSymbolic,
+        Divergent,
+    };
+
+    Status status = Status::Unevaluated;
+    Expr value; // definite integral value when ProvedSymbolic
+    Expr F;     // certified indefinite antiderivative used
+    std::string reason;
+
+    bool proved() const { return status == Status::ProvedSymbolic; }
+};
+
+// Certified definite and improper symbolic integration int_a^b f(var) d(var):
+//   1. Interior pole detection on (a, b) via polynomial denominator root
+//      isolation (`solveRealRoots`) + Laurent pole verification (`limit`).
+//   2. Certified indefinite antiderivative F(var) via `integrate`.
+//   3. Endpoint evaluation lim_{var -> b^-} F(var) - lim_{var -> a^+} F(var)
+//      with real log|u| branch realization and symbolic infinity support
+//      (`inf`/`oo`/`infinity` and `-inf`).
+DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
+                                   Budget *budget = nullptr);
+
 // Factor the rational function e(var) over Q: returns the factored
 // canonical product (content coefficients in front, irreducible
 // factors with multiplicities as integer powers). Returns false when

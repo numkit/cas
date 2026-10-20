@@ -69,6 +69,20 @@ bool splitLine(const std::string &line, std::string &cmd,
         exprSrc = trim(line.substr(cmd.size()));
         return !exprSrc.empty();
     }
+    if (cmd == "defint") {
+        // "defint <expr...> <var> <a> <b>": last three tokens are var, a, b.
+        if (words.size() < 5)
+            return false;
+        const std::string &bTok = words.back();
+        const std::string &aTok = words[words.size() - 2];
+        const std::string &varTok = words[words.size() - 3];
+        const std::size_t bOff = line.rfind(bTok);
+        const std::size_t aOff = line.rfind(aTok, bOff > 0 ? bOff - 1 : 0);
+        const std::size_t vOff = line.rfind(varTok, aOff > 0 ? aOff - 1 : 0);
+        exprSrc = trim(line.substr(cmd.size(), vOff - cmd.size()));
+        var = varTok + "\t" + aTok + "\t" + bTok;
+        return !exprSrc.empty();
+    }
     if (cmd == "subs" || cmd == "eval") {
         if (cmd == "eval" && words.size() == 2) {
             exprSrc = trim(line.substr(cmd.size()));
@@ -202,9 +216,46 @@ int runLimit(const std::string &exprSrc, const std::string &varName,
     return 2;
 }
 
+int runDefInt(const std::string &exprSrc, const std::string &varName,
+              const std::string &aSrc, const std::string &bSrc)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f, a, b;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+        a = numkit::cas::parseExpr(ctx, aSrc);
+        b = numkit::cas::parseExpr(ctx, bSrc);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr var = ctx.symbol(varName);
+    const numkit::cas::DefiniteIntegral r =
+        numkit::cas::definiteIntegrate(ctx, f, var, a, b);
+    if (r.proved()) {
+        std::cout << ctx.toString(r.value) << "\n";
+        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        return 0;
+    }
+    if (r.status == numkit::cas::DefiniteIntegral::Status::Divergent) {
+        std::cout << "Divergent: " << r.reason << "\n";
+        return 2;
+    }
+    std::cout << "Unevaluated: " << r.reason << "\n";
+    return 2;
+}
+
 int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
+    if (cmd == "defint") {
+        const std::size_t t1 = varName.find('\t');
+        const std::size_t t2 = varName.find('\t', t1 + 1);
+        return runDefInt(exprSrc, varName.substr(0, t1),
+                         varName.substr(t1 + 1, t2 - t1 - 1),
+                         varName.substr(t2 + 1));
+    }
     if (cmd == "subs") {
         // splitLine packed "from\tto" into varName
         const std::size_t tab = varName.find('\t');
@@ -404,6 +455,8 @@ int main(int argc, char **argv)
 {
     if (argc == 6 && std::string(argv[1]) == "taylor")
         return runTaylor(argv[2], argv[3], argv[4], std::atoi(argv[5]));
+    if (argc == 6 && std::string(argv[1]) == "defint")
+        return runDefInt(argv[2], argv[3], argv[4], argv[5]);
     if (argc == 5 && std::string(argv[1]) == "taylor")
         return runTaylor(argv[2], argv[3], "", std::atoi(argv[4]));
     if (argc == 5 && std::string(argv[1]) == "limit")

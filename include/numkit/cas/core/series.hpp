@@ -46,7 +46,20 @@ struct LimitResult
 //      arbitrary-order zero/pole indeterminate forms 0/0, inf - inf, etc.).
 //   2. Product-to-quotient rewrite for 0 * log(0) indeterminate forms and
 //      bounded L'Hopital's rule on 0/0 or inf/inf quotient forms.
+//   3. Recognizes symbolic infinity endpoints `inf`/`oo`/`infinity` and
+//      `-inf`/`-oo`/`-infinity`, dispatching to `limitAtInfinity`.
 LimitResult limit(Ctx &c, Expr f, Expr var, Expr x0,
                   Budget *budget = nullptr);
+
+// One-sided symbolic limit lim_{var -> x0^+} f(var) (dir > 0) or
+// lim_{var -> x0^-} f(var) (dir < 0), supporting square-root Puiseux
+// branch points at x0 via t = sqrt(dir * (var - x0)).
+LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
+                          Budget *budget = nullptr);
+
+// Symbolic limit at infinity: lim_{var -> +inf} f(var) (dir >= 0) or
+// lim_{var -> -inf} f(var) (dir < 0).
+LimitResult limitAtInfinity(Ctx &c, Expr f, Expr var, int dir = +1,
+                            Budget *budget = nullptr);
 
 } // namespace numkit::cas

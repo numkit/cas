@@ -117,6 +117,58 @@ TEST(SimplifyTest, InverseFunctionAndExpLogIdentities)
     }
 }
 
+TEST(SimplifyTest, SpecialAngleTrigAndInverseTrigEvaluation)
+{
+    Ctx c;
+    struct Case {
+        const char *in;
+        const char *expected;
+    };
+    const Case cases[] = {
+        {"sin(pi/6)", "1/2"},
+        {"sin(pi/4)", "2^(-1/2)"},
+        {"sin(pi/3)", "1/2*3^(1/2)"},
+        {"sin(pi/2)", "1"},
+        {"sin(pi)", "0"},
+        {"sin(7*pi/6)", "-1/2"},
+        {"cos(pi/6)", "1/2*3^(1/2)"},
+        {"cos(pi/4)", "2^(-1/2)"},
+        {"cos(pi/3)", "1/2"},
+        {"cos(pi/2)", "0"},
+        {"cos(pi)", "-1"},
+        {"cos(2*pi)", "1"},
+        {"tan(pi/6)", "3^(-1/2)"},
+        {"tan(pi/4)", "1"},
+        {"tan(pi/3)", "3^(1/2)"},
+        {"tan(pi)", "0"},
+        {"cot(pi/4)", "1"},
+        {"sec(pi/3)", "2"},
+        {"csc(pi/6)", "2"},
+        {"asin(1/2)", "1/6*pi"},
+        {"asin(-1/2)", "-1/6*pi"},
+        {"asin(1)", "1/2*pi"},
+        {"asin(-1)", "-1/2*pi"},
+        {"acos(1/2)", "1/3*pi"},
+        {"acos(0)", "1/2*pi"},
+        {"acos(-1)", "pi"},
+        {"atan(1)", "1/4*pi"},
+        {"atan(-1)", "-1/4*pi"},
+        {"atan(3^(1/2))", "1/3*pi"},
+        {"atan(3^(-1/2))", "1/6*pi"},
+        {"acot(1)", "1/4*pi"},
+        {"acot(0)", "1/2*pi"},
+    };
+
+    for (const auto &tc : cases) {
+        const Expr e = parseExpr(c, tc.in);
+        const Expr want = parseExpr(c, tc.expected);
+        const Expr got = c.simplify(e);
+        EXPECT_EQ(got, want)
+            << "in:   " << tc.in << "\n  got:  " << c.toString(got)
+            << "\n  want: " << c.toString(want);
+    }
+}
+
 TEST(SimplifyTest, RationalGcdAndFactorization)
 {
     Ctx c;

@@ -51,6 +51,9 @@ Expr foldConst(Ctx &c, Expr e)
         const Expr fn = c.func(c.funcName(e), arg);
         if (c.evalExact(fn, {}, r))
             return c.number(r);
+        double dVal = 0.0;
+        if (c.evalDouble(arg, {}, dVal))
+            return c.simplify(fn);
         return fn;
     }
     case NodeKind::Pow: {
@@ -58,9 +61,11 @@ Expr foldConst(Ctx &c, Expr e)
         const Expr ex = foldConst(c, c.child(e, 1));
         if (b.isNull() || ex.isNull())
             return Expr();
-        if (c.isZero(b) && c.kind(ex) == NodeKind::Number &&
-            c.numberValue(ex).signum() <= 0)
-            return Expr();
+        if (c.isZero(b) && c.kind(ex) == NodeKind::Number) {
+            if (c.numberValue(ex).signum() <= 0)
+                return Expr();
+            return c.zero();
+        }
         if (c.kind(b) == NodeKind::Number && c.numberValue(b).signum() < 0 &&
             c.kind(ex) == NodeKind::Number &&
             !(c.numberValue(ex).den() == BigInt(1))) {
@@ -129,6 +134,7 @@ Expr safeSubsAndFold(Ctx &c, Expr e, Expr from, Expr to)
             if (c.kind(ex) != NodeKind::Number ||
                 c.numberValue(ex).signum() <= 0)
                 return Expr();
+            return c.zero();
         }
         return foldConst(c, c.pow(b, ex));
     }
@@ -430,11 +436,79 @@ bool integrateSeriesZeroConst(Ctx &c, const Laurent &g, Laurent &out)
     return true;
 }
 
-bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
-                    Laurent &out)
+int exprSign(Ctx &c, Expr e)
 {
-    if (!arg.coeffs.empty() && arg.val < 0)
+    if (e.isNull())
+        return 0;
+    Rational r;
+    if (c.evalExact(e, {}, r))
+        return r.signum();
+    double dVal = 0.0;
+    if (c.evalDouble(e, {}, dVal)) {
+        if (dVal > 1e-12)
+            return +1;
+        if (dVal < -1e-12)
+            return -1;
+    }
+    return 0;
+}
+
+bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
+                    Laurent &out, bool positiveT = false)
+{
+    if (fn == "sqrt") {
+        return powRatSeries(c, arg, Rational(std::int64_t{1}, BigInt(2)),
+                            arg.maxDeg, out);
+    }
+    if (!arg.coeffs.empty() && arg.val < 0) {
+        if (!positiveT && (-arg.val) % 2 != 0)
+            return false; // odd pole changes sign across two-sided t -> 0
+        const int sgn = exprSign(c, arg.coeffs.front());
+        if (sgn == 0)
+            return false;
+        const int highDeg = std::max(32, -arg.val * 8);
+        if (fn == "atan") {
+            Laurent invArg, atanInv;
+            if (!invSeries(c, arg, invArg) ||
+                !evalFuncSeries(c, "atan", invArg, atanInv, positiveT))
+                return false;
+            const Expr halfPi = c.mul(
+                {c.number(Rational(static_cast<std::int64_t>(sgn), BigInt(2))),
+                 c.symbol("pi")});
+            out = addSeries(
+                c, makeConstSeries(c, halfPi, atanInv.maxDeg),
+                scaleSeries(c, atanInv, c.number(std::int64_t{-1})));
+            return true;
+        }
+        if (fn == "acot") {
+            Laurent invArg, atanInv;
+            if (!invSeries(c, arg, invArg) ||
+                !evalFuncSeries(c, "atan", invArg, atanInv, positiveT))
+                return false;
+            if (sgn > 0) {
+                out = atanInv;
+            } else {
+                out = addSeries(
+                    c, makeConstSeries(c, c.symbol("pi"), atanInv.maxDeg),
+                    atanInv);
+            }
+            return true;
+        }
+        if (fn == "exp" && sgn < 0) {
+            out = makeConstSeries(c, c.zero(), highDeg);
+            return true;
+        }
+        if (fn == "tanh" || fn == "coth") {
+            out = makeConstSeries(
+                c, c.number(static_cast<std::int64_t>(sgn)), highDeg);
+            return true;
+        }
+        if (fn == "sech" || fn == "csch") {
+            out = makeConstSeries(c, c.zero(), highDeg);
+            return true;
+        }
         return false; // essential singularity / pole inside transcendental
+    }
     const int L = arg.maxDeg;
     if (L < 0)
         return false;
@@ -444,10 +518,6 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
 
     // u(t) = arg(t) - c0, with valuation >= 1 and maxDeg = L.
     Laurent u = addSeries(c, arg, makeConstSeries(c, c.neg(c0), L));
-
-    if (fn == "sqrt") {
-        return powRatSeries(c, arg, Rational(std::int64_t{1}, BigInt(2)), L, out);
-    }
     if (fn == "exp") {
         const Expr expC0 = foldConst(c, c.func("exp", c0));
         Laurent sum = makeConstSeries(c, c.one(), L);
@@ -599,7 +669,7 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
 }
 
 bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
-                    Budget *budget, Laurent &out)
+                    Budget *budget, Laurent &out, bool positiveT = false)
 {
     if (!checkSeriesBudget(c, budget))
         return false;
@@ -630,7 +700,8 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
         Laurent acc = makeConstSeries(c, c.zero(), maxDeg);
         for (std::size_t i = 0; i < c.childCount(e); ++i) {
             Laurent term;
-            if (!computeLaurent(c, c.child(e, i), var, x0, maxDeg, budget, term))
+            if (!computeLaurent(c, c.child(e, i), var, x0, maxDeg, budget, term,
+                                positiveT))
                 return false;
             acc = addSeries(c, acc, term);
         }
@@ -641,7 +712,8 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
         Laurent acc = makeConstSeries(c, c.one(), maxDeg);
         for (std::size_t i = 0; i < c.childCount(e); ++i) {
             Laurent factor;
-            if (!computeLaurent(c, c.child(e, i), var, x0, maxDeg, budget, factor))
+            if (!computeLaurent(c, c.child(e, i), var, x0, maxDeg, budget, factor,
+                                positiveT))
                 return false;
             acc = mulSeries(c, acc, factor);
         }
@@ -655,7 +727,8 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
             const Expr foldedExp = foldConst(c, expExpr);
             if (!foldedExp.isNull() && c.kind(foldedExp) == NodeKind::Number) {
                 Laurent bSeries;
-                if (!computeLaurent(c, baseExpr, var, x0, maxDeg, budget, bSeries))
+                if (!computeLaurent(c, baseExpr, var, x0, maxDeg, budget, bSeries,
+                                    positiveT))
                     return false;
                 return powRatSeries(c, bSeries, c.numberValue(foldedExp), maxDeg,
                                     out);
@@ -663,17 +736,21 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
         }
         // General power b(x)^e(x) = exp(e(x) * log(b(x)))
         Laurent bSeries, logB, eSeries;
-        if (!computeLaurent(c, baseExpr, var, x0, maxDeg, budget, bSeries) ||
-            !evalFuncSeries(c, "log", bSeries, logB) ||
-            !computeLaurent(c, expExpr, var, x0, maxDeg, budget, eSeries))
+        if (!computeLaurent(c, baseExpr, var, x0, maxDeg, budget, bSeries,
+                            positiveT) ||
+            !evalFuncSeries(c, "log", bSeries, logB, positiveT) ||
+            !computeLaurent(c, expExpr, var, x0, maxDeg, budget, eSeries,
+                            positiveT))
             return false;
-        return evalFuncSeries(c, "exp", mulSeries(c, eSeries, logB), out);
+        return evalFuncSeries(c, "exp", mulSeries(c, eSeries, logB), out,
+                              positiveT);
     }
     case NodeKind::Func: {
         Laurent argSeries;
-        if (!computeLaurent(c, c.child(e, 0), var, x0, maxDeg, budget, argSeries))
+        if (!computeLaurent(c, c.child(e, 0), var, x0, maxDeg, budget, argSeries,
+                            positiveT))
             return false;
-        return evalFuncSeries(c, c.funcName(e), argSeries, out);
+        return evalFuncSeries(c, c.funcName(e), argSeries, out, positiveT);
     }
     }
     return false;
@@ -775,8 +852,103 @@ Expr laurent(Ctx &c, Expr f, Expr var, Expr x0, int order, Budget *budget)
 
 namespace {
 
+// Combine linear combinations sum_i r_i * log(u_i) (r_i in Q) inside Add nodes
+// into (1/q) * log(prod_i u_i^(q * r_i)), canceling inf - inf log poles.
+Expr combineLogsForLimit(Ctx &c, Expr e)
+{
+    if (e.isNull())
+        return Expr();
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func:
+        return c.func(c.funcName(e), combineLogsForLimit(c, c.child(e, 0)));
+    case NodeKind::Pow:
+        return c.pow(combineLogsForLimit(c, c.child(e, 0)),
+                     combineLogsForLimit(c, c.child(e, 1)));
+    case NodeKind::Mul: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(combineLogsForLimit(c, c.child(e, i)));
+        return c.mul(ch);
+    }
+    case NodeKind::Add: {
+        std::vector<Expr> otherTerms;
+        std::vector<std::pair<Rational, Expr>> logTerms;
+        auto matchRatLog = [&](Expr t, Rational &rOut, Expr &uOut) -> bool {
+            if (c.kind(t) == NodeKind::Func && c.funcName(t) == "log") {
+                rOut = Rational(std::int64_t{1});
+                uOut = c.child(t, 0);
+                return true;
+            }
+            if (c.kind(t) == NodeKind::Mul && c.childCount(t) == 2 &&
+                c.kind(c.child(t, 0)) == NodeKind::Number &&
+                c.kind(c.child(t, 1)) == NodeKind::Func &&
+                c.funcName(c.child(t, 1)) == "log") {
+                rOut = c.numberValue(c.child(t, 0));
+                uOut = c.child(c.child(t, 1), 0);
+                return true;
+            }
+            return false;
+        };
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const Expr ti = combineLogsForLimit(c, c.child(e, i));
+            Rational r;
+            Expr u;
+            if (matchRatLog(ti, r, u))
+                logTerms.push_back({r, u});
+            else
+                otherTerms.push_back(ti);
+        }
+        if (logTerms.size() >= 2) {
+            BigInt qLcm(1);
+            for (const auto &kv : logTerms) {
+                const BigInt g = BigInt::gcd(qLcm, kv.first.den());
+                qLcm = (qLcm / g) * kv.first.den();
+            }
+            std::vector<Expr> prodFactors;
+            prodFactors.reserve(logTerms.size());
+            for (const auto &kv : logTerms) {
+                const BigInt m = kv.first.num() * (qLcm / kv.first.den());
+                prodFactors.push_back(
+                    c.pow(kv.second, c.number(Rational(m, BigInt(1)))));
+            }
+            const Expr combinedLog = c.mul(
+                {c.number(Rational(BigInt(1), qLcm)),
+                 c.func("log", c.mul(prodFactors))});
+            otherTerms.push_back(combinedLog);
+        } else {
+            for (const auto &kv : logTerms)
+                otherTerms.push_back(
+                    c.mul({c.number(kv.first), c.func("log", kv.second)}));
+        }
+        return otherTerms.empty() ? c.zero() : c.add(otherTerms);
+    }
+    }
+    return e;
+}
+
+bool isBoundedOscillatoryFactor(const Ctx &c, Expr f)
+{
+    if (c.kind(f) == NodeKind::Func) {
+        const std::string &fn = c.funcName(f);
+        return fn == "sin" || fn == "cos";
+    }
+    if (c.kind(f) == NodeKind::Pow &&
+        c.kind(c.child(f, 0)) == NodeKind::Func &&
+        c.kind(c.child(f, 1)) == NodeKind::Number &&
+        c.numberValue(c.child(f, 1)).signum() > 0) {
+        const std::string &fn = c.funcName(c.child(f, 0));
+        return fn == "sin" || fn == "cos";
+    }
+    return false;
+}
+
 LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
-                       int depth)
+                       int depth, bool positiveT = false)
 {
     LimitResult out;
     if (!checkSeriesBudget(c, budget)) {
@@ -793,7 +965,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
     // 1. Truncated Laurent series around t = var - x0.
     for (int pad : {8, 16}) {
         Laurent s;
-        if (computeLaurent(c, f, var, x0, pad, budget, s)) {
+        if (computeLaurent(c, f, var, x0, pad, budget, s, positiveT)) {
             if (!s.coeffs.empty() && s.val < 0) {
                 out.status = LimitResult::Status::Divergent;
                 out.poleOrder = -s.val;
@@ -822,9 +994,82 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
         return out;
     }
 
-    // 3. Decompose Mul into numerator / denominator or 0 * log(...) indeterminate
-    //    forms and apply L'Hopital's rule.
+    // 2b. Direct singularity / asymptotic checks for Pow and Func(log/exp).
+    if (c.kind(f) == NodeKind::Pow &&
+        c.kind(c.child(f, 1)) == NodeKind::Number) {
+        const Expr b = c.child(f, 0);
+        const Rational &re = c.numberValue(c.child(f, 1));
+        const LimitResult bLim =
+            limitDepth(c, b, var, x0, budget, depth + 1, positiveT);
+        if (re.signum() < 0) {
+            if (bLim.proved() && isZeroCoeff(c, bLim.value)) {
+                out.status = LimitResult::Status::Divergent;
+                out.poleOrder = 1;
+                out.reason = "algebraic pole at limit point";
+                return out;
+            }
+            if (bLim.status == LimitResult::Status::Divergent) {
+                out.status = LimitResult::Status::Proved;
+                out.value = c.zero();
+                return out;
+            }
+        } else if (re.signum() > 0 &&
+                   bLim.status == LimitResult::Status::Divergent) {
+            out.status = LimitResult::Status::Divergent;
+            out.poleOrder = 1;
+            out.reason = "divergent power at limit point";
+            return out;
+        }
+    }
+    if (c.kind(f) == NodeKind::Func) {
+        const std::string &fn = c.funcName(f);
+        const Expr arg = c.child(f, 0);
+        if (fn == "log") {
+            const LimitResult argLim =
+                limitDepth(c, arg, var, x0, budget, depth + 1, positiveT);
+            if ((argLim.proved() && isZeroCoeff(c, argLim.value)) ||
+                argLim.status == LimitResult::Status::Divergent) {
+                out.status = LimitResult::Status::Divergent;
+                out.poleOrder = 1;
+                out.reason = "logarithmic singularity at limit point";
+                return out;
+            }
+        } else if (fn == "exp" && positiveT) {
+            Laurent argS;
+            if (computeLaurent(c, arg, var, x0, 4, budget, argS, positiveT) &&
+                !argS.coeffs.empty() && argS.val < 0 &&
+                exprSign(c, argS.coeffs.front()) > 0) {
+                out.status = LimitResult::Status::Divergent;
+                out.poleOrder = -argS.val;
+                out.reason = "essential exponential growth at limit point";
+                return out;
+            }
+        }
+    }
+
+    // 3. Decompose Mul into bounded oscillatory factors (squeeze theorem) or
+    //    numerator / denominator / 0 * log(...) indeterminate forms (L'Hopital).
     if (c.kind(f) == NodeKind::Mul) {
+        std::vector<Expr> boundedFactors;
+        std::vector<Expr> nonBoundedFactors;
+        for (std::size_t i = 0; i < c.childCount(f); ++i) {
+            const Expr ch = c.child(f, i);
+            if (isBoundedOscillatoryFactor(c, ch))
+                boundedFactors.push_back(ch);
+            else
+                nonBoundedFactors.push_back(ch);
+        }
+        if (!boundedFactors.empty() && !nonBoundedFactors.empty()) {
+            const LimitResult restLim = limitDepth(
+                c, c.mul(nonBoundedFactors), var, x0, budget, depth + 1,
+                positiveT);
+            if (restLim.proved() && isZeroCoeff(c, restLim.value)) {
+                out.status = LimitResult::Status::Proved;
+                out.value = c.zero();
+                return out;
+            }
+        }
+
         std::vector<Expr> numFactors;
         std::vector<Expr> denFactors;
         std::vector<Expr> logFactors;
@@ -854,8 +1099,14 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                     const Expr lhop = c.div(
                         c.neg(c.mul({c.pow(A, c.number(std::int64_t{2})), dB})),
                         c.mul({dA, B}));
-                    return limitDepth(c, lhop, var, x0, budget, depth + 1);
+                    return limitDepth(c, lhop, var, x0, budget, depth + 1,
+                                      positiveT);
                 }
+            } else if (!aAt0.isNull() && !isZeroCoeff(c, aAt0)) {
+                const LimitResult logLim = limitDepth(
+                    c, logFactors[0], var, x0, budget, depth + 1, positiveT);
+                if (logLim.status == LimitResult::Status::Divergent)
+                    return logLim;
             }
         }
         if (!denFactors.empty()) {
@@ -863,19 +1114,136 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                 numFactors.push_back(lf);
             const Expr N = numFactors.empty() ? c.one() : c.mul(numFactors);
             const Expr D = c.mul(denFactors);
+            const Expr nAt0 = safeSubsAndFold(c, N, var, x0);
+            const Expr dAt0 = safeSubsAndFold(c, D, var, x0);
+            if (!dAt0.isNull() && isZeroCoeff(c, dAt0) && !nAt0.isNull() &&
+                !isZeroCoeff(c, nAt0)) {
+                out.status = LimitResult::Status::Divergent;
+                out.poleOrder = 1;
+                out.reason = "non-zero numerator over zero denominator";
+                return out;
+            }
             const Expr dN = c.diff(N, var);
             const Expr dD = c.diff(D, var);
             if (!c.isZero(dD)) {
-                return limitDepth(c, c.div(dN, dD), var, x0, budget, depth + 1);
+                return limitDepth(c, c.div(dN, dD), var, x0, budget, depth + 1,
+                                  positiveT);
             }
         }
+    }
+
+    // 4. Additive linearity fallback when every summand has a finite Proved
+    //    limit, or when exactly one summand diverges and all others are finite.
+    if (c.kind(f) == NodeKind::Add) {
+        std::vector<Expr> pieceVals;
+        pieceVals.reserve(c.childCount(f));
+        std::size_t divCount = 0;
+        std::size_t unevalCount = 0;
+        LimitResult firstDiv;
+        for (std::size_t i = 0; i < c.childCount(f); ++i) {
+            const LimitResult pi = limitDepth(
+                c, c.child(f, i), var, x0, budget, depth + 1, positiveT);
+            if (pi.proved()) {
+                pieceVals.push_back(pi.value);
+            } else if (pi.status == LimitResult::Status::Divergent) {
+                ++divCount;
+                if (divCount == 1)
+                    firstDiv = pi;
+            } else {
+                ++unevalCount;
+                break;
+            }
+        }
+        if (divCount == 0 && unevalCount == 0) {
+            out.status = LimitResult::Status::Proved;
+            out.value = foldConst(c, c.add(pieceVals));
+            return out;
+        }
+        if (divCount == 1 && unevalCount == 0)
+            return firstDiv;
     }
 
     out.reason = "unable to determine limit";
     return out;
 }
 
+bool isSymbolicInfinity(const Ctx &c, Expr e, int &dirOut)
+{
+    if (e.isNull())
+        return false;
+    if (c.kind(e) == NodeKind::Symbol) {
+        const std::string &nm = c.symbolName(e);
+        if (nm == "inf" || nm == "oo" || nm == "infinity") {
+            dirOut = +1;
+            return true;
+        }
+    }
+    if (c.kind(e) == NodeKind::Mul && c.childCount(e) == 2 &&
+        c.kind(c.child(e, 0)) == NodeKind::Number &&
+        c.kind(c.child(e, 1)) == NodeKind::Symbol) {
+        const std::string &nm = c.symbolName(c.child(e, 1));
+        if (nm == "inf" || nm == "oo" || nm == "infinity") {
+            const int s = c.numberValue(c.child(e, 0)).signum();
+            if (s != 0) {
+                dirOut = s > 0 ? +1 : -1;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 } // namespace
+
+LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
+                          Budget *budget)
+{
+    if (f.isNull() || var.isNull() || x0.isNull()) {
+        LimitResult out;
+        out.reason = "null input expression";
+        return out;
+    }
+    int infDir = 0;
+    if (isSymbolicInfinity(c, x0, infDir))
+        return limitAtInfinity(c, f, var, infDir, budget);
+
+    const Expr fNorm = combineLogsForLimit(c, c.expand(f));
+    const Expr tSym = c.symbol("_t_lim");
+    const std::int64_t sgn = dir >= 0 ? std::int64_t{1} : std::int64_t{-1};
+    const Expr xSub = c.add({x0, c.mul({c.number(sgn), tSym})});
+    const Expr fSub = c.subs(fNorm, var, xSub);
+    LimitResult res = limitDepth(c, fSub, tSym, c.zero(), budget, 0, true);
+    if (res.status != LimitResult::Status::Unevaluated)
+        return res;
+
+    // Puiseux square-root substitution var = x0 + sgn * t^2 (t -> 0+).
+    const Expr xPuiseux = c.add(
+        {x0, c.mul({c.number(sgn), c.pow(tSym, c.number(std::int64_t{2}))})});
+    const Expr fPuiseux = c.subs(fNorm, var, xPuiseux);
+    return limitDepth(c, fPuiseux, tSym, c.zero(), budget, 0, true);
+}
+
+LimitResult limitAtInfinity(Ctx &c, Expr f, Expr var, int dir, Budget *budget)
+{
+    if (f.isNull() || var.isNull()) {
+        LimitResult out;
+        out.reason = "null input expression";
+        return out;
+    }
+    if (!mentionsSymbol(c, f, var)) {
+        LimitResult out;
+        out.status = LimitResult::Status::Proved;
+        out.value = foldConst(c, f);
+        return out;
+    }
+    const Expr fNorm = combineLogsForLimit(c, c.expand(f));
+    const Expr tSym = c.symbol("_t_inf");
+    const std::int64_t sgn = dir >= 0 ? std::int64_t{1} : std::int64_t{-1};
+    const Expr xOfT =
+        c.mul({c.number(sgn), c.pow(tSym, c.number(std::int64_t{-1}))});
+    const Expr fOfT = c.subs(fNorm, var, xOfT);
+    return limitOneSided(c, fOfT, tSym, c.zero(), +1, budget);
+}
 
 LimitResult limit(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget)
 {
@@ -884,7 +1252,11 @@ LimitResult limit(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget)
         out.reason = "null input expression";
         return out;
     }
-    return limitDepth(c, f, var, x0, budget, 0);
+    int infDir = 0;
+    if (isSymbolicInfinity(c, x0, infDir))
+        return limitAtInfinity(c, f, var, infDir, budget);
+    const Expr fNorm = combineLogsForLimit(c, f);
+    return limitDepth(c, fNorm, var, x0, budget, 0, false);
 }
 
 } // namespace numkit::cas

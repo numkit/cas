@@ -1391,4 +1391,126 @@ TEST_F(RatIntTest, BudgetExhaustionStopsCleanly)
     }
 }
 
+// ── Definite integration & improper integrals (item 44) ─────────
+
+TEST_F(RatIntTest, DefiniteIntegrateFixedVectors)
+{
+    struct Case {
+        const char *f;
+        const char *a;
+        const char *b;
+        const char *expected;
+    };
+    const Case cases[] = {
+        // Proper polynomial & rational
+        {"x^2", "0", "1", "1/3"},
+        {"1/(1 + x^2)", "0", "1", "1/4*pi"},
+        {"1/(1 + x^2)", "-1", "1", "1/2*pi"},
+        {"x/(1 + x^2)", "0", "1", "1/2*log(2)"},
+        {"1/x", "1", "2", "log(2)"},
+        {"1/x", "-2", "-1", "-log(2)"},
+        // Trig & exponential
+        {"sin(x)", "0", "pi", "2"},
+        {"cos(x)", "0", "pi/2", "1"},
+        {"sec(x)^2", "0", "pi/4", "1"},
+        {"exp(x)", "0", "1", "-1 + exp(1)"},
+        {"x*log(x)", "0", "1", "-1/4"},
+        // Improper at +inf / -inf
+        {"exp(-x)", "0", "inf", "1"},
+        {"x*exp(-x)", "0", "inf", "1"},
+        {"x^2*exp(-x)", "0", "inf", "2"},
+        {"exp(-2*x)*cos(x)", "0", "inf", "2/5"},
+        {"exp(-2*x)*sin(x)", "0", "inf", "1/5"},
+        {"1/(1 + x^2)", "0", "inf", "1/2*pi"},
+        {"1/(1 + x^2)", "-inf", "inf", "pi"},
+        {"1/((x + 1)*(x + 2))", "0", "inf", "log(2)"},
+        {"1/x^2", "1", "inf", "1"},
+        {"exp(x)", "-inf", "0", "1"},
+        // Weakly singular endpoints
+        {"x^(-1/2)", "0", "1", "2"},
+        {"(1 - x)^(-1/2)", "0", "1", "2"},
+        {"(1 - x^2)^(-1/2)", "0", "1", "1/2*pi"},
+        // Removable interior singularity
+        {"(x^2 - 1)/(x - 1)", "0", "2", "4"},
+        // Reversed and equal bounds
+        {"x^2", "1", "0", "-1/3"},
+        {"sin(x^2)", "5", "5", "0"},
+    };
+
+    for (const auto &tc : cases) {
+        const Expr f = numkit::cas::parseExpr(c, tc.f);
+        const Expr a = numkit::cas::parseExpr(c, tc.a);
+        const Expr b = numkit::cas::parseExpr(c, tc.b);
+        const Expr want = c.simplify(numkit::cas::parseExpr(c, tc.expected));
+        const numkit::cas::DefiniteIntegral r =
+            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        ASSERT_TRUE(r.proved())
+            << "f = " << tc.f << " on [" << tc.a << ", " << tc.b
+            << "]: " << r.reason;
+        const Expr diff = c.simplify(c.add({r.value, c.neg(want)}));
+        EXPECT_EQ(diff, c.zero())
+            << "f = " << tc.f << " on [" << tc.a << ", " << tc.b << "]"
+            << "\n  got:  " << c.toString(r.value)
+            << "\n  want: " << c.toString(want);
+    }
+}
+
+TEST_F(RatIntTest, DefiniteIntegrateDivergentAndHonestFailures)
+{
+    struct DivCase {
+        const char *f;
+        const char *a;
+        const char *b;
+    };
+    const DivCase divCases[] = {
+        {"1/x^2", "-1", "1"},          // interior pole at x = 0
+        {"1/x", "-1", "1"},            // interior pole at x = 0
+        {"1/(x - 1)^2", "0", "2"},     // interior pole at x = 1
+        {"1/x", "0", "1"},             // endpoint logarithmic divergence at x = 0
+        {"1/x^2", "0", "1"},           // endpoint pole at x = 0
+        {"1/x", "1", "inf"},           // divergent at +inf
+    };
+
+    for (const auto &tc : divCases) {
+        const Expr f = numkit::cas::parseExpr(c, tc.f);
+        const Expr a = numkit::cas::parseExpr(c, tc.a);
+        const Expr b = numkit::cas::parseExpr(c, tc.b);
+        const numkit::cas::DefiniteIntegral r =
+            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        EXPECT_EQ(r.status, numkit::cas::DefiniteIntegral::Status::Divergent)
+            << "expected Divergent for " << tc.f << " on [" << tc.a << ", "
+            << tc.b << "], got status=" << static_cast<int>(r.status)
+            << " reason=" << r.reason;
+    }
+}
+
+TEST_F(RatIntTest, DefiniteIntegrateAdditivityAndOrientationProperty)
+{
+    std::uint64_t st = 0xDEF147E01ULL;
+    for (int iter = 0; iter < 60; ++iter) {
+        std::vector<Expr> terms;
+        for (int d = 0; d <= 3; ++d) {
+            terms.push_back(c.mul({c.number(rr(st, 5)),
+                                   c.pow(x, c.number(static_cast<std::int64_t>(d)))}));
+        }
+        const Expr f = c.add(terms);
+        const Expr a = c.number(rr(st, 4));
+        const Expr b = c.number(rr(st, 4));
+        const Expr m = c.number(rr(st, 4));
+
+        const auto rab = numkit::cas::definiteIntegrate(c, f, x, a, b);
+        const auto rba = numkit::cas::definiteIntegrate(c, f, x, b, a);
+        const auto ram = numkit::cas::definiteIntegrate(c, f, x, a, m);
+        const auto rmb = numkit::cas::definiteIntegrate(c, f, x, m, b);
+        ASSERT_TRUE(rab.proved());
+        ASSERT_TRUE(rba.proved());
+        ASSERT_TRUE(ram.proved());
+        ASSERT_TRUE(rmb.proved());
+
+        EXPECT_EQ(c.expand(c.add({rab.value, rba.value})), c.zero());
+        EXPECT_EQ(c.expand(c.add({ram.value, rmb.value, c.neg(rab.value)})),
+                  c.zero());
+    }
+}
+
 

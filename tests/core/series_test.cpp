@@ -217,6 +217,73 @@ TEST(SeriesTest, LimitDetectsPoles)
     }
 }
 
+TEST(SeriesTest, LimitAtInfinityAndOneSidedVectors)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    struct InfCase {
+        const char *f;
+        const char *x0;
+        const char *expected;
+    };
+    const InfCase infCases[] = {
+        {"(3*x^2 + 5*x - 1)/(2*x^2 - 7)", "inf", "3/2"},
+        {"(3*x^2 + 5*x - 1)/(2*x^2 - 7)", "-inf", "3/2"},
+        {"(x + 1)/(x^2 + 1)", "oo", "0"},
+        {"atan(x)", "inf", "1/2*pi"},
+        {"atan(x)", "-inf", "-1/2*pi"},
+        {"x*(pi/2 - atan(x))", "inf", "1"},
+        {"exp(-x)", "inf", "0"},
+        {"x^3*exp(-2*x)", "inf", "0"},
+        {"exp(2*x)", "-inf", "0"},
+        {"tanh(x)", "inf", "1"},
+        {"tanh(x)", "-inf", "-1"},
+        {"log(x + 1) - log(x + 2)", "inf", "0"},
+        {"log(3*x + 1) - log(x + 2)", "inf", "log(3)"},
+        {"sin(x)/x", "inf", "0"},
+        {"cos(2*x)*exp(-x)", "inf", "0"},
+        {"sqrt(x^2 + 2*x) - x", "inf", "1"},
+    };
+
+    for (const auto &tc : infCases) {
+        const Expr f = parseExpr(c, tc.f);
+        const Expr x0 = parseExpr(c, tc.x0);
+        const Expr want = parseExpr(c, tc.expected);
+        const LimitResult r = limit(c, f, x, x0);
+        ASSERT_EQ(r.status, LimitResult::Status::Proved)
+            << "failed on " << tc.f << " at " << tc.x0 << " (" << r.reason << ")";
+        EXPECT_TRUE(exprEq(c, c.simplify(r.value), c.simplify(want)))
+            << "f = " << tc.f << " at x0 = " << tc.x0
+            << "\n  got:  " << c.toString(r.value)
+            << "\n  want: " << c.toString(want);
+    }
+
+    // One-sided limits at branch points and finite points
+    {
+        const LimitResult r = limitOneSided(c, parseExpr(c, "sqrt(x)"), x, c.zero(), +1);
+        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason;
+        EXPECT_EQ(r.value, c.zero());
+    }
+    {
+        const LimitResult r =
+            limitOneSided(c, parseExpr(c, "sqrt(1 - x)"), x, c.one(), -1);
+        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason;
+        EXPECT_EQ(r.value, c.zero());
+    }
+    {
+        const LimitResult r =
+            limitOneSided(c, parseExpr(c, "x*log(x)"), x, c.zero(), +1);
+        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason;
+        EXPECT_EQ(r.value, c.zero());
+    }
+    // Divergent polynomial at +inf
+    {
+        const LimitResult r = limitAtInfinity(c, parseExpr(c, "x^2 + 1"), x, +1);
+        EXPECT_EQ(r.status, LimitResult::Status::Divergent);
+    }
+}
+
 // ============================================================================
 // Layer 2: Property Tests
 // ============================================================================

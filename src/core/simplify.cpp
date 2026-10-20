@@ -517,6 +517,151 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         }
     }
 
+    // Exact special-angle trigonometric values at rational multiples of pi.
+    if (fn == "sin" || fn == "cos" || fn == "tan" || fn == "cot" ||
+        fn == "sec" || fn == "csc") {
+        const Expr piSym = c.symbol("pi");
+        Rational kPi;
+        bool isRatPi = false;
+        if (arg == piSym) {
+            kPi = Rational(std::int64_t{1});
+            isRatPi = true;
+        } else if (c.kind(arg) == NodeKind::Mul && c.childCount(arg) == 2 &&
+                   c.kind(c.child(arg, 0)) == NodeKind::Number &&
+                   c.child(arg, 1) == piSym) {
+            kPi = c.numberValue(c.child(arg, 0));
+            isRatPi = true;
+        }
+        std::int64_t p = 0, q = 0;
+        if (isRatPi && kPi.num().fitsInt64(p) && kPi.den().fitsInt64(q) &&
+            (q == 1 || q == 2 || q == 3 || q == 4 || q == 6)) {
+            const std::int64_t twoQ = 2 * q;
+            const std::int64_t m = ((p % twoQ) + twoQ) % twoQ;
+            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr sqrt3Over2 =
+                c.mul({half, c.pow(c.number(std::int64_t{3}), half)});
+            const Expr invSqrt2 = c.pow(
+                c.number(std::int64_t{2}),
+                c.number(Rational(std::int64_t{-1}, BigInt(2))));
+            Expr sinVal, cosVal;
+            if (q == 4) {
+                sinVal = (m == 1 || m == 3) ? invSqrt2 : c.neg(invSqrt2);
+                cosVal = (m == 1 || m == 7) ? invSqrt2 : c.neg(invSqrt2);
+            } else {
+                const std::int64_t n = m * (6 / q);
+                switch (n) {
+                case 0:
+                    sinVal = c.zero();
+                    cosVal = c.one();
+                    break;
+                case 1:
+                    sinVal = half;
+                    cosVal = sqrt3Over2;
+                    break;
+                case 2:
+                    sinVal = sqrt3Over2;
+                    cosVal = half;
+                    break;
+                case 3:
+                    sinVal = c.one();
+                    cosVal = c.zero();
+                    break;
+                case 4:
+                    sinVal = sqrt3Over2;
+                    cosVal = c.neg(half);
+                    break;
+                case 5:
+                    sinVal = half;
+                    cosVal = c.neg(sqrt3Over2);
+                    break;
+                case 6:
+                    sinVal = c.zero();
+                    cosVal = c.number(std::int64_t{-1});
+                    break;
+                case 7:
+                    sinVal = c.neg(half);
+                    cosVal = c.neg(sqrt3Over2);
+                    break;
+                case 8:
+                    sinVal = c.neg(sqrt3Over2);
+                    cosVal = c.neg(half);
+                    break;
+                case 9:
+                    sinVal = c.number(std::int64_t{-1});
+                    cosVal = c.zero();
+                    break;
+                case 10:
+                    sinVal = c.neg(sqrt3Over2);
+                    cosVal = half;
+                    break;
+                case 11:
+                    sinVal = c.neg(half);
+                    cosVal = sqrt3Over2;
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (!sinVal.isNull() && !cosVal.isNull()) {
+                if (fn == "sin")
+                    return sinVal;
+                if (fn == "cos")
+                    return cosVal;
+                if (fn == "tan" && !c.isZero(cosVal))
+                    return c.div(sinVal, cosVal);
+                if (fn == "cot" && !c.isZero(sinVal))
+                    return c.div(cosVal, sinVal);
+                if (fn == "sec" && !c.isZero(cosVal))
+                    return c.pow(cosVal, c.number(std::int64_t{-1}));
+                if (fn == "csc" && !c.isZero(sinVal))
+                    return c.pow(sinVal, c.number(std::int64_t{-1}));
+            }
+        }
+    }
+
+    // Special values of inverse trigonometric functions.
+    if (fn == "asin" || fn == "acos" || fn == "atan" || fn == "acot") {
+        const Expr piSym = c.symbol("pi");
+        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+        if (arg == c.one()) {
+            if (fn == "asin")
+                return c.mul({half, piSym});
+            if (fn == "acos")
+                return c.zero();
+            if (fn == "atan" || fn == "acot")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(4))), piSym});
+        }
+        if (arg == c.number(std::int64_t{-1}) && fn == "acos")
+            return piSym;
+        if (c.isZero(arg) && (fn == "acos" || fn == "acot"))
+            return c.mul({half, piSym});
+        if (arg == half) {
+            if (fn == "asin")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), piSym});
+            if (fn == "acos")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), piSym});
+        }
+        if (arg == c.number(Rational(std::int64_t{-1}, BigInt(2))) && fn == "acos")
+            return c.mul({c.number(Rational(std::int64_t{2}, BigInt(3))), piSym});
+        const Expr sqrt3 = c.pow(c.number(std::int64_t{3}), half);
+        const Expr invSqrt3 = c.pow(
+            c.number(std::int64_t{3}),
+            c.number(Rational(std::int64_t{-1}, BigInt(2))));
+        if (arg == sqrt3) {
+            if (fn == "atan")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), piSym});
+            if (fn == "acot")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), piSym});
+        }
+        if (arg == invSqrt3 ||
+            arg == c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), sqrt3})) {
+            if (fn == "atan")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), piSym});
+            if (fn == "acot")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), piSym});
+        }
+    }
+
     // Inverse function compositions
     if (c.kind(arg) == NodeKind::Func) {
         const std::string &innerFn = c.funcName(arg);
@@ -606,6 +751,8 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
         if (c.kind(b) == NodeKind::Number && c.kind(ex) == NodeKind::Number) {
             const Rational &rb = c.numberValue(b);
             const Rational &re = c.numberValue(ex);
+            if (rb.isZero() && re.signum() > 0)
+                return c.zero();
             if (rb.signum() > 0 && re.den() == BigInt(2)) {
                 const BigInt nq = rb.num() * rb.den();
                 BigInt root;

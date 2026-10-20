@@ -40,10 +40,11 @@ ctest --test-dir build/msvc -C Release --output-on-failure
 
 ```
 build/msvc/apps/Release/nkcas.exe integrate "(expr)" x   # unified certified cascade
+build/msvc/apps/Release/nkcas.exe defint "(expr)" x a b  # certified definite / improper integral
 build/msvc/apps/Release/nkcas.exe rubi "(expr)" x        # Rubi fast path only
 build/msvc/apps/Release/nkcas.exe diff "(expr)" x
 build/msvc/apps/Release/nkcas.exe taylor "(expr)" x [x0] [order]
-build/msvc/apps/Release/nkcas.exe limit "(expr)" x [x0]
+build/msvc/apps/Release/nkcas.exe limit "(expr)" x [x0]  # finite or inf / -inf
 build/msvc/apps/Release/nkcas.exe simplify "(expr)"      # cost-guided simplification
 build/msvc/apps/Release/nkcas.exe symsolve "(eqn)" x     # symbolic equation solver
 build/msvc/apps/Release/nkcas.exe dsolve "(rhs)" x       # certified 1st-order ODE solver
@@ -86,9 +87,9 @@ special functions `erf`/`erfc`/`gamma`) to `double`; `leafCount` and
 hyperbolic, and logarithmic simplification; `solveSymbolic` and
 `solveSystem2` (`core/symsolve.hpp`) solve parametric polynomial/radical
 and single-occurrence transcendental equations and 2-variable polynomial
-systems via Sylvester resultants; `taylor`,
-`laurent`, and `limit` (`core/series.hpp`) compute truncated power/Laurent
-series and symbolic limits.
+systems via Sylvester resultants; `taylor`, `laurent`, `limit`, `limitOneSided`, and `limitAtInfinity`
+(`core/series.hpp`) compute truncated power/Laurent series and finite,
+one-sided, and infinite (`inf` / `-inf`) symbolic limits.
 
 **Polynomials** (`poly/`): `UPoly` — Q[x] with exact division,
 squarefree decomposition; Sturm machinery (`isolateRealRoots`,
@@ -106,6 +107,9 @@ t=tan(x/2) and R(x^(p/q))) plus linearity over constant factors and
 mixed sums; every answer passes a Tier-1 symbolic certificate AND a
 Tier-2a certified interval audit of the form (a wrong form is
 structurally impossible — it becomes an honest `Unevaluated`).
+`definiteIntegrate(Ctx&, f, var, a, b, budget)` evaluates proper and
+improper definite integrals via Newton–Leibniz and endpoint limits
+with interior-pole detection and real $\log|u|$ branch realization.
 `factorExpr` gives the factored form.
 
 **Rubi fast path** (`rubi/`): `rubiApply(tables, Ctx&, f, var, budget)` —

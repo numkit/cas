@@ -1,13 +1,16 @@
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/integrate/verify.hpp>
 
+#include <numkit/cas/core/series.hpp>
 #include <numkit/cas/poly/modcpoly.hpp>
+#include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/poly/sturm.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 #include <numkit/cas/rubi/rules.hpp>
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <numeric>
 #include <vector>
 
@@ -1770,6 +1773,228 @@ bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out)
     }
     out = c.mul(prod);
     return true;
+}
+
+namespace {
+
+bool isInfBound(const Ctx &c, Expr e, int &dirOut)
+{
+    if (e.isNull())
+        return false;
+    if (c.kind(e) == NodeKind::Symbol) {
+        const std::string &nm = c.symbolName(e);
+        if (nm == "inf" || nm == "oo" || nm == "infinity") {
+            dirOut = +1;
+            return true;
+        }
+    }
+    if (c.kind(e) == NodeKind::Mul && c.childCount(e) == 2 &&
+        c.kind(c.child(e, 0)) == NodeKind::Number &&
+        c.kind(c.child(e, 1)) == NodeKind::Symbol) {
+        const std::string &nm = c.symbolName(c.child(e, 1));
+        if (nm == "inf" || nm == "oo" || nm == "infinity") {
+            const int s = c.numberValue(c.child(e, 0)).signum();
+            if (s != 0) {
+                dirOut = s > 0 ? +1 : -1;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void collectPoleDenominators(Ctx &c, Expr e, Expr var,
+                             std::vector<UPoly> &polysOut)
+{
+    UPoly n, d;
+    if (toRational(c, e, var, n, d) && !d.isZero() && d.deg() >= 1) {
+        polysOut.push_back(d);
+        return;
+    }
+    if (c.kind(e) == NodeKind::Pow &&
+        c.kind(c.child(e, 1)) == NodeKind::Number &&
+        c.numberValue(c.child(e, 1)) <= Rational(std::int64_t{-1})) {
+        UPoly bn, bd;
+        if (toRational(c, c.child(e, 0), var, bn, bd) && bd.isConst() &&
+            !bd.isZero() && bn.deg() >= 1) {
+            polysOut.push_back(bn);
+        }
+    }
+    for (std::size_t i = 0; i < c.childCount(e); ++i)
+        collectPoleDenominators(c, c.child(e, i), var, polysOut);
+}
+
+// Rewrite log(u) -> log(-u) when evaluating F(var) at a finite real endpoint
+// `pt` where u(pt) < 0 (realizing the log|u| antiderivative branch).
+Expr realizeLogAbsAtEndpoint(Ctx &c, Expr e, Expr var, Expr pt)
+{
+    if (e.isNull())
+        return Expr();
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Add: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(realizeLogAbsAtEndpoint(c, c.child(e, i), var, pt));
+        return c.add(ch);
+    }
+    case NodeKind::Mul: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(realizeLogAbsAtEndpoint(c, c.child(e, i), var, pt));
+        return c.mul(ch);
+    }
+    case NodeKind::Pow:
+        return c.pow(realizeLogAbsAtEndpoint(c, c.child(e, 0), var, pt),
+                     realizeLogAbsAtEndpoint(c, c.child(e, 1), var, pt));
+    case NodeKind::Func: {
+        const Expr u = realizeLogAbsAtEndpoint(c, c.child(e, 0), var, pt);
+        if (c.funcName(e) == "log") {
+            const Expr uAtPt = c.subs(u, var, pt);
+            Rational r;
+            if (c.evalExact(uAtPt, {}, r)) {
+                if (r.signum() < 0)
+                    return c.func("log", c.neg(u));
+            } else {
+                double dVal = 0.0;
+                if (c.evalDouble(uAtPt, {}, dVal) && dVal < -1e-12)
+                    return c.func("log", c.neg(u));
+            }
+        }
+        return c.func(c.funcName(e), u);
+    }
+    }
+    return e;
+}
+
+} // namespace
+
+DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
+                                   Budget *budget)
+{
+    DefiniteIntegral out;
+    if (f.isNull() || var.isNull() || a.isNull() || b.isNull()) {
+        out.reason = "null input expression";
+        return out;
+    }
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+
+    int aInfDir = 0, bInfDir = 0;
+    const bool aIsInf = isInfBound(c, a, aInfDir);
+    const bool bIsInf = isInfBound(c, b, bInfDir);
+    if (!aIsInf && !bIsInf && a == b) {
+        out.status = DefiniteIntegral::Status::ProvedSymbolic;
+        out.value = c.zero();
+        return out;
+    }
+
+    double aVal = 0.0, bVal = 0.0;
+    bool hasNumA = false, hasNumB = false;
+    if (aIsInf) {
+        aVal = aInfDir > 0 ? HUGE_VAL : -HUGE_VAL;
+        hasNumA = true;
+    } else {
+        hasNumA = c.evalDouble(a, {}, aVal);
+    }
+    if (bIsInf) {
+        bVal = bInfDir > 0 ? HUGE_VAL : -HUGE_VAL;
+        hasNumB = true;
+    } else {
+        hasNumB = c.evalDouble(b, {}, bVal);
+    }
+
+    // 1. Interior pole guard on (min(a,b), max(a,b)).
+    if (hasNumA && hasNumB) {
+        const double xMin = std::min(aVal, bVal);
+        const double xMax = std::max(aVal, bVal);
+        std::vector<UPoly> denPolys;
+        collectPoleDenominators(c, f, var, denPolys);
+        for (const UPoly &D : denPolys) {
+            const std::vector<RealRootSolution> roots = solveRealRoots(D);
+            for (const RealRootSolution &rt : roots) {
+                double rLo = 0.0, rHi = 0.0;
+                if (rt.isRational) {
+                    rLo = rHi = rt.value.toDouble();
+                } else {
+                    const RootInterval iv = refineRoot(
+                        rt.carrier, rt.interval,
+                        Rational(std::int64_t{1}, BigInt(1000000)));
+                    rLo = iv.lo.toDouble();
+                    rHi = iv.hi.toDouble();
+                }
+                if (rLo > xMin + 1e-11 && rHi < xMax - 1e-11) {
+                    if (rt.isRational) {
+                        const LimitResult limPole =
+                            limit(c, f, var, c.number(rt.value), budget);
+                        if (limPole.proved())
+                            continue; // removable singularity
+                    }
+                    out.status = DefiniteIntegral::Status::Divergent;
+                    out.reason = "divergent interior pole on integration interval";
+                    return out;
+                }
+            }
+        }
+    }
+
+    // 2. Compute certified indefinite antiderivative F(var).
+    const RationalIntegral indef = integrate(c, f, var, budget);
+    if (!indef.proved()) {
+        out.reason = indef.reason;
+        return out;
+    }
+    out.F = indef.F;
+
+    // 3. Evaluate endpoint limits lim_{x -> b^-} F(x) - lim_{x -> a^+} F(x).
+    const int dirA = (hasNumA && hasNumB && bVal < aVal) ? -1 : +1;
+    const int dirB = -dirA;
+
+    auto evalEndpoint = [&](Expr bound, bool isInf, int infDir,
+                            int approachDir) -> LimitResult {
+        if (isInf)
+            return limitAtInfinity(c, indef.F, var, infDir, budget);
+        const Expr fReal = realizeLogAbsAtEndpoint(c, indef.F, var, bound);
+        LimitResult lim1 = limitOneSided(c, fReal, var, bound, approachDir, budget);
+        if (lim1.status != LimitResult::Status::Unevaluated)
+            return lim1;
+        return limit(c, fReal, var, bound, budget);
+    };
+
+    const LimitResult limB = evalEndpoint(b, bIsInf, bInfDir, dirB);
+    if (limB.status == LimitResult::Status::Divergent) {
+        out.status = DefiniteIntegral::Status::Divergent;
+        out.reason = "divergent at upper integration bound";
+        return out;
+    }
+    if (!limB.proved()) {
+        out.reason = limB.reason.empty()
+                         ? "unable to evaluate antiderivative at upper bound"
+                         : limB.reason;
+        return out;
+    }
+
+    const LimitResult limA = evalEndpoint(a, aIsInf, aInfDir, dirA);
+    if (limA.status == LimitResult::Status::Divergent) {
+        out.status = DefiniteIntegral::Status::Divergent;
+        out.reason = "divergent at lower integration bound";
+        return out;
+    }
+    if (!limA.proved()) {
+        out.reason = limA.reason.empty()
+                         ? "unable to evaluate antiderivative at lower bound"
+                         : limA.reason;
+        return out;
+    }
+
+    out.value = c.simplify(c.add({limB.value, c.neg(limA.value)}));
+    out.status = DefiniteIntegral::Status::ProvedSymbolic;
+    return out;
 }
 
 } // namespace numkit::cas

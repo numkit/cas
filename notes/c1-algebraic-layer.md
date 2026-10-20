@@ -375,12 +375,16 @@
     распознаванием устранимых особенностей, вещественная ветвь $\log|u|$ на
     границах и несобственные интегралы на $\pm\infty$ и в слабо сингулярных
     концах через односторонние пределы и подстановку Пюизё; CLI `nkcas defint`).
-45. 🔶 (v0.4-пул, Эшелон 4) Система предположений о символах (`AssumeDomain`:
+45. ✅ (v0.4-пул, Эшелон 4) Система предположений о символах (`AssumeDomain`:
     `Any`, `Real`, `Positive`, `Negative`, `NonNegative`, `Integer` в `Ctx`),
-    вывод знака и вещественности подвыражений, учёт предположений в `simplify`
-    ($\sqrt{u^2} \to u$ при $u > 0$, $\log(u^p) \to p\log u$) и в предикатах
-    Руби (`PosQ`/`NegQ`/`GtQ`/`IntegerQ` на символьных параметрах).
-46. ⬜ (v0.4-пул, Эшелон 4) Прямое и обратное преобразования Лапласа
+    вывод знака, вещественности и целочисленности подвыражений
+    (`isAssumedPositive`/`Negative`/`NonNegative`/`Real`/`Integer`), учёт
+    предположений в `simplify` ($\sqrt{u^2} \to u$ при $u \ge 0$, $\to -u$ при
+    $u < 0$, вынесение множителей из-под радикала $\sqrt{4 u^2 y} \to 2 u \sqrt{y}$,
+    $\log(u^p) \to p\log u$, $(u^a)^b \to u^{ab}$, $|u| \to \pm u$,
+    $\sin(n\pi) \to 0$, $\cos(n\pi) \to (-1)^n$) и в рантайме Руби (`PosQ`/`NegQ`/
+    `GtQ`/`LtQ`/`GeQ`/`LeQ`/`IntegerQ`/`IntegersQ` и `Rt` на символьных параметрах).
+46. 🔶 (v0.4-пул, Эшелон 4) Прямое и обратное преобразования Лапласа
     (`laplace` / `ilaplace` в `transform/laplace`): линейность, теоремы сдвига в
     частотной области $e^{at}g(t) \implies F(s-a)$ и дифференцирования
     $t^n g(t) \implies (-1)^n F^{(n)}(s)$, таблица элементарных оригиналов,
@@ -2464,3 +2468,25 @@ MATLAB Symbolic Math Toolbox (три эшелона):
    - Контроль внутренних полюсов на интервале $(\min(a,b), \max(a,b))$: извлечение полиномиальных знаменателей, изоляция вещественных корней через `solveRealRoots` + `refineRoot` и отсеивание устранимых особенностей через `limit(c, f, var, root)` (например, $\int_0^2 \frac{x^2-1}{x-1}\,dx = 4$ проходит, а $\int_{-1}^1 x^{-2}\,dx$ и $\int_{-1}^1 x^{-1}\,dx$ возвращают `Divergent`).
    - Вещественная ветвь $\log|u(x)|$ (`realizeLogAbsAtEndpoint`): при подстановке конечной границы, в которой аргумент логарифма в первообразной отрицателен, $\log(u)$ заменяется на $\log(-u)$ (например, $\int_{-2}^{-1} \frac{1}{x}\,dx = -\log 2$).
    - Команда CLI `nkcas defint "<expr>" <var> <a> <b>`.
+
+## 2026-10-21: Реализация пункта 45 — Система предположений о символах (`AssumeDomain`) и интеграция в `simplify` и Руби
+
+Реализован второй пакет Эшелона 4 (пул `v0.4.0`):
+
+1. **Модель предположений `AssumeDomain` и структурный вывод на DAG (`include/numkit/cas/core/expr.hpp`, `src/core/expr.cpp`)**:
+   - В `numkit::cas` добавлен `enum class AssumeDomain : std::uint8_t { Any, Real, Positive, Negative, NonNegative, Integer }` и методы `Ctx::assume(name/sym, dom)`, `Ctx::assumption(name/sym)`, `Ctx::clearAssumptions()`.
+   - Реализованы рекурсивные предикаты вывода свойств составных выражений:
+     - `isAssumedPositive(e)`, `isAssumedNegative(e)`, `isAssumedNonNegative(e)`, `isAssumedReal(e)`, `isAssumedInteger(e)`.
+     - Автоматически распознаются положительность констант `pi` и `e`, чётные степени вещественных выражений ($x^{2k} \ge 0$ при $x \in \mathbb{R}$, и $> 0$ при $x < 0$), суммы неотрицательных слагаемых с хотя бы одним строго положительным ($1 + x^2 > 0$ при $x \in \mathbb{R}$), правила знаков произведений, положительность $\exp(u), \cosh(u), \operatorname{sech}(u), \operatorname{erfc}(u)$ на вещественных аргументах, сохранение знака нечётными монотонными функциями ($\sinh, \tanh, \operatorname{asinh}, \arctan, \operatorname{erf}$) и замкнутость $\mathbb{Z}$ относительно сложения, умножения и неотрицательных целых степеней.
+
+2. **Учёт предположений в `simplify` (`src/core/simplify.cpp`)**:
+   - Для `abs(u)`: $|u| \to u$ при $u \ge 0$, $|u| \to -u$ при $u < 0$.
+   - Для вложенных степеней `(u^a)^b`: $(u^a)^b \to u^{ab}$ при $u > 0, a, b \in \mathbb{R}$ (или $u \ge 0, a, b > 0$), а также $(u^{2k})^{m/2} \to (-u)^{km}$ при $u < 0$.
+   - Вынесение положительных квадратов и сертифицированных множителей из-под дробных степеней произведений: $(4 u^2 y)^{1/2} \to 2 u y^{1/2}$ при $u \ge 0$ и $\to -2 u y^{1/2}$ при $u < 0$.
+   - Для логарифмов степеней: $\log(u^p) \to p\log u$ при $u > 0, p \in \mathbb{R}$ (включая составные положительные основания вроде $\log((1+x^2)^2) \to 2\log(1+x^2)$ при $x \in \mathbb{R}$).
+   - Для обратных гиперболических композиций: $\operatorname{asinh}(\sinh u) \to u$, $\operatorname{atanh}(\tanh u) \to u$ при $u \in \mathbb{R}$, $\operatorname{acosh}(\cosh u) \to \pm u$ при $u \ge 0$ / $u < 0$.
+   - Для целочисленных кратных $\pi$: $\sin(n\pi) \to 0$, $\tan(n\pi) \to 0$, $\cos(2n\pi) \to 1$, $\cos(n\pi) \to (-1)^n$ и $(-1)^{2n} \to 1$ при $n \in \mathbb{Z}$.
+
+3. **Учёт предположений в предикатах и `Rt` Руби (`src/rubi/rules.cpp`)**:
+   - В `evalCondition` предикаты `PosQ`, `NegQ`, `IntegerQ`, `IntegersQ`, а также сравнения `GtQ`, `LtQ`, `GeQ`, `LeQ`, `IGtQ`, `ILtQ`, `IGeQ`, `ILeQ` и операторы `<, >, <=, >=, ==, !=` на символьных выражениях используют `isAssumedPositive`/`Negative`/`NonNegative`/`Integer` над разностью `simplify(x - y)`.
+   - В `buildReplacement` для `Rt[q, n]` на символьном `q` при $q \ge 0$ (или нечётном $n$ и $q \in \mathbb{R}$) возвращается $q^{1/n}$ (а при $q < 0$ и нечётном $n$ — $-(-q)^{1/n}$), что позволяет сертифицированно выбирать ветви $\arctan$ (`a > 0, b > 0`) или $\operatorname{atanh}$ (`a > 0, b < 0`) для параметрических интегралов вроде $\int \frac{dx}{a + b x^2}$.

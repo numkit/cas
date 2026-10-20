@@ -1114,4 +1114,313 @@ std::size_t Ctx::exprCost(Expr e) const
     return total;
 }
 
+void Ctx::assume(const std::string &name, AssumeDomain dom)
+{
+    if (dom == AssumeDomain::Any)
+        assumptions_.erase(name);
+    else
+        assumptions_[name] = dom;
+}
+
+void Ctx::assume(Expr sym, AssumeDomain dom)
+{
+    assert(!sym.isNull() && kind(sym) == NodeKind::Symbol);
+    if (!sym.isNull() && kind(sym) == NodeKind::Symbol)
+        assume(symbolName(sym), dom);
+}
+
+AssumeDomain Ctx::assumption(const std::string &name) const
+{
+    auto it = assumptions_.find(name);
+    return it != assumptions_.end() ? it->second : AssumeDomain::Any;
+}
+
+AssumeDomain Ctx::assumption(Expr sym) const
+{
+    assert(!sym.isNull() && kind(sym) == NodeKind::Symbol);
+    if (sym.isNull() || kind(sym) != NodeKind::Symbol)
+        return AssumeDomain::Any;
+    return assumption(symbolName(sym));
+}
+
+void Ctx::clearAssumptions()
+{
+    assumptions_.clear();
+}
+
+bool Ctx::isAssumedPositive(Expr e) const
+{
+    if (e.isNull())
+        return false;
+    switch (kind(e)) {
+    case NodeKind::Number:
+        return numberValue(e).signum() > 0;
+    case NodeKind::Symbol: {
+        const std::string &nm = symbolName(e);
+        const AssumeDomain dom = assumption(nm);
+        if (dom != AssumeDomain::Any)
+            return dom == AssumeDomain::Positive;
+        return nm == "pi" || nm == "e" || nm == "E";
+    }
+    case NodeKind::RootOf:
+        return false;
+    case NodeKind::Pow: {
+        const Expr b = child(e, 0);
+        const Expr ex = child(e, 1);
+        if (isAssumedPositive(b) && isAssumedReal(ex))
+            return true;
+        if (kind(ex) == NodeKind::Number) {
+            const Rational &re = numberValue(ex);
+            if (re.den() == BigInt(1) && (re.num() % BigInt(2)).isZero() &&
+                isAssumedNegative(b)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    case NodeKind::Func: {
+        const std::string &fn = funcName(e);
+        const Expr u = child(e, 0);
+        if (fn == "exp" || fn == "cosh" || fn == "sech" || fn == "erfc")
+            return isAssumedReal(u);
+        if (fn == "abs")
+            return isAssumedPositive(u) || isAssumedNegative(u);
+        if (fn == "sqrt" || fn == "sinh" || fn == "tanh" || fn == "asinh" ||
+            fn == "atan" || fn == "erf" || fn == "gamma")
+            return isAssumedPositive(u);
+        return false;
+    }
+    case NodeKind::Mul: {
+        int sign = 1;
+        for (std::size_t i = 0; i < childCount(e); ++i) {
+            const Expr ch = child(e, i);
+            if (isAssumedPositive(ch))
+                continue;
+            if (isAssumedNegative(ch))
+                sign = -sign;
+            else
+                return false;
+        }
+        return sign > 0;
+    }
+    case NodeKind::Add: {
+        bool anyPos = false;
+        for (std::size_t i = 0; i < childCount(e); ++i) {
+            const Expr ch = child(e, i);
+            if (isAssumedPositive(ch))
+                anyPos = true;
+            else if (!isAssumedNonNegative(ch))
+                return false;
+        }
+        return anyPos;
+    }
+    }
+    return false;
+}
+
+bool Ctx::isAssumedNegative(Expr e) const
+{
+    if (e.isNull())
+        return false;
+    switch (kind(e)) {
+    case NodeKind::Number:
+        return numberValue(e).signum() < 0;
+    case NodeKind::Symbol:
+        return assumption(symbolName(e)) == AssumeDomain::Negative;
+    case NodeKind::RootOf:
+        return false;
+    case NodeKind::Pow: {
+        const Expr b = child(e, 0);
+        const Expr ex = child(e, 1);
+        if (kind(ex) == NodeKind::Number) {
+            const Rational &re = numberValue(ex);
+            if (re.den() == BigInt(1) && !(re.num() % BigInt(2)).isZero() &&
+                isAssumedNegative(b)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    case NodeKind::Func: {
+        const std::string &fn = funcName(e);
+        const Expr u = child(e, 0);
+        if (fn == "sinh" || fn == "tanh" || fn == "asinh" || fn == "atan" ||
+            fn == "erf")
+            return isAssumedNegative(u);
+        return false;
+    }
+    case NodeKind::Mul: {
+        int sign = 1;
+        for (std::size_t i = 0; i < childCount(e); ++i) {
+            const Expr ch = child(e, i);
+            if (isAssumedPositive(ch))
+                continue;
+            if (isAssumedNegative(ch))
+                sign = -sign;
+            else
+                return false;
+        }
+        return sign < 0;
+    }
+    case NodeKind::Add: {
+        bool anyNeg = false;
+        for (std::size_t i = 0; i < childCount(e); ++i) {
+            const Expr ch = child(e, i);
+            if (isAssumedNegative(ch))
+                anyNeg = true;
+            else if (!isZero(ch))
+                return false;
+        }
+        return anyNeg;
+    }
+    }
+    return false;
+}
+
+bool Ctx::isAssumedNonNegative(Expr e) const
+{
+    if (e.isNull())
+        return false;
+    if (isZero(e) || isAssumedPositive(e))
+        return true;
+    switch (kind(e)) {
+    case NodeKind::Number:
+        return numberValue(e).signum() >= 0;
+    case NodeKind::Symbol: {
+        const AssumeDomain dom = assumption(symbolName(e));
+        return dom == AssumeDomain::NonNegative || dom == AssumeDomain::Positive;
+    }
+    case NodeKind::RootOf:
+        return false;
+    case NodeKind::Pow: {
+        const Expr b = child(e, 0);
+        const Expr ex = child(e, 1);
+        if (kind(ex) == NodeKind::Number) {
+            const Rational &re = numberValue(ex);
+            if (re.signum() > 0 && isAssumedNonNegative(b))
+                return true;
+            if (re.den() == BigInt(1) && re.signum() >= 0 &&
+                (re.num() % BigInt(2)).isZero() && isAssumedReal(b))
+                return true;
+        }
+        return false;
+    }
+    case NodeKind::Func: {
+        const std::string &fn = funcName(e);
+        const Expr u = child(e, 0);
+        if (fn == "abs")
+            return isAssumedReal(u);
+        if (fn == "sqrt" || fn == "sinh" || fn == "tanh" || fn == "asinh" ||
+            fn == "atan" || fn == "erf")
+            return isAssumedNonNegative(u);
+        return false;
+    }
+    case NodeKind::Mul: {
+        int negCount = 0;
+        for (std::size_t i = 0; i < childCount(e); ++i) {
+            const Expr ch = child(e, i);
+            if (isAssumedNonNegative(ch))
+                continue;
+            if (isAssumedNegative(ch))
+                ++negCount;
+            else
+                return false;
+        }
+        return (negCount % 2) == 0;
+    }
+    case NodeKind::Add: {
+        for (std::size_t i = 0; i < childCount(e); ++i)
+            if (!isAssumedNonNegative(child(e, i)))
+                return false;
+        return true;
+    }
+    }
+    return false;
+}
+
+bool Ctx::isAssumedReal(Expr e) const
+{
+    if (e.isNull())
+        return false;
+    if (isAssumedNonNegative(e) || isAssumedNegative(e))
+        return true;
+    switch (kind(e)) {
+    case NodeKind::Number:
+        return true;
+    case NodeKind::Symbol: {
+        const std::string &nm = symbolName(e);
+        return assumption(nm) != AssumeDomain::Any || nm == "pi" ||
+               nm == "e" || nm == "E";
+    }
+    case NodeKind::RootOf:
+        return false;
+    case NodeKind::Pow: {
+        const Expr b = child(e, 0);
+        const Expr ex = child(e, 1);
+        if (isAssumedPositive(b) && isAssumedReal(ex))
+            return true;
+        if (kind(ex) == NodeKind::Number) {
+            const Rational &re = numberValue(ex);
+            if (re.den() == BigInt(1) && isAssumedReal(b))
+                return true;
+            if (re.signum() >= 0 && isAssumedNonNegative(b))
+                return true;
+        }
+        return false;
+    }
+    case NodeKind::Func: {
+        const std::string &fn = funcName(e);
+        const Expr u = child(e, 0);
+        if (fn == "log")
+            return isAssumedPositive(u);
+        if (fn == "sqrt")
+            return isAssumedNonNegative(u);
+        if (fn == "exp" || fn == "abs" || fn == "sin" || fn == "cos" ||
+            fn == "tan" || fn == "cot" || fn == "sec" || fn == "csc" ||
+            fn == "atan" || fn == "acot" || fn == "sinh" || fn == "cosh" ||
+            fn == "tanh" || fn == "coth" || fn == "sech" || fn == "csch" ||
+            fn == "asinh" || fn == "erf" || fn == "erfc")
+            return isAssumedReal(u);
+        return false;
+    }
+    case NodeKind::Mul:
+    case NodeKind::Add: {
+        for (std::size_t i = 0; i < childCount(e); ++i)
+            if (!isAssumedReal(child(e, i)))
+                return false;
+        return true;
+    }
+    }
+    return false;
+}
+
+bool Ctx::isAssumedInteger(Expr e) const
+{
+    if (e.isNull())
+        return false;
+    switch (kind(e)) {
+    case NodeKind::Number:
+        return numberValue(e).den() == BigInt(1);
+    case NodeKind::Symbol:
+        return assumption(symbolName(e)) == AssumeDomain::Integer;
+    case NodeKind::RootOf:
+    case NodeKind::Func:
+        return false;
+    case NodeKind::Pow: {
+        const Expr b = child(e, 0);
+        const Expr ex = child(e, 1);
+        return isAssumedInteger(b) && isAssumedInteger(ex) &&
+               isAssumedNonNegative(ex);
+    }
+    case NodeKind::Mul:
+    case NodeKind::Add: {
+        for (std::size_t i = 0; i < childCount(e); ++i)
+            if (!isAssumedInteger(child(e, i)))
+                return false;
+        return true;
+    }
+    }
+    return false;
+}
+
 } // namespace numkit::cas

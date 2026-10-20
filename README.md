@@ -81,10 +81,12 @@ MATLAB-precedence text; `toString` prints round-trip-exact forms;
 `subs` substitutes subtrees; `expand` distributes to polynomial form;
 `evalExact` evaluates exactly in Q with honest declines outside;
 `evalDouble` evaluates DAGs (including Sturm-refined `RootOf` atoms and
-special functions `erf`/`erfc`/`gamma`) to `double`; `leafCount` and
-`exprCost` measure expression size and DAG complexity; `simplify`
+special functions `erf`/`erfc`/`gamma`) to `double`; `leafCount` and `exprCost` measure expression size and DAG complexity;
+`AssumeDomain` and `Ctx::assume` attach domain assumptions (`Real`,
+`Positive`, `Negative`, `NonNegative`, `Integer`) with DAG-level sign,
+reality, and integrality inference; `simplify`
 (`core/simplify.hpp`) performs cost-guided algebraic, trigonometric,
-hyperbolic, and logarithmic simplification; `solveSymbolic` and
+hyperbolic, and logarithmic simplification (respecting symbol assumptions); `solveSymbolic` and
 `solveSystem2` (`core/symsolve.hpp`) solve parametric polynomial/radical
 and single-occurrence transcendental equations and 2-variable polynomial
 systems via Sylvester resultants; `taylor`, `laurent`, `limit`, `limitOneSided`, and `limitAtInfinity`

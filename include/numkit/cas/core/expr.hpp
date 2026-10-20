@@ -24,6 +24,15 @@ enum class NodeKind : std::uint8_t {
     RootOf, // algebraic number atom: root #index of a monic polynomial
 };
 
+enum class AssumeDomain : std::uint8_t {
+    Any = 0,     // unconstrained symbol (default)
+    Real,        // x in R
+    Positive,    // x in R, x > 0
+    Negative,    // x in R, x < 0
+    NonNegative, // x in R, x >= 0
+    Integer,     // x in Z
+};
+
 // ============================================================
 // Expr — a thin handle into a Ctx-owned interned arena.
 //
@@ -201,6 +210,19 @@ public:
         return e.id_;
     }
 
+    // ── symbol assumptions (item 45) ──────────────────────────
+    void assume(const std::string &name, AssumeDomain dom);
+    void assume(Expr sym, AssumeDomain dom);
+    AssumeDomain assumption(const std::string &name) const;
+    AssumeDomain assumption(Expr sym) const;
+    void clearAssumptions();
+
+    bool isAssumedPositive(Expr e) const;
+    bool isAssumedNegative(Expr e) const;
+    bool isAssumedNonNegative(Expr e) const;
+    bool isAssumedReal(Expr e) const;
+    bool isAssumedInteger(Expr e) const;
+
 private:
     friend class Expr;
 
@@ -245,6 +267,7 @@ private:
         std::uint32_t nodeId = 0; // id of the interning node (filled after makeNode)
     };
     std::deque<RootOfDesc> rootofs_;
+    std::unordered_map<std::string, AssumeDomain> assumptions_;
 };
 
 } // namespace numkit::cas

@@ -1025,6 +1025,39 @@ TEST(RubiApply, PropertyR3R4R5Shapes)
     }
 }
 
+TEST(RubiApply, AssumptionsSymbolicParameters)
+{
+    const RuleTables t = sliceTables();
+
+    // When a > 0 and b > 0, PosQ[a/b] holds and Rt[a/b, 2] evaluates to
+    // (a/b)^(1/2), giving the atan form for 1/(a + b*x^2).
+    {
+        Ctx c;
+        const Expr x = c.symbol("x");
+        c.assume("a", numkit::cas::AssumeDomain::Positive);
+        c.assume("b", numkit::cas::AssumeDomain::Positive);
+        const Expr e = numkit::cas::parseExpr(c, "(a + b*x^2)^-1");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_NE(c.toString(F).find("atan"), std::string::npos)
+            << c.toString(F);
+    }
+
+    // When a > 0 and b < 0, NegQ[a/b] holds and Rt[-a/b, 2] evaluates to
+    // (-a/b)^(1/2), giving the atanh form for 1/(a + b*x^2).
+    {
+        Ctx c;
+        const Expr x = c.symbol("x");
+        c.assume("a", numkit::cas::AssumeDomain::Positive);
+        c.assume("b", numkit::cas::AssumeDomain::Negative);
+        const Expr e = numkit::cas::parseExpr(c, "(a + b*x^2)^-1");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+        EXPECT_NE(c.toString(F).find("atanh"), std::string::npos)
+            << c.toString(F);
+    }
+}
+
 
 
 

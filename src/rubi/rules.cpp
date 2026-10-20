@@ -1128,13 +1128,22 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
             const Expr n = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
-            if (q.isNull() || c.kind(q) != NodeKind::Number ||
-                n.isNull() || c.kind(n) != NodeKind::Number)
+            if (q.isNull() || n.isNull() || c.kind(n) != NodeKind::Number)
                 return Expr();
             const Rational &nv = c.numberValue(n);
             std::int64_t ni = 0;
             if (!(nv.den() == BigInt(1)) || !nv.num().fitsInt64(ni) || ni < 2)
                 return Expr();
+            const Expr invN = c.number(Rational(BigInt(1), BigInt(ni)));
+            if (c.kind(q) != NodeKind::Number) {
+                if (c.isAssumedNonNegative(q))
+                    return c.pow(q, invN);
+                if ((ni % 2 != 0) && c.isAssumedNegative(q))
+                    return c.neg(c.pow(c.neg(q), invN));
+                if ((ni % 2 != 0) && c.isAssumedReal(q))
+                    return c.pow(q, invN);
+                return Expr();
+            }
             const Rational v = c.numberValue(q);
             if (v.signum() < 0 && (ni % 2 == 0))
                 return Expr();
@@ -1145,7 +1154,6 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 const Rational rExact(v.signum() >= 0 ? rn : -rn, rd);
                 return c.number(rExact);
             }
-            const Expr invN = c.number(Rational(BigInt(1), BigInt(ni)));
             if (v.signum() >= 0)
                 return c.pow(c.number(v), invN);
             return c.neg(c.pow(c.number(-v), invN));
@@ -1303,17 +1311,27 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
             const Expr b = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
-            if (a.isNull() || b.isNull() || c.kind(a) != NodeKind::Number ||
-                c.kind(b) != NodeKind::Number)
+            if (a.isNull() || b.isNull())
                 return false;
-            const Rational &va = c.numberValue(a);
-            const Rational &vb = c.numberValue(b);
-            if (op == "==") return va == vb;
-            if (op == "!=") return !(va == vb);
-            if (op == "<") return va < vb;
-            if (op == ">") return va > vb;
-            if (op == "<=") return va <= vb;
-            return va >= vb;
+            if (c.kind(a) == NodeKind::Number &&
+                c.kind(b) == NodeKind::Number) {
+                const Rational &va = c.numberValue(a);
+                const Rational &vb = c.numberValue(b);
+                if (op == "==") return va == vb;
+                if (op == "!=") return !(va == vb);
+                if (op == "<") return va < vb;
+                if (op == ">") return va > vb;
+                if (op == "<=") return va <= vb;
+                return va >= vb;
+            }
+            const Expr diff = c.simplify(c.add({a, c.neg(b)}));
+            if (op == "==") return c.isZero(diff);
+            if (op == "!=")
+                return c.isAssumedPositive(diff) || c.isAssumedNegative(diff);
+            if (op == "<") return c.isAssumedNegative(diff);
+            if (op == ">") return c.isAssumedPositive(diff);
+            if (op == "<=") return c.isAssumedNonNegative(c.neg(diff));
+            return c.isAssumedNonNegative(diff);
         }
         return false;
     }
@@ -1371,8 +1389,7 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
         for (int i = 0; i < nkids; ++i) {
             const Expr a = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
-            if (a.isNull() || c.kind(a) != NodeKind::Number ||
-                !(c.numberValue(a).den() == BigInt(1)))
+            if (a.isNull() || !c.isAssumedInteger(a))
                 return false;
         }
         return true;
@@ -1602,13 +1619,14 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             return false;
         const Expr a = buildReplacement(
             t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
-        if (a.isNull() || c.kind(a) != NodeKind::Number)
+        if (a.isNull())
             return false;
-        const Rational &va = c.numberValue(a);
-        if (pred == "PosQ") return va.signum() > 0;
-        if (pred == "NegQ") return va.signum() < 0;
-        if (pred == "IntegerQ") return va.den() == BigInt(1);
-        return !(va.den() == BigInt(1)); // FractionQ
+        if (pred == "PosQ") return c.isAssumedPositive(a);
+        if (pred == "NegQ") return c.isAssumedNegative(a);
+        if (pred == "IntegerQ") return c.isAssumedInteger(a);
+        if (c.kind(a) != NodeKind::Number)
+            return false;
+        return !(c.numberValue(a).den() == BigInt(1)); // FractionQ
     }
     if (pred == "NeQ" || pred == "EqQ" || pred == "GtQ" || pred == "LtQ" ||
         pred == "GeQ" || pred == "LeQ" || pred == "IGtQ" || pred == "ILtQ" ||
@@ -1636,7 +1654,29 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                     c.isZero(c.simplify(c.add({exprs[0], c.neg(exprs[1])})));
                 return pred == "EqQ" ? eq : !eq;
             }
-            return false;
+            auto cmpSymbolic = [&](Expr x, Expr y) -> bool {
+                const Expr diff = c.simplify(c.add({x, c.neg(y)}));
+                if (pred == "GtQ" || pred == "IGtQ")
+                    return c.isAssumedPositive(diff);
+                if (pred == "LtQ" || pred == "ILtQ")
+                    return c.isAssumedNegative(diff);
+                if (pred == "GeQ" || pred == "IGeQ")
+                    return c.isAssumedNonNegative(diff);
+                if (pred == "LeQ" || pred == "ILeQ")
+                    return c.isAssumedNonNegative(c.neg(diff));
+                return false;
+            };
+            if (pred == "IGtQ" || pred == "ILtQ" || pred == "IGeQ" ||
+                pred == "ILeQ") {
+                if (nkids == 2 && !c.isAssumedInteger(exprs[0]))
+                    return false;
+                if (nkids == 3 && !c.isAssumedInteger(exprs[1]))
+                    return false;
+            }
+            if (nkids == 2)
+                return cmpSymbolic(exprs[0], exprs[1]);
+            return cmpSymbolic(exprs[0], exprs[1]) &&
+                   cmpSymbolic(exprs[1], exprs[2]);
         }
         const Rational &va = vals[0];
         const Rational &vb = vals[1];

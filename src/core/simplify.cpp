@@ -503,6 +503,14 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         return c.pow(arg, c.number(Rational(std::int64_t{1}, BigInt(2))));
     }
 
+    // Assumption-driven abs(u) simplification: abs(u) -> u for u >= 0, -u for u < 0.
+    if (fn == "abs") {
+        if (c.isAssumedNonNegative(arg))
+            return arg;
+        if (c.isAssumedNegative(arg))
+            return c.neg(arg);
+    }
+
     // Reflection symmetries for negative arguments: sin(-u) -> -sin(u), cos(-u) -> cos(u), etc.
     Expr posArg;
     if (extractNegativeArg(c, arg, posArg)) {
@@ -617,6 +625,38 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                     return c.pow(sinVal, c.number(std::int64_t{-1}));
             }
         }
+        // Symbolic integer multiples of pi: sin(n*pi) -> 0, tan(n*pi) -> 0,
+        // cos(2*n*pi) -> 1, cos(n*pi) -> (-1)^n when n is assumed Integer.
+        if (!isRatPi && c.kind(arg) == NodeKind::Mul) {
+            std::vector<Expr> otherFactors;
+            bool hasPi = false;
+            for (std::size_t i = 0; i < c.childCount(arg); ++i) {
+                const Expr ch = c.child(arg, i);
+                if (!hasPi && ch == piSym)
+                    hasPi = true;
+                else
+                    otherFactors.push_back(ch);
+            }
+            if (hasPi && !otherFactors.empty()) {
+                const Expr kExpr =
+                    otherFactors.size() == 1 ? otherFactors[0] : c.mul(otherFactors);
+                if (c.isAssumedInteger(kExpr)) {
+                    if (fn == "sin" || fn == "tan")
+                        return c.zero();
+                    if (fn == "cos" || fn == "sec") {
+                        const bool isEven =
+                            c.kind(kExpr) == NodeKind::Mul &&
+                            c.kind(c.child(kExpr, 0)) == NodeKind::Number &&
+                            c.numberValue(c.child(kExpr, 0)).den() == BigInt(1) &&
+                            (c.numberValue(c.child(kExpr, 0)).num() % BigInt(2))
+                                .isZero();
+                        if (isEven)
+                            return c.one();
+                        return c.pow(c.number(std::int64_t{-1}), kExpr);
+                    }
+                }
+            }
+        }
     }
 
     // Special values of inverse trigonometric functions.
@@ -676,6 +716,17 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             (fn == "tanh" && innerFn == "atanh")) {
             return u;
         }
+        if (((fn == "asinh" && innerFn == "sinh") ||
+             (fn == "atanh" && innerFn == "tanh")) &&
+            c.isAssumedReal(u)) {
+            return u;
+        }
+        if (fn == "acosh" && innerFn == "cosh") {
+            if (c.isAssumedNonNegative(u))
+                return u;
+            if (c.isAssumedNegative(u))
+                return c.neg(u);
+        }
         // Cross-trig of inverse trig
         const Expr u2 = c.pow(u, c.number(std::int64_t{2}));
         const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
@@ -706,12 +757,15 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         return c.pow(c.child(c.child(arg, 1), 0), c.child(arg, 0));
     }
 
-    // log(u^k) -> k * log(u) when k is an odd integer or when u is e
+    // log(u^k) -> k * log(u) when u > 0 (and k real), or when k is an odd
+    // integer, or when u is e.
     if (fn == "log" && c.kind(arg) == NodeKind::Pow) {
         const Expr b = c.child(arg, 0);
         const Expr ex = c.child(arg, 1);
         if (c.kind(b) == NodeKind::Symbol && c.symbolName(b) == "e")
             return ex;
+        if (c.isAssumedPositive(b) && c.isAssumedReal(ex))
+            return c.mul({ex, c.func("log", b)});
         if (c.kind(ex) == NodeKind::Number) {
             std::int64_t k = 0;
             if (c.numberValue(ex).den() == BigInt(1) &&
@@ -760,6 +814,102 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
                     const Expr sq = c.number(Rational(root, rb.den()));
                     return c.pow(sq, c.number(Rational(re.num(), BigInt(1))));
                 }
+            }
+        }
+        // (-1)^(2*k*n) -> 1 when ex is an even integer multiple of an Integer expression
+        if (b == c.number(std::int64_t{-1}) && c.isAssumedInteger(ex) &&
+            c.kind(ex) == NodeKind::Mul &&
+            c.kind(c.child(ex, 0)) == NodeKind::Number &&
+            c.numberValue(c.child(ex, 0)).den() == BigInt(1) &&
+            (c.numberValue(c.child(ex, 0)).num() % BigInt(2)).isZero()) {
+            return c.one();
+        }
+        // Assumption-driven power-of-power rules:
+        //   (u^a)^ex -> u^(a*ex) when u > 0 (or u >= 0 and a, ex > 0);
+        //   (u^(2*k))^(m/2) -> (-u)^(k*m) when u < 0.
+        if (c.kind(p) == NodeKind::Pow &&
+            c.kind(c.child(p, 0)) == NodeKind::Pow) {
+            const Expr inner = c.child(p, 0);
+            const Expr u = c.child(inner, 0);
+            const Expr a = c.child(inner, 1);
+            const Expr outerEx = c.child(p, 1);
+            if ((c.isAssumedPositive(u) && c.isAssumedReal(a) &&
+                 c.isAssumedReal(outerEx)) ||
+                (c.isAssumedNonNegative(u) && c.isAssumedPositive(a) &&
+                 c.isAssumedPositive(outerEx))) {
+                return rewriteBottomUp(c, c.pow(u, c.mul({a, outerEx})));
+            }
+            if (c.isAssumedNegative(u) && c.kind(a) == NodeKind::Number &&
+                c.kind(outerEx) == NodeKind::Number) {
+                const Rational &ra = c.numberValue(a);
+                const Rational &re = c.numberValue(outerEx);
+                if (ra.den() == BigInt(1) &&
+                    (ra.num() % BigInt(2)).isZero() &&
+                    re.den() == BigInt(2)) {
+                    const Rational newExp(
+                        (ra.num() / BigInt(2)) * re.num(), BigInt(1));
+                    return rewriteBottomUp(
+                        c, c.pow(c.neg(u), c.number(newExp)));
+                }
+            }
+        }
+        // Extract positive rational squares and assumption-certified factors
+        // out of fractional powers of products: (4 * x^2 * y)^(1/2) -> 2 * x * y^(1/2).
+        if (c.kind(p) == NodeKind::Pow &&
+            c.kind(c.child(p, 0)) == NodeKind::Mul &&
+            c.kind(c.child(p, 1)) == NodeKind::Number &&
+            !(c.numberValue(c.child(p, 1)).den() == BigInt(1))) {
+            const Expr mulBase = c.child(p, 0);
+            const Expr outerEx = c.child(p, 1);
+            const Rational &re = c.numberValue(outerEx);
+            std::vector<Expr> extracted;
+            std::vector<Expr> remaining;
+            for (std::size_t i = 0; i < c.childCount(mulBase); ++i) {
+                const Expr ch = c.child(mulBase, i);
+                if (c.kind(ch) == NodeKind::Number &&
+                    c.numberValue(ch).signum() > 0 && re.den() == BigInt(2)) {
+                    const Rational &rb = c.numberValue(ch);
+                    const BigInt nq = rb.num() * rb.den();
+                    BigInt root;
+                    if (nq.sqrtExact(root)) {
+                        extracted.push_back(c.pow(
+                            c.number(Rational(root, rb.den())),
+                            c.number(Rational(re.num(), BigInt(1)))));
+                        continue;
+                    }
+                }
+                if (c.kind(ch) == NodeKind::Pow &&
+                    c.kind(c.child(ch, 1)) == NodeKind::Number) {
+                    const Expr u = c.child(ch, 0);
+                    const Rational &ra = c.numberValue(c.child(ch, 1));
+                    const Rational prodExp = ra * re;
+                    if ((c.isAssumedPositive(u) ||
+                         (c.isAssumedNonNegative(u) && ra.signum() > 0 &&
+                          re.signum() > 0)) &&
+                        prodExp.den() == BigInt(1)) {
+                        extracted.push_back(c.pow(u, c.number(prodExp)));
+                        continue;
+                    }
+                    if (c.isAssumedNegative(u) && ra.den() == BigInt(1) &&
+                        (ra.num() % BigInt(2)).isZero() &&
+                        re.den() == BigInt(2)) {
+                        const Rational newExp(
+                            (ra.num() / BigInt(2)) * re.num(), BigInt(1));
+                        extracted.push_back(
+                            c.pow(c.neg(u), c.number(newExp)));
+                        continue;
+                    }
+                }
+                remaining.push_back(ch);
+            }
+            if (!extracted.empty()) {
+                if (!remaining.empty()) {
+                    const Expr remBase = remaining.size() == 1
+                                             ? remaining[0]
+                                             : c.mul(remaining);
+                    extracted.push_back(c.pow(remBase, outerEx));
+                }
+                return simplifyMulNode(c, c.mul(extracted));
             }
         }
         // exp(u)^v -> exp(u * v)

@@ -270,5 +270,76 @@ TEST(SimplifyTest, BoundaryCases)
     EXPECT_EQ(exhausted.status(), BudgetStatus::StepExhausted);
 }
 
+TEST(SimplifyTest, AssumptionsInferenceAndSimplification)
+{
+    Ctx c;
+    const Expr u = c.symbol("u");
+    const Expr v = c.symbol("v");
+    const Expr x = c.symbol("x");
+    const Expr n = c.symbol("n");
+    const Expr a = c.symbol("a");
+    const Expr b = c.symbol("b");
+
+    // Unconstrained symbols do not trigger domain-restricted identities
+    EXPECT_EQ(c.simplify(parseExpr(c, "sqrt(u^2)")), parseExpr(c, "(u^2)^(1/2)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "log(u^2)")), parseExpr(c, "log(u^2)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "sin(n*pi)")), parseExpr(c, "sin(n*pi)"));
+
+    c.assume(u, AssumeDomain::Positive);
+    c.assume(v, AssumeDomain::Negative);
+    c.assume(x, AssumeDomain::Real);
+    c.assume(n, AssumeDomain::Integer);
+    c.assume(a, AssumeDomain::Real);
+    c.assume(b, AssumeDomain::Real);
+
+    // Expression-level inference predicates
+    EXPECT_TRUE(c.isAssumedPositive(u));
+    EXPECT_TRUE(c.isAssumedNegative(v));
+    EXPECT_TRUE(c.isAssumedPositive(c.mul({v, v})));
+    EXPECT_TRUE(c.isAssumedNegative(c.mul({u, v})));
+    EXPECT_TRUE(c.isAssumedNonNegative(parseExpr(c, "x^2")));
+    EXPECT_TRUE(c.isAssumedPositive(parseExpr(c, "1 + x^2")));
+    EXPECT_TRUE(c.isAssumedPositive(parseExpr(c, "exp(x)")));
+    EXPECT_TRUE(c.isAssumedPositive(parseExpr(c, "cosh(x)")));
+    EXPECT_TRUE(c.isAssumedInteger(parseExpr(c, "3*n^2 - 2*n + 5")));
+
+    // Positive assumptions
+    EXPECT_EQ(c.simplify(parseExpr(c, "sqrt(u^2)")), u);
+    EXPECT_EQ(c.simplify(parseExpr(c, "sqrt(4*u^2*y)")),
+              parseExpr(c, "2*u*y^(1/2)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "log(u^2)")), parseExpr(c, "2*log(u)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "log(u^a)")), parseExpr(c, "a*log(u)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "(u^a)^b")), parseExpr(c, "u^(a*b)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "abs(u)")), u);
+    EXPECT_EQ(c.simplify(parseExpr(c, "acosh(cosh(u))")), u);
+
+    // Negative assumptions
+    EXPECT_EQ(c.simplify(parseExpr(c, "sqrt(v^2)")), c.neg(v));
+    EXPECT_EQ(c.simplify(parseExpr(c, "sqrt(9*v^2*y)")),
+              parseExpr(c, "-3*v*y^(1/2)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "abs(v)")), c.neg(v));
+    EXPECT_EQ(c.simplify(parseExpr(c, "acosh(cosh(v))")), c.neg(v));
+
+    // Real assumptions and composite positive expressions (1 + x^2 > 0)
+    EXPECT_EQ(c.simplify(parseExpr(c, "sqrt((1 + x^2)^2)")),
+              parseExpr(c, "1 + x^2"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "log((1 + x^2)^2)")),
+              parseExpr(c, "2*log(1 + x^2)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "asinh(sinh(x))")), x);
+    EXPECT_EQ(c.simplify(parseExpr(c, "atanh(tanh(x))")), x);
+
+    // Integer assumptions
+    EXPECT_EQ(c.simplify(parseExpr(c, "sin(n*pi)")), c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(c, "tan(n*pi)")), c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(c, "cos(2*n*pi)")), c.one());
+    EXPECT_EQ(c.simplify(parseExpr(c, "cos(n*pi)")), parseExpr(c, "(-1)^n"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "(-1)^(2*n)")), c.one());
+
+    // Clearing assumptions restores unconstrained behavior
+    c.clearAssumptions();
+    EXPECT_EQ(c.assumption(u), AssumeDomain::Any);
+    EXPECT_EQ(c.simplify(parseExpr(c, "sqrt(u^2)")), parseExpr(c, "(u^2)^(1/2)"));
+}
+
 } // namespace
 } // namespace numkit::cas

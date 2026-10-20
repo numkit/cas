@@ -290,9 +290,15 @@
     `factorOverQ` (Zassenhaus/Hensel), `integrateSquarefree` /
     `integrateRational` (Hermite/Rothstein–Trager/Rioboo/лиувиллевы этажи)
     и `rubiApply`.
-35. 🔶 (SMT-трек) Численная оценка `evalDouble`/`vpa`-мост (вещественная
-    оценка `Expr`, включая `RootOf` и трансцендентные атомы) + SBO в
-    `BigInt` (inline-лимбы на стеке без аллокаций для ≤ 128 бит).
+35. ✅ (SMT-трек) Численная оценка `evalDouble`/`vpa`-мост (`BigInt::toDouble`,
+    масштабно-инвариантный `Rational::toDouble` с округлением к ближайшему
+    чётному 0.5 ULP, `Ctx::evalDouble` с DAG-мемоизацией, изоляцией и 56-битным
+    уточнением `RootOf`, нечётными корнями отрицательных чисел и полным набором
+    элементарных и спецфункций `erf`/`erfc`/`gamma`, CLI `nkcas eval`) +
+    Small Buffer Optimization (SBO) в `BigInt` (`LimbVec` на 2 лимба / 128 бит
+    на стеке без кучи + аппаратные 64-битные fast-path в `BigInt::divMod` и
+    `BigInt::gcd`; ускорение малых `BigInt`/`Rational` в 7–8× и медианы
+    `rational-baseline.txt` в 2.38×: 35.7 → 15.0 мс).
 36. 🔶 (SMT-трек) Аналитическое ядро тулбокса: усечённые степенные ряды
     `taylor(f, x, x0, order)` и вычисление пределов `limit(f, x, x0)` с
     раскрытием неопределённостей через ряды/правило Лопиталя.
@@ -2012,4 +2018,42 @@ MATLAB Symbolic Math Toolbox (три эшелона):
    - CLI-команда `nkcas integrate <expr> <var>` переведена на единый каскад
      `numkit::cas::integrate`, а в `corpus_runner` добавлен маршрут
      `op=cascade`.
+
+### Сессия: `BigInt` SBO + численная оценка `evalDouble` / `vpa`-мост (пункт 35 ЗАКРЫТ)
+
+1. **Small Buffer Optimization (SBO) в `BigInt` (`include/numkit/cas/num/bigint.hpp`, `src/num/bigint.cpp`)**:
+   - Заменён `std::vector<std::uint64_t>` на встроенный контейнер `BigInt::LimbVec`
+     с 2 inline-лимбами (128 бит) на стеке (`kInlineCap = 2`). Конструкторы,
+     копирование, перемещение и умножение любых 64-битных целых чисел (дающее
+     $\le 128$-битный результат) выполняются с **нулевым числом аллокаций кучи**.
+   - В `BigInt::divMod` и `BigInt::gcd` добавлены 1-лимбовые ($\le 64$ бит)
+     аппаратные `uint64_t` fast-path без создания временных 32-битных векторов.
+   - **Эффект на производительность**:
+     - `BigIntProperty.SmallRangeAgainstInt64`: **40 мс $\to$ 5 мс** ($\times 8.0$).
+     - `RationalProperty.SmallRangeAgainstInt64`: **140 мс $\to$ 20 мс** ($\times 7.0$).
+     - Полный корпус `corpora/rational-baseline.txt` (500 задач): медиана
+       ускорилась с **35.7 мс до 15.0 мс** ($\times 2.38$), p95 — со **132.3 мс
+       до 102.6 мс**.
+2. **Численная оценка `toDouble` и `Ctx::evalDouble` (`vpa`-мост)**:
+   - `BigInt::toDouble() const`: точный перевод в IEEE-754 `double` с
+     округлением старших 53 бит мантиссы к ближайшему чётному (round-to-nearest-even).
+   - `Rational::toDouble() const`: масштабно-инвариантное деление `|num| / den`
+     через битовый сдвиг к 55-битному частному `BigInt::divMod` + round-to-nearest-even
+     и `std::ldexp`. Даёт побитовый round-trip `Rational::fromDoubleBits(v).toDouble() == v`
+     на всех нормальных и денормализованных `double` и не переполняется в
+     `inf/inf = NaN` даже при тысячебитных числителях и знаменателях.
+   - `Ctx::evalDouble(Expr e, vals, out)`: мемоизированный по узлам DAG
+     вычислитель вещественного значения `Expr`:
+     - `Number` $\to$ `Rational::toDouble()`;
+     - `Symbol` $\to$ таблица `vals` + встроенные константы `pi` и `e`;
+     - `RootOf` $\to$ изоляция вещественных корней полинома через ряд Штурма
+       (`isolateRealRoots`) и 56-битное уточнение (`refineRoot` до ширины $2^{-56}$);
+     - `Pow` $\to$ целые и дробные степени, включая вещественные нечётные корни
+       отрицательных чисел (`(-8)^(1/3) = -2`);
+     - `Func` $\to$ все элементарные функции (`exp`, `log`, `sqrt`, `abs`,
+       прямые и обратные тригонометрические и гиперболические функции) и
+       спецфункции `erf`, `erfc`, `gamma` с честным отказом (`false`) вне
+       вещественной области определения и в полюсах.
+   - В CLI `apps/nkcas.cpp` добавлена команда `nkcas eval "<expr>" [<var> <val>]`.
+
 

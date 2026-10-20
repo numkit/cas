@@ -39,6 +39,10 @@ public:
     // the sym() layer contract in notes/integration-model.md.
     static Rational fromDoubleBits(double v);
 
+    // Correctly rounded IEEE-754 double (scale-invariant for arbitrary
+    // numerator/denominator bit-lengths).
+    double toDouble() const;
+
     bool isZero() const { return num_.isZero(); }
     int signum() const { return num_.signum(); }
     const BigInt &num() const { return num_; }

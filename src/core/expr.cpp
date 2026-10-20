@@ -1,6 +1,8 @@
 #include <numkit/cas/core/expr.hpp>
+#include <numkit/cas/poly/sturm.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace numkit::cas {
 
@@ -667,6 +669,241 @@ bool Ctx::evalExact(
     }
     }
     return false;
+}
+
+namespace {
+
+bool evalDoubleRec(
+    const Ctx &c, Expr e,
+    const std::vector<std::pair<std::string, double>> &vals,
+    std::unordered_map<std::uint32_t, double> &memo, double &out)
+{
+    if (e.isNull())
+        return false;
+    const std::uint32_t nid = c.id(e);
+    const auto hit = memo.find(nid);
+    if (hit != memo.end()) {
+        out = hit->second;
+        return true;
+    }
+
+    double res = 0.0;
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+        res = c.numberValue(e).toDouble();
+        if (!std::isfinite(res))
+            return false;
+        break;
+    case NodeKind::Symbol: {
+        const std::string &name = c.symbolName(e);
+        bool found = false;
+        for (const auto &kv : vals) {
+            if (kv.first == name) {
+                res = kv.second;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            if (name == "pi" || name == "Pi") {
+                res = 3.141592653589793238462643383279502884;
+                found = true;
+            } else if (name == "e" || name == "E") {
+                res = 2.718281828459045235360287471352662498;
+                found = true;
+            }
+        }
+        if (!found || !std::isfinite(res))
+            return false;
+        break;
+    }
+    case NodeKind::RootOf: {
+        const std::vector<Rational> &poly = c.rootOfPoly(e);
+        const int idx = c.rootOfIndex(e);
+        UPoly p = UPoly(poly).squarefreePart();
+        p.makeMonic();
+        const std::vector<RootInterval> ivs = isolateRealRoots(p);
+        if (idx < 0 || idx >= static_cast<int>(ivs.size()))
+            return false;
+        const RootInterval iv =
+            refineRoot(p, ivs[static_cast<std::size_t>(idx)],
+                       Rational(std::int64_t{1}, BigInt(1) << 56));
+        const Rational mid =
+            (iv.lo + iv.hi) * Rational(std::int64_t{1}, BigInt(2));
+        res = mid.toDouble();
+        if (!std::isfinite(res))
+            return false;
+        break;
+    }
+    case NodeKind::Pow: {
+        double b = 0.0;
+        if (!evalDoubleRec(c, c.child(e, 0), vals, memo, b))
+            return false;
+        const Expr expNode = c.child(e, 1);
+        if (c.kind(expNode) == NodeKind::Number) {
+            const Rational &er = c.numberValue(expNode);
+            std::int64_t p = 0, q = 0;
+            if (er.den() == BigInt(1) && er.num().fitsInt64(p)) {
+                if (b == 0.0 && p <= 0)
+                    return false;
+                res = std::pow(b, static_cast<double>(p));
+                if (!std::isfinite(res))
+                    return false;
+                break;
+            }
+            if (er.num().fitsInt64(p) && er.den().fitsInt64(q) && q > 0) {
+                if (b < 0.0) {
+                    if (q % 2 == 0)
+                        return false; // even root of negative is non-real
+                    const double mag = std::pow(-b, er.toDouble());
+                    res = (p % 2 != 0) ? -mag : mag;
+                    if (!std::isfinite(res))
+                        return false;
+                    break;
+                }
+                if (b == 0.0 && p <= 0)
+                    return false;
+            }
+        }
+        double ex = 0.0;
+        if (!evalDoubleRec(c, expNode, vals, memo, ex))
+            return false;
+        if (b < 0.0 && std::floor(ex) != ex)
+            return false;
+        if (b == 0.0 && ex <= 0.0)
+            return false;
+        res = std::pow(b, ex);
+        if (!std::isfinite(res))
+            return false;
+        break;
+    }
+    case NodeKind::Func: {
+        double a = 0.0;
+        if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a))
+            return false;
+        const std::string &fn = c.funcName(e);
+        if (fn == "exp") {
+            res = std::exp(a);
+        } else if (fn == "log") {
+            if (a <= 0.0) return false;
+            res = std::log(a);
+        } else if (fn == "sqrt") {
+            if (a < 0.0) return false;
+            res = std::sqrt(a);
+        } else if (fn == "abs") {
+            res = std::abs(a);
+        } else if (fn == "sin") {
+            res = std::sin(a);
+        } else if (fn == "cos") {
+            res = std::cos(a);
+        } else if (fn == "tan") {
+            res = std::tan(a);
+        } else if (fn == "cot") {
+            const double t = std::tan(a);
+            if (t == 0.0) return false;
+            res = 1.0 / t;
+        } else if (fn == "sec") {
+            const double cs = std::cos(a);
+            if (cs == 0.0) return false;
+            res = 1.0 / cs;
+        } else if (fn == "csc") {
+            const double sn = std::sin(a);
+            if (sn == 0.0) return false;
+            res = 1.0 / sn;
+        } else if (fn == "asin") {
+            if (a < -1.0 || a > 1.0) return false;
+            res = std::asin(a);
+        } else if (fn == "acos") {
+            if (a < -1.0 || a > 1.0) return false;
+            res = std::acos(a);
+        } else if (fn == "atan") {
+            res = std::atan(a);
+        } else if (fn == "acot") {
+            res = (a >= 0.0) ? std::atan(1.0 / a)
+                             : (3.141592653589793238462643383279502884 +
+                                std::atan(1.0 / a));
+        } else if (fn == "asec") {
+            if (a > -1.0 && a < 1.0) return false;
+            res = std::acos(1.0 / a);
+        } else if (fn == "acsc") {
+            if (a > -1.0 && a < 1.0) return false;
+            res = std::asin(1.0 / a);
+        } else if (fn == "sinh") {
+            res = std::sinh(a);
+        } else if (fn == "cosh") {
+            res = std::cosh(a);
+        } else if (fn == "tanh") {
+            res = std::tanh(a);
+        } else if (fn == "coth") {
+            const double th = std::tanh(a);
+            if (th == 0.0) return false;
+            res = 1.0 / th;
+        } else if (fn == "sech") {
+            res = 1.0 / std::cosh(a);
+        } else if (fn == "csch") {
+            const double sh = std::sinh(a);
+            if (sh == 0.0) return false;
+            res = 1.0 / sh;
+        } else if (fn == "asinh") {
+            res = std::asinh(a);
+        } else if (fn == "acosh") {
+            if (a < 1.0) return false;
+            res = std::acosh(a);
+        } else if (fn == "atanh") {
+            if (a <= -1.0 || a >= 1.0) return false;
+            res = std::atanh(a);
+        } else if (fn == "acoth") {
+            if (a >= -1.0 && a <= 1.0) return false;
+            res = std::atanh(1.0 / a);
+        } else if (fn == "asech") {
+            if (a <= 0.0 || a > 1.0) return false;
+            res = std::acosh(1.0 / a);
+        } else if (fn == "acsch") {
+            if (a == 0.0) return false;
+            res = std::asinh(1.0 / a);
+        } else if (fn == "erf") {
+            res = std::erf(a);
+        } else if (fn == "erfc") {
+            res = std::erfc(a);
+        } else if (fn == "gamma") {
+            if (a <= 0.0 && std::floor(a) == a) return false;
+            res = std::tgamma(a);
+        } else {
+            return false;
+        }
+        if (!std::isfinite(res))
+            return false;
+        break;
+    }
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        const bool isAdd = (c.kind(e) == NodeKind::Add);
+        res = isAdd ? 0.0 : 1.0;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            double t = 0.0;
+            if (!evalDoubleRec(c, c.child(e, i), vals, memo, t))
+                return false;
+            res = isAdd ? (res + t) : (res * t);
+            if (!std::isfinite(res))
+                return false;
+        }
+        break;
+    }
+    }
+
+    memo.emplace(nid, res);
+    out = res;
+    return true;
+}
+
+} // namespace
+
+bool Ctx::evalDouble(
+    Expr e, const std::vector<std::pair<std::string, double>> &vals,
+    double &out) const
+{
+    std::unordered_map<std::uint32_t, double> memo;
+    return evalDoubleRec(*this, e, vals, memo, out);
 }
 
 namespace {

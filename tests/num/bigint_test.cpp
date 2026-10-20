@@ -272,3 +272,30 @@ TEST(BigIntFits, Int64Uint64Boundaries)
     EXPECT_FALSE(parse("18446744073709551616").fitsUint64(u64)); // 2^64
     EXPECT_FALSE(BigInt(-1).fitsUint64(u64));
 }
+
+TEST(BigIntSBO, InlineForUpTo128BitsAndSpillsCleanly)
+{
+    const BigInt zero(0);
+    EXPECT_TRUE(zero.isInline());
+
+    const BigInt oneLimb(std::numeric_limits<std::uint64_t>::max());
+    EXPECT_TRUE(oneLimb.isInline());
+
+    // Product of two 64-bit max values is 128 bits (2 limbs) -> still inline!
+    const BigInt twoLimbs = oneLimb * oneLimb;
+    EXPECT_EQ(twoLimbs.bitLength(), 128u);
+    EXPECT_TRUE(twoLimbs.isInline());
+
+    // 3 limbs (129+ bits) spills to heap, and copy-constructing a <=2-limb
+    // value stays inline.
+    const BigInt threeLimbs = twoLimbs * BigInt(2);
+    EXPECT_EQ(threeLimbs.bitLength(), 129u);
+    EXPECT_FALSE(threeLimbs.isInline());
+
+    const BigInt backToTwo = threeLimbs >> 1;
+    EXPECT_EQ(backToTwo, twoLimbs);
+    const BigInt copyOfBack(backToTwo);
+    EXPECT_TRUE(copyOfBack.isInline());
+    EXPECT_EQ(copyOfBack, twoLimbs);
+}
+

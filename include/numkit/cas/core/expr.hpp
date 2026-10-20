@@ -162,6 +162,19 @@ public:
         const std::vector<std::pair<std::string, Rational>> &vals,
         Rational &out);
 
+    // Real IEEE-754 double evaluation (vpa/double bridge, item 35):
+    // evaluates Number (via Rational::toDouble), Symbol (from `vals`, with
+    // built-in fallback for "pi" and "e"), RootOf (via Sturm isolation +
+    // 56-bit interval refinement), Pow (including odd roots of negatives),
+    // and elementary/special functions (exp, log, sqrt, abs, trig, inverse
+    // trig, hyperbolic, inverse hyperbolic, erf, erfc, gamma). Memoized over
+    // the expression DAG. Returns false on unresolved symbols, complex
+    // values, poles, or non-finite overflow.
+    bool evalDouble(
+        Expr e,
+        const std::vector<std::pair<std::string, double>> &vals,
+        double &out) const;
+
     std::string toString(Expr e) const;
 
     // Tree-based leaf/head count (Mathematica/Rubi LeafCount convention):

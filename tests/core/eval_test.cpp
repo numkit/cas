@@ -3,11 +3,13 @@
 // double -> Q) and Ctx::evalExact (exact rational evaluation of an
 // expression, honest decline outside Q).
 #include <numkit/cas/core/expr.hpp>
+#include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -191,6 +193,112 @@ TEST(EvalExact, Boundary)
     const Expr x = c.symbol("x");
     ASSERT_TRUE(c.evalExact(c.mul({x, c.zero()}), {{"x", Rational(std::int64_t{5})}}, out));
     EXPECT_EQ(out, Rational(std::int64_t{0}));
+}
+
+// ── Item 35: Rational::toDouble and Ctx::evalDouble (vpa bridge) ──
+
+TEST(ToDouble, ExactRoundTripAndScaleInvariance)
+{
+    const double samples[] = {
+        0.0, 0.5, -0.25, 0.1, -3.141592653589793, 1e-100, 1e100, 1e-300, 1e300,
+        4.9406564584124654e-324, // smallest positive subnormal 2^-1074
+    };
+    for (double v : samples) {
+        const Rational r = Rational::fromDoubleBits(v);
+        EXPECT_DOUBLE_EQ(r.toDouble(), v) << "v=" << v;
+    }
+
+    // Scale invariance: 3 * 10^600 / (8 * 10^600) = 3/8 = 0.375 even if built
+    // from huge BigInts before reduction or compared with large bit-length ratios.
+    const BigInt p = BigInt::powUInt(BigInt(3), 1200); // > 1900 bits
+    const BigInt q = BigInt::powUInt(BigInt(2), 1902);
+    const Rational hugeRatio(p, q);
+    EXPECT_TRUE(std::isfinite(hugeRatio.toDouble()));
+    EXPECT_GT(hugeRatio.toDouble(), 0.0);
+}
+
+TEST(EvalDouble, TranscendentalRootOfAndOddRoots)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    double out = 0.0;
+
+    // Built-in constants pi and e: sin(pi/6) = 0.5, log(e^2) = 2.0.
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "sin(pi/6)"), {}, out));
+    EXPECT_NEAR(out, 0.5, 1e-15);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "log(e^2)"), {}, out));
+    EXPECT_NEAR(out, 2.0, 1e-15);
+
+    // Inverse trig & hyperbolic functions emitted by Rubi and ratint:
+    ASSERT_TRUE(c.evalDouble(
+        numkit::cas::parseExpr(c, "atanh(1/2) + asinh(1) + acosh(2) + erf(1)"),
+        {}, out));
+    const double want =
+        std::atanh(0.5) + std::asinh(1.0) + std::acosh(2.0) + std::erf(1.0);
+    EXPECT_NEAR(out, want, 1e-15);
+
+    // Odd fractional power of a negative value: (-8)^(1/3) = -2, (-8)^(2/3) = 4.
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "x^(1/3)"),
+                             {{"x", -8.0}}, out));
+    EXPECT_NEAR(out, -2.0, 1e-15);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "x^(2/3)"),
+                             {{"x", -8.0}}, out));
+    EXPECT_NEAR(out, 4.0, 1e-15);
+
+    // RootOf: unique real root of z^3 - 2 = 0 is 2^(1/3).
+    const Expr cbrt2 = c.rootOf(
+        {Rational(std::int64_t{-2}), Rational(0), Rational(0), Rational(1)}, 0);
+    ASSERT_TRUE(c.evalDouble(cbrt2, {}, out));
+    EXPECT_NEAR(out, std::cbrt(2.0), 1e-15);
+
+    // Numerical derivative check of a full Rioboo + Rubi cascade integral via evalDouble!
+    const Expr f =
+        numkit::cas::parseExpr(c, "(1 + 2*x)^(-3/2) + 1/(x^3 + 2)");
+    const numkit::cas::RationalIntegral r = numkit::cas::integrate(c, f, x);
+    ASSERT_TRUE(r.proved());
+    const double x0 = 1.3, h = 1e-6;
+    double fPlus = 0.0, fMinus = 0.0, fExact = 0.0;
+    ASSERT_TRUE(c.evalDouble(r.F, {{"x", x0 + h}}, fPlus));
+    ASSERT_TRUE(c.evalDouble(r.F, {{"x", x0 - h}}, fMinus));
+    ASSERT_TRUE(c.evalDouble(f, {{"x", x0}}, fExact));
+    EXPECT_NEAR((fPlus - fMinus) / (2.0 * h), fExact, 1e-8);
+
+    // Honest declines: even root of negative, log(<=0), atanh(>=1), complex RootOf index, unresolved symbol.
+    EXPECT_FALSE(c.evalDouble(numkit::cas::parseExpr(c, "x^(1/2)"),
+                              {{"x", -4.0}}, out));
+    EXPECT_FALSE(c.evalDouble(numkit::cas::parseExpr(c, "log(x)"),
+                              {{"x", 0.0}}, out));
+    EXPECT_FALSE(c.evalDouble(numkit::cas::parseExpr(c, "atanh(x)"),
+                              {{"x", 1.0}}, out));
+    const Expr complexIdx = c.rootOf(
+        {Rational(std::int64_t{-2}), Rational(0), Rational(0), Rational(1)}, 1);
+    EXPECT_FALSE(c.evalDouble(complexIdx, {}, out));
+    EXPECT_FALSE(c.evalDouble(c.symbol("unresolved_z"), {}, out));
+}
+
+TEST(EvalDouble, PropertyAgreesWithEvalExact)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    std::uint64_t st = 0xD00B1EC0DEULL;
+    for (int iter = 0; iter < 1000; ++iter) {
+        std::vector<Rational> cs;
+        const int deg = static_cast<int>(nextU64(st) % 5);
+        for (int i = 0; i <= deg; ++i)
+            cs.emplace_back(
+                BigInt(static_cast<std::int64_t>(nextU64(st) % 17) - 8),
+                BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 4)));
+        const UPoly p(cs);
+        const Rational q(
+            BigInt(static_cast<std::int64_t>(nextU64(st) % 13) - 6),
+            BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 4)));
+        const Expr pe = numkit::cas::toExpr(c, p, x);
+        Rational exactOut;
+        double dblOut = 0.0;
+        ASSERT_TRUE(c.evalExact(pe, {{"x", q}}, exactOut));
+        ASSERT_TRUE(c.evalDouble(pe, {{"x", q.toDouble()}}, dblOut));
+        EXPECT_NEAR(dblOut, exactOut.toDouble(), 1e-12);
+    }
 }
 
 } // namespace

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <limits>
 
 namespace numkit::cas {
@@ -72,7 +73,8 @@ void mulu64(std::uint64_t a, std::uint64_t b, std::uint64_t *lo, std::uint64_t *
     *hi = hh + (mid >> 32) + (midCarry << 32) + loCarry;
 }
 
-void toDigits32(const std::vector<std::uint64_t> &limbs, std::vector<std::uint32_t> &d)
+template <typename LimbContainer>
+void toDigits32(const LimbContainer &limbs, std::vector<std::uint32_t> &d)
 {
     d.clear();
     d.reserve(limbs.size() * 2);
@@ -84,9 +86,10 @@ void toDigits32(const std::vector<std::uint64_t> &limbs, std::vector<std::uint32
         d.pop_back();
 }
 
-std::vector<std::uint64_t> fromDigits32(const std::vector<std::uint32_t> &d)
+template <typename LimbContainer>
+void fromDigits32(const std::vector<std::uint32_t> &d, LimbContainer &limbs)
 {
-    std::vector<std::uint64_t> limbs((d.size() + 1) / 2, 0);
+    limbs.assign((d.size() + 1) / 2, 0);
     for (std::size_t i = 0; i < d.size(); ++i) {
         if (i & 1)
             limbs[i >> 1] |= static_cast<std::uint64_t>(d[i]) << 32;
@@ -95,7 +98,6 @@ std::vector<std::uint64_t> fromDigits32(const std::vector<std::uint32_t> &d)
     }
     while (!limbs.empty() && limbs.back() == 0)
         limbs.pop_back();
-    return limbs;
 }
 
 // Knuth algorithm D (Hacker's Delight divmnu) on base-2^32 digits.
@@ -196,7 +198,7 @@ void divModDigits(const std::vector<std::uint32_t> &u,
 
 } // namespace
 
-BigInt::BigInt(std::int64_t v)
+BigInt::BigInt(std::int64_t v) noexcept
 {
     if (v == 0)
         return;
@@ -205,13 +207,13 @@ BigInt::BigInt(std::int64_t v)
                                : static_cast<std::uint64_t>(v));
 }
 
-BigInt::BigInt(std::uint64_t v)
+BigInt::BigInt(std::uint64_t v) noexcept
 {
     if (v != 0)
         limbs_.push_back(v);
 }
 
-void BigInt::normalize()
+void BigInt::normalize() noexcept
 {
     while (!limbs_.empty() && limbs_.back() == 0)
         limbs_.pop_back();
@@ -219,21 +221,21 @@ void BigInt::normalize()
         negative_ = false;
 }
 
-int BigInt::signum() const
+int BigInt::signum() const noexcept
 {
     if (limbs_.empty())
         return 0;
     return negative_ ? -1 : 1;
 }
 
-std::size_t BigInt::bitLength() const
+std::size_t BigInt::bitLength() const noexcept
 {
     if (limbs_.empty())
         return 0;
     return (limbs_.size() - 1) * 64 + (64 - nlz64(limbs_.back()));
 }
 
-int BigInt::compareMagnitude(const BigInt &o) const
+int BigInt::compareMagnitude(const BigInt &o) const noexcept
 {
     if (limbs_.size() != o.limbs_.size())
         return limbs_.size() < o.limbs_.size() ? -1 : 1;
@@ -246,9 +248,9 @@ int BigInt::compareMagnitude(const BigInt &o) const
 
 BigInt BigInt::addMagnitude(const BigInt &a, const BigInt &b)
 {
-    const std::vector<std::uint64_t> &big =
+    const LimbVec &big =
         a.limbs_.size() >= b.limbs_.size() ? a.limbs_ : b.limbs_;
-    const std::vector<std::uint64_t> &small =
+    const LimbVec &small =
         a.limbs_.size() >= b.limbs_.size() ? b.limbs_ : a.limbs_;
 
     BigInt out;
@@ -364,13 +366,29 @@ void BigInt::divMod(const BigInt &a, const BigInt &b, BigInt &q, BigInt &r)
     if (a.isZero())
         return;
 
+    if (a.limbs_.size() == 1 && b.limbs_.size() == 1) {
+        const std::uint64_t ua = a.limbs_[0];
+        const std::uint64_t ub = b.limbs_[0];
+        const std::uint64_t uq = ua / ub;
+        const std::uint64_t ur = ua % ub;
+        if (uq != 0) {
+            q.limbs_.push_back(uq);
+            q.negative_ = (a.negative_ != b.negative_);
+        }
+        if (ur != 0) {
+            r.limbs_.push_back(ur);
+            r.negative_ = a.negative_;
+        }
+        return;
+    }
+
     std::vector<std::uint32_t> ud, vd, qd, rd;
     toDigits32(a.limbs_, ud);
     toDigits32(b.limbs_, vd);
     divModDigits(ud, vd, qd, rd);
 
-    q.limbs_ = fromDigits32(qd);
-    r.limbs_ = fromDigits32(rd);
+    fromDigits32(qd, q.limbs_);
+    fromDigits32(rd, r.limbs_);
     q.negative_ = (a.negative_ != b.negative_) && !q.limbs_.empty();
     r.negative_ = a.negative_ && !r.limbs_.empty();
 }
@@ -506,13 +524,33 @@ BigInt BigInt::operator>>(std::size_t bits) const
 
 BigInt BigInt::gcd(const BigInt &a, const BigInt &b)
 {
+    if (a.limbs_.size() <= 1 && b.limbs_.size() <= 1) {
+        std::uint64_t u = a.lowLimb();
+        std::uint64_t v = b.lowLimb();
+        while (v != 0) {
+            const std::uint64_t t = u % v;
+            u = v;
+            v = t;
+        }
+        return BigInt(u);
+    }
     BigInt x = a.abs();
     BigInt y = b.abs();
     while (!y.isZero()) {
+        if (x.limbs_.size() <= 1 && y.limbs_.size() <= 1) {
+            std::uint64_t u = x.lowLimb();
+            std::uint64_t v = y.lowLimb();
+            while (v != 0) {
+                const std::uint64_t t = u % v;
+                u = v;
+                v = t;
+            }
+            return BigInt(u);
+        }
         BigInt q, r;
         divMod(x, y, q, r);
-        x = y;
-        y = r;
+        x = std::move(y);
+        y = std::move(r);
     }
     return x;
 }
@@ -573,7 +611,7 @@ std::uint64_t BigInt::hashBits() const
     return h;
 }
 
-bool BigInt::fitsInt64(std::int64_t &out) const
+bool BigInt::fitsInt64(std::int64_t &out) const noexcept
 {
     if (limbs_.empty()) {
         out = 0;
@@ -595,7 +633,7 @@ bool BigInt::fitsInt64(std::int64_t &out) const
     return true;
 }
 
-bool BigInt::fitsUint64(std::uint64_t &out) const
+bool BigInt::fitsUint64(std::uint64_t &out) const noexcept
 {
     if (limbs_.empty()) {
         out = 0;
@@ -605,6 +643,41 @@ bool BigInt::fitsUint64(std::uint64_t &out) const
         return false;
     out = limbs_[0];
     return true;
+}
+
+double BigInt::toDouble() const noexcept
+{
+    if (limbs_.empty())
+        return 0.0;
+    const std::size_t n = limbs_.size();
+    if (n == 1) {
+        const double v = static_cast<double>(limbs_[0]);
+        return negative_ ? -v : v;
+    }
+    const std::size_t bits = bitLength();
+    if (bits > 1024)
+        return negative_ ? -std::numeric_limits<double>::infinity()
+                         : std::numeric_limits<double>::infinity();
+    const std::uint64_t hi = limbs_[n - 1];
+    const std::uint64_t lo = limbs_[n - 2];
+    const int lz = nlz64(hi);
+    // Align the top 64 bits of the magnitude into `top64`.
+    const std::uint64_t top64 =
+        lz == 0 ? hi : ((hi << lz) | (lo >> (64 - lz)));
+    // Round the top 64-bit word to 53 IEEE-754 mantissa bits (round-to-nearest-even).
+    std::uint64_t mant53 = top64 >> 11;
+    const std::uint64_t rem11 = top64 & 0x7FFULL;
+    bool sticky = (rem11 & 0x3FFULL) != 0;
+    if (!sticky && lz > 0 && (lo & ((1ULL << (64 - lz)) - 1)) != 0)
+        sticky = true;
+    for (std::size_t i = 0; !sticky && i + 2 < n; ++i)
+        if (limbs_[i] != 0)
+            sticky = true;
+    if ((rem11 & 0x400ULL) != 0 && (sticky || (mant53 & 1ULL) != 0))
+        ++mant53;
+    const double scaled =
+        std::ldexp(static_cast<double>(mant53), static_cast<int>(bits) - 53);
+    return negative_ ? -scaled : scaled;
 }
 
 std::string BigInt::toString() const

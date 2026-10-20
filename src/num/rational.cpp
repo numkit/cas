@@ -25,6 +25,43 @@ Rational Rational::fromDoubleBits(double v)
                                     static_cast<std::uint64_t>(-shift)));
 }
 
+double Rational::toDouble() const
+{
+    if (num_.isZero())
+        return 0.0;
+    if (den_ == BigInt(1))
+        return num_.toDouble();
+    const std::size_t bn = num_.bitLength();
+    const std::size_t bd = den_.bitLength();
+    if (bn <= 53 && bd <= 53) {
+        const double v = static_cast<double>(num_.lowLimb()) /
+                         static_cast<double>(den_.lowLimb());
+        return num_.isNegative() ? -v : v;
+    }
+    const BigInt N = num_.abs();
+    const BigInt &D = den_;
+    int shift = 54 - (static_cast<int>(bn) - static_cast<int>(bd));
+    BigInt Ns = shift >= 0 ? (N << static_cast<std::size_t>(shift)) : N;
+    BigInt Ds = shift < 0 ? (D << static_cast<std::size_t>(-shift)) : D;
+    if (Ns < (Ds << 54)) {
+        Ns = Ns << 1;
+        ++shift;
+    } else if (Ns >= (Ds << 55)) {
+        Ds = Ds << 1;
+        --shift;
+    }
+    BigInt Q, R;
+    BigInt::divMod(Ns, Ds, Q, R);
+    const std::uint64_t q64 = Q.lowLimb();
+    std::uint64_t mant53 = q64 >> 2;
+    const bool guard = ((q64 >> 1) & 1ULL) != 0;
+    const bool sticky = ((q64 & 1ULL) != 0) || !R.isZero();
+    if (guard && (sticky || (mant53 & 1ULL) != 0))
+        ++mant53;
+    const double scaled = std::ldexp(static_cast<double>(mant53), 2 - shift);
+    return num_.isNegative() ? -scaled : scaled;
+}
+
 Rational::Rational(std::int64_t v) : num_(v), den_(1) {}
 
 Rational::Rational(std::uint64_t v) : num_(v), den_(1) {}

@@ -1,7 +1,7 @@
 # diff-null-child-and-sqrt
 
 Kind: bug
-Status: ✅ FIXED (Item 36 commit)
+Status: ✅ FIXED (b0a0119)
 Area: core
 
 ## Description

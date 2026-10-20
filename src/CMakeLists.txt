@@ -14,6 +14,7 @@ add_library(numkit_cas STATIC
     poly/zassenhaus.cpp
     integrate/ratint.cpp
     integrate/verify.cpp
+    linalg/symmatrix.cpp
     rubi/rules.cpp
 )
 

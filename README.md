@@ -39,9 +39,12 @@ ctest --test-dir build/msvc -C Release --output-on-failure
 ## CLI
 
 ```
-build/msvc/apps/Release/nkcas.exe integrate "(expr)" x   # certified int
-build/msvc/apps/Release/nkcas.exe rubi "(expr)" x        # fast path only
+build/msvc/apps/Release/nkcas.exe integrate "(expr)" x   # unified certified cascade
+build/msvc/apps/Release/nkcas.exe rubi "(expr)" x        # Rubi fast path only
 build/msvc/apps/Release/nkcas.exe diff "(expr)" x
+build/msvc/apps/Release/nkcas.exe taylor "(expr)" x [x0] [order]
+build/msvc/apps/Release/nkcas.exe limit "(expr)" x [x0]
+build/msvc/apps/Release/nkcas.exe eval "(expr)" [x val]  # IEEE-754 double evaluation
 build/msvc/apps/Release/nkcas.exe solve "x^2-2" x        # exact real roots
 build/msvc/apps/Release/nkcas.exe expand|factor|subs "(expr)" ...
 build/msvc/apps/Release/nkcas.exe corpus corpora/rubi-slice.txt
@@ -60,17 +63,24 @@ expression arena; `Expr` handles are meaningful only inside their
 `Ctx`.
 
 **Exact numbers** (`num/`): `BigInt` — arbitrary-precision integers
-(Miller-Rabin `isPrime`, Pollard-Brent `factorize`); `Rational` —
+with 2-limb (128-bit) Small Buffer Optimization, Miller-Rabin `isPrime`,
+Pollard-Brent `factorize`, and 0.5-ULP `toDouble()`; `Rational` —
 canonical exact rationals, `fromDoubleBits(double)` converts any
-finite IEEE double losslessly.
+finite IEEE double losslessly, and scale-invariant `toDouble()`
+rounds to nearest-even without intermediate overflow.
 
-**Expressions** (`core/`): `Ctx::symbol/number/add/mul/pow/func/
+**Expressions & Series** (`core/`): `Ctx::symbol/number/add/mul/pow/func/
 neg/div/rootOf` build a canonical hash-consed DAG (structural
 equality is pointer identity); `parseExpr(Ctx&, src)` parses
 MATLAB-precedence text; `toString` prints round-trip-exact forms;
-`diff` differentiates (exp, log, sin, cos, tan, atan); `subs`
-substitutes subtrees; `expand` distributes to polynomial form;
-`evalExact` evaluates exactly in Q with honest declines outside.
+`diff` differentiates elementary and inverse trig/hyperbolic functions;
+`subs` substitutes subtrees; `expand` distributes to polynomial form;
+`evalExact` evaluates exactly in Q with honest declines outside;
+`evalDouble` evaluates DAGs (including Sturm-refined `RootOf` atoms and
+special functions `erf`/`erfc`/`gamma`) to `double`; `leafCount` and
+`exprCost` measure expression size and DAG complexity; `taylor`,
+`laurent`, and `limit` (`core/series.hpp`) compute truncated power/Laurent
+series and symbolic limits.
 
 **Polynomials** (`poly/`): `UPoly` — Q[x] with exact division,
 squarefree decomposition; Sturm machinery (`isolateRealRoots`,
@@ -78,26 +88,37 @@ squarefree decomposition; Sturm machinery (`isolateRealRoots`,
 values, irrationals as isolating brackets); `factorOverQ` — full
 Zassenhaus factorization.
 
-**Integration** (`integrate/`): `integrateRational(Ctx&, f, var)` —
-the proof-carrying integrator: rational functions (Trager residues,
-quadratic and cubic Rioboo-phase-A residues as real atan/log forms,
-RootOf atoms where unavoidable) plus the Liouvillian storeys for
-R(e^x), R(log x)/x, R(sin,cos) via t=tan(x/2) and R(x^(p/q)); every
-answer passes a Tier-1 polynomial certificate AND a Tier-2a
-certified interval audit of the form (a wrong form is structurally
-impossible — it becomes an honest `Unevaluated`). `factorExpr`
-gives the factored form.
+**Integration** (`integrate/`): `integrate(Ctx&, f, var, budget)` —
+the unified proof-carrying integrator cascade combining the Rubi
+discrimination-tree fast path with `integrateRational` (Hermite
+reduction, Rothstein–Trager residues, quadratic and cubic
+Rioboo-phase-A real atan/log forms, RootOf atoms where unavoidable,
+and Liouvillian storeys for R(e^x), R(log x)/x, R(sin,cos) via
+t=tan(x/2) and R(x^(p/q))) plus linearity over constant factors and
+mixed sums; every answer passes a Tier-1 symbolic certificate AND a
+Tier-2a certified interval audit of the form (a wrong form is
+structurally impossible — it becomes an honest `Unevaluated`).
+`factorExpr` gives the factored form.
 
-**Rubi fast path** (`rubi/`): `rubiApply(tables, Ctx&, f, var)` —
-the compiled discrimination-tree matcher over committed upstream
-rule slices (1.1.1.1, 1.1.1.2, 1.1.2.1; 78 rules) with recursive
-Int cascades and mirrors of Rubi's 9.1 utility identities
-(constant, constant factor, IntSum); every replacement passes the
-same certificate. `tools/rubi_parse.py` + `tools/rubi_codegen.py`
+**Rubi fast path** (`rubi/`): `rubiApply(tables, Ctx&, f, var, budget)` —
+the compiled discrimination-tree matcher over the full Rubi `1.1
+Binomial products` section (33 `.m` files across `1.1.1`–`1.1.4`,
+1365 rules, 6365 trie nodes) with recursive `Int`/`Subst`/`ExpandIntegrand`
+cascades and mirrors of Rubi's 9.1 utility identities; every replacement
+passes the same certificate. `tools/rubi_parse.py` + `tools/rubi_codegen.py`
 regenerate the committed tables from `third_party/rubi-snapshot/`.
 
-**Cancellation** (`core/budget.hpp`): `Budget` token, the day-one
-plumbing for the future speculative cascade.
+**Symbolic Linear Algebra** (`linalg/`): `SymMatrix` over `Expr`,
+rational expression normalizer `simplifyRationalExpr`, multivariable
+calculus (`jacobian`, `gradient`, `hessian`), division-free
+Faddeev–LeVerrier characteristic polynomial, determinant, adjugate,
+and inverse (`charpoly`, `det`, `adjugate`, `inv`), and exact linear
+system solver (`linsolve`).
+
+**Cancellation** (`core/budget.hpp`): `Budget` token tracking step and
+arena-byte limits (`StepExhausted` / `ArenaExhausted`) across
+factorization, rational/Liouvillian integration, Rubi, series, and
+linear algebra.
 
 ## Vendoring into Numkit
 

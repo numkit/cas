@@ -406,6 +406,9 @@
     квадратичные радикалы, неоднородную правую часть через вариацию постоянных
     $\Phi(x)\int \Phi(-x)\mathbf{f}(x)\,dx$ и задачу Коши $\mathbf{y}(x_0) = \mathbf{y}_0$,
     с обязательной проверкой сертификата $\mathbf{y}' - A\mathbf{y} - \mathbf{f} = \mathbf{0}$).
+48. ✅ Релизная отсечка `v0.4.0` и переезд в `git@github.com:numkit/cas.git` (`C:\Users\User\Projects\numkit\cas`):
+    обновление `CHANGELOG.md`, `CMakeLists.txt` (`VERSION 0.4.0`), `README.md`, `AGENTS.md`,
+    251/251 тестов Release, аннотированный тег `v0.4.0`.
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
 

@@ -5,15 +5,14 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
-- **Released: v0.3.0** (Echelon 3 Symbolic Toolbox: cost-guided `simplify`,
-  Rubi R1–R5 60 files / 2058 rules with MLR = 1.00 over 600 tasks,
-  `solveSymbolic` & `solveSystem2`, certified 1st/2nd-order `dsolve`,
-  plus v0.2.0 `taylor`/`laurent`/`limit` and `SymMatrix`; see `CHANGELOG.md`).
-- **Working goal: v0.4.0 "Echelon 4 — Definite Integration, Symbol Assumptions, Laplace Transforms & Linear ODE Systems"** —
-  autonomous pool: items 44–47 in `notes/c1-algebraic-layer.md`
-  (definite integration & limits at infinity `definiteIntegrate`, symbol
-  assumptions `AssumeDomain`, `laplace` / `ilaplace` transforms, and
-  `SymMatrix` `eigenvalues`/`eigenvectors` + 1st-order linear ODE systems).
+- **Released: v0.4.0** (Echelon 4 Symbolic Toolbox: `definiteIntegrate` +
+  `limitOneSided`/`limitAtInfinity`, `AssumeDomain` symbol assumptions,
+  `laplace`/`ilaplace` transforms, `SymMatrix` `nullspace`/`eigenvalues`/
+  `eigenvectors`/`matrixExp`, and `dsolveSystem1Linear`/`dsolveSystem1LinearIVP`,
+  plus v0.3.0 `simplify`, Rubi R1–R5 2058 rules, `solveSymbolic`/`solveSystem2`,
+  and `dsolve1`/`dsolve2Linear`; see `CHANGELOG.md`).
+- **Working goal: v0.5.0 "Echelon 5 — Residues & Contour Integration, Z-Transform & Difference Equations, Special Functions & Exact Matrix Decompositions"** —
+  autonomous pool in `notes/c1-algebraic-layer.md`.
   The Numkit vendoring spike (item 23 remainder) waits for the user's
   explicit command.
 - **Integration contract is BINDING for all code** (the core is vendored into
@@ -67,7 +66,7 @@ Test layers (keep all three for numeric code):
 - Conversational Russian; code / commits / tests / repo artifacts English.
 - Commit messages — English only, subject AND body.
 - `Co-Authored-By: ZCode <noreply@z.ai>` trailer required.
-- Push ONLY to `origin` (git.megahard.ru).
+- Primary repository: `C:\Users\User\Projects\numkit\cas` (`origin` -> `git@github.com:numkit/cas.git`).
 
 ## Reasoning archive (`notes/`)
 

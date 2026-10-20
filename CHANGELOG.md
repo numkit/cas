@@ -1,5 +1,79 @@
 # Changelog
 
+## v0.4.0 — 2026-10-21
+
+Echelon 4 release: proper and improper definite integration
+`definiteIntegrate` with one-sided and infinite limits `limitOneSided` /
+`limitAtInfinity` and special-angle trigonometry (`integrate/ratint`,
+`core/series`, `core/simplify`), symbol domain assumptions `AssumeDomain`
+with recursive DAG sign/reality/integrality inference (`core/expr`,
+`core/simplify`, `rubi/rules`), forward and certified inverse unilateral
+Laplace transforms `laplace` / `ilaplace` (`transform/laplace`), and exact
+matrix nullspace, symbolic eigenvalues/eigenvectors, certified matrix
+exponential `matrixExp`, and 1st-order linear ODE systems solver
+`dsolveSystem1Linear` / `dsolveSystem1LinearIVP` (`linalg/symmatrix`,
+`ode/dsolve`).
+
+### Highlights & New Capabilities
+
+- **Definite & Improper Integration and Infinite Limits (`integrate/ratint`, `core/series`, Item 44)**:
+  - `definiteIntegrate(Ctx&, f, var, a, b, Budget*)` (`DefiniteIntegral` with
+    `ProvedSymbolic`, `Divergent`, and `Unevaluated` verdicts): applies
+    Newton–Leibniz and one-sided/infinite endpoint limits, detects interior
+    poles on $(\min(a,b), \max(a,b))$ via `solveRealRoots` + `refineRoot`
+    while filtering out removable singularities, and realizes the real
+    $\log|u|$ branch at negative endpoints. Exposed in CLI as `nkcas defint`.
+  - `limitOneSided` (with automatic Puiseux $x = x_0 \pm t^2$ square-root
+    branch-point fallback) and `limitAtInfinity` (plus symbolic `inf`/`oo`/
+    `infinity` and `-inf` support in `limit`), full asymptotic Laurent expansion
+    of $\arctan(u)$ and $\operatorname{acot}(u)$ as $u \to \pm\infty$,
+    exponential decay $\exp(u) \to 0$, logarithm combination for $\infty - \infty$,
+    and bounded-oscillation squeeze in `core/series`.
+  - Exact evaluation of `sin`/`cos`/`tan`/`cot`/`sec`/`csc` at rational
+    multiples of $\pi$ with denominators $q \in \{1,2,3,4,6\}$ and special
+    values of `asin`/`acos`/`atan`/`acot` in `core/simplify`.
+- **Symbol Assumptions & Recursive DAG Inference (`core/expr`, `core/simplify`, `rubi/rules`, Item 45)**:
+  - `AssumeDomain` (`Any`, `Real`, `Positive`, `Negative`, `NonNegative`,
+    `Integer`), `Ctx::assume`, `Ctx::assumption`, `Ctx::clearAssumptions`, and
+    recursive DAG predicates `isAssumedPositive`, `isAssumedNegative`,
+    `isAssumedNonNegative`, `isAssumedReal`, and `isAssumedInteger`.
+  - Assumption-aware simplification in `core/simplify` ($\sqrt{u^2} \to \pm u$,
+    radical factor extraction $\sqrt{4 u^2 y} \to \pm 2 u \sqrt{y}$,
+    $(u^a)^b \to u^{ab}$, $\log(u^p) \to p\log u$, $|u| \to \pm u$,
+    $\operatorname{asinh}(\sinh x) \to x$, $\sin(n\pi) \to 0$,
+    $\cos(n\pi) \to (-1)^n$) and symbolic parameter support in Rubi predicates
+    (`PosQ`/`NegQ`/`GtQ`/`LtQ`/`GeQ`/`LeQ`/`IntegerQ`/`IntegersQ` and `Rt`).
+- **Forward & Certified Inverse Laplace Transforms (`transform/laplace`, Item 46)**:
+  - `laplace(Ctx&, f, t, s, Budget*)`: unilateral Laplace transform supporting
+    linearity, integer and half-integer powers $t^n$ and $t^{k/2}$ via exact
+    $\Gamma(n + 1/2) = \frac{(2n-1)!!}{2^n}\sqrt{\pi}$, exponentials,
+    phase-shifted trigonometric and hyperbolic functions, frequency shift
+    $e^{at}g(t) \implies G(s-a)$, frequency differentiation
+    $t^n g(t) \implies (-1)^n G^{(n)}(s)$, and trig/hyperbolic product-to-sum
+    reduction.
+  - `ilaplace(Ctx&, F, s, t, Budget*)`: inverse Laplace transform via
+    Zassenhaus factorization `factorOverQ` and partial-fraction decomposition
+    over $\mathbb{Q}[s]$ (repeated real poles, repeated complex-conjugate
+    quadratic poles via completion of the square and shift recurrence,
+    real-radical quadratic poles, and parametric forms), certified by checking
+    $\mathcal{L}\{\mathcal{L}^{-1}\{F\}\}(s) = F(s)$. Exposed in CLI as
+    `nkcas laplace` and `nkcas ilaplace`.
+- **Spectral Linear Algebra, Matrix Exponential & 1st-Order Linear ODE Systems (`linalg/symmatrix`, `ode/dsolve`, Item 47)**:
+  - `nullspace(Ctx&, A, Budget*)` via Gauss–Jordan RREF with cross-multiplied
+    pivot elimination; `EigenPair`, `eigenvalues`, and `eigenvectors` via
+    `charpoly` + `factorOverQ` / `solveSymbolic`; and certified
+    `matrixExp(Ctx&, A, t, Budget*)` ($e^{At}$) via Laplace resolvent inversion
+    $\mathcal{L}^{-1}\{(sI - A)^{-1}\}(t)$, $2 \times 2$ Putzer /
+    Cayley–Hamilton closed form, and generalized Jordan chains.
+  - `dsolveSystem1Linear` and `dsolveSystem1LinearIVP` solving homogeneous and
+    inhomogeneous systems $\mathbf{y}'(x) = A\mathbf{y}(x) + \mathbf{f}(x)$
+    across distinct real, repeated/defective Jordan blocks, and
+    complex-conjugate eigenvalues $\alpha \pm i\omega \implies e^{\alpha x}\cos/\sin(\omega x)$,
+    with Variation of Parameters $\Phi(x)\int\Phi(-x)\mathbf{f}(x)\,dx$ and
+    componentwise ODE + initial-condition certification.
+
+---
+
 ## v0.3.0 — 2026-10-21
 
 Echelon 3 release: cost-guided algebraic/trigonometric/hyperbolic/logarithmic

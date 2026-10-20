@@ -5,16 +5,15 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
-- **Released: v0.2.0** (Symbolic Toolbox in Numkit core: full Rubi 1.1
-  binomial section 1365 rules with MLR = 1.00, unified `integrate`
-  cascade with `Budget`, 128-bit `BigInt` SBO + `evalDouble`,
-  `taylor`/`laurent`/`limit`, and `SymMatrix` `jacobian`/`hessian`/
-  `det`/`inv`/`linsolve`/`charpoly`; see `CHANGELOG.md`).
-- **Working goal: v0.3.0 "Echelon 3 — Simplify, Transcendental Rubi, Symbolic Solve & ODEs"** —
-  autonomous pool: items 38–42 in `notes/c1-algebraic-layer.md`
-  (algebraic/trig `simplify` engine minimizing `exprCost`, Rubi R3–R5
-  trinomial/exp/log/trig scaling, symbolic `solve` in radicals &
-  polynomial systems, and certified 1st/2nd-order ODE solver `dsolve`).
+- **Released: v0.3.0** (Echelon 3 Symbolic Toolbox: cost-guided `simplify`,
+  Rubi R1–R5 60 files / 2058 rules with MLR = 1.00 over 600 tasks,
+  `solveSymbolic` & `solveSystem2`, certified 1st/2nd-order `dsolve`,
+  plus v0.2.0 `taylor`/`laurent`/`limit` and `SymMatrix`; see `CHANGELOG.md`).
+- **Working goal: v0.4.0 "Echelon 4 — Definite Integration, Symbol Assumptions, Laplace Transforms & Linear ODE Systems"** —
+  autonomous pool: items 44–47 in `notes/c1-algebraic-layer.md`
+  (definite integration & limits at infinity `definiteIntegrate`, symbol
+  assumptions `AssumeDomain`, `laplace` / `ilaplace` transforms, and
+  `SymMatrix` `eigenvalues`/`eigenvectors` + 1st-order linear ODE systems).
   The Numkit vendoring spike (item 23 remainder) waits for the user's
   explicit command.
 - **Integration contract is BINDING for all code** (the core is vendored into

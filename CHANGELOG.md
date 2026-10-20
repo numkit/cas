@@ -1,5 +1,82 @@
 # Changelog
 
+## v0.3.0 — 2026-10-21
+
+Echelon 3 release: cost-guided algebraic/trigonometric/hyperbolic/logarithmic
+`simplify` engine (`core/simplify`), Rubi R3–R5 scaling to 60 rule files and
+2058 elementary rules across trinomials, exponentials, logarithms,
+trigonometry, inverse trig, and hyperbolics (`rubi/`), exact symbolic
+equation & 2-variable polynomial system solver `solveSymbolic` /
+`solveSystem2` (`core/symsolve`), and certified 1st- and 2nd-order ordinary
+differential equation solver `dsolve` (`ode/dsolve`).
+
+### Highlights & New Capabilities
+
+- **Cost-Guided Expression Simplification (`core/simplify`, Item 39)**:
+  - `simplify(Ctx&, Expr)` and `Ctx::simplify(Expr)` minimize the
+    lexicographic cost pair `(Ctx::exprCost, Ctx::leafCount)` across
+    bottom-up structural rewrites, `expand`, rational GCD reduction
+    `simplifyRationalExpr`, polynomial factorization `factorExpr`,
+    Pythagorean and hyperbolic identities ($A\sin^2 u + A\cos^2 u \to A$,
+    $C - C\sin^2 u \to C\cos^2 u$, $A\cosh^2 u - A\sinh^2 u \to A$,
+    double-angle formulas), inverse function compositions
+    ($\exp(\log u) \to u$, $\log(\exp u) \to u$, $\sin(\arcsin u) \to u$,
+    $\cos(\arcsin u) \to \sqrt{1-u^2}$, etc.), `tan/cot/sec/csc` to
+    `sin/cos` conversions, and logarithmic/power rules. Exposed in CLI as
+    `nkcas simplify`.
+- **Rubi R3–R5 Transcendental & Trinomial Scaling (`rubi/`, Item 40)**:
+  - Expanded `third_party/rubi-snapshot/` to **60 `.m` rule files**
+    (**2058 elementary rules**, 10301 discrimination-tree nodes in
+    `src/rubi/rubi_tables_1111.inc`) covering `1.1` binomials, `1.2`
+    quadratic & quartic trinomials, `2` exponentials, `3` logarithms, `4`
+    trigonometry, `5` inverse trigonometry, `6` hyperbolics, and `7`
+    inverse hyperbolics.
+  - Added derivatives for `cot`, `sec`, `csc`, `acot`, `coth`, `sech`,
+    `csch` in `src/core/diff.cpp`, and integrated `checkSimplifiedDelta`
+    (`rewriteTrigToSinCos`, `clearNestedDenominators`, and common-denominator
+    clearance) into `certificateHolds` in `src/rubi/rules.cpp`.
+  - Expanded `corpora/rubi-slice.txt` to **600 tasks** across 24 R1–R5
+    families with **100% pass rate** and $\text{MLR} = 1.00$.
+- **Symbolic Equation & System Solver (`core/symsolve`, Item 41)**:
+  - `solveSymbolic(Ctx&, Expr eqn, Expr var, Budget*)`: solves factored
+    products, single-occurrence transcendental/power equations by inverse
+    peeling, rational polynomials via Zassenhaus factorization (`factorOverQ`,
+    emitting exact rationals, radicals, and `RootOf` atoms), and parametric
+    symbolic polynomials of degree $\le 4$ (linear, quadratic with exact
+    square extraction, binomial, and biquadratic), filtering out pole roots.
+  - `solveSystem2(Ctx&, Expr eq1, Expr eq2, Expr x, Expr y, Budget*)`:
+    solves 2-variable polynomial systems via the Sylvester resultant
+    determinant in `SymMatrix`, certifying every $(x_i, y_j)$ solution pair
+    by substitution into both equations. Exposed in CLI as `nkcas symsolve`.
+- **Certified 1st- and 2nd-Order ODE Solver (`ode/dsolve`, Item 42)**:
+  - `dsolve1` / `dsolve1IVP`: solves 1st-order quadrature, linear
+    $y' = A(x)y + B(x)$ (via integrating factor and undetermined
+    coefficients), separable $y' = g(x)h(y)$, and Bernoulli
+    $y' = A(x)y + B(x)y^n$ ODEs and initial value problems.
+  - `dsolve2Linear` / `dsolve2LinearIVP`: solves 2nd-order constant-coefficient
+    linear ODEs $a y'' + b y' + d y = f(x)$ across overdamped ($\Delta > 0$),
+    critically damped ($\Delta = 0$), and underdamped oscillatory
+    ($\Delta < 0 \to e^{\alpha x}\cos/\sin$) regimes, finding particular
+    solutions via differential-closure undetermined coefficients (`SymMatrix` +
+    `linsolve` with automatic resonance multiplicity shift) and variation of
+    parameters via the Wronskian. Every ODE solution is certified by
+    substitution into the differential equation. Exposed in CLI as
+    `nkcas dsolve`.
+
+### Metrics (plan section 7; Release build at tag time)
+
+| corpus                | tasks | pass | verification | MLR  | median  | p95     |
+|-----------------------|-------|------|--------------|------|---------|---------|
+| rational-baseline     | 500   | 100% | 100%         | —    | 9.37 ms | 54.7 ms |
+| rubi-slice (R1–R5)    | 600   | 100% | 100%         | 1.00 | 91 µs   | 816 µs  |
+
+All section-7 targets met: fast-path median 91 µs (target ≤ 500 µs),
+heavy-path median 9.37 ms (target ≤ 50 ms), Mean Leaf Ratio **1.00** over
+all 600 Rubi R1–R5 reference tasks (target ≤ 1.00), full 236-test Release
+suite finishes in **27.5 s**.
+
+---
+
 ## v0.2.0 — 2026-10-20
 
 Symbolic Math Toolbox core release: full Rubi `1.1 Binomial products`

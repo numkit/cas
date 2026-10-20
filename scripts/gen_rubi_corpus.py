@@ -136,6 +136,93 @@ def main():
                 expr = f"(x^2 + {b}*x^4)^(1/2)"
         exprs.append(expr)
 
+    # Stage R3-R5 (tasks 501..600): trinomials, exponentials, logarithms,
+    # trigonometry, inverse trig, hyperbolics, and inverse hyperbolics.
+    while len(exprs) < 600:
+        kind = rnd.randrange(16, 24)
+        a = rnd.randint(1, 5)
+        b = rnd.randint(1, 5)
+        c_coef = rnd.randint(1, 5)
+        if kind == 16:
+            sub = rnd.randrange(3)
+            if sub == 0:
+                expr = f"({a + b} + {b}*x + {a}*x^2)^-1"
+            elif sub == 1:
+                expr = f"({a} + {b}*x + {c_coef}*x^2)^(-1/2)"
+            else:
+                expr = f"({a} + {b}*x)*({a + c_coef} + {b}*x + {c_coef}*x^2)^-1"
+        elif kind == 17:
+            sub = rnd.randrange(3)
+            if sub == 0:
+                m = rnd.randint(1, 2)
+                expr = f"x^{m}*exp({a} + {b}*x)" if m > 1 else f"x*exp({a} + {b}*x)"
+            elif sub == 1:
+                expr = f"({a} + {b}*exp({c_coef}*x))^-1"
+            else:
+                expr = f"exp(x)*({a} + {b}*exp(2*x))^-1"
+        elif kind == 18:
+            sub = rnd.randrange(3)
+            if sub == 0:
+                p = rnd.randint(1, 2)
+                expr = f"x^{a}*log({b}*x)" if p == 1 else f"x^{a}*log({b}*x)^2"
+            elif sub == 1:
+                p = rnd.randint(1, 3)
+                expr = f"x^-1*log({b}*x)^{p}" if p > 1 else f"x^-1*log({b}*x)"
+            else:
+                expr = f"x^-1*({a} + log({b}*x))^-1"
+        elif kind == 19:
+            sub = rnd.randrange(4)
+            if sub == 0:
+                n = rnd.randint(1, 4)
+                fn = "sin" if rnd.randrange(2) == 0 else "cos"
+                expr = f"{fn}({a} + {b}*x)^{n}" if n > 1 else f"{fn}({a} + {b}*x)"
+            elif sub == 1:
+                n = rnd.randint(1, 3)
+                expr = f"tan({a} + {b}*x)^{n}" if n > 1 else f"tan({a} + {b}*x)"
+            elif sub == 2:
+                n = rnd.randint(1, 3)
+                expr = f"sec({a} + {b}*x)^{n}" if n > 1 else f"sec({a} + {b}*x)"
+            else:
+                expr = f"cos({b}*x)*({a + 1} + sin({b}*x))^-1"
+        elif kind == 20:
+            sub = rnd.randrange(2)
+            fn = "sin" if rnd.randrange(2) == 0 else "cos"
+            if sub == 0:
+                m = rnd.randint(1, 2)
+                expr = f"x^{m}*{fn}({b}*x)" if m > 1 else f"({a} + {b}*x)*{fn}({c_coef}*x)"
+            else:
+                expr = f"exp({a}*x)*{fn}({b}*x)"
+        elif kind == 21:
+            sub = rnd.randrange(4)
+            if sub == 0:
+                expr = f"asin({a}*x)"
+            elif sub == 1:
+                expr = f"x*asin({a}*x)"
+            elif sub == 2:
+                expr = f"atan({a}*x)"
+            else:
+                m = rnd.randint(1, 2)
+                expr = f"x^{m}*atan({a}*x)" if m > 1 else f"x*atan({a}*x)"
+        elif kind == 22:
+            sub = rnd.randrange(3)
+            fn = "sinh" if rnd.randrange(2) == 0 else "cosh"
+            if sub == 0:
+                n = rnd.randint(1, 3)
+                expr = f"{fn}({a} + {b}*x)^{n}" if n > 1 else f"{fn}({a} + {b}*x)"
+            elif sub == 1:
+                expr = f"x*{fn}({b}*x)"
+            else:
+                expr = f"sech({a} + {b}*x)^2"
+        else:
+            sub = rnd.randrange(3)
+            if sub == 0:
+                expr = f"asinh({a}*x)" if rnd.randrange(2) == 0 else f"x*asinh({a}*x)"
+            elif sub == 1:
+                expr = f"acosh({a}*x)"
+            else:
+                expr = f"atanh({a}*x)" if rnd.randrange(2) == 0 else f"x*atanh({a}*x)"
+        exprs.append(expr)
+
     refs = query_reference_antiderivatives(exprs)
     for idx, (expr, ref) in enumerate(zip(exprs, refs), start=1):
         print(f"rs{idx:04d}\tx\trubi\t{expr}\t{ref}")

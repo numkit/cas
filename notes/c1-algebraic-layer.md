@@ -359,6 +359,37 @@
     коэффициентов через `SymMatrix`/`linsolve` с учётом резонансов и
     вариацией постоянных через вронскиан) с обязательной проверкой
     сертификата подстановкой решения в ОДУ; CLI `nkcas dsolve`.
+43. ✅ Релизная отсечка `v0.3.0`: расширение `scripts/gen_rubi_corpus.py` и
+    `corpora/rubi-slice.txt` до 600 задач по 24 семействам R1–R5 (600/600 = 100%
+    PROVED, $\text{MLR} = 1.00$, медиана 91 мкс, p95 816 мкс;
+    `rational-baseline` 500/500 = 100% PROVED, медиана 9.37 мс), актуализация
+    `tools/vendor_sync.py` (`integrate/verify.hpp` + `verify.cpp`), обновление
+    `CHANGELOG.md`, `CMakeLists.txt` (`VERSION 0.3.0`), `README.md`, `AGENTS.md`,
+    236/236 тестов Release за 27.5 с, аннотированный тег `v0.3.0`.
+44. 🔶 (v0.4-пул, Эшелон 4) Определённое интегрирование и пределы на бесконечности
+    (`definiteIntegrate` + `limitAtInfinity` в `core/series` и `integrate/ratint`,
+    формула Ньютона–Лейбница с контролем непрерывности и внутренних полюсов на
+    $(a, b)$, несобственные интегралы на $\pm\infty$ и в особых точках через
+    пределы; CLI `nkcas defint`).
+45. ⬜ (v0.4-пул, Эшелон 4) Система предположений о символах (`AssumeDomain`:
+    `Any`, `Real`, `Positive`, `Negative`, `NonNegative`, `Integer` в `Ctx`),
+    вывод знака и вещественности подвыражений, учёт предположений в `simplify`
+    ($\sqrt{u^2} \to u$ при $u > 0$, $\log(u^p) \to p\log u$) и в предикатах
+    Руби (`PosQ`/`NegQ`/`GtQ`/`IntegerQ` на символьных параметрах).
+46. ⬜ (v0.4-пул, Эшелон 4) Прямое и обратное преобразования Лапласа
+    (`laplace` / `ilaplace` в `transform/laplace`): линейность, теоремы сдвига в
+    частотной области $e^{at}g(t) \implies F(s-a)$ и дифференцирования
+    $t^n g(t) \implies (-1)^n F^{(n)}(s)$, таблица элементарных оригиналов,
+    обратное преобразование через разложение рациональных дробей над $\mathbb{Q}[s]$
+    и круговой сертификат `simplify(laplace(ilaplace(F))) == F`; CLI `nkcas laplace`
+    и `nkcas ilaplace`.
+47. ⬜ (v0.4-пул, Эшелон 4) Собственные значения и векторы `SymMatrix`
+    (`eigenvalues`, `eigenvectors`) и решатель систем линейных ОДУ 1-го порядка с
+    постоянными коэффициентами `dsolveSystem1Linear` ($\mathbf{y}' = A\mathbf{y}$,
+    включая кратные собственные значения и комплексно-сопряжённые пары
+    $\alpha \pm i\omega \implies e^{\alpha t}\cos(\omega t), e^{\alpha t}\sin(\omega t)$
+    и задачу Коши $\mathbf{y}(x_0) = \mathbf{y}_0$, с проверкой сертификата
+    $\mathbf{y}' - A\mathbf{y} = \mathbf{0}$).
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
 

@@ -565,6 +565,19 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
         const Expr p = c.pow(b, ex);
         if (c.evalExact(p, {}, r))
             return c.number(r);
+        // Exact rational square root folding: (n/q)^(k/2) when n*q is a square
+        if (c.kind(b) == NodeKind::Number && c.kind(ex) == NodeKind::Number) {
+            const Rational &rb = c.numberValue(b);
+            const Rational &re = c.numberValue(ex);
+            if (rb.signum() > 0 && re.den() == BigInt(2)) {
+                const BigInt nq = rb.num() * rb.den();
+                BigInt root;
+                if (nq.sqrtExact(root)) {
+                    const Expr sq = c.number(Rational(root, rb.den()));
+                    return c.pow(sq, c.number(Rational(re.num(), BigInt(1))));
+                }
+            }
+        }
         // exp(u)^v -> exp(u * v)
         if (c.kind(p) == NodeKind::Pow &&
             c.kind(c.child(p, 0)) == NodeKind::Func &&

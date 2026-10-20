@@ -13,6 +13,7 @@
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/core/series.hpp>
 #include <numkit/cas/core/simplify.hpp>
+#include <numkit/cas/core/symsolve.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/rubi/rules.hpp>
@@ -278,6 +279,16 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
                           << s.interval.hi.toString() << "]\n";
             }
         }
+        return 0;
+    }
+    if (cmd == "symsolve") {
+        const auto roots = numkit::cas::solveSymbolic(ctx, f, var);
+        if (roots.empty()) {
+            std::cout << "no symbolic solutions found\n";
+            return 2;
+        }
+        for (const auto &r : roots)
+            std::cout << ctx.toString(r) << "\n";
         return 0;
     }
     if (cmd == "factor") {

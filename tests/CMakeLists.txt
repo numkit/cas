@@ -21,6 +21,7 @@ add_executable(nkcas_gtest
     core/expand_test.cpp
     core/series_test.cpp
     core/simplify_test.cpp
+    core/symsolve_test.cpp
     poly/upoly_test.cpp
     poly/sturm_test.cpp
     poly/solve_test.cpp

@@ -4,6 +4,7 @@
 #include <numkit/cas/poly/modcpoly.hpp>
 #include <numkit/cas/poly/sturm.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
+#include <numkit/cas/rubi/rules.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -330,6 +331,21 @@ bool integrateSplitting(const UPoly &A, const UPoly &F,
     return true;
 }
 
+bool checkBudget(const Ctx &c, Budget *budget, std::string &reason)
+{
+    if (!budget)
+        return true;
+    if (!budget->step()) {
+        reason = "step budget exhausted";
+        return false;
+    }
+    if (!budget->recordArenaBytes(c.nodeCount() * 32)) {
+        reason = "arena byte budget exhausted";
+        return false;
+    }
+    return true;
+}
+
 // Integrate A/F (F squarefree): Trager's rational residues first — the
 // residues are the rational roots of res(A - t*F', F), and each residue
 // r contributes ONE grouped logarithm r*log(gcd(A - r*F', F)) covering
@@ -337,10 +353,13 @@ bool integrateSplitting(const UPoly &A, const UPoly &F,
 // per-root/quadratic splitting path.
 bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                          std::vector<Piece> &pieces, std::vector<Expr> &extraTerms,
-                         UPoly &certN, UPoly &certD, std::string &reason)
+                         UPoly &certN, UPoly &certD, std::string &reason,
+                         Budget *budget)
 {
     if (A.isZero())
         return true;
+    if (!checkBudget(c, budget, reason))
+        return false;
 
     const UPoly dF = F.derivative();
     const UPoly R = resultantT(A, dF, F);
@@ -349,9 +368,15 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
     // Rational residues from the FULL factorization of the squarefree
     // resultant (Zassenhaus): no search budget, nothing missed.
     std::vector<Rational> residues;
-    for (const UPoly &fact : factorOverQ(Rsq))
+    for (const UPoly &fact : factorOverQ(Rsq, budget))
         if (fact.deg() == 1)
             residues.push_back(fact.coeff(0) * Rational(std::int64_t{-1}));
+    if (budget && !budget->ok()) {
+        reason = budget->status() == BudgetStatus::StepExhausted
+                     ? "step budget exhausted"
+                     : "arena byte budget exhausted";
+        return false;
+    }
 
     UPoly leftN = A, leftD = F;
     for (const Rational &res : residues) {
@@ -389,7 +414,13 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
         UPoly Rsq2 = resultantT(n0, dL, d0).squarefreePart();
 
         std::vector<Rational> res2;
-        const std::vector<UPoly> facts2 = factorOverQ(Rsq2);
+        const std::vector<UPoly> facts2 = factorOverQ(Rsq2, budget);
+        if (budget && !budget->ok()) {
+            reason = budget->status() == BudgetStatus::StepExhausted
+                         ? "step budget exhausted"
+                         : "arena byte budget exhausted";
+            return false;
+        }
         for (const UPoly &fact : facts2)
             if (fact.deg() == 1)
                 res2.push_back(fact.coeff(0) * Rational(std::int64_t{-1}));
@@ -530,6 +561,8 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
         for (const UPoly &fact : facts2) {
             if (fact.deg() < 3 || leftN.isZero())
                 continue;
+            if (!checkBudget(c, budget, reason))
+                return false;
             const int d = fact.deg();
             const std::vector<Rational> s = newtonPowerSums(fact.coeffs());
             const ModCRing ring(fact);
@@ -1133,9 +1166,12 @@ bool mentionsVar(const Ctx &c, Expr e, Expr var)
 
 } // namespace
 
-static RationalIntegral integrateLogRational(Ctx &c, Expr f, Expr var)
+static RationalIntegral integrateLogRational(Ctx &c, Expr f, Expr var,
+                                             Budget *budget)
 {
     RationalIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
     const Expr t = c.symbol("#l");
     const Expr g = substituteLogVar(c, f, var, t);
     const Expr gx = c.mul({g, var}); // canonical: x*x^-1 folds away
@@ -1143,9 +1179,10 @@ static RationalIntegral integrateLogRational(Ctx &c, Expr f, Expr var)
         out.reason = "integrand is not R(log(var))/var";
         return out;
     }
-    const RationalIntegral r = integrateRational(c, gx, t);
+    const RationalIntegral r = integrateRational(c, gx, t, budget);
     if (!r.proved()) {
-        out.reason = "log substitution: " + r.reason;
+        out.reason = (budget && !budget->ok()) ? r.reason
+                                               : "log substitution: " + r.reason;
         return out;
     }
     const Expr logVar = c.func("log", var);
@@ -1163,9 +1200,12 @@ static RationalIntegral integrateLogRational(Ctx &c, Expr f, Expr var)
     return out;
 }
 
-static RationalIntegral integrateExpRational(Ctx &c, Expr f, Expr var)
+static RationalIntegral integrateExpRational(Ctx &c, Expr f, Expr var,
+                                             Budget *budget)
 {
     RationalIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
     // The '#e' name is unreachable from the parser grammar, so the
     // substitution symbol can never collide with user symbols.
     const Expr t = c.symbol("#e");
@@ -1175,9 +1215,10 @@ static RationalIntegral integrateExpRational(Ctx &c, Expr f, Expr var)
         out.reason = "integrand mixes the variable outside exp(var)";
         return out;
     }
-    const RationalIntegral r = integrateRational(c, c.div(g, t), t);
+    const RationalIntegral r = integrateRational(c, c.div(g, t), t, budget);
     if (!r.proved()) {
-        out.reason = "exp substitution: " + r.reason;
+        out.reason = (budget && !budget->ok()) ? r.reason
+                                               : "exp substitution: " + r.reason;
         return out;
     }
     const Expr expVar = c.func("exp", var);
@@ -1389,9 +1430,12 @@ Expr radicalRebuild(Ctx &c, Expr e, Expr var, Expr t, int L)
 
 } // namespace
 
-static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var)
+static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var,
+                                                 Budget *budget)
 {
     RationalIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
     const int L = radicalIndex(c, f, var);
     if (L < 2) {
         // L == 1: a plain rational (the old path owns it); L < 0:
@@ -1408,9 +1452,11 @@ static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var)
         c, c.mul({c.number(Rational(
                             BigInt(static_cast<std::int64_t>(L)), BigInt(1))),
                   c.pow(t, c.number(static_cast<std::int64_t>(L - 1))), g}),
-        t);
+        t, budget);
     if (!r.proved()) {
-        out.reason = "radical substitution: " + r.reason;
+        out.reason = (budget && !budget->ok())
+                         ? r.reason
+                         : "radical substitution: " + r.reason;
         return out;
     }
     const Expr root = c.pow(var, c.number(
@@ -1431,9 +1477,12 @@ static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var)
     return out;
 }
 
-static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var)
+static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var,
+                                             Budget *budget)
 {
     RationalIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
     const Expr t = c.symbol("#t");
     bool ok = true;
     const Expr g = substituteTangent(c, f, var, t, ok);
@@ -1444,10 +1493,11 @@ static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var)
     // Jacobian dx = 2 dt / (1 + t^2).
     const Expr t2p1 =
         c.add({c.one(), c.pow(t, c.number(std::int64_t{2}))});
-    const RationalIntegral r =
-        integrateRational(c, c.div(c.mul({c.number(std::int64_t{2}), g}), t2p1), t);
+    const RationalIntegral r = integrateRational(
+        c, c.div(c.mul({c.number(std::int64_t{2}), g}), t2p1), t, budget);
     if (!r.proved()) {
-        out.reason = "tan substitution: " + r.reason;
+        out.reason = (budget && !budget->ok()) ? r.reason
+                                               : "tan substitution: " + r.reason;
         return out;
     }
     const Expr halfTan = c.func("tan", halfArg(c, var));
@@ -1472,9 +1522,11 @@ static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var)
     return out;
 }
 
-RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
+RationalIntegral integrateRational(Ctx &c, Expr f, Expr var, Budget *budget)
 {
     RationalIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
     UPoly N, D;
     if (!toRational(c, f, var, N, D)) {
         // Substitution storeys must only fire on integrands that
@@ -1486,20 +1538,20 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
             out.reason = "integrand does not depend on the variable";
             return out;
         }
-        RationalIntegral r = integrateExpRational(c, f, var);
-        if (r.proved())
+        RationalIntegral r = integrateExpRational(c, f, var, budget);
+        if (r.proved() || (budget && !budget->ok()))
             return r;
         std::string why = r.reason;
-        r = integrateLogRational(c, f, var);
-        if (r.proved())
+        r = integrateLogRational(c, f, var, budget);
+        if (r.proved() || (budget && !budget->ok()))
             return r;
         why += "; " + r.reason;
-        r = integrateTanRational(c, f, var);
-        if (r.proved())
+        r = integrateTanRational(c, f, var, budget);
+        if (r.proved() || (budget && !budget->ok()))
             return r;
         why += "; " + r.reason;
-        r = integrateRadicalRational(c, f, var);
-        if (r.proved())
+        r = integrateRadicalRational(c, f, var, budget);
+        if (r.proved() || (budget && !budget->ok()))
             return r;
         r.reason = why + "; " + r.reason;
         return r;
@@ -1513,6 +1565,8 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
         out.F = c.zero();
         return out;
     }
+    if (!checkBudget(c, budget, out.reason))
+        return out;
 
     const HermiteResult h = hermiteReduce(N, D);
 
@@ -1532,7 +1586,7 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
         if (gs[i].isZero())
             continue;
         if (!integrateSquarefree(c, var, gs[i], sq[i], pieces, extraTerms,
-                                 qcertN, qcertD, out.reason))
+                                 qcertN, qcertD, out.reason, budget))
             return out;
     }
 
@@ -1591,6 +1645,76 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var)
     out.status = RationalIntegral::Status::ProvedSymbolic;
     out.reason.clear();
     return out;
+}
+
+RationalIntegral integrate(Ctx &c, Expr f, Expr var, Budget *budget)
+{
+    RationalIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+
+    // 1. AOT Rubi rule engine fast-path (`rubiApply`).
+    const Expr F_rubi =
+        rubi::rubiApply(rubi::sliceTables(), c, f, var, budget);
+    if (!F_rubi.isNull()) {
+        out.F = F_rubi;
+        out.status = RationalIntegral::Status::ProvedSymbolic;
+        return out;
+    }
+    if (budget && !budget->ok()) {
+        out.reason = budget->status() == BudgetStatus::StepExhausted
+                         ? "step budget exhausted"
+                         : "arena byte budget exhausted";
+        return out;
+    }
+
+    // 2. Algebraic & Liouvillian kernel (`integrateRational`: Hermite +
+    //    Rothstein-Trager + Rioboo + exp/log/tan/radical storeys).
+    const RationalIntegral r = integrateRational(c, f, var, budget);
+    if (r.proved() || (budget && !budget->ok()))
+        return r;
+
+    // 3. Constant-factor pull-out (`var`-free factors in a product whose
+    //    remaining factors actually depend on `var`).
+    if (c.kind(f) == NodeKind::Mul) {
+        std::vector<Expr> constFactors;
+        std::vector<Expr> varFactors;
+        for (std::size_t i = 0; i < c.childCount(f); ++i) {
+            const Expr ch = c.child(f, i);
+            if (mentionsVar(c, ch, var))
+                varFactors.push_back(ch);
+            else
+                constFactors.push_back(ch);
+        }
+        if (!constFactors.empty() && !varFactors.empty()) {
+            const RationalIntegral inner =
+                integrate(c, c.mul(varFactors), var, budget);
+            if (!inner.proved())
+                return inner;
+            out.F = c.mul({c.mul(constFactors), inner.F});
+            out.status = RationalIntegral::Status::ProvedSymbolic;
+            return out;
+        }
+    }
+
+    // 4. Additive linearity over `Add` (mixed sums where summands are
+    //    handled by either Rubi or the algebraic/Liouvillian kernel).
+    if (c.kind(f) == NodeKind::Add) {
+        std::vector<Expr> pieces;
+        pieces.reserve(c.childCount(f));
+        for (std::size_t i = 0; i < c.childCount(f); ++i) {
+            const RationalIntegral part =
+                integrate(c, c.child(f, i), var, budget);
+            if (!part.proved())
+                return part;
+            pieces.push_back(part.F);
+        }
+        out.F = c.add(pieces);
+        out.status = RationalIntegral::Status::ProvedSymbolic;
+        return out;
+    }
+
+    return r;
 }
 
 bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out)

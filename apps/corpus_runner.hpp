@@ -13,14 +13,16 @@
 
 namespace nkcorpus {
 
-// One corpus task, parsed from "id<TAB>var<TAB>expr" or the
-// 4-column form "id<TAB>var<TAB>op<TAB>expr" (op: integrate | rubi;
-// blank/unknown defaults to integrate).
+// One corpus task, parsed from "id<TAB>var<TAB>expr", the 4-column
+// form "id<TAB>var<TAB>op<TAB>expr" (op: integrate | rubi | cascade),
+// or the 5-column form "id<TAB>var<TAB>op<TAB>expr<TAB>ref" where ref
+// is the reference antiderivative for Mean Leaf Ratio (MLR) auditing.
 struct CorpusTask {
     std::string id;
     std::string var;
     std::string expr;
-    std::string op; // "rubi" routes through the rule engine
+    std::string op;  // "rubi" routes through the rule engine, "cascade" through integrate()
+    std::string ref; // optional reference antiderivative (5-column format)
 };
 
 enum class TaskStatus {
@@ -33,9 +35,12 @@ enum class TaskStatus {
 struct TaskOutcome {
     std::string id;
     TaskStatus status = TaskStatus::MalformedLine;
-    std::string detail;          // reason / error message
-    std::uint64_t micros = 0;    // parse+integrate wall time
-    std::size_t answerNodes = 0; // Ctx node count after a proved run
+    std::string detail;           // reason / error message
+    std::uint64_t micros = 0;     // parse+integrate wall time
+    std::size_t answerNodes = 0;  // Ctx node count after a proved run
+    std::size_t answerLeaves = 0; // Ctx::leafCount(F) after a proved run
+    std::size_t refLeaves = 0;    // Ctx::leafCount(ref) when ref is provided
+    double leafRatio = 0.0;       // answerLeaves / refLeaves when refLeaves > 0
 };
 
 struct CorpusReport {
@@ -46,6 +51,8 @@ struct CorpusReport {
     std::size_t malformedLines = 0;
     std::uint64_t medianMicros = 0;
     std::uint64_t p95Micros = 0;
+    std::size_t withReference = 0;
+    double meanLeafRatio = 0.0;
 
     // proved / total, in percent (0 when total == 0).
     double passRatePct() const;

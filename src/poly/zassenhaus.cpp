@@ -298,8 +298,11 @@ std::vector<std::uint32_t> subsetMasks(std::size_t n)
 
 } // namespace
 
-std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt> &fIn)
+std::vector<std::vector<BigInt>>
+factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
 {
+    if (budget && !budget->tryConsume())
+        return {};
     std::vector<BigInt> f = fIn;
     bpTrim(f);
     assert(!f.empty() && f.size() >= 2 && "need degree >= 1");
@@ -441,6 +444,8 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
                 const BigInt &sym0 = sym[0];
                 const BigInt halfConst = pk >> 1;
                 for (const BigInt &d : divs) {
+                    if (budget && !budget->tryConsume())
+                        return {};
                     if (!curConst.isZero() && !sym0.isZero()) {
                         BigInt rep0 = (d * sym0) % pk;
                         if (rep0.isNegative())
@@ -518,10 +523,12 @@ std::vector<std::vector<BigInt>> factorPrimitiveInteger(const std::vector<BigInt
     return out;
 }
 
-std::vector<UPoly> factorOverQ(const UPoly &f)
+std::vector<UPoly> factorOverQ(const UPoly &f, Budget *budget)
 {
     std::vector<UPoly> out;
     if (f.isZero() || f.deg() < 1)
+        return out;
+    if (budget && !budget->tryConsume())
         return out;
 
     // Multiplicity-aware: Yun's decomposition over Q, distinct factors
@@ -543,7 +550,9 @@ std::vector<UPoly> factorOverQ(const UPoly &f)
             BigInt::divMod(denLcm2, c.den(), q2, r2);
             ip2.push_back(c.num() * q2);
         }
-        for (const std::vector<BigInt> &g : factorPrimitiveInteger(ip2)) {
+        for (const std::vector<BigInt> &g : factorPrimitiveInteger(ip2, budget)) {
+            if (budget && !budget->ok())
+                return {};
             std::vector<Rational> cs;
             const BigInt glc = g.back();
             for (const BigInt &c : g)
@@ -552,6 +561,8 @@ std::vector<UPoly> factorOverQ(const UPoly &f)
             for (std::size_t k = 0; k <= i; ++k) // multiplicity i+1
                 out.push_back(fact);
         }
+        if (budget && !budget->ok())
+            return {};
     }
     return out;
 }

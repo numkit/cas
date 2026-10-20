@@ -373,3 +373,44 @@ TEST_F(ExprTest, ZeroDenominatorIsNullInRelease)
     GTEST_SKIP() << "Debug: the assert is the contract";
 #endif
 }
+
+TEST_F(ExprTest, LeafCountAndExprCostMetrics)
+{
+    // Null Expr has 0 leaves and 0 cost.
+    EXPECT_EQ(c.leafCount(Expr()), 0u);
+    EXPECT_EQ(c.exprCost(Expr()), 0u);
+
+    // Atoms (Number, Symbol, RootOf) have leafCount = 1, exprCost = 1.
+    EXPECT_EQ(c.leafCount(x), 1u);
+    EXPECT_EQ(c.exprCost(x), 1u);
+    EXPECT_EQ(c.leafCount(c.number(std::int64_t{42})), 1u);
+    EXPECT_EQ(c.exprCost(c.number(std::int64_t{42})), 1u);
+
+    // Compound tree: Pow(x, 2) -> 1 (Pow) + 1 (x) + 1 (2) = 3 leaves, 3 DAG nodes.
+    const Expr x2 = c.pow(x, c.number(std::int64_t{2}));
+    EXPECT_EQ(c.leafCount(x2), 3u);
+    EXPECT_EQ(c.exprCost(x2), 3u);
+
+    // DAG sharing vs tree leafCount:
+    // u = x + y (leafCount = 3, exprCost = 3: Add, x, y).
+    // e = sin(u) + cos(u):
+    //   leafCount counts `u` twice: 1(Add) + (1+3) + (1+3) = 9.
+    //   exprCost counts unique DAG nodes: Add(1) + sin(3) + cos(3) + u(Add:1, x:1, y:1) = 10.
+    const Expr u = c.add({x, y});
+    EXPECT_EQ(c.leafCount(u), 3u);
+    EXPECT_EQ(c.exprCost(u), 3u);
+    const Expr trigSum = c.add({c.func("sin", u), c.func("cos", u)});
+    EXPECT_EQ(c.leafCount(trigSum), 9u);
+    EXPECT_EQ(c.exprCost(trigSum), 10u);
+
+    // Elementary function vs abs-inside-log vs special function:
+    // abs(x): abs(3) + x(1) = 4.
+    // log(abs(x)): log(3) + abs-inside-log(5) + x(1) = 9.
+    // erf(x): erf(10) + x(1) = 11.
+    const Expr absX = c.func("abs", x);
+    EXPECT_EQ(c.exprCost(absX), 4u);
+    const Expr logAbsX = c.func("log", absX);
+    EXPECT_EQ(c.exprCost(logAbsX), 9u);
+    const Expr erfX = c.func("erf", x);
+    EXPECT_EQ(c.exprCost(erfX), 11u);
+}

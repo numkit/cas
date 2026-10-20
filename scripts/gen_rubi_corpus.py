@@ -25,17 +25,45 @@ all with op=rubi so the corpus runner routes them through the rule engine:
 Deterministic: fixed seed.
 """
 
+import os
 import random
+import subprocess
 from fractions import Fraction
 
 SEED = 20261005
 TASKS = 500
 
 
+def query_reference_antiderivatives(exprs):
+    nkcas_bin = os.environ.get(
+        "NKCAS_BIN",
+        os.path.join("build", "msvc", "apps", "Release", "nkcas.exe"),
+    )
+    if not os.path.exists(nkcas_bin):
+        nkcas_bin = os.path.join("build", "apps", "nkcas")
+    stdin_payload = "".join(f"rubi {e} x\n" for e in exprs) + "quit\n"
+    proc = subprocess.run(
+        [nkcas_bin],
+        input=stdin_payload,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
+    refs = []
+    i = 0
+    for expr in exprs:
+        if i + 1 >= len(lines) or lines[i + 1] != "[certificate: PROVED_SYMBOLIC]":
+            raise RuntimeError(f"failed to certify reference for {expr}: {lines[i:i+2]}")
+        refs.append(lines[i])
+        i += 2
+    return refs
+
+
 def main():
     rnd = random.Random(SEED)
-    made = 0
-    while made < TASKS:
+    exprs = []
+    while len(exprs) < TASKS:
         kind = rnd.randrange(16)
         a = rnd.randint(1, 6)
         b = rnd.randint(1, 6)
@@ -106,8 +134,11 @@ def main():
                 expr = f"x^{n - 1}*({a} + {b}*x^{n})^(-1/2)"
             else:
                 expr = f"(x^2 + {b}*x^4)^(1/2)"
-        made += 1
-        print(f"rs{made:04d}\tx\trubi\t{expr}")
+        exprs.append(expr)
+
+    refs = query_reference_antiderivatives(exprs)
+    for idx, (expr, ref) in enumerate(zip(exprs, refs), start=1):
+        print(f"rs{idx:04d}\tx\trubi\t{expr}\t{ref}")
 
 
 if __name__ == "__main__":

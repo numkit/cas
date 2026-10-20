@@ -62,13 +62,26 @@ bool parseCorpusLine(const std::string &line, CorpusTask &out)
         out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
         out.expr = trim(line.substr(t2 + 1));
         out.op.clear();
+        out.ref.clear();
     } else {
-        if (line.find('\t', t3 + 1) != std::string::npos)
-            return false;
-        out.id = trim(line.substr(0, t1));
-        out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
-        out.op = trim(line.substr(t2 + 1, t3 - t2 - 1));
-        out.expr = trim(line.substr(t3 + 1));
+        const std::size_t t4 = line.find('\t', t3 + 1);
+        if (t4 == std::string::npos) {
+            out.id = trim(line.substr(0, t1));
+            out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
+            out.op = trim(line.substr(t2 + 1, t3 - t2 - 1));
+            out.expr = trim(line.substr(t3 + 1));
+            out.ref.clear();
+        } else {
+            if (line.find('\t', t4 + 1) != std::string::npos)
+                return false;
+            out.id = trim(line.substr(0, t1));
+            out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
+            out.op = trim(line.substr(t2 + 1, t3 - t2 - 1));
+            out.expr = trim(line.substr(t3 + 1, t4 - t3 - 1));
+            out.ref = trim(line.substr(t4 + 1));
+            if (out.op.empty() || out.ref.empty())
+                return false;
+        }
     }
     return !out.id.empty() && !out.var.empty() && !out.expr.empty();
 }
@@ -107,14 +120,28 @@ TaskOutcome runTask(const CorpusTask &t)
         const numkit::cas::Expr f = numkit::cas::parseExpr(ctx, t.expr);
         const numkit::cas::Expr var = ctx.symbol(t.var);
         bool proved = false;
+        numkit::cas::Expr F;
+        std::string reason;
         if (t.op == "rubi") {
-            // The C2 rule engine: one certified rule application of
-            // the committed slice (single-shot, no simplification).
-            const numkit::cas::Expr F = numkit::cas::rubi::rubiApply(
+            // The C2 rule engine: certified rule application of the
+            // committed slice.
+            F = numkit::cas::rubi::rubiApply(
                 numkit::cas::rubi::sliceTables(), ctx, f, var);
             proved = !F.isNull();
+            if (!proved)
+                reason = "no certified rule application";
+        } else if (t.op == "cascade") {
+            const numkit::cas::RationalIntegral r =
+                numkit::cas::integrate(ctx, f, var);
+            proved = r.proved();
+            F = r.F;
+            reason = r.reason;
         } else {
-            proved = numkit::cas::integrateRational(ctx, f, var).proved();
+            const numkit::cas::RationalIntegral r =
+                numkit::cas::integrateRational(ctx, f, var);
+            proved = r.proved();
+            F = r.F;
+            reason = r.reason;
         }
         const auto stop = Clock::now();
         o.micros = static_cast<std::uint64_t>(
@@ -123,10 +150,19 @@ TaskOutcome runTask(const CorpusTask &t)
         if (proved) {
             o.status = TaskStatus::Proved;
             o.answerNodes = ctx.nodeCount();
+            o.answerLeaves = ctx.leafCount(F);
+            if (!t.ref.empty()) {
+                const numkit::cas::Expr refExpr =
+                    numkit::cas::parseExpr(ctx, t.ref);
+                o.refLeaves = ctx.leafCount(refExpr);
+                if (o.refLeaves > 0) {
+                    o.leafRatio = static_cast<double>(o.answerLeaves) /
+                                  static_cast<double>(o.refLeaves);
+                }
+            }
         } else {
             o.status = TaskStatus::Unevaluated;
-            o.detail = t.op == "rubi" ? "no certified rule application"
-                                       : "declined";
+            o.detail = reason.empty() ? "declined" : reason;
         }
     } catch (const numkit::cas::ParseError &e) {
         const auto stop = Clock::now();
@@ -161,10 +197,17 @@ CorpusReport runCorpus(const std::vector<CorpusTask> &tasks,
     rep.total = tasks.size();
     std::vector<std::uint64_t> times;
     times.reserve(tasks.size());
+    double leafRatioSum = 0.0;
     for (const CorpusTask &t : tasks) {
         TaskOutcome o = runTask(t);
         switch (o.status) {
-        case TaskStatus::Proved: ++rep.proved; break;
+        case TaskStatus::Proved:
+            ++rep.proved;
+            if (o.refLeaves > 0) {
+                ++rep.withReference;
+                leafRatioSum += o.leafRatio;
+            }
+            break;
         case TaskStatus::Unevaluated: ++rep.unevaluated; break;
         case TaskStatus::ParseError: ++rep.parseErrors; break;
         case TaskStatus::MalformedLine: ++rep.malformedLines; break;
@@ -175,6 +218,9 @@ CorpusReport runCorpus(const std::vector<CorpusTask> &tasks,
     }
     rep.medianMicros = medianOf(times);
     rep.p95Micros = percentileOf(times, 0.95);
+    rep.meanLeafRatio = rep.withReference > 0
+                            ? leafRatioSum / static_cast<double>(rep.withReference)
+                            : 0.0;
     return rep;
 }
 

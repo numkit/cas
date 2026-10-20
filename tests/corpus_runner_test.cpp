@@ -64,12 +64,14 @@ TEST(CorpusLine, RejectsMalformed)
     const char *bad[] = {
         "no tabs at all",
         "only\tone tab",
-        "a\tb\tc\td\te",     // five columns (four are legal now)
+        "a\tb\tc\td\te\tf",  // six columns (3, 4, 5 are legal)
         "\tx\t1/x",          // empty id
         "id\t\t1/x",         // empty var
         "id\tx\t",           // empty expr
         "id\tx\t   ",        // whitespace-only expr
         "a\tx\tb\t",         // four columns, empty expr
+        "a\tx\trubi\tx\t",   // five columns, empty ref
+        "a\tx\t\tx\tx^2/2",  // five columns, empty op
     };
     for (const char *s : bad) {
         CorpusTask t;
@@ -283,13 +285,44 @@ TEST(CorpusLine, ParsesFourColumnRubiOp)
     EXPECT_EQ(t.var, "x");
     EXPECT_EQ(t.op, "rubi");
     EXPECT_EQ(t.expr, "x^7");
+    EXPECT_EQ(t.ref, "");
     // Legacy 3-column lines keep working (op empty -> integrate).
     EXPECT_TRUE(parseCorpusLine("r1\tx\t1/x", t));
     EXPECT_EQ(t.op, "");
     EXPECT_EQ(t.expr, "1/x");
-    // Five columns stay malformed.
+    EXPECT_EQ(t.ref, "");
+    // Five columns carry the reference antiderivative for Mean Leaf Ratio.
     CorpusTask t5;
-    EXPECT_FALSE(parseCorpusLine("a\tx\trubi\tb\tc", t5));
+    EXPECT_TRUE(parseCorpusLine("rs1\tx\trubi\tx^7\t1/8*x^8", t5));
+    EXPECT_EQ(t5.id, "rs1");
+    EXPECT_EQ(t5.var, "x");
+    EXPECT_EQ(t5.op, "rubi");
+    EXPECT_EQ(t5.expr, "x^7");
+    EXPECT_EQ(t5.ref, "1/8*x^8");
+    // Six columns stay malformed.
+    CorpusTask t6;
+    EXPECT_FALSE(parseCorpusLine("a\tx\trubi\tb\tc\td", t6));
+}
+
+TEST(CorpusReport, MeanLeafRatioAndCascadeOp)
+{
+    CorpusTask t1, t2;
+    ASSERT_TRUE(parseCorpusLine("m1\tx\trubi\tx^3\t1/4*x^4", t1));
+    ASSERT_TRUE(parseCorpusLine(
+        "m2\tx\tcascade\t(1 + 2*x)^(-3/2) + exp(x)/(1 + exp(x))\t-(1 + 2*x)^(-1/2) + log(1 + exp(x))",
+        t2));
+    std::vector<TaskOutcome> outcomes;
+    const CorpusReport rep = runCorpus({t1, t2}, &outcomes);
+    EXPECT_EQ(rep.total, 2u);
+    EXPECT_EQ(rep.proved, 2u);
+    EXPECT_EQ(rep.withReference, 2u);
+    EXPECT_DOUBLE_EQ(rep.meanLeafRatio, 1.0);
+    ASSERT_EQ(outcomes.size(), 2u);
+    EXPECT_GT(outcomes[0].answerLeaves, 0u);
+    EXPECT_EQ(outcomes[0].answerLeaves, outcomes[0].refLeaves);
+    EXPECT_DOUBLE_EQ(outcomes[0].leafRatio, 1.0);
+    EXPECT_EQ(outcomes[1].answerLeaves, outcomes[1].refLeaves);
+    EXPECT_DOUBLE_EQ(outcomes[1].leafRatio, 1.0);
 }
 
 TEST(CorpusTask, RubiRoutingStatuses)

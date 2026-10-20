@@ -14,6 +14,7 @@
 // step 3) come later.
 #pragma once
 
+#include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 
 #include <cstdint>
@@ -87,9 +88,10 @@ RuleTables sliceTables();
 //  - the answer is CERTIFIED by the caller-grade check dF/dvar == e
 //    (the Tier-1 gate of the core, reused verbatim) - a rule answer
 //    is only returned when it differentiates back to the integrand.
-// Returns a null Expr when no rule matches, conditions fail, or the
-// certificate rejects the result.
-Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var);
+// Returns a null Expr when no rule matches, conditions fail, the
+// step/arena budget is exhausted, or the certificate rejects the result.
+Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var,
+               Budget *budget = nullptr);
 
 // One wildcard binding: the pattern variable name (from the string
 // table at generation time, recorded per rule) and the matched Expr.

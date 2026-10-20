@@ -164,6 +164,17 @@ public:
 
     std::string toString(Expr e) const;
 
+    // Tree-based leaf/head count (Mathematica/Rubi LeafCount convention):
+    // 1 for atoms (Number, Symbol, RootOf), 1 + sum(child leafCounts) for
+    // compound nodes (Pow, Func, Add, Mul), 0 for a null Expr.
+    std::size_t leafCount(Expr e) const;
+
+    // Section 6 discrete DAG cost functional C(F) = sum_{v in DAG(F)} NodeCost(v)
+    // over unique reachable DAG nodes (1 for Number/Symbol/RootOf/Add/Mul/Pow,
+    // 3 for elementary transcendental Func, 5 for abs inside log, 10 for
+    // special functions).
+    std::size_t exprCost(Expr e) const;
+
     std::size_t nodeCount() const { return nodes_.size(); }
 
     // Stable per-Ctx node identity (1-based; matches insertion order).

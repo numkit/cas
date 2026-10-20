@@ -273,11 +273,23 @@
     подстановки. Корпус `corpora/rubi-slice.txt` расширен до **500 задач**
     по 16 семействам `1.1.x`: **500/500 = 100% PROVED**, VR **100%**,
     медиана **146 мкс** (p95: 1.68 мс). Стадийный план R1–R6 — секция ниже.
-33. 🔶 (v0.2-пул) Качество формы: машинизация эталонных ответов Руби
-    в корпус + метрика Mean Leaf Ratio (§7, цель ≤ 1.00 на срезе).
-34. 🔶 (v0.2-пул) Единый диспетчер `integrate` (fast-path `rubiApply` →
-    канонический `ratint`/лиувиллевы этажи с единым `IntegrationResult`)
-    + сквозной трединг `Budget` в Zassenhaus/Hensel/Rothstein–Trager/Rubi.
+33. ✅ (v0.2-пул) Качество формы: `Ctx::leafCount` (деревянный `LeafCount`
+    Mathematica/Rubi) + дискретный DAG-функционал стоимости `Ctx::exprCost`
+    (§6 плана: арифметика/атомы = 1, элементарные трансцендентные = 3,
+    `abs` внутри `log` = 5, спецфункции = 10 с учётом общих узлов DAG),
+    5-колоночный формат корпуса `id<TAB>var<TAB>op<TAB>expr<TAB>ref`,
+    машинизация эталонных ответов Руби в `corpora/rubi-slice.txt`
+    (`scripts/gen_rubi_corpus.py`) + метрика **Mean Leaf Ratio = 1.00**
+    (по 500 референсным задачам, цель §7 ≤ 1.00).
+34. ✅ (v0.2-пул) Единый диспетчер `integrate(Ctx&, Expr, Expr, Budget*)`
+    (fast-path `rubiApply` → алгебраическое/лиувиллево ядро
+    `integrateRational` → вынос не зависящих от `var` множителей в `Mul` и
+    линейность по `Add` для смешанных сумм) + сквозной трединг `Budget`
+    (лимит шагов `steps` и лимит памяти `maxArenaBytes` со статусами
+    `StepExhausted` / `ArenaExhausted`) в `factorPrimitiveInteger` /
+    `factorOverQ` (Zassenhaus/Hensel), `integrateSquarefree` /
+    `integrateRational` (Hermite/Rothstein–Trager/Rioboo/лиувиллевы этажи)
+    и `rubiApply`.
 35. 🔶 (SMT-трек) Численная оценка `evalDouble`/`vpa`-мост (вещественная
     оценка `Expr`, включая `RootOf` и трансцендентные атомы) + SBO в
     `BigInt` (inline-лимбы на стеке без аллокаций для ≤ 128 бит).
@@ -1948,3 +1960,56 @@ MATLAB Symbolic Math Toolbox (три эшелона):
    - Добавлены 3 новых GTest-сьюта (`RubiApply.R1bSubstWithAndMultiFactor`,
      `RubiApply.R2GeneralBinomialsAndExpandIntegrand`,
      `RubiApply.PropertyR1bR2Shapes` на 500 случайных интегралов).
+
+### Сессия: качество формы + единый каскад `integrate` и `Budget` (пункты 33 и 34 ЗАКРЫТЫ)
+
+1. **Пункт 33 — Метрики качества формы и Mean Leaf Ratio (§6, §7 плана)**:
+   - В `Ctx` (`include/numkit/cas/core/expr.hpp`, `src/core/expr.cpp`)
+     добавлены:
+     - `Ctx::leafCount(Expr e) const`: размер дерева по конвенции
+       `LeafCount` Mathematica/Rubi (`1` на атомах `Number`/`Symbol`/`RootOf`,
+       `1 + sum(leafCount(child_i))` на составных узлах `Pow`/`Func`/`Add`/`Mul`,
+       `0` на пустом `Expr`).
+     - `Ctx::exprCost(Expr e) const`: дискретный DAG-функционал стоимости §6
+       $C(F) = \sum_{v \in \text{DAG}(F)} \text{NodeCost}(v)$ по уникальным
+       достижимым узлам DAG (`1` для арифметики и атомов, `3` для элементарных
+       трансцендентных функций, `5` для `abs` непосредственно внутри `log`,
+       `10` для спецфункций).
+   - В `apps/corpus_runner.hpp`, `apps/corpus_runner.cpp` и `apps/nkcas.cpp`
+     добавлена поддержка 5-колоночного формата корпуса
+     `id<TAB>var<TAB>op<TAB>expr<TAB>ref`, подсчёт `answerLeaves`, `refLeaves`,
+     `leafRatio` в `TaskOutcome` и `withReference` / `meanLeafRatio` в
+     `CorpusReport` (время парсинга референсного ответа вынесено за пределы
+     таймера задачи `o.micros`).
+   - `scripts/gen_rubi_corpus.py` и `corpora/rubi-slice.txt` обновлены до
+     5 колонок с сертифицированными эталонными первообразными для всех 500
+     задач: **500/500 = 100% PROVED**, **Mean Leaf Ratio = 1.00** (цель §7
+     $\le 1.00$).
+2. **Пункт 34 — Единый диспетчер `integrate` и сквозной `Budget`**:
+   - В `include/numkit/cas/core/budget.hpp` расширен `Budget` со статусами
+     `BudgetStatus::{Ok, StepExhausted, ArenaExhausted}`, счётчиками
+     `stepsUsed()` / `arenaBytesUsed()` и проверками `tryConsume()` (`step()`)
+     и `recordArenaBytes(bytes)` при сохранении полной обратной совместимости с
+     агрегатным `Budget{steps}`.
+   - Сквозной `Budget *budget = nullptr` проброшен через
+     `factorPrimitiveInteger` / `factorOverQ` (`poly/zassenhaus`),
+     `integrateSquarefree` / `integrateRational` и все лиувиллевы этажи
+     (`integrate/ratint`), а также `rubi::rubiApply` (`rubi/rules`).
+   - В `include/numkit/cas/integrate/ratint.hpp` и `src/integrate/ratint.cpp`
+     реализована единая точка входа
+     `integrate(Ctx &c, Expr f, Expr var, Budget *budget = nullptr)`:
+     1) fast-path `rubi::rubiApply(sliceTables(), c, f, var, budget)`;
+     2) алгебраическое и лиувиллево ядро `integrateRational(c, f, var, budget)`
+        (Эрмит + Ротштейн–Трагер + Риобу + этажи `exp`/`log`/`tan`/`radical`);
+     3) вынос не зависящих от `var` множителей в `Mul` (включая символьные
+        параметры вроде `a * exp(x)/(1 + exp(x))`) и аддитивная линейность по
+        `Add` для смешанных сумм, где часть слагаемых берётся правилами Руби, а
+        часть — алгебраическим/лиувиллевым ядром.
+   - В `RemoveContent[u, x]` (`src/rubi/rules.cpp`) при наличии символьных
+     параметров вне $\mathbb{Q}[x]$ возвращается исходный двучлен `u`, что
+     позволило `rubiApply` и `integrate` сертифицировать интегралы с символьными
+     параметрами вида `1/(a + b*x)`.
+   - CLI-команда `nkcas integrate <expr> <var>` переведена на единый каскад
+     `numkit::cas::integrate`, а в `corpus_runner` добавлен маршрут
+     `op=cascade`.
+

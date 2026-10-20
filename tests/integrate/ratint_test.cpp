@@ -1317,3 +1317,68 @@ TEST_F(RatIntTest, Tier2aRealFormsProperty)
     }
 }
 
+// ── Unified integrate cascade & Budget threading (item 34) ──────
+
+TEST_F(RatIntTest, UnifiedIntegrateCascade)
+{
+    struct Case
+    {
+        const char *expr;
+    };
+    const Case cases[] = {
+        // Pure Rubi 1.1 binomials (algebraic radicals, half-integer powers, symbolic params)
+        {"(2 + 3*x)^(-3/2)"},
+        {"x*(2 + 3*x^2)^(1/2)"},
+        {"(1 + x)^(-1/2)*(4 + x)^(-1/2)"},
+        {"1/(a + b*x)"},
+        // Pure algebraic / Liouvillian storeys (outside Rubi 1.1)
+        {"1/(x^3 + 2)"},
+        {"exp(x)/(1 + exp(2*x))"},
+        {"1/(x*(1 + log(x)^2))"},
+        {"1/(2 + cos(x))"},
+        {"1/(1 + x^(1/3))"},
+        // Symbolic constant factor times Liouvillian storey
+        {"a*exp(x)/(1 + exp(x))"},
+        // Mixed sum of Rubi binomial radical + Liouvillian exponential + Rioboo cubic
+        {"(1 + 2*x)^(-3/2) + exp(x)/(1 + exp(x)) + 1/(x^3 + 2)"},
+    };
+    for (const Case &tc : cases) {
+        const Expr f = numkit::cas::parseExpr(c, tc.expr);
+        numkit::cas::Budget budget(10000, 64 * 1024 * 1024);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrate(c, f, x, &budget);
+        ASSERT_TRUE(r.proved()) << tc.expr << ": " << r.reason;
+        EXPECT_FALSE(r.F.isNull()) << tc.expr;
+        EXPECT_TRUE(budget.ok()) << tc.expr;
+        EXPECT_GT(budget.stepsUsed(), 0u) << tc.expr;
+    }
+}
+
+TEST_F(RatIntTest, BudgetExhaustionStopsCleanly)
+{
+    const Expr fRubi =
+        numkit::cas::parseExpr(c, "(1 + 2*x)^2*(3 + x)*(4 + x)");
+    {
+        // Step budget of 1 is enough to enter, but not enough to complete
+        // multi-step expansion + integration.
+        numkit::cas::Budget stepBudget(1, 64 * 1024 * 1024);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrate(c, fRubi, x, &stepBudget);
+        EXPECT_FALSE(r.proved());
+        EXPECT_EQ(stepBudget.status(),
+                  numkit::cas::BudgetStatus::StepExhausted);
+        EXPECT_EQ(r.reason, "step budget exhausted");
+    }
+    {
+        // Tiny arena byte budget triggers ArenaExhausted cleanly.
+        numkit::cas::Budget arenaBudget(10000, 16);
+        const numkit::cas::RationalIntegral r =
+            numkit::cas::integrate(c, fRubi, x, &arenaBudget);
+        EXPECT_FALSE(r.proved());
+        EXPECT_EQ(arenaBudget.status(),
+                  numkit::cas::BudgetStatus::ArenaExhausted);
+        EXPECT_EQ(r.reason, "arena byte budget exhausted");
+    }
+}
+
+

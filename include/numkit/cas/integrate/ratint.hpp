@@ -1,6 +1,7 @@
 // integrate/ratint.hpp — rational function integration with certificate.
 #pragma once
 
+#include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/poly/upoly.hpp>
 
@@ -62,7 +63,19 @@ HermiteResult hermiteReduce(const UPoly &N, const UPoly &D);
 // Q[x] resultant plus Lagrange interpolation suffice.
 UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M);
 
-RationalIntegral integrateRational(Ctx &c, Expr f, Expr var);
+RationalIntegral integrateRational(Ctx &c, Expr f, Expr var,
+                                   Budget *budget = nullptr);
+
+// Unified symbolic integration cascade (C1 item 34):
+//   1. AOT Rubi rule engine fast-path (`rubiApply(sliceTables(), ...)`).
+//   2. Algebraic & Liouvillian kernel (`integrateRational`: Hermite +
+//      Rothstein-Trager + Rioboo + exp/log/tan/radical storeys).
+//   3. Constant-factor pull-out (`var`-free factors) and additive
+//      linearity over `Add`, allowing mixed sums where individual
+//      summands are handled by either Rubi or the algebraic/Liouvillian
+//      kernel.
+RationalIntegral integrate(Ctx &c, Expr f, Expr var,
+                           Budget *budget = nullptr);
 
 // Factor the rational function e(var) over Q: returns the factored
 // canonical product (content coefficients in front, irreducible

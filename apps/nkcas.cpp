@@ -134,7 +134,7 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
     }
     if (cmd == "integrate") {
         const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(ctx, f, var);
+            numkit::cas::integrate(ctx, f, var);
         if (r.proved()) {
             std::cout << ctx.toString(r.F) << "\n";
             std::cout << "[certificate: PROVED_SYMBOLIC]\n";
@@ -247,6 +247,10 @@ int runCorpusFile(const char *path)
               << "% of integrable\n"
               << "median time: " << rep.medianMicros << "us, p95: "
               << rep.p95Micros << "us\n";
+    if (rep.withReference > 0) {
+        std::cout << "mean leaf ratio: " << rep.meanLeafRatio << " (over "
+                  << rep.withReference << " referenced tasks)\n";
+    }
     return 0;
 }
 

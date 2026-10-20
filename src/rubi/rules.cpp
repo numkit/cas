@@ -366,7 +366,8 @@ std::int32_t subtreeSize(const std::int32_t *terms, std::int32_t term)
 
 constexpr int kMaxRubiDepth = 8;
 
-Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth);
+Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
+                    Budget *budget = nullptr);
 
 bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                    Expr currentE, Expr var, const std::vector<Binding> &bnd,
@@ -640,8 +641,10 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
 Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                       Expr currentE, Expr var,
                       const std::vector<Binding> &bnd,
-                      std::int32_t term, int depth)
+                      std::int32_t term, int depth, Budget *budget = nullptr)
 {
+    if (budget && !budget->ok())
+        return Expr();
     const std::int32_t tag = t.termRow(terms, term, 0);
     const std::int32_t valId = t.termRow(terms, term, 1);
     const std::int32_t nkids = t.termRow(terms, term, 3);
@@ -729,13 +732,16 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
         }
         if (nkids == 2 && head == "Simp") {
             return buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
         }
         if (nkids == 3 && head == "Dist") {
             const Expr factor = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             const Expr body = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
             return distributeMul(c, body, factor);
         }
         if (nkids == 2 && (head == "With" || head == "Module")) {
@@ -758,24 +764,27 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 if (t.termRow(terms, lhs, 0) != kTagSym)
                     return Expr();
                 const Expr val = buildReplacement(
-                    t, terms, c, currentE, var, localBnd, rhs, depth);
+                    t, terms, c, currentE, var, localBnd, rhs, depth, budget);
                 if (val.isNull())
                     return Expr();
                 upsertBinding(localBnd, t.str(t.termRow(terms, lhs, 1)), val);
             }
             return buildReplacement(
                 t, terms, c, currentE, var, localBnd, childOf(terms, term, 1),
-                depth);
+                depth, budget);
         }
         if (nkids == 3 && head == "Subst") {
             const Expr xSym = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
             const Expr subExpr = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth,
+                budget);
             if (xSym.isNull() || !(xSym == var) || subExpr.isNull())
                 return Expr();
             const Expr body = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             if (body.isNull())
                 return Expr();
             return c.subs(body, var, subExpr);
@@ -787,13 +796,14 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 t.termRow(terms, ruleTerm, 3) != 2)
                 return Expr();
             const Expr u = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             const Expr from = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, ruleTerm, 0),
-                depth);
+                depth, budget);
             const Expr to = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, ruleTerm, 1),
-                depth);
+                depth, budget);
             if (u.isNull() || from.isNull() || to.isNull())
                 return Expr();
             return c.subs(u, from, to);
@@ -950,14 +960,16 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             if (depth >= kMaxRubiDepth)
                 return Expr();
             const Expr integrand = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             const Expr iVar = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
             if (integrand.isNull() || c.kind(iVar) != NodeKind::Symbol)
                 return Expr();
             if (integrand == currentE && iVar == var)
                 return Expr();
-            return rubiApplyDepth(t, c, integrand, iVar, depth + 1);
+            return rubiApplyDepth(t, c, integrand, iVar, depth + 1, budget);
         }
         if (nkids == 2 && head == "Rt") {
             // Rubi's Rt[q, n]: the REAL n-th root - the sign rides
@@ -1000,7 +1012,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             UPoly N, D;
             if (!toRational(c, u, xArg, N, D) || !D.isConst() ||
                 N.isZero())
-                return Expr();
+                return u;
             BigInt numGcd(0), denLcm(1);
             for (const Rational &q : N.coeffs()) {
                 numGcd = BigInt::gcd(numGcd, q.num());
@@ -1020,7 +1032,8 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
         const std::string op = t.str(valId);
         if (nkids == 1 && op == "neg") {
             const Expr a = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             return a.isNull() ? Expr() : c.neg(a);
         }
         if (nkids != 2)
@@ -1030,7 +1043,8 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                                childOf(terms, term, 1), depth))
                 return Expr();
             return buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
         }
         if (op == ";") {
             const std::int32_t stmt = childOf(terms, term, 0);
@@ -1043,19 +1057,21 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 if (t.termRow(terms, lhs, 0) != kTagSym)
                     return Expr();
                 const Expr val = buildReplacement(
-                    t, terms, c, currentE, var, localBnd, rhs, depth);
+                    t, terms, c, currentE, var, localBnd, rhs, depth, budget);
                 if (val.isNull())
                     return Expr();
                 upsertBinding(localBnd, t.str(t.termRow(terms, lhs, 1)), val);
                 return buildReplacement(t, terms, c, currentE, var, localBnd,
-                                        childOf(terms, term, 1), depth);
+                                        childOf(terms, term, 1), depth, budget);
             }
             return Expr();
         }
         const Expr a = buildReplacement(
-            t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+            t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+            budget);
         const Expr bb = buildReplacement(
-            t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
+            t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+            budget);
         if (a.isNull() || bb.isNull())
             return Expr();
         if (op == "+")
@@ -1687,9 +1703,12 @@ bool certificateHolds(Ctx &c, Expr F, Expr e, Expr var)
 }
 
 Expr rubiLinearityFallback(const RuleTables &t, Ctx &c, Expr e, Expr var,
-                           int depth)
+                           int depth, Budget *budget)
 {
     if (depth >= kMaxRubiDepth)
+        return Expr();
+    if (budget &&
+        (!budget->step() || !budget->recordArenaBytes(c.nodeCount() * 32)))
         return Expr();
     Expr F;
     if (c.kind(e) == NodeKind::Number) {
@@ -1702,14 +1721,16 @@ Expr rubiLinearityFallback(const RuleTables &t, Ctx &c, Expr e, Expr var,
         std::vector<Expr> rest;
         for (std::size_t i = 1; i < c.childCount(e); ++i)
             rest.push_back(c.child(e, i));
-        const Expr inner = rubiApplyDepth(t, c, c.mul(rest), var, depth + 1);
+        const Expr inner =
+            rubiApplyDepth(t, c, c.mul(rest), var, depth + 1, budget);
         if (inner.isNull())
             return Expr();
         F = c.mul({c.child(e, 0), inner});
     } else if (c.kind(e) == NodeKind::Add) {
         std::vector<Expr> pieces;
         for (std::size_t i = 0; i < c.childCount(e); ++i) {
-            const Expr p = rubiApplyDepth(t, c, c.child(e, i), var, depth + 1);
+            const Expr p =
+                rubiApplyDepth(t, c, c.child(e, i), var, depth + 1, budget);
             if (p.isNull())
                 return Expr();
             pieces.push_back(p);
@@ -1721,9 +1742,13 @@ Expr rubiLinearityFallback(const RuleTables &t, Ctx &c, Expr e, Expr var,
     return certificateHolds(c, F, e, var) ? F : Expr();
 }
 
-Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth)
+Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
+                    Budget *budget)
 {
     if (depth > kMaxRubiDepth)
+        return Expr();
+    if (budget &&
+        (!budget->step() || !budget->recordArenaBytes(c.nodeCount() * 32)))
         return Expr();
     // Rubi 9.1 constant-factor pull-out FIRST: canonical Mul sorts its
     // lone numeric factor at child(0), and pulling it out before trie
@@ -1736,7 +1761,8 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth)
         rest.reserve(c.childCount(e) - 1);
         for (std::size_t i = 1; i < c.childCount(e); ++i)
             rest.push_back(c.child(e, i));
-        const Expr inner = rubiApplyDepth(t, c, c.mul(rest), var, depth + 1);
+        const Expr inner =
+            rubiApplyDepth(t, c, c.mul(rest), var, depth + 1, budget);
         if (inner.isNull())
             return Expr();
         const Expr F = c.mul({c.child(e, 0), inner});
@@ -1765,26 +1791,29 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth)
                          return a.rule < b.rule;
                      });
     for (const CandidateHit &h : hits) {
+        if (budget &&
+            (!budget->step() || !budget->recordArenaBytes(c.nodeCount() * 32)))
+            return Expr();
         const std::int32_t repOff = t.ruleRow(h.rule, 0);
         const std::int32_t condOff = t.ruleRow(h.rule, 1);
         if (condOff >= 0 &&
             !evalCondition(t, t.condTerms, c, e, var, h.bnd, condOff, depth))
             continue;
         const Expr F = buildReplacement(
-            t, t.repTerms, c, e, var, h.bnd, repOff, depth);
+            t, t.repTerms, c, e, var, h.bnd, repOff, depth, budget);
         if (F.isNull())
             continue;
         if (certificateHolds(c, F, e, var))
             return F;
     }
-    return rubiLinearityFallback(t, c, e, var, depth);
+    return rubiLinearityFallback(t, c, e, var, depth, budget);
 }
 
 } // namespace
 
-Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var)
+Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var, Budget *budget)
 {
-    return rubiApplyDepth(t, c, e, var, 0);
+    return rubiApplyDepth(t, c, e, var, 0, budget);
 }
 
 } // namespace numkit::cas::rubi

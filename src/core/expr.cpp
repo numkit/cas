@@ -780,4 +780,99 @@ std::string Ctx::toString(Expr e) const
     return out;
 }
 
+std::size_t Ctx::leafCount(Expr e) const
+{
+    if (e.isNull())
+        return 0;
+    switch (kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return 1;
+    case NodeKind::Pow:
+    case NodeKind::Func:
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::size_t total = 1;
+        for (std::size_t i = 0; i < childCount(e); ++i)
+            total += leafCount(child(e, i));
+        return total;
+    }
+    }
+    return 1;
+}
+
+namespace {
+
+bool isElementaryFuncName(const std::string &name)
+{
+    return name == "log" || name == "exp" || name == "abs" ||
+           name == "sin" || name == "cos" || name == "tan" ||
+           name == "cot" || name == "sec" || name == "csc" ||
+           name == "asin" || name == "acos" || name == "atan" ||
+           name == "acot" || name == "asec" || name == "acsc" ||
+           name == "sinh" || name == "cosh" || name == "tanh" ||
+           name == "coth" || name == "sech" || name == "csch" ||
+           name == "asinh" || name == "acosh" || name == "atanh" ||
+           name == "acoth" || name == "asech" || name == "acsch";
+}
+
+} // namespace
+
+std::size_t Ctx::exprCost(Expr e) const
+{
+    if (e.isNull())
+        return 0;
+    std::unordered_map<std::uint32_t, bool> visited;
+    std::size_t total = 0;
+
+    struct Frame
+    {
+        Expr expr;
+        bool insideLog;
+    };
+    std::vector<Frame> stack{Frame{e, false}};
+    while (!stack.empty()) {
+        const Frame cur = stack.back();
+        stack.pop_back();
+        if (cur.expr.isNull())
+            continue;
+        const std::uint32_t nid = id(cur.expr);
+        auto it = visited.find(nid);
+        if (it != visited.end()) {
+            // If an `abs` node was previously visited outside `log` (cost 3)
+            // and is now also reached directly inside `log` (cost 5), upgrade
+            // its weight by +2 once.
+            if (cur.insideLog && !it->second &&
+                kind(cur.expr) == NodeKind::Func &&
+                funcName(cur.expr) == "abs") {
+                it->second = true;
+                total += 2;
+            }
+            continue;
+        }
+        const NodeKind k = kind(cur.expr);
+        bool markedInsideLog = false;
+        if (k == NodeKind::Func) {
+            const std::string &fn = funcName(cur.expr);
+            if (cur.insideLog && fn == "abs") {
+                total += 5;
+                markedInsideLog = true;
+            } else if (isElementaryFuncName(fn)) {
+                total += 3;
+            } else {
+                total += 10;
+            }
+        } else {
+            total += 1;
+        }
+        visited.emplace(nid, markedInsideLog);
+        const bool nextInsideLog =
+            (k == NodeKind::Func && funcName(cur.expr) == "log");
+        for (std::size_t i = 0; i < childCount(cur.expr); ++i)
+            stack.push_back(Frame{child(cur.expr, i), nextInsideLog});
+    }
+    return total;
+}
+
 } // namespace numkit::cas

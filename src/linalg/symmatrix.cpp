@@ -1,7 +1,11 @@
 #include <numkit/cas/linalg/symmatrix.hpp>
 
+#include <numkit/cas/core/simplify.hpp>
+#include <numkit/cas/core/symsolve.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/poly/upoly.hpp>
+#include <numkit/cas/poly/zassenhaus.hpp>
+#include <numkit/cas/transform/laplace.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -124,6 +128,12 @@ FormalFrac toFormalFrac(Ctx &c, Expr e)
                 const Expr ek = c.number(-k);
                 return {c.expand(c.pow(bf.den, ek)),
                         c.expand(c.pow(bf.num, ek))};
+            }
+            if (rv.signum() < 0) {
+                const Expr sb = simplifyRationalExpr(c, b);
+                if (sb.isNull() || c.isZero(sb))
+                    return {Expr(), Expr()};
+                return {c.one(), c.expand(c.pow(sb, c.number(-rv)))};
             }
         }
         const Expr sb = simplifyRationalExpr(c, b);
@@ -687,6 +697,552 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
     }
 
     return X;
+}
+
+namespace {
+
+bool isZeroLinalg(Ctx &c, Expr e, Budget *budget)
+{
+    if (e.isNull())
+        return false;
+    if (c.isZero(e))
+        return true;
+    const Expr expd = c.expand(e);
+    if (!expd.isNull() && c.isZero(expd))
+        return true;
+    const Expr r = simplifyRationalExpr(c, expd.isNull() ? e : expd);
+    if (!r.isNull() && c.isZero(r))
+        return true;
+    const Expr s = simplify(c, r.isNull() ? e : r, budget);
+    if (!s.isNull() && c.isZero(s))
+        return true;
+    const Expr sr = simplifyRationalExpr(c, s);
+    return !sr.isNull() && c.isZero(sr);
+}
+
+Expr normLinalg(Ctx &c, Expr e, Budget *budget)
+{
+    if (e.isNull())
+        return c.zero();
+    if (c.isZero(e) || c.kind(e) == NodeKind::Number)
+        return e;
+    const Expr expd = c.expand(e);
+    if (!expd.isNull() && c.isZero(expd))
+        return c.zero();
+    Expr r = simplifyRationalExpr(c, expd.isNull() ? e : expd);
+    if (r.isNull())
+        r = expd.isNull() ? e : expd;
+    if (c.isZero(r) || c.kind(r) == NodeKind::Number)
+        return r;
+    const Expr s = simplify(c, r, budget);
+    if (!s.isNull()) {
+        if (c.isZero(s))
+            return c.zero();
+        const Expr sr = simplifyRationalExpr(c, s);
+        if (!sr.isNull() && c.isZero(sr))
+            return c.zero();
+        return s;
+    }
+    return r;
+}
+
+// Compute Reduced Row Echelon Form (RREF) of an m x cols matrix M, pivoting on
+// the first `pivotColLimit` columns. Populates `pivotCols` with the column index
+// of each pivot row.
+bool computeRREF(Ctx &c, SymMatrix &M, std::size_t pivotColLimit,
+                 std::vector<std::size_t> &pivotCols, Budget *budget)
+{
+    const std::size_t m = M.rows();
+    const std::size_t cols = M.cols();
+    pivotCols.clear();
+
+    for (std::size_t r = 0; r < m; ++r)
+        for (std::size_t j = 0; j < cols; ++j)
+            M.at(r, j) = normLinalg(c, M.at(r, j), budget);
+
+    std::size_t curRow = 0;
+    for (std::size_t col = 0; col < pivotColLimit && curRow < m; ++col) {
+        if (!checkLinalgBudget(c, budget))
+            return false;
+
+        std::size_t pivotRow = m;
+        std::size_t bestCost = static_cast<std::size_t>(-1);
+        for (std::size_t r = curRow; r < m; ++r) {
+            const Expr cand = M.at(r, col);
+            if (!isZeroLinalg(c, cand, budget)) {
+                const std::size_t cost = c.exprCost(cand);
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    pivotRow = r;
+                }
+            } else {
+                M.at(r, col) = c.zero();
+            }
+        }
+        if (pivotRow == m)
+            continue;
+
+        if (pivotRow != curRow) {
+            for (std::size_t j = 0; j < cols; ++j)
+                std::swap(M.at(curRow, j), M.at(pivotRow, j));
+        }
+
+        const Expr pivot = M.at(curRow, col);
+        const Expr invPivot = c.pow(pivot, c.number(std::int64_t{-1}));
+
+        // Eliminate column `col` in all other rows r != curRow using
+        // cross-multiplied numerator (pivot * M(r, j) - M(r, col) * M(curRow, j))
+        // first so conjugate radical products cancel to 0 before dividing by pivot.
+        for (std::size_t r = 0; r < m; ++r) {
+            if (r == curRow)
+                continue;
+            if (!checkLinalgBudget(c, budget))
+                return false;
+            const Expr entry = M.at(r, col);
+            if (isZeroLinalg(c, entry, budget)) {
+                M.at(r, col) = c.zero();
+                continue;
+            }
+            M.at(r, col) = c.zero();
+            for (std::size_t j = col + 1; j < cols; ++j) {
+                const Expr crossNum = c.expand(
+                    c.add({c.mul({pivot, M.at(r, j)}),
+                           c.neg(c.mul({entry, M.at(curRow, j)}))}));
+                if (isZeroLinalg(c, crossNum, budget)) {
+                    M.at(r, j) = c.zero();
+                } else {
+                    M.at(r, j) =
+                        normLinalg(c, c.mul({crossNum, invPivot}), budget);
+                }
+            }
+        }
+
+        // Normalize the pivot row so M(curRow, col) == 1.
+        M.at(curRow, col) = c.one();
+        for (std::size_t j = col + 1; j < cols; ++j) {
+            if (!c.isZero(M.at(curRow, j))) {
+                M.at(curRow, j) =
+                    normLinalg(c, c.mul({M.at(curRow, j), invPivot}), budget);
+            }
+        }
+
+        pivotCols.push_back(col);
+        ++curRow;
+    }
+    return true;
+}
+
+// Find one particular solution x to a (possibly rank-deficient) linear system
+// A * x = b using RREF on the augmented matrix [A | b], setting free variables to 0.
+SymMatrix linsolveParticular(Ctx &c, const SymMatrix &A, const SymMatrix &b,
+                             Budget *budget)
+{
+    if (A.empty() || b.empty() || A.rows() != b.rows() || b.cols() != 1)
+        return SymMatrix();
+    const std::size_t m = A.rows();
+    const std::size_t n = A.cols();
+
+    SymMatrix aug(m, n + 1, c.zero());
+    for (std::size_t r = 0; r < m; ++r) {
+        for (std::size_t j = 0; j < n; ++j)
+            aug.at(r, j) = A.at(r, j);
+        aug.at(r, n) = b.at(r, 0);
+    }
+
+    std::vector<std::size_t> pivotCols;
+    if (!computeRREF(c, aug, n, pivotCols, budget))
+        return SymMatrix();
+
+    // Check consistency on non-pivot rows
+    for (std::size_t r = pivotCols.size(); r < m; ++r) {
+        if (!isZeroLinalg(c, aug.at(r, n), budget))
+            return SymMatrix();
+    }
+
+    SymMatrix x = SymMatrix::zeros(c, n, 1);
+    for (std::size_t k = 0; k < pivotCols.size(); ++k)
+        x.at(pivotCols[k], 0) = aug.at(k, n);
+    return x;
+}
+
+bool isTriangularMatrix(Ctx &c, const SymMatrix &A, Budget *budget)
+{
+    const std::size_t n = A.rows();
+    bool upper = true;
+    bool lower = true;
+    for (std::size_t r = 0; r < n; ++r) {
+        for (std::size_t col = 0; col < n; ++col) {
+            if (r > col && !isZeroLinalg(c, A.at(r, col), budget))
+                upper = false;
+            if (r < col && !isZeroLinalg(c, A.at(r, col), budget))
+                lower = false;
+        }
+    }
+    return upper || lower;
+}
+
+bool verifyMatrixExp(Ctx &c, const SymMatrix &A, const SymMatrix &Phi, Expr t,
+                     Budget *budget)
+{
+    const std::size_t n = A.rows();
+    if (Phi.rows() != n || Phi.cols() != n)
+        return false;
+    const SymMatrix dPhi = Phi.diff(c, t);
+    const SymMatrix APhi = A.mul(c, Phi);
+    const SymMatrix Phi0 = Phi.subs(c, t, c.zero());
+    for (std::size_t r = 0; r < n; ++r) {
+        for (std::size_t col = 0; col < n; ++col) {
+            if (!checkLinalgBudget(c, budget))
+                return false;
+            const Expr diffEntry =
+                c.add({dPhi.at(r, col), c.neg(APhi.at(r, col))});
+            if (!isZeroLinalg(c, diffEntry, budget))
+                return false;
+            const Expr want0 = (r == col) ? c.one() : c.zero();
+            if (!isZeroLinalg(c, c.add({Phi0.at(r, col), c.neg(want0)}),
+                              budget)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+std::vector<SymMatrix> nullspace(Ctx &c, const SymMatrix &A, Budget *budget)
+{
+    if (A.empty())
+        return {};
+    const std::size_t n = A.cols();
+    SymMatrix M = A;
+    std::vector<std::size_t> pivotCols;
+    if (!computeRREF(c, M, n, pivotCols, budget))
+        return {};
+
+    std::vector<bool> isPivot(n, false);
+    for (std::size_t pc : pivotCols)
+        isPivot[pc] = true;
+
+    std::vector<SymMatrix> basis;
+    for (std::size_t freeCol = 0; freeCol < n; ++freeCol) {
+        if (isPivot[freeCol])
+            continue;
+        SymMatrix v = SymMatrix::zeros(c, n, 1);
+        v.at(freeCol, 0) = c.one();
+        for (std::size_t k = 0; k < pivotCols.size(); ++k) {
+            const Expr coef = M.at(k, freeCol);
+            if (!c.isZero(coef))
+                v.at(pivotCols[k], 0) = normLinalg(c, c.neg(coef), budget);
+        }
+        basis.push_back(std::move(v));
+    }
+    return basis;
+}
+
+std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
+{
+    if (!A.isSquare() || A.empty())
+        return {};
+    const std::size_t n = A.rows();
+    if (!checkLinalgBudget(c, budget))
+        return {};
+
+    std::vector<std::pair<Expr, std::size_t>> distinctLams;
+    auto addEigenvalue = [&](Expr lam, std::size_t mult) {
+        lam = normLinalg(c, lam, budget);
+        for (auto &kv : distinctLams) {
+            if (isZeroLinalg(c, c.add({kv.first, c.neg(lam)}), budget)) {
+                kv.second += mult;
+                return;
+            }
+        }
+        distinctLams.push_back({lam, mult});
+    };
+
+    if (n == 1) {
+        addEigenvalue(A.at(0, 0), 1);
+    } else if (isTriangularMatrix(c, A, budget)) {
+        for (std::size_t i = 0; i < n; ++i)
+            addEigenvalue(A.at(i, i), 1);
+    } else {
+        const Expr lamSym = c.symbol("_nk_eigen_lambda");
+        const Expr cp = charpoly(c, A, lamSym, budget);
+        if (cp.isNull())
+            return {};
+
+        UPoly up, upDen;
+        if (toRational(c, cp, lamSym, up, upDen) && !up.isZero() &&
+            upDen.isConst()) {
+            const std::vector<UPoly> factors = factorOverQ(up, budget);
+            if (budget && !budget->ok())
+                return {};
+            std::vector<std::pair<UPoly, std::size_t>> grouped;
+            for (UPoly f : factors) {
+                f.makeMonic();
+                bool found = false;
+                for (auto &kv : grouped) {
+                    if (kv.first == f) {
+                        ++kv.second;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    grouped.push_back({f, 1});
+            }
+
+            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+            for (const auto &fe : grouped) {
+                const UPoly &P = fe.first;
+                const std::size_t mult = fe.second;
+                if (P.deg() == 1) {
+                    addEigenvalue(c.number(-P.coeff(0)), mult);
+                } else if (P.deg() == 2) {
+                    const Rational b = P.coeff(1);
+                    const Rational c0 = P.coeff(0);
+                    const Rational disc = b * b - Rational(std::int64_t{4}) * c0;
+                    if (disc.signum() > 0) {
+                        const Expr sqrtDisc =
+                            simplify(c, c.pow(c.number(disc), half), budget);
+                        const Expr negHalfB =
+                            c.number(-b / Rational(std::int64_t{2}));
+                        const Expr halfSqrt = c.mul({half, sqrtDisc});
+                        addEigenvalue(c.add({negHalfB, c.neg(halfSqrt)}), mult);
+                        addEigenvalue(c.add({negHalfB, halfSqrt}), mult);
+                    }
+                } else if (P.deg() >= 3) {
+                    const Expr fExpr = upolyToExpr(c, P, lamSym);
+                    const std::vector<Expr> roots =
+                        solveSymbolic(c, fExpr, lamSym, budget);
+                    for (const Expr &r : roots)
+                        addEigenvalue(r, mult);
+                }
+            }
+        } else {
+            const std::vector<Expr> roots =
+                solveSymbolic(c, cp, lamSym, budget);
+            for (const Expr &r : roots) {
+                // Determine algebraic multiplicity by derivative vanishing order
+                std::size_t mult = 0;
+                Expr deriv = cp;
+                for (std::size_t k = 0; k < n; ++k) {
+                    const Expr val = c.subs(deriv, lamSym, r);
+                    if (isZeroLinalg(c, val, budget)) {
+                        ++mult;
+                        deriv = c.diff(deriv, lamSym);
+                    } else {
+                        break;
+                    }
+                }
+                addEigenvalue(r, mult == 0 ? 1 : mult);
+            }
+        }
+    }
+
+    // Sort eigenvalues deterministically (by numeric value when evaluable, else by string)
+    std::sort(distinctLams.begin(), distinctLams.end(),
+              [&](const std::pair<Expr, std::size_t> &a,
+                  const std::pair<Expr, std::size_t> &b) {
+                  double va = 0.0, vb = 0.0;
+                  const bool okA = c.evalDouble(a.first, {}, va);
+                  const bool okB = c.evalDouble(b.first, {}, vb);
+                  if (okA && okB && va != vb)
+                      return va < vb;
+                  return c.toString(a.first) < c.toString(b.first);
+              });
+
+    const SymMatrix I = SymMatrix::eye(c, n);
+    std::vector<EigenPair> out;
+    out.reserve(distinctLams.size());
+    for (const auto &lm : distinctLams) {
+        if (!checkLinalgBudget(c, budget))
+            return {};
+        const SymMatrix shifted = A.sub(c, I.scale(c, lm.first));
+        EigenPair ep;
+        ep.lambda = lm.first;
+        ep.multiplicity = lm.second;
+        ep.vectors = nullspace(c, shifted, budget);
+        out.push_back(std::move(ep));
+    }
+    return out;
+}
+
+std::vector<Expr> eigenvalues(Ctx &c, const SymMatrix &A, Budget *budget)
+{
+    const std::vector<EigenPair> pairs = eigenvectors(c, A, budget);
+    std::vector<Expr> out;
+    for (const auto &ep : pairs) {
+        for (std::size_t k = 0; k < ep.multiplicity; ++k)
+            out.push_back(ep.lambda);
+    }
+    return out;
+}
+
+SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
+{
+    if (!A.isSquare() || A.empty() || t.isNull() ||
+        c.kind(t) != NodeKind::Symbol) {
+        return SymMatrix();
+    }
+    const std::size_t n = A.rows();
+    if (!checkLinalgBudget(c, budget))
+        return SymMatrix();
+
+    if (n == 1) {
+        SymMatrix out(1, 1);
+        out.at(0, 0) = simplify(c, c.func("exp", c.mul({A.at(0, 0), t})), budget);
+        if (verifyMatrixExp(c, A, out, t, budget))
+            return out;
+        return SymMatrix();
+    }
+
+    // Path 1: Laplace resolvent inversion Phi(t) = L^{-1}{(s*I - A)^(-1)}(t).
+    // Handles all constant matrices over Q (distinct real, repeated/defective
+    // Jordan blocks, complex-conjugate pairs alpha +- i*w -> exp*cos/sin, and
+    // quadratic real radicals).
+    {
+        const Expr s = c.symbol("_nk_mat_exp_s");
+        const SymMatrix sI = SymMatrix::eye(c, n).scale(c, s);
+        const SymMatrix resolvent = inv(c, sI.sub(c, A), budget);
+        if (!resolvent.empty()) {
+            SymMatrix Phi(n, n, c.zero());
+            bool allOk = true;
+            for (std::size_t r = 0; r < n && allOk; ++r) {
+                for (std::size_t col = 0; col < n && allOk; ++col) {
+                    const LaplaceResult lr =
+                        ilaplace(c, resolvent.at(r, col), s, t, budget);
+                    if (!lr.proved()) {
+                        allOk = false;
+                        break;
+                    }
+                    Phi.at(r, col) = lr.F;
+                }
+            }
+            if (allOk && verifyMatrixExp(c, A, Phi, t, budget))
+                return Phi;
+        }
+    }
+
+    // Path 2: Direct Putzer / Cayley-Hamilton closed form for 2x2 symbolic matrices.
+    if (n == 2) {
+        const SymMatrix I = SymMatrix::eye(c, 2);
+        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+        const Expr alpha =
+            normLinalg(c, c.mul({half, A.trace(c)}), budget);
+        const Expr detA = det(c, A, budget);
+        const Expr delta = normLinalg(
+            c, c.add({c.pow(alpha, c.number(std::int64_t{2})), c.neg(detA)}),
+            budget);
+        const SymMatrix B = A.sub(c, I.scale(c, alpha));
+        const Expr expAlphaT = c.func("exp", c.mul({alpha, t}));
+
+        if (isZeroLinalg(c, delta, budget)) {
+            // Defective/repeated eigenvalue lambda = alpha:
+            // exp(A*t) = exp(alpha*t) * (I + t*(A - alpha*I))
+            SymMatrix Phi = I.add(c, B.scale(c, t)).scale(c, expAlphaT);
+            for (std::size_t i = 0; i < 4; ++i)
+                Phi.at(i / 2, i % 2) =
+                    simplify(c, Phi.at(i / 2, i % 2), budget);
+            if (verifyMatrixExp(c, A, Phi, t, budget))
+                return Phi;
+        } else if (c.isAssumedNegative(delta)) {
+            const Expr w =
+                simplify(c, c.pow(c.neg(delta), half), budget);
+            const Expr wt = c.mul({w, t});
+            const SymMatrix term1 = I.scale(c, c.func("cos", wt));
+            const SymMatrix term2 =
+                B.scale(c, c.div(c.func("sin", wt), w));
+            SymMatrix Phi = term1.add(c, term2).scale(c, expAlphaT);
+            for (std::size_t i = 0; i < 4; ++i)
+                Phi.at(i / 2, i % 2) =
+                    simplify(c, Phi.at(i / 2, i % 2), budget);
+            if (verifyMatrixExp(c, A, Phi, t, budget))
+                return Phi;
+        } else {
+            const Expr mu = simplify(c, c.pow(delta, half), budget);
+            const Expr lam1 = normLinalg(c, c.add({alpha, c.neg(mu)}), budget);
+            const Expr lam2 = normLinalg(c, c.add({alpha, mu}), budget);
+            const Expr e1 = c.func("exp", c.mul({lam1, t}));
+            const Expr e2 = c.func("exp", c.mul({lam2, t}));
+            const Expr inv2Mu =
+                c.pow(c.mul({c.number(std::int64_t{2}), mu}),
+                      c.number(std::int64_t{-1}));
+            const Expr c0 =
+                c.mul({c.add({e1, e2}), half});
+            const Expr c1 =
+                c.mul({c.add({e2, c.neg(e1)}), inv2Mu});
+            SymMatrix Phi = I.scale(c, c0).add(c, B.scale(c, c1));
+            for (std::size_t i = 0; i < 4; ++i)
+                Phi.at(i / 2, i % 2) =
+                    simplify(c, Phi.at(i / 2, i % 2), budget);
+            if (verifyMatrixExp(c, A, Phi, t, budget))
+                return Phi;
+        }
+    }
+
+    // Path 3: Spectral / Jordan chain fundamental matrix Y(t) * Y(0)^(-1)
+    // for n x n symbolic matrices (e.g. diagonal, triangular, or symmetric).
+    {
+        const std::vector<EigenPair> pairs = eigenvectors(c, A, budget);
+        const SymMatrix I = SymMatrix::eye(c, n);
+        std::vector<SymMatrix> cols;
+        for (const auto &ep : pairs) {
+            const Expr expLamT = c.func("exp", c.mul({ep.lambda, t}));
+            const SymMatrix N = A.sub(c, I.scale(c, ep.lambda));
+            for (const SymMatrix &v0 : ep.vectors) {
+                cols.push_back(v0.scale(c, expLamT));
+                // If geometric multiplicity < algebraic multiplicity, build
+                // generalized Jordan chain (A - lam*I) w_k = w_{k-1}.
+                SymMatrix prev = v0;
+                std::vector<SymMatrix> chain = {v0};
+                while (cols.size() < n && chain.size() < ep.multiplicity) {
+                    const SymMatrix w = linsolveParticular(c, N, prev, budget);
+                    if (w.empty())
+                        break;
+                    chain.push_back(w);
+                    prev = w;
+                    // Column is exp(lam*t) * sum_{j=0}^{k} t^(k-j)/(k-j)! * chain[j]
+                    const std::size_t k = chain.size() - 1;
+                    SymMatrix colSum = SymMatrix::zeros(c, n, 1);
+                    std::int64_t fact = 1;
+                    for (std::size_t d = 0; d <= k; ++d) {
+                        if (d > 1)
+                            fact *= static_cast<std::int64_t>(d);
+                        const Expr tFactor =
+                            (d == 0)
+                                ? c.one()
+                                : c.mul({c.number(Rational(std::int64_t{1},
+                                                           BigInt(fact))),
+                                         c.pow(t, c.number(
+                                                      static_cast<std::int64_t>(
+                                                          d)))});
+                        colSum = colSum.add(
+                            c, chain[k - d].scale(c, tFactor));
+                    }
+                    cols.push_back(colSum.scale(c, expLamT));
+                }
+            }
+        }
+        if (cols.size() == n) {
+            SymMatrix Y(n, n, c.zero());
+            for (std::size_t r = 0; r < n; ++r)
+                for (std::size_t col = 0; col < n; ++col)
+                    Y.at(r, col) = cols[col].at(r, 0);
+            const SymMatrix Y0 = Y.subs(c, t, c.zero());
+            const SymMatrix Y0Inv = inv(c, Y0, budget);
+            if (!Y0Inv.empty()) {
+                SymMatrix Phi = Y.mul(c, Y0Inv);
+                for (std::size_t r = 0; r < n; ++r)
+                    for (std::size_t col = 0; col < n; ++col)
+                        Phi.at(r, col) = simplify(c, Phi.at(r, col), budget);
+                if (verifyMatrixExp(c, A, Phi, t, budget))
+                    return Phi;
+            }
+        }
+    }
+
+    return SymMatrix();
 }
 
 } // namespace numkit::cas

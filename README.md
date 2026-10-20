@@ -130,16 +130,21 @@ tables from `third_party/rubi-snapshot/`.
 rational expression normalizer `simplifyRationalExpr`, multivariable
 calculus (`jacobian`, `gradient`, `hessian`), division-free
 Faddeev–LeVerrier characteristic polynomial, determinant, adjugate,
-and inverse (`charpoly`, `det`, `adjugate`, `inv`), and exact linear
-system solver (`linsolve`).
+and inverse (`charpoly`, `det`, `adjugate`, `inv`), exact linear
+system solver (`linsolve`), RREF kernel basis (`nullspace`), symbolic
+eigenvalues and eigenvectors (`eigenvalues`, `eigenvectors`), and
+certified matrix exponential (`matrixExp`).
 
 **Ordinary Differential Equations** (`ode/`): `dsolve1`, `dsolve1IVP`,
-`dsolve2Linear`, and `dsolve2LinearIVP` (`ode/dsolve.hpp`) solve
-1st-order quadrature, linear, separable, and Bernoulli ODEs and
-2nd-order constant-coefficient linear ODEs (overdamped, critically
-damped, and underdamped oscillatory regimes with resonant forcing and
-initial value problems), certifying every solution by substitution into
-the ODE.
+`dsolve2Linear`, `dsolve2LinearIVP`, `dsolveSystem1Linear`, and
+`dsolveSystem1LinearIVP` (`ode/dsolve.hpp`) solve 1st-order quadrature,
+linear, separable, and Bernoulli ODEs, 2nd-order constant-coefficient
+linear ODEs (overdamped, critically damped, and underdamped oscillatory
+regimes with resonant forcing and initial value problems), and $n \times n$
+first-order constant-coefficient linear ODE systems $\mathbf{y}' = A\mathbf{y} + \mathbf{f}(x)$
+(distinct real, repeated/defective Jordan blocks, and complex-conjugate
+eigenvalues $\alpha \pm i\omega$, plus Cauchy IVPs), certifying every
+solution by substitution into the ODE.
 
 **Integral Transforms** (`transform/`): `laplace` and `ilaplace`
 (`transform/laplace.hpp`) compute forward and inverse unilateral

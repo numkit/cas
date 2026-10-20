@@ -103,4 +103,35 @@ SymMatrix inv(Ctx &c, const SymMatrix &A, Budget *budget = nullptr);
 SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
                    Budget *budget = nullptr);
 
+// Compute an exact basis of the nullspace (kernel) ker(A) = { v : A * v = 0 }
+// via symbolic Gauss-Jordan elimination to Reduced Row Echelon Form (RREF).
+// Returns a vector of n x 1 column matrices spanning ker(A) (empty if rank(A) == n).
+std::vector<SymMatrix> nullspace(Ctx &c, const SymMatrix &A,
+                                 Budget *budget = nullptr);
+
+struct EigenPair
+{
+    Expr lambda;                    // eigenvalue
+    std::size_t multiplicity = 1;   // algebraic multiplicity in charpoly(A)
+    std::vector<SymMatrix> vectors; // geometric eigenspace basis: n x 1 columns v with (A - lambda*I)*v = 0
+};
+
+// Compute the symbolic/real eigenvalues of a square matrix A (roots of
+// charpoly(A, lambda) = 0), repeated according to their algebraic multiplicity.
+std::vector<Expr> eigenvalues(Ctx &c, const SymMatrix &A,
+                              Budget *budget = nullptr);
+
+// Compute the eigenpairs (lambda, algebraic multiplicity, basis of ker(A - lambda*I))
+// of a square matrix A.
+std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A,
+                                    Budget *budget = nullptr);
+
+// Compute the exact matrix exponential exp(A * t) of a square matrix A
+// (with respect to scalar parameter t, where A is independent of t) via
+// Laplace resolvent inversion L^{-1}{(s*I - A)^(-1)}(t) and spectral/Putzer
+// fallback, certified by verifying d/dt Phi(t) == A * Phi(t) and Phi(0) == I.
+// Returns an empty (0x0) SymMatrix if A is non-square or cannot be exponentiated.
+SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t,
+                    Budget *budget = nullptr);
+
 } // namespace numkit::cas

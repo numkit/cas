@@ -712,4 +712,203 @@ OdeResult dsolve2LinearIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     return fail;
 }
 
+namespace {
+
+bool verifyOdeSystem1Linear(Ctx &c, const std::vector<Expr> &ySol,
+                            const SymMatrix &A, const std::vector<Expr> &f,
+                            Expr x, Budget *budget)
+{
+    const std::size_t n = A.rows();
+    if (ySol.size() != n || (!f.empty() && f.size() != n))
+        return false;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!checkOdeBudget(c, budget) || ySol[i].isNull())
+            return false;
+        const Expr dyi = c.diff(ySol[i], x);
+        if (dyi.isNull())
+            return false;
+        std::vector<Expr> rhsTerms;
+        for (std::size_t j = 0; j < n; ++j) {
+            if (!c.isZero(A.at(i, j)) && !c.isZero(ySol[j]))
+                rhsTerms.push_back(c.mul({A.at(i, j), ySol[j]}));
+        }
+        if (!f.empty() && !f[i].isNull() && !c.isZero(f[i]))
+            rhsTerms.push_back(f[i]);
+        const Expr rhs = rhsTerms.empty() ? c.zero() : c.add(rhsTerms);
+        const Expr residual = c.add({dyi, c.neg(rhs)});
+        if (!isZeroSimp(c, residual)) {
+            const Expr ratRes = simplifyRationalExpr(c, c.simplify(residual));
+            if (ratRes.isNull() || !c.isZero(ratRes))
+                return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
+                                    const std::vector<Expr> &f, Expr x,
+                                    Budget *budget)
+{
+    OdeSystemResult out;
+    if (!A.isSquare() || A.empty() || x.isNull() ||
+        c.kind(x) != NodeKind::Symbol) {
+        out.reason = "invalid matrix or independent variable";
+        return out;
+    }
+    const std::size_t n = A.rows();
+    if (!f.empty() && f.size() != n) {
+        out.reason = "forcing vector dimension mismatch";
+        return out;
+    }
+    for (std::size_t r = 0; r < n; ++r) {
+        for (std::size_t col = 0; col < n; ++col) {
+            if (A.at(r, col).isNull() || mentionsSym(c, A.at(r, col), x)) {
+                out.reason = "matrix A must have x-independent constant entries";
+                return out;
+            }
+        }
+    }
+
+    const SymMatrix Phi = matrixExp(c, A, x, budget);
+    if (Phi.empty()) {
+        out.reason = "could not construct fundamental matrix exp(A*x)";
+        return out;
+    }
+
+    std::vector<Expr> cVec(n);
+    for (std::size_t i = 0; i < n; ++i)
+        cVec[i] = c.symbol("C" + std::to_string(i + 1));
+
+    const SymMatrix yHomMat = Phi.mul(c, SymMatrix::column(cVec));
+    std::vector<Expr> ySol(n, c.zero());
+    for (std::size_t i = 0; i < n; ++i)
+        ySol[i] = simplify(c, yHomMat.at(i, 0), budget);
+
+    bool hasForcing = false;
+    for (const Expr &fi : f) {
+        if (fi.isNull()) {
+            out.reason = "null entry in forcing vector";
+            return out;
+        }
+        if (!c.isZero(fi))
+            hasForcing = true;
+    }
+
+    if (hasForcing) {
+        // Variation of Parameters with Phi(x)^(-1) = exp(-A*x) = Phi(-x):
+        // y_p(x) = Phi(x) * int Phi(-x) * f(x) dx
+        const SymMatrix PhiInv = Phi.subs(c, x, c.neg(x));
+        const SymMatrix integrandMat = PhiInv.mul(c, SymMatrix::column(f));
+        SymMatrix intVec(n, 1, c.zero());
+        for (std::size_t i = 0; i < n; ++i) {
+            const Expr term = simplify(c, integrandMat.at(i, 0), budget);
+            if (c.isZero(term))
+                continue;
+            const auto ant = integrate(c, term, x, budget);
+            if (!ant.proved()) {
+                out.reason = "could not integrate Variation of Parameters term";
+                return out;
+            }
+            intVec.at(i, 0) = ant.F;
+        }
+        const SymMatrix ypMat = Phi.mul(c, intVec);
+        for (std::size_t i = 0; i < n; ++i) {
+            ySol[i] = simplify(c, c.add({ySol[i], ypMat.at(i, 0)}), budget);
+        }
+    }
+
+    if (!verifyOdeSystem1Linear(c, ySol, A, f, x, budget)) {
+        out.reason = "system ODE solution failed certificate verification";
+        return out;
+    }
+
+    out.status = OdeSystemResult::Status::Proved;
+    out.y = std::move(ySol);
+    out.fundamental = Phi;
+    return out;
+}
+
+OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A, Expr x,
+                                    Budget *budget)
+{
+    return dsolveSystem1Linear(c, A, {}, x, budget);
+}
+
+OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
+                                       const std::vector<Expr> &f, Expr x,
+                                       Expr x0, const std::vector<Expr> &y0,
+                                       Budget *budget)
+{
+    OdeSystemResult out;
+    if (!A.isSquare() || A.empty() || x.isNull() || x0.isNull() ||
+        y0.size() != A.rows()) {
+        out.reason = "invalid IVP arguments";
+        return out;
+    }
+    const std::size_t n = A.rows();
+    for (const Expr &yi0 : y0) {
+        if (yi0.isNull()) {
+            out.reason = "null initial value";
+            return out;
+        }
+    }
+
+    OdeSystemResult gen = dsolveSystem1Linear(c, A, f, x, budget);
+    if (!gen.proved())
+        return gen;
+
+    // Extract particular solution y_p(x) by setting C1 = ... = Cn = 0
+    std::vector<Expr> yp(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        Expr e = gen.y[i];
+        for (std::size_t j = 0; j < n; ++j)
+            e = c.subs(e, c.symbol("C" + std::to_string(j + 1)), c.zero());
+        yp[i] = simplify(c, e, budget);
+    }
+
+    // At x = x0: Phi(x0) * C + y_p(x0) = y0
+    // Since Phi(x)^(-1) = Phi(-x), C = Phi(-x0) * (y0 - y_p(x0)) and
+    // Phi(x) * C = Phi(x - x0) * (y0 - y_p(x0)).
+    SymMatrix delta0(n, 1, c.zero());
+    for (std::size_t i = 0; i < n; ++i) {
+        const Expr ypAt0 = c.subs(yp[i], x, x0);
+        delta0.at(i, 0) = simplify(c, c.add({y0[i], c.neg(ypAt0)}), budget);
+    }
+
+    const Expr shiftedX = c.add({x, c.neg(x0)});
+    const SymMatrix PhiShifted = gen.fundamental.subs(c, x, shiftedX);
+    const SymMatrix yHomIVP = PhiShifted.mul(c, delta0);
+
+    std::vector<Expr> yIVP(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        yIVP[i] = simplify(c, c.add({yHomIVP.at(i, 0), yp[i]}), budget);
+    }
+
+    if (!verifyOdeSystem1Linear(c, yIVP, A, f, x, budget)) {
+        out.reason = "IVP system solution failed ODE certificate";
+        return out;
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        const Expr atX0 = c.subs(yIVP[i], x, x0);
+        if (!isZeroSimp(c, c.add({atX0, c.neg(y0[i])}))) {
+            out.reason = "IVP system solution failed initial condition at x0";
+            return out;
+        }
+    }
+
+    out.status = OdeSystemResult::Status::Proved;
+    out.y = std::move(yIVP);
+    out.fundamental = std::move(gen.fundamental);
+    return out;
+}
+
+OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A, Expr x,
+                                       Expr x0, const std::vector<Expr> &y0,
+                                       Budget *budget)
+{
+    return dsolveSystem1LinearIVP(c, A, {}, x, x0, y0, budget);
+}
+
 } // namespace numkit::cas

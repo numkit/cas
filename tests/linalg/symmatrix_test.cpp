@@ -336,5 +336,143 @@ TEST(SymMatrixTest, BoundaryAndSingularCases)
     EXPECT_EQ(tiny.status(), BudgetStatus::StepExhausted);
 }
 
+TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
+{
+    Ctx c;
+
+    // 1. Symmetric 2x2: [1, 2; 2, 1] -> eigenvalues -1, 3; eigenvectors [-1; 1], [1; 1]
+    {
+        const SymMatrix A = parseMat(c, 2, 2, {"1", "2", "2", "1"});
+        const std::vector<Expr> evals = eigenvalues(c, A);
+        ASSERT_EQ(evals.size(), 2u);
+        EXPECT_EQ(evals[0], c.number(std::int64_t{-1}));
+        EXPECT_EQ(evals[1], c.number(std::int64_t{3}));
+
+        const std::vector<EigenPair> pairs = eigenvectors(c, A);
+        ASSERT_EQ(pairs.size(), 2u);
+        EXPECT_EQ(pairs[0].multiplicity, 1u);
+        ASSERT_EQ(pairs[0].vectors.size(), 1u);
+        EXPECT_TRUE(matEq(c, pairs[0].vectors[0],
+                          parseMat(c, 2, 1, {"-1", "1"})));
+        EXPECT_EQ(pairs[1].multiplicity, 1u);
+        ASSERT_EQ(pairs[1].vectors.size(), 1u);
+        EXPECT_TRUE(matEq(c, pairs[1].vectors[0],
+                          parseMat(c, 2, 1, {"1", "1"})));
+    }
+
+    // 2. Defective 2x2 Jordan block: [2, 1; 0, 2] -> eigenvalue 2 (algebraic mult 2, geometric mult 1)
+    {
+        const SymMatrix J = parseMat(c, 2, 2, {"2", "1", "0", "2"});
+        const std::vector<Expr> evals = eigenvalues(c, J);
+        ASSERT_EQ(evals.size(), 2u);
+        EXPECT_EQ(evals[0], c.number(std::int64_t{2}));
+        EXPECT_EQ(evals[1], c.number(std::int64_t{2}));
+
+        const std::vector<EigenPair> pairs = eigenvectors(c, J);
+        ASSERT_EQ(pairs.size(), 1u);
+        EXPECT_EQ(pairs[0].lambda, c.number(std::int64_t{2}));
+        EXPECT_EQ(pairs[0].multiplicity, 2u);
+        ASSERT_EQ(pairs[0].vectors.size(), 1u);
+        EXPECT_TRUE(matEq(c, pairs[0].vectors[0],
+                          parseMat(c, 2, 1, {"1", "0"})));
+    }
+
+    // 3. Diagonalizable 3x3 with repeated eigenvalue: diag-like with 2D eigenspace
+    //    A = [2, 0, 0; 0, 2, 0; 0, 0, 5] -> lambda = 2 (mult 2, 2 vectors), lambda = 5 (mult 1, 1 vector)
+    {
+        const SymMatrix A = parseMat(
+            c, 3, 3, {"2", "0", "0", "0", "2", "0", "0", "0", "5"});
+        const std::vector<EigenPair> pairs = eigenvectors(c, A);
+        ASSERT_EQ(pairs.size(), 2u);
+        EXPECT_EQ(pairs[0].lambda, c.number(std::int64_t{2}));
+        EXPECT_EQ(pairs[0].multiplicity, 2u);
+        EXPECT_EQ(pairs[0].vectors.size(), 2u);
+        EXPECT_EQ(pairs[1].lambda, c.number(std::int64_t{5}));
+        EXPECT_EQ(pairs[1].multiplicity, 1u);
+        EXPECT_EQ(pairs[1].vectors.size(), 1u);
+    }
+
+    // 4. Quadratic radical eigenvalues: [1, 1; 2, 1] -> lambda = 1 - sqrt(2), 1 + sqrt(2)
+    {
+        const SymMatrix A = parseMat(c, 2, 2, {"1", "1", "2", "1"});
+        const SymMatrix I2 = SymMatrix::eye(c, 2);
+        const std::vector<EigenPair> pairs = eigenvectors(c, A);
+        ASSERT_EQ(pairs.size(), 2u);
+        EXPECT_EQ(c.simplify(c.add({pairs[0].lambda,
+                                    c.neg(parseExpr(c, "1 - 2^(1/2)"))})),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({pairs[1].lambda,
+                                    c.neg(parseExpr(c, "1 + 2^(1/2)"))})),
+                  c.zero());
+        for (const auto &ep : pairs) {
+            ASSERT_EQ(ep.vectors.size(), 1u);
+            const SymMatrix res =
+                A.sub(c, I2.scale(c, ep.lambda)).mul(c, ep.vectors[0]);
+            EXPECT_EQ(c.simplify(res.at(0, 0)), c.zero());
+            EXPECT_EQ(c.simplify(res.at(1, 0)), c.zero());
+        }
+    }
+
+    // 5. Symbolic/parametric symmetric 2x2: [a, b; b, a] -> eigenvalues a - b, a + b
+    {
+        const SymMatrix A = parseMat(c, 2, 2, {"a", "b", "b", "a"});
+        const SymMatrix I2 = SymMatrix::eye(c, 2);
+        const std::vector<EigenPair> pairs = eigenvectors(c, A);
+        ASSERT_EQ(pairs.size(), 2u);
+        for (const auto &ep : pairs) {
+            ASSERT_EQ(ep.vectors.size(), 1u);
+            const SymMatrix res =
+                A.sub(c, I2.scale(c, ep.lambda)).mul(c, ep.vectors[0]);
+            EXPECT_EQ(c.simplify(res.at(0, 0)), c.zero());
+            EXPECT_EQ(c.simplify(res.at(1, 0)), c.zero());
+        }
+    }
+
+    // 6. Nullspace of rank-1 2x3 matrix: [1, 2, 3; 2, 4, 6] -> 2 basis vectors in R^3
+    {
+        const SymMatrix M =
+            parseMat(c, 2, 3, {"1", "2", "3", "2", "4", "6"});
+        const std::vector<SymMatrix> ns = nullspace(c, M);
+        ASSERT_EQ(ns.size(), 2u);
+        const SymMatrix Z21 = SymMatrix::zeros(c, 2, 1);
+        for (const auto &v : ns) {
+            EXPECT_TRUE(matEq(c, M.mul(c, v), Z21));
+        }
+    }
+}
+
+TEST(SymMatrixTest, MatrixExponentialIdentities)
+{
+    Ctx c;
+    const Expr t = c.symbol("t");
+
+    // 1. Rotation generator: [0, -w; w, 0] -> [cos(w*t), -sin(w*t); sin(w*t), cos(w*t)]
+    {
+        const SymMatrix A = parseMat(c, 2, 2, {"0", "-3", "3", "0"});
+        const SymMatrix Phi = matrixExp(c, A, t);
+        ASSERT_FALSE(Phi.empty());
+        EXPECT_EQ(c.simplify(c.add({Phi.at(0, 0), c.neg(parseExpr(c, "cos(3*t)"))})),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({Phi.at(0, 1), c.neg(parseExpr(c, "-sin(3*t)"))})),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({Phi.at(1, 0), c.neg(parseExpr(c, "sin(3*t)"))})),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({Phi.at(1, 1), c.neg(parseExpr(c, "cos(3*t)"))})),
+                  c.zero());
+    }
+
+    // 2. 3x3 nilpotent/Jordan block: [2, 1, 0; 0, 2, 1; 0, 0, 2]
+    //    -> exp(2*t) * [1, t, 1/2*t^2; 0, 1, t; 0, 0, 1]
+    {
+        const SymMatrix J3 = parseMat(
+            c, 3, 3, {"2", "1", "0", "0", "2", "1", "0", "0", "2"});
+        const SymMatrix Phi = matrixExp(c, J3, t);
+        ASSERT_FALSE(Phi.empty());
+        EXPECT_EQ(c.simplify(c.add({Phi.at(0, 2),
+                                    c.neg(parseExpr(c, "1/2*t^2*exp(2*t)"))})),
+                  c.zero());
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

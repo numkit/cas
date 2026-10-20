@@ -352,5 +352,122 @@ TEST(DsolveTest, BoundaryAndEdgeCases)
     }
 }
 
+// ============================================================================
+// Layer 1 & 2: First-Order Linear ODE Systems (dsolveSystem1Linear / IVP)
+// ============================================================================
+
+TEST(DsolveTest, LinearOdeSystemsDistinctRepeatedAndComplexEigenvalues)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    // 1. Distinct real eigenvalues: y' = [1, 2; 2, 1] * y, y(0) = [1; -1] -> [exp(-x); -exp(-x)]
+    //    and y(0) = [1; 1] -> [exp(3*x); exp(3*x)]
+    {
+        const SymMatrix A(2, 2,
+                          {c.one(), c.number(2), c.number(2), c.one()});
+        const OdeSystemResult gen = dsolveSystem1Linear(c, A, x);
+        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_EQ(gen.y.size(), 2u);
+
+        const OdeSystemResult ivp1 = dsolveSystem1LinearIVP(
+            c, A, x, c.zero(), {c.one(), c.number(-1)});
+        ASSERT_TRUE(ivp1.proved()) << ivp1.reason;
+        EXPECT_TRUE(sameExpr(c, ivp1.y[0], P(c, "exp(-x)")));
+        EXPECT_TRUE(sameExpr(c, ivp1.y[1], P(c, "-exp(-x)")));
+
+        const OdeSystemResult ivp2 = dsolveSystem1LinearIVP(
+            c, A, x, c.zero(), {c.one(), c.one()});
+        ASSERT_TRUE(ivp2.proved()) << ivp2.reason;
+        EXPECT_TRUE(sameExpr(c, ivp2.y[0], P(c, "exp(3*x)")));
+        EXPECT_TRUE(sameExpr(c, ivp2.y[1], P(c, "exp(3*x)")));
+    }
+
+    // 2. Defective / repeated eigenvalue (Jordan block):
+    //    y' = [2, 1; 0, 2] * y, y(0) = [1; 3] -> [(1 + 3*x)*exp(2*x); 3*exp(2*x)]
+    {
+        const SymMatrix A(2, 2,
+                          {c.number(2), c.one(), c.zero(), c.number(2)});
+        const OdeSystemResult ivp = dsolveSystem1LinearIVP(
+            c, A, x, c.zero(), {c.one(), c.number(3)});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y[0], P(c, "(1 + 3*x)*exp(2*x)")));
+        EXPECT_TRUE(sameExpr(c, ivp.y[1], P(c, "3*exp(2*x)")));
+    }
+
+    // 3. Complex-conjugate eigenvalues alpha +- i*w (-1 +- 2*i):
+    //    y' = [-1, -2; 2, -1] * y, y(0) = [1; 0] -> [exp(-x)*cos(2*x); exp(-x)*sin(2*x)]
+    {
+        const SymMatrix A(
+            2, 2, {c.number(-1), c.number(-2), c.number(2), c.number(-1)});
+        const OdeSystemResult ivp = dsolveSystem1LinearIVP(
+            c, A, x, c.zero(), {c.one(), c.zero()});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y[0], P(c, "exp(-x)*cos(2*x)")));
+        EXPECT_TRUE(sameExpr(c, ivp.y[1], P(c, "exp(-x)*sin(2*x)")));
+    }
+
+    // 4. 3x3 Jordan block with non-zero initial point x0 = 1:
+    //    y' = [-1, 1, 0; 0, -1, 1; 0, 0, -1] * y, y(1) = [0; 0; 2]
+    //    -> [(x - 1)^2 * exp(-(x - 1)); 2*(x - 1)*exp(-(x - 1)); 2*exp(-(x - 1))]
+    {
+        const SymMatrix A(3, 3,
+                          {c.number(-1), c.one(), c.zero(), c.zero(),
+                           c.number(-1), c.one(), c.zero(), c.zero(),
+                           c.number(-1)});
+        const OdeSystemResult ivp = dsolveSystem1LinearIVP(
+            c, A, x, c.one(), {c.zero(), c.zero(), c.number(2)});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(
+            sameExpr(c, ivp.y[0], P(c, "(x - 1)^2*exp(1 - x)")));
+        EXPECT_TRUE(
+            sameExpr(c, ivp.y[1], P(c, "2*(x - 1)*exp(1 - x)")));
+        EXPECT_TRUE(sameExpr(c, ivp.y[2], P(c, "2*exp(1 - x)")));
+    }
+
+    // 5. Inhomogeneous forced system:
+    //    y' = [0, 1; -1, 0] * y + [0; cos(x)], y(0) = [0; 0]
+    //    -> [1/2*x*sin(x); 1/2*sin(x) + 1/2*x*cos(x)]
+    {
+        const SymMatrix A(2, 2,
+                          {c.zero(), c.one(), c.number(-1), c.zero()});
+        const std::vector<Expr> f = {c.zero(), P(c, "cos(x)")};
+        const OdeSystemResult ivp = dsolveSystem1LinearIVP(
+            c, A, f, x, c.zero(), {c.zero(), c.zero()});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y[0], P(c, "1/2*x*sin(x)")));
+        EXPECT_TRUE(
+            sameExpr(c, ivp.y[1], P(c, "1/2*sin(x) + 1/2*x*cos(x)")));
+    }
+}
+
+TEST(DsolveTest, PropertyRandom2x2LinearOdeSystems)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    std::mt19937 rng(0x5150DE01u);
+    std::uniform_int_distribution<int> d(-3, 3);
+
+    for (int iter = 0; iter < 35; ++iter) {
+        const SymMatrix A(2, 2,
+                          {c.number(d(rng)), c.number(d(rng)),
+                           c.number(d(rng)), c.number(d(rng))});
+        const std::vector<Expr> y0 = {c.number(d(rng)), c.number(d(rng))};
+        const OdeSystemResult res =
+            dsolveSystem1LinearIVP(c, A, x, c.zero(), y0);
+        ASSERT_TRUE(res.proved())
+            << "iter " << iter << " A=" << A.toString(c) << ": " << res.reason;
+        ASSERT_EQ(res.y.size(), 2u);
+        for (std::size_t i = 0; i < 2; ++i) {
+            const Expr dy = c.diff(res.y[i], x);
+            const Expr rhs = c.add(
+                {c.mul({A.at(i, 0), res.y[0]}), c.mul({A.at(i, 1), res.y[1]})});
+            EXPECT_TRUE(sameExpr(c, dy, rhs)) << "iter " << iter << " comp " << i;
+            EXPECT_TRUE(sameExpr(c, c.subs(res.y[i], x, c.zero()), y0[i]))
+                << "iter " << iter << " init " << i;
+        }
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

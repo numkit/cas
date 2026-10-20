@@ -801,7 +801,8 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
         const Expr p = c.pow(b, ex);
         if (c.evalExact(p, {}, r))
             return c.number(r);
-        // Exact rational square root folding: (n/q)^(k/2) when n*q is a square
+        // Exact rational square root folding and square-factor extraction:
+        // (p/q)^(k/2) = (s/q)^k * m^(k/2) when p*q = s^2 * m with s > 1.
         if (c.kind(b) == NodeKind::Number && c.kind(ex) == NodeKind::Number) {
             const Rational &rb = c.numberValue(b);
             const Rational &re = c.numberValue(ex);
@@ -813,6 +814,31 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
                 if (nq.sqrtExact(root)) {
                     const Expr sq = c.number(Rational(root, rb.den()));
                     return c.pow(sq, c.number(Rational(re.num(), BigInt(1))));
+                }
+                if (nq.bitLength() <= 64) {
+                    const auto pf = BigInt::factorize(nq);
+                    BigInt sPart(1);
+                    BigInt mPart(1);
+                    for (const auto &pe : pf) {
+                        if (pe.second >= 2) {
+                            sPart = sPart * BigInt::powUInt(
+                                                pe.first,
+                                                static_cast<std::uint64_t>(
+                                                    pe.second / 2));
+                        }
+                        if (pe.second % 2 == 1)
+                            mPart = mPart * pe.first;
+                    }
+                    if (sPart > BigInt(1) || rb.den() > BigInt(1)) {
+                        const Expr ratFactor = c.pow(
+                            c.number(Rational(sPart, rb.den())),
+                            c.number(Rational(re.num(), BigInt(1))));
+                        const Expr radFactor =
+                            (mPart == BigInt(1))
+                                ? c.one()
+                                : c.pow(c.number(Rational(mPart, BigInt(1))), ex);
+                        return c.mul({ratFactor, radFactor});
+                    }
                 }
             }
         }

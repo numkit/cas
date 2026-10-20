@@ -397,13 +397,15 @@
     параметрическое сопоставление $s-a$, $s^2+\omega^2$, $s^2-a^2$ с обязательным
     круговым сертификатом `laplace(ilaplace(F)) == F`; CLI `nkcas laplace` и
     `nkcas ilaplace`.
-47. 🔶 (v0.4-пул, Эшелон 4) Собственные значения и векторы `SymMatrix`
-    (`eigenvalues`, `eigenvectors`) и решатель систем линейных ОДУ 1-го порядка с
-    постоянными коэффициентами `dsolveSystem1Linear` ($\mathbf{y}' = A\mathbf{y}$,
-    включая кратные собственные значения и комплексно-сопряжённые пары
-    $\alpha \pm i\omega \implies e^{\alpha t}\cos(\omega t), e^{\alpha t}\sin(\omega t)$
-    и задачу Коши $\mathbf{y}(x_0) = \mathbf{y}_0$, с проверкой сертификата
-    $\mathbf{y}' - A\mathbf{y} = \mathbf{0}$).
+47. ✅ (v0.4-пул, Эшелон 4) Собственные значения и векторы `SymMatrix`
+    (`nullspace`, `eigenvalues`, `eigenvectors`, матричная экспонента `matrixExp`)
+    и решатель систем линейных ОДУ 1-го порядка с постоянными коэффициентами
+    `dsolveSystem1Linear` / `dsolveSystem1LinearIVP` ($\mathbf{y}' = A\mathbf{y} + \mathbf{f}(x)$,
+    включая кратные дефектные собственные значения / жордановы клетки,
+    комплексно-сопряжённые пары $\alpha \pm i\omega \implies e^{\alpha x}\cos(\omega x), e^{\alpha x}\sin(\omega x)$,
+    квадратичные радикалы, неоднородную правую часть через вариацию постоянных
+    $\Phi(x)\int \Phi(-x)\mathbf{f}(x)\,dx$ и задачу Коши $\mathbf{y}(x_0) = \mathbf{y}_0$,
+    с обязательной проверкой сертификата $\mathbf{y}' - A\mathbf{y} - \mathbf{f} = \mathbf{0}$).
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
 
@@ -2518,3 +2520,23 @@ MATLAB Symbolic Math Toolbox (три эшелона):
      - для символьных параметров поддержаны общие формы $(s - a)^{-k}$ и $((s - \alpha)^2 + \beta)^{-k}$ ($k=1,2$).
    - **Круговой сертификат**: каждый кандидат $f(t)$ проходит обязательную проверку $\mathcal{L}\{f(t)\}(s) \equiv F(s)$ через `laplace` и `simplifyRationalExpr`/`simplify`; при несовпадении возвращается честный `Unevaluated`.
    - Добавлены команды CLI `nkcas laplace "<expr>" [t] [s]` и `nkcas ilaplace "<expr>" [s] [t]` и сьют `tests/transform/laplace_test.cpp` (фиксированные векторы, круговой property-тест на 60 случайных комбинациях и граничные отказы на неправильных дробях $\deg P \ge \deg Q$).
+
+## 2026-10-21: Реализация пункта 47 — `nullspace`, `eigenvalues`, `eigenvectors`, `matrixExp` и системы линейных ОДУ `dsolveSystem1Linear`
+
+Реализован четвёртый пакет Эшелона 4 (завершающий автономный пул `v0.4.0`):
+
+1. **Ядро матрицы, собственные пары и матричная экспонента (`include/numkit/cas/linalg/symmatrix.hpp`, `src/linalg/symmatrix.cpp`)**:
+   - `nullspace(c, A, budget)` строит точный базис ядра $\ker(A) = \{\mathbf{v} : A\mathbf{v} = \mathbf{0}\}$ приведением матрицы к ступенчатому виду Гаусса–Жордана (RREF) с перекрёстным числителем `pivot * M(r, j) - M(r, col) * M(curRow, j)` до деления на ведущий элемент, благодаря чему сопряжённые квадратичные радикалы $(p + q\sqrt{d})(p - q\sqrt{d}) - (p^2 - dq^2)$ сворачиваются в `0` без паразитного деления на биномиальный радикал.
+   - В `toFormalFrac` (`src/linalg/symmatrix.cpp`) отрицательные дробные показатели $b^{-p/q}$ переводятся в знаменатель $b^{p/q}$, а в `rewriteBottomUp` (`src/core/simplify.cpp`) для $(p/q)^{k/2}$ выделяется квадратная часть $p\cdot q = s^2 m \implies (s/q)^k m^{k/2}$ (так что $8^{1/2} \to 2\cdot 2^{1/2}$ и $(37/4)^{1/2} \to \frac{1}{2}\cdot 37^{1/2}$).
+   - `eigenvectors(c, A, budget)` и `eigenvalues(c, A, budget)` находят собственные значения и их алгебраические кратности через `charpoly` + `factorOverQ` / `solveSymbolic` (плюс прямой путь для треугольных матриц с символьными параметрами) и для каждого $\lambda_i$ вычисляют геометрическое собственное подпространство $\ker(A - \lambda_i I)$ через `nullspace`.
+   - `matrixExp(c, A, t, budget)` вычисляет фундаментальную матрицу $\Phi(t) = e^{At}$ ($\Phi(0) = I$) тремя каскадными путями:
+     1. обращение резольвенты Лапласа $\Phi(t) = \mathcal{L}^{-1}\{(sI - A)^{-1}\}(t)$ через Фаддеева–Леверье `inv(sI - A)` и покомпонентный `ilaplace` (единым алгоритмом покрывает простые вещественные корни, кратные жордановы блоки произвольного порядка, комплексно-сопряжённые пары $\alpha \pm i\omega \implies e^{\alpha t}\cos/\sin(\omega t)$ и квадратичные радикалы);
+     2. замкнутая формула Путцера / Кэли–Гамильтона для символьных $2 \times 2$ матриц;
+     3. спектральное разложение и обобщённые жордановы цепочки $(A - \lambda I)\mathbf{w}_k = \mathbf{w}_{k-1}$ через `linsolveParticular` с нормировкой $Y(t)Y(0)^{-1}$;
+     и сертифицирует каждый результат проверкой $\Phi'(t) = A\Phi(t)$ и $\Phi(0) = I$.
+
+2. **Системы линейных ОДУ 1-го порядка и задача Коши (`include/numkit/cas/ode/dsolve.hpp`, `src/ode/dsolve.cpp`)**:
+   - Добавлена структура `OdeSystemResult` (`Status::{Unevaluated, Proved}`, вектор компонент `y`, фундаментальная матрица `fundamental = exp(A*x)`, `reason`).
+   - `dsolveSystem1Linear(c, A, [f,] x, budget)` решает однородные и неоднородные системы $\mathbf{y}'(x) = A\mathbf{y}(x) + \mathbf{f}(x)$ с константами интегрирования `C1..Cn`: однородная часть $\Phi(x)\mathbf{C}$ + частное решение методом вариации постоянных $\mathbf{y}_p(x) = \Phi(x)\int \Phi(-x)\mathbf{f}(x)\,dx$ (используя тождество $\Phi(x)^{-1} = e^{-Ax} = \Phi(-x)$ без обращения матрицы от $x$).
+   - `dsolveSystem1LinearIVP(c, A, [f,] x, x0, y0, budget)` решает задачу Коши $\mathbf{y}(x_0) = \mathbf{y}_0$ по формуле $\mathbf{y}(x) = \Phi(x - x_0)(\mathbf{y}_0 - \mathbf{y}_p(x_0)) + \mathbf{y}_p(x)$.
+   - Каждое решение проходит обязательную покомпонентную сертификацию $\text{simplify}(y'_i(x) - (A\mathbf{y}(x) + \mathbf{f}(x))_i) = 0$ (и $y_i(x_0) = y_{0,i}$ для задачи Коши).

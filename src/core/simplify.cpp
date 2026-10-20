@@ -74,69 +74,69 @@ struct SqTrigTerm
     SqTrigKind kind = SqTrigKind::None;
     Expr arg;
     Expr cofactor;
+    bool exactSq = false;
 };
 
-// Check whether a single factor `f` is sin(u)^2, cos(u)^2, sinh(u)^2, or cosh(u)^2.
-bool matchSqTrigFactor(const Ctx &c, Expr f, SqTrigKind &kindOut, Expr &argOut)
+// Check whether a single factor `f` is sin(u)^k, cos(u)^k, sinh(u)^k, or cosh(u)^k
+// with integer k >= 2, splitting off fn(u)^2 and returning fn(u)^(k-2) as residual.
+bool matchSqTrigFactor(Ctx &c, Expr f, SqTrigKind &kindOut, Expr &argOut,
+                       Expr &residualOut, bool &exactSqOut)
 {
     if (c.kind(f) != NodeKind::Pow)
         return false;
     const Expr base = c.child(f, 0);
     const Expr exp = c.child(f, 1);
-    if (c.kind(base) != NodeKind::Func || c.kind(exp) != NodeKind::Number ||
-        !(c.numberValue(exp) == Rational(std::int64_t{2}))) {
+    if (c.kind(base) != NodeKind::Func || c.kind(exp) != NodeKind::Number)
         return false;
-    }
+    const Rational &re = c.numberValue(exp);
+    std::int64_t k = 0;
+    if (!(re.den() == BigInt(1)) || !re.num().fitsInt64(k) || k < 2)
+        return false;
+
     const std::string &fn = c.funcName(base);
     if (fn == "sin") {
         kindOut = SqTrigKind::Sin2;
-        argOut = c.child(base, 0);
-        return true;
-    }
-    if (fn == "cos") {
+    } else if (fn == "cos") {
         kindOut = SqTrigKind::Cos2;
-        argOut = c.child(base, 0);
-        return true;
-    }
-    if (fn == "sinh") {
+    } else if (fn == "sinh") {
         kindOut = SqTrigKind::Sinh2;
-        argOut = c.child(base, 0);
-        return true;
-    }
-    if (fn == "cosh") {
+    } else if (fn == "cosh") {
         kindOut = SqTrigKind::Cosh2;
-        argOut = c.child(base, 0);
-        return true;
+    } else {
+        return false;
     }
-    return false;
+    argOut = c.child(base, 0);
+    exactSqOut = (k == 2);
+    residualOut = (k == 2) ? c.one() : c.pow(base, c.number(k - 2));
+    return true;
 }
 
-SqTrigTerm analyzeSqTrigTerm(Ctx &c, Expr term)
+std::vector<SqTrigTerm> analyzeSqTrigTerm(Ctx &c, Expr term)
 {
-    SqTrigTerm res;
+    std::vector<SqTrigTerm> out;
     SqTrigKind k = SqTrigKind::None;
     Expr u;
-    if (matchSqTrigFactor(c, term, k, u)) {
-        res.kind = k;
-        res.arg = u;
-        res.cofactor = c.one();
-        return res;
+    Expr residual;
+    bool exactSq = false;
+    if (matchSqTrigFactor(c, term, k, u, residual, exactSq)) {
+        out.push_back(SqTrigTerm{k, u, residual, exactSq});
+        return out;
     }
     if (c.kind(term) == NodeKind::Mul) {
         for (std::size_t i = 0; i < c.childCount(term); ++i) {
-            if (matchSqTrigFactor(c, c.child(term, i), k, u)) {
+            if (matchSqTrigFactor(c, c.child(term, i), k, u, residual, exactSq)) {
                 std::vector<Expr> rest;
+                if (residual != c.one())
+                    rest.push_back(residual);
                 for (std::size_t j = 0; j < c.childCount(term); ++j)
                     if (j != i)
                         rest.push_back(c.child(term, j));
-                res.kind = k;
-                res.arg = u;
-                res.cofactor = rest.empty() ? c.one() : c.mul(rest);
-                return res;
+                const Expr cof = rest.empty() ? c.one() : c.mul(rest);
+                out.push_back(SqTrigTerm{k, u, cof, exactSq});
             }
         }
     }
-    return res;
+    return out;
 }
 
 // Simplify an Add node using Pythagorean, hyperbolic, and logarithmic rules.
@@ -154,101 +154,136 @@ Expr simplifyAddNode(Ctx &c, Expr e)
     while (changed) {
         changed = false;
         const std::size_t n = terms.size();
-        std::vector<SqTrigTerm> info(n);
+        std::vector<std::vector<SqTrigTerm>> info(n);
         for (std::size_t i = 0; i < n; ++i)
             info[i] = analyzeSqTrigTerm(c, terms[i]);
 
-        // 1. Pairwise sin^2/cos^2 and sinh^2/cosh^2 reductions for identical `arg`.
+        // 1a. Exact Pythagorean identity: A*sin(u)^2 + A*cos(u)^2 -> A and
+        //     B*cosh(u)^2 - B*sinh(u)^2 -> B (works for any cofactor A, including trig powers).
         for (std::size_t i = 0; i < n && !changed; ++i) {
-            if (info[i].kind == SqTrigKind::None)
-                continue;
-            for (std::size_t j = i + 1; j < n && !changed; ++j) {
-                if (info[j].kind == SqTrigKind::None ||
-                    !(info[i].arg == info[j].arg))
-                    continue;
-                const Expr u = info[i].arg;
-                // Normalize order so k1 is Sin2/Sinh2 and k2 is Cos2/Cosh2
-                std::size_t idxA = i, idxB = j;
-                if ((info[i].kind == SqTrigKind::Cos2 &&
-                     info[j].kind == SqTrigKind::Sin2) ||
-                    (info[i].kind == SqTrigKind::Cosh2 &&
-                     info[j].kind == SqTrigKind::Sinh2)) {
-                    std::swap(idxA, idxB);
-                }
-                const SqTrigKind kA = info[idxA].kind;
-                const SqTrigKind kB = info[idxB].kind;
-                const Expr cofA = info[idxA].cofactor;
-                const Expr cofB = info[idxB].cofactor;
-
-                if (kA == SqTrigKind::Sin2 && kB == SqTrigKind::Cos2) {
-                    if (cofA == cofB) {
-                        // A*sin(u)^2 + A*cos(u)^2 -> A
-                        terms[i] = cofA;
-                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
-                        changed = true;
-                    } else if (cofA == c.neg(cofB)) {
-                        // B*cos(u)^2 - B*sin(u)^2 -> B*cos(2*u)
-                        terms[i] = c.mul(
-                            {cofB, c.func("cos", c.mul({c.number(std::int64_t{2}), u}))});
-                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
-                        changed = true;
-                    }
-                } else if (kA == SqTrigKind::Sinh2 && kB == SqTrigKind::Cosh2) {
-                    if (cofA == c.neg(cofB)) {
-                        // B*cosh(u)^2 - B*sinh(u)^2 -> B
-                        terms[i] = cofB;
-                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
-                        changed = true;
-                    } else if (cofA == cofB) {
-                        // B*cosh(u)^2 + B*sinh(u)^2 -> B*cosh(2*u)
-                        terms[i] = c.mul(
-                            {cofB, c.func("cosh", c.mul({c.number(std::int64_t{2}), u}))});
-                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
-                        changed = true;
+            for (const SqTrigTerm &ti : info[i]) {
+                for (std::size_t j = i + 1; j < n && !changed; ++j) {
+                    for (const SqTrigTerm &tj : info[j]) {
+                        if (!(ti.arg == tj.arg))
+                            continue;
+                        const SqTrigTerm *pA = &ti;
+                        const SqTrigTerm *pB = &tj;
+                        if ((ti.kind == SqTrigKind::Cos2 &&
+                             tj.kind == SqTrigKind::Sin2) ||
+                            (ti.kind == SqTrigKind::Cosh2 &&
+                             tj.kind == SqTrigKind::Sinh2)) {
+                            std::swap(pA, pB);
+                        }
+                        if (pA->kind == SqTrigKind::Sin2 &&
+                            pB->kind == SqTrigKind::Cos2 &&
+                            pA->cofactor == pB->cofactor) {
+                            terms[i] = pA->cofactor;
+                            terms.erase(terms.begin() +
+                                        static_cast<std::ptrdiff_t>(j));
+                            changed = true;
+                            break;
+                        }
+                        if (pA->kind == SqTrigKind::Sinh2 &&
+                            pB->kind == SqTrigKind::Cosh2 &&
+                            pA->cofactor == c.neg(pB->cofactor)) {
+                            terms[i] = pB->cofactor;
+                            terms.erase(terms.begin() +
+                                        static_cast<std::ptrdiff_t>(j));
+                            changed = true;
+                            break;
+                        }
                     }
                 }
+                if (changed)
+                    break;
             }
         }
 
         // 2. Complement rules: C - C*sin(u)^2 -> C*cos(u)^2, C - C*cos(u)^2 -> C*sin(u)^2,
         //    C + C*sinh(u)^2 -> C*cosh(u)^2, -C + C*cosh(u)^2 -> C*sinh(u)^2.
         for (std::size_t i = 0; i < n && !changed; ++i) {
-            if (info[i].kind == SqTrigKind::None)
-                continue;
-            const Expr u = info[i].arg;
-            const Expr cof = info[i].cofactor;
-            const Expr negCof = c.neg(cof);
-            for (std::size_t j = 0; j < n && !changed; ++j) {
-                if (i == j || info[j].kind != SqTrigKind::None)
-                    continue;
-                if (info[i].kind == SqTrigKind::Sin2 && terms[j] == negCof) {
-                    // (-cof) + cof*sin(u)^2 = (-cof)*(1 - sin(u)^2) = (-cof)*cos(u)^2
-                    terms[std::min(i, j)] = c.mul(
-                        {negCof, c.pow(c.func("cos", u), c.number(std::int64_t{2}))});
-                    terms.erase(terms.begin() +
-                                static_cast<std::ptrdiff_t>(std::max(i, j)));
-                    changed = true;
-                } else if (info[i].kind == SqTrigKind::Cos2 && terms[j] == negCof) {
-                    terms[std::min(i, j)] = c.mul(
-                        {negCof, c.pow(c.func("sin", u), c.number(std::int64_t{2}))});
-                    terms.erase(terms.begin() +
-                                static_cast<std::ptrdiff_t>(std::max(i, j)));
-                    changed = true;
-                } else if (info[i].kind == SqTrigKind::Sinh2 && terms[j] == cof) {
-                    // cof + cof*sinh(u)^2 = cof*cosh(u)^2
-                    terms[std::min(i, j)] = c.mul(
-                        {cof, c.pow(c.func("cosh", u), c.number(std::int64_t{2}))});
-                    terms.erase(terms.begin() +
-                                static_cast<std::ptrdiff_t>(std::max(i, j)));
-                    changed = true;
-                } else if (info[i].kind == SqTrigKind::Cosh2 && terms[j] == negCof) {
-                    // -cof + cof*cosh(u)^2 = cof*sinh(u)^2
-                    terms[std::min(i, j)] = c.mul(
-                        {cof, c.pow(c.func("sinh", u), c.number(std::int64_t{2}))});
-                    terms.erase(terms.begin() +
-                                static_cast<std::ptrdiff_t>(std::max(i, j)));
-                    changed = true;
+            for (const SqTrigTerm &ti : info[i]) {
+                const Expr u = ti.arg;
+                const Expr cof = ti.cofactor;
+                const Expr negCof = c.neg(cof);
+                for (std::size_t j = 0; j < n && !changed; ++j) {
+                    if (i == j)
+                        continue;
+                    if (ti.kind == SqTrigKind::Sin2 && terms[j] == negCof) {
+                        terms[std::min(i, j)] = c.mul(
+                            {negCof, c.pow(c.func("cos", u), c.number(std::int64_t{2}))});
+                        terms.erase(terms.begin() +
+                                    static_cast<std::ptrdiff_t>(std::max(i, j)));
+                        changed = true;
+                    } else if (ti.kind == SqTrigKind::Cos2 && terms[j] == negCof) {
+                        terms[std::min(i, j)] = c.mul(
+                            {negCof, c.pow(c.func("sin", u), c.number(std::int64_t{2}))});
+                        terms.erase(terms.begin() +
+                                    static_cast<std::ptrdiff_t>(std::max(i, j)));
+                        changed = true;
+                    } else if (ti.kind == SqTrigKind::Sinh2 && terms[j] == cof) {
+                        terms[std::min(i, j)] = c.mul(
+                            {cof, c.pow(c.func("cosh", u), c.number(std::int64_t{2}))});
+                        terms.erase(terms.begin() +
+                                    static_cast<std::ptrdiff_t>(std::max(i, j)));
+                        changed = true;
+                    } else if (ti.kind == SqTrigKind::Cosh2 && terms[j] == negCof) {
+                        terms[std::min(i, j)] = c.mul(
+                            {cof, c.pow(c.func("sinh", u), c.number(std::int64_t{2}))});
+                        terms.erase(terms.begin() +
+                                    static_cast<std::ptrdiff_t>(std::max(i, j)));
+                        changed = true;
+                    }
                 }
+                if (changed)
+                    break;
+            }
+        }
+
+        // 1b. Double-angle cosine/cosh rules for pure degree-2 squares:
+        //     B*cos(u)^2 - B*sin(u)^2 -> B*cos(2*u), B*cosh(u)^2 + B*sinh(u)^2 -> B*cosh(2*u).
+        for (std::size_t i = 0; i < n && !changed; ++i) {
+            for (const SqTrigTerm &ti : info[i]) {
+                if (!ti.exactSq)
+                    continue;
+                for (std::size_t j = i + 1; j < n && !changed; ++j) {
+                    for (const SqTrigTerm &tj : info[j]) {
+                        if (!tj.exactSq || !(ti.arg == tj.arg))
+                            continue;
+                        const SqTrigTerm *pA = &ti;
+                        const SqTrigTerm *pB = &tj;
+                        if ((ti.kind == SqTrigKind::Cos2 &&
+                             tj.kind == SqTrigKind::Sin2) ||
+                            (ti.kind == SqTrigKind::Cosh2 &&
+                             tj.kind == SqTrigKind::Sinh2)) {
+                            std::swap(pA, pB);
+                        }
+                        if (pA->kind == SqTrigKind::Sin2 &&
+                            pB->kind == SqTrigKind::Cos2 &&
+                            pA->cofactor == c.neg(pB->cofactor)) {
+                            terms[i] = c.mul(
+                                {pB->cofactor,
+                                 c.func("cos", c.mul({c.number(std::int64_t{2}), ti.arg}))});
+                            terms.erase(terms.begin() +
+                                        static_cast<std::ptrdiff_t>(j));
+                            changed = true;
+                            break;
+                        }
+                        if (pA->kind == SqTrigKind::Sinh2 &&
+                            pB->kind == SqTrigKind::Cosh2 &&
+                            pA->cofactor == pB->cofactor) {
+                            terms[i] = c.mul(
+                                {pB->cofactor,
+                                 c.func("cosh", c.mul({c.number(std::int64_t{2}), ti.arg}))});
+                            terms.erase(terms.begin() +
+                                        static_cast<std::ptrdiff_t>(j));
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+                if (changed)
+                    break;
             }
         }
 
@@ -471,11 +506,13 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     // Reflection symmetries for negative arguments: sin(-u) -> -sin(u), cos(-u) -> cos(u), etc.
     Expr posArg;
     if (extractNegativeArg(c, arg, posArg)) {
-        if (fn == "sin" || fn == "tan" || fn == "asin" || fn == "atan" ||
-            fn == "sinh" || fn == "tanh" || fn == "asinh" || fn == "atanh") {
+        if (fn == "sin" || fn == "tan" || fn == "cot" || fn == "csc" ||
+            fn == "asin" || fn == "atan" || fn == "sinh" || fn == "tanh" ||
+            fn == "coth" || fn == "csch" || fn == "asinh" || fn == "atanh") {
             return c.neg(c.func(fn, posArg));
         }
-        if (fn == "cos" || fn == "cosh" || fn == "abs") {
+        if (fn == "cos" || fn == "sec" || fn == "cosh" || fn == "sech" ||
+            fn == "abs") {
             return c.func(fn, posArg);
         }
     }

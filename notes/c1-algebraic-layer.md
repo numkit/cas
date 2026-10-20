@@ -330,9 +330,14 @@
     $\sin(\arcsin u) \to u$, $\cos(\arcsin u) \to \sqrt{1-u^2}$ и т.д.),
     перевода `tan/cot/sec/csc` в `sin/cos` и логарифмических/степенных правил;
     CLI `nkcas simplify`.
-40. 🔶 (v0.3-пул, стадии R3–R5) Масштабирование базы Руби на триномы и
+40. ✅ (v0.3-пул, стадии R3–R5) Масштабирование базы Руби на триномы и
     трансцендентные функции (`1.2` триномы + `2` экспоненты + `3` логарифмы +
-    `4` тригонометрия).
+    `4` тригонометрия + `5` обратные тригонометрические + `6`/`7`
+    гиперболические и обратные гиперболические функции: 60 `.m`-файлов в
+    `third_party/rubi-snapshot/`, 2058 элементарных правил, 10301 узел trie в
+    `src/rubi/rubi_tables_1111.inc`, интеграция `c.simplify` +
+    `clearNestedDenominators` + `rewriteTrigToSinCos` в гейт сертификата
+    `certificateHolds`).
 41. ✅ (v0.3-пул) Символьный решатель уравнений и систем `solveSymbolic` /
     `solveSystem2` (`core/symsolve`): точные корни в радикалах для
     параметрических полиномиальных уравнений степеней $\le 4$ (линейные,
@@ -2348,3 +2353,57 @@ MATLAB Symbolic Math Toolbox (три эшелона):
      порядка).
 
 
+### Сессия: масштабирование базы Руби R3–R5 на триномы и трансцендентные функции (пункт 40 ЗАКРЫТ)
+
+1. **Расширение ядра дифференцирования и упрощения (`src/core/diff.cpp`, `src/core/expr.cpp`, `src/core/simplify.cpp`)**:
+   - В `src/core/diff.cpp` добавлены точные производные для `cot`, `sec`, `csc`,
+     `acot`, `coth`, `sech`, `csch`; в `src/core/expr.cpp` (`evalExact`) добавлены
+     тождества `sec(0) = 1` и `sech(0) = 1`.
+   - В `src/core/simplify.cpp` обобщено извлечение квадратных тригонометрических и
+     гиперболических факторов (`matchSqTrigFactor` и `analyzeSqTrigTerm` возвращают
+     все разложения `std::vector<SqTrigTerm>` для целых степеней $k \ge 2$:
+     $\sin^k u \to \sin^{k-2} u \cdot \sin^2 u$), а в `simplifyAddNode` установлен
+     строгий приоритет пифагоровых свёрток ($A\sin^2 u + A\cos^2 u \to A$) и
+     правил дополнения ($C - C\sin^2 u \to C\cos^2 u$ для произвольного множителя $C$)
+     перед правилами двойного угла.
+2. **Конвейер парсинга и кодогенерации Руби (`tools/rubi_parse.py`, `tools/rubi_codegen.py`)**:
+   - В `tools/rubi_parse.py` добавлены: удаление вложенных комментариев
+     Mathematica `(* ... (* ... *) *)` (`strip_comments`), пропуск верхнеуровневых
+     директив `If[...]`, цепные сравнения `a <= b <= c`, постфиксная индексация
+     `u[[i]]` (`Part`), неявное умножение рядом стоящих идентификаторов в паттернах
+     и исправление приоритета унарного минуса относительно возведения в степень `^`
+     (см. `bugs/closed/integrate/rubi-parse-unary-minus-power-precedence.md`).
+   - В `tools/rubi_codegen.py` добавлены: `flatten_add`, таблица канонических голов
+     `PATTERN_HEAD_MAP` (`Exp`/`Log`/`Sin`/`Cos`/`Tan`/`Cot`/`Sec`/`Csc`/обратные/
+     гиперболические → строчные имена `Ctx::func`), фильтр неэлементарных голов
+     `NON_ELEMENTARY_HEADS`, генератор экспоненциальных близнецов
+     `expand_exp_base_rules` (`F_^(...)` → пара правил для `exp(...)` с `Log[F]=1`
+     и общего `F_^...`), а также учёт опциональных слагаемых `+[a_., w]` и степеней
+     `^[w, m_.]` в `spec_norm`.
+3. **Матчер, рантайм и сертификация трансцендентных первообразных (`src/rubi/rules.cpp`)**:
+   - В `matchStep` добавлены: перестановки слагаемых `Add` арности 2..3,
+     сопоставление 2-членного `Add` с 3-членным паттерном `a_. + b*x + c*x^2` при
+     `a := 0`, а также синтез `2b`/`2c` вне верхнего уровня и на узлах `Func`.
+   - В `buildReplacement` и `evalCondition` поддержаны головы и предикаты R3–R5
+     (`ActivateTrig`, `DeactivateTrig`, `SimplifyIntegrand`, `NormalizeIntegrand`,
+     `ExpandTrig`, `ExpandTrigReduce`, `ExpandLinearProduct`, `FreeFactors`,
+     `NonfreeFactors`, `PolynomialDivide`, `IntHide`, `If`, `IntQuadraticQ`,
+     списочный `LinearQ`, `SimplerQ`/`SumSimplerQ`/`SimplerSqrtQ`, `OddQ`/`EvenQ`,
+     `PerfectSquareQ`, символьный фоллбэк в `EqQ`/`NeQ`).
+   - В `certificateHolds` после алгебраических проверок подключён
+     `checkSimplifiedDelta`: перевод `tan/cot/sec/csc/tanh/coth/sech/csch` в
+     `sin/cos/sinh/cosh` (`rewriteTrigToSinCos`), расчистка вложенных знаменателей
+     в отрицательных степенях сумм (`clearNestedDenominators`) и проверка
+     `c.simplify(c.expand(dF - e)) == 0` с приведением к общему знаменателю
+     (`isZeroOrClearedZero`).
+4. **Таблицы и тесты**:
+   - Срез `third_party/rubi-snapshot/` расширен до **60 `.m`-файлов** (разделы
+     `1.1` биномы, `1.2` триномы, `2` экспоненты, `3` логарифмы, `4` тригонометрия,
+     `5` обратная тригонометрия, `6` гиперболические, `7` обратные гиперболические
+     функции): **2058 правил**, **10301 узел trie**, **10300 рёбер** в
+     `src/rubi/rubi_tables_1111.inc`.
+   - Добавлены тестовые сьюты `R3Trinomials`, `R4ExponentialsAndLogs`,
+     `R5TrigInverseTrigHyperbolic` и `PropertyR3R4R5Shapes` в
+     `tests/rubi/rules_test.cpp` + расширен `UnifiedIntegrateCascade` в
+     `tests/integrate/ratint_test.cpp`. Все **236/236 тестов Release** проходят за
+     27.5 с.

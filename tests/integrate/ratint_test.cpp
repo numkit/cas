@@ -1341,6 +1341,16 @@ TEST_F(RatIntTest, UnifiedIntegrateCascade)
         {"a*exp(x)/(1 + exp(x))"},
         // Mixed sum of Rubi binomial radical + Liouvillian exponential + Rioboo cubic
         {"(1 + 2*x)^(-3/2) + exp(x)/(1 + exp(x)) + 1/(x^3 + 2)"},
+        // Rubi R3-R5 trinomials, IBP exponentials/logs, trig, inverse trig, hyperbolics
+        {"(1 + x + x^2)^(-1/2)"},
+        {"x^2*exp(2*x)"},
+        {"x^2*log(x)"},
+        {"sin(x)^3"},
+        {"sec(x)^3"},
+        {"x*asin(x)"},
+        {"x^2*atan(x)"},
+        {"x*sinh(x)"},
+        {"x*asinh(x)"},
     };
     for (const Case &tc : cases) {
         const Expr f = numkit::cas::parseExpr(c, tc.expr);

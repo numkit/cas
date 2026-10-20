@@ -626,7 +626,8 @@ bool Ctx::evalExact(
             out = zero;
             return true;
         }
-        if ((name == "cos" || name == "cosh") && a == zero) {
+        if ((name == "cos" || name == "cosh" || name == "sec" || name == "sech") &&
+            a == zero) {
             out = one;
             return true;
         }

@@ -109,12 +109,14 @@ structurally impossible — it becomes an honest `Unevaluated`).
 `factorExpr` gives the factored form.
 
 **Rubi fast path** (`rubi/`): `rubiApply(tables, Ctx&, f, var, budget)` —
-the compiled discrimination-tree matcher over the full Rubi `1.1
-Binomial products` section (33 `.m` files across `1.1.1`–`1.1.4`,
-1365 rules, 6365 trie nodes) with recursive `Int`/`Subst`/`ExpandIntegrand`
-cascades and mirrors of Rubi's 9.1 utility identities; every replacement
-passes the same certificate. `tools/rubi_parse.py` + `tools/rubi_codegen.py`
-regenerate the committed tables from `third_party/rubi-snapshot/`.
+the compiled discrimination-tree matcher over the Rubi R1–R5 slice
+(60 `.m` files across `1.1` binomials, `1.2` trinomials, `2` exponentials,
+`3` logarithms, `4` trigonometry, `5` inverse trig, `6` hyperbolics, and
+`7` inverse hyperbolics; 2058 rules, 10301 trie nodes) with recursive
+`Int`/`Subst`/`ExpandIntegrand` cascades and mirrors of Rubi's 9.1 utility
+identities; every replacement passes the symbolic certificate.
+`tools/rubi_parse.py` + `tools/rubi_codegen.py` regenerate the committed
+tables from `third_party/rubi-snapshot/`.
 
 **Symbolic Linear Algebra** (`linalg/`): `SymMatrix` over `Expr`,
 rational expression normalizer `simplifyRationalExpr`, multivariable

@@ -77,6 +77,62 @@ def flatten_mul(node):
     return {"op": "*", "args": flat}
 
 
+def flatten_add(node):
+    if node.get("op") != "+":
+        return node
+    flat = []
+    for a in node["args"]:
+        if a.get("op") == "+":
+            flat.extend(a["args"])
+        else:
+            flat.append(a)
+    return {"op": "+", "args": flat}
+
+
+PATTERN_HEAD_MAP = {
+    "Exp": "exp",
+    "Log": "log",
+    "Sin": "sin", "sin": "sin",
+    "Cos": "cos", "cos": "cos",
+    "Tan": "tan", "tan": "tan",
+    "Cot": "cot", "cot": "cot",
+    "Sec": "sec", "sec": "sec",
+    "Csc": "csc", "csc": "csc",
+    "ArcSin": "asin",
+    "ArcCos": "acos",
+    "ArcTan": "atan",
+    "ArcCot": "acot",
+    "Sinh": "sinh", "sinh": "sinh",
+    "Cosh": "cosh", "cosh": "cosh",
+    "Tanh": "tanh", "tanh": "tanh",
+    "Coth": "coth", "coth": "coth",
+    "Sech": "sech", "sech": "sech",
+    "Csch": "csch", "csch": "csch",
+    "ArcSinh": "asinh",
+    "ArcCosh": "acosh",
+    "ArcTanh": "atanh",
+    "ArcCoth": "acoth",
+}
+
+
+NON_ELEMENTARY_HEADS = {
+    "Unintegrable", "CannotIntegrate",
+    "Hypergeometric2F1", "HypergeometricPFQ", "AppellF1",
+    "EllipticF", "EllipticE", "EllipticPi",
+    "ExpIntegralEi", "ExpIntegralE", "LogIntegral",
+    "SinIntegral", "CosIntegral", "SinhIntegral", "CoshIntegral",
+    "FresnelS", "FresnelC", "Erf", "Erfi", "Gamma", "PolyLog", "Complex",
+}
+
+
+def has_non_elementary(node):
+    if not node or not isinstance(node, dict):
+        return False
+    if node.get("head") in NON_ELEMENTARY_HEADS or node.get("sym") == "I":
+        return True
+    return any(has_non_elementary(a) for a in node.get("args", []))
+
+
 def make_pow(base, exp):
     """Canonicalize (u^r)^n -> u^(r*n) and (u*v)^n -> u^n*v^n for
     integer n, mirroring Ctx::pow (src/core/expr.cpp)."""
@@ -98,22 +154,39 @@ def rewrite_div(node):
     """Canonicalize a PATTERN into the shapes the expression DAG
     actually builds:
         neg[num]        ->  num (-r)
+        neg[u]          ->  * [-1, u]
+        - [a, b]        ->  + [a, *[-1, b]]
         / [num, num]    ->  num (p/q)
         Sqrt[u]         ->  ^ [u, 1/2]
         ^ [^[u, r], n]  ->  ^ [u, r*n]  (integer n, numeric r)
         / [1, d]        ->  ^ [d, -1]   (distributed over * factors)
         / [a, b]        ->  * [a, ^ [b, -1]]
         * [*[a, b], c]  ->  * [a, b, c] (flattened unless inner * is v_.*w)
+        + [+[a, b], c]  ->  + [a, b, c]
     Children are rewritten recursively. REPLACEMENTS keep their
     spelling (the replacement builder evaluates / through div)."""
     if "args" not in node:
         return node
     args = [rewrite_div(a) for a in node["args"]]
-    if node.get("op") == "neg" and len(args) == 1 and "num" in args[0]:
-        return {"num": fmt_frac(-Fraction(args[0]["num"]))}
+    if node.get("op") == "neg" and len(args) == 1:
+        if "num" in args[0]:
+            return {"num": fmt_frac(-Fraction(args[0]["num"]))}
+        return flatten_mul({"op": "*", "args": [{"num": "-1"}, args[0]]})
+    if node.get("op") == "-" and len(args) == 2:
+        neg_b = ({"num": fmt_frac(-Fraction(args[1]["num"]))}
+                 if "num" in args[1]
+                 else flatten_mul({"op": "*", "args": [{"num": "-1"}, args[1]]}))
+        return flatten_add({"op": "+", "args": [args[0], neg_b]})
     if node.get("head") == "Sqrt" and len(args) == 1:
         return make_pow(args[0], {"num": "1/2"})
+    if node.get("head") in PATTERN_HEAD_MAP:
+        out = dict(node)
+        out["head"] = PATTERN_HEAD_MAP[node["head"]]
+        out["args"] = args
+        return out
     if node.get("op") == "^" and len(args) == 2:
+        if args[0].get("sym") == "E":
+            return {"head": "exp", "args": [args[1]]}
         return make_pow(args[0], args[1])
     if node.get("op") == "/":
         num, den = args
@@ -128,7 +201,71 @@ def rewrite_div(node):
     out["args"] = args
     if out.get("op") == "*":
         return flatten_mul(out)
+    if out.get("op") == "+":
+        return flatten_add(out)
     return out
+
+
+def expand_exp_base_rules(rules):
+    """For any rule whose pattern contains F_^(...) (general exponential
+    base F_), also emit an E-specialized twin where F_^u in the pattern
+    becomes exp(u), F^u in replacement/conditions becomes Exp[u], and
+    Log[F] becomes 1."""
+    def has_f_pow(n):
+        if not n or not isinstance(n, dict):
+            return False
+        if (n.get("op") == "^" and len(n.get("args", [])) == 2
+                and n["args"][0].get("pattern_var") == "F"):
+            return True
+        return any(has_f_pow(a) for a in n.get("args", []))
+
+    def sub_pat(n):
+        if not n or not isinstance(n, dict) or "args" not in n:
+            return n
+        args = [sub_pat(a) for a in n["args"]]
+        if n.get("op") == "^" and len(args) == 2 and args[0].get("pattern_var") == "F":
+            return {"head": "exp", "args": [args[1]]}
+        out = dict(n)
+        out["args"] = args
+        return out
+
+    def sub_rep(n):
+        if not n or not isinstance(n, dict):
+            return n
+        if n.get("sym") == "F":
+            return {"sym": "E"}
+        if "args" not in n:
+            return n
+        args = [sub_rep(a) for a in n["args"]]
+        if n.get("op") == "^" and len(args) == 2 and args[0].get("sym") == "E":
+            return {"head": "Exp", "args": [args[1]]}
+        if n.get("head") == "Log" and len(args) == 1 and args[0].get("sym") == "E":
+            return {"num": "1"}
+        if n.get("head") == "FreeQ" and len(args) == 2:
+            lst = args[0]
+            if lst.get("op") == "list":
+                kept = [a for a in lst["args"] if a.get("sym") != "E"]
+                if not kept:
+                    return {"op": "==", "args": [{"num": "1"}, {"num": "1"}]}
+                args = [{"op": "list", "args": kept}, args[1]]
+            elif lst.get("sym") == "E":
+                return {"op": "==", "args": [{"num": "1"}, {"num": "1"}]}
+        out = dict(n)
+        out["args"] = args
+        return out
+
+    expanded = []
+    for r in rules:
+        if has_f_pow(r["pattern"]):
+            e_rule = dict(
+                r,
+                pattern=sub_pat(r["pattern"]),
+                replacement=sub_rep(r["replacement"]),
+                conditions=sub_rep(r["conditions"]) if r.get("conditions") else None,
+            )
+            expanded.append(e_rule)
+        expanded.append(r)
+    return expanded
 
 
 def subtree_sizes(terms):
@@ -184,6 +321,13 @@ class Codegen:
         # x-forms before the u-forms, which is the right tie-break).
         # Canonical-twin rewrite of the patterns: division must go,
         # or /-rules could never match the DAG (see rewrite_div).
+        self.rules = [
+            r for r in self.rules
+            if "blank" not in r["pattern"]
+            and not has_non_elementary(r["pattern"])
+            and not has_non_elementary(r["replacement"])
+        ]
+        self.rules = expand_exp_base_rules(self.rules)
         self.rules = [dict(r, pattern=rewrite_div(r["pattern"]))
                       for r in self.rules]
 
@@ -198,12 +342,19 @@ class Codegen:
                     and "pattern_var" in args[0]
                     and args[0].get("blank") == "_."):
                 return args[1]
-            # Collapse monomial wildcard power ^[x_, m_|m_.] -> x_ so
-            # x_, x_^m_., x_^m_, and (c_.*x_)^m_. share the same
-            # structural rank and preserve Rubi's intra-file rule order.
+            # Strip optional sum wrapper +[a_., w] -> w so
+            # (a_. + b_.*f(x)) has the same structural rank as f(x).
+            if (op == "+" and len(args) == 2
+                    and "pattern_var" in args[0]
+                    and args[0].get("blank") == "_."):
+                return args[1]
+            # Collapse optional power ^[w, m_.] -> w and monomial
+            # wildcard power ^[x_, m_|m_.] -> x_ so intra-file rule
+            # order is preserved.
             if (op == "^" and len(args) == 2
-                    and args[0].get("pattern_var") == var
-                    and "pattern_var" in args[1]):
+                    and "pattern_var" in args[1]
+                    and (args[1].get("blank") == "_."
+                         or args[0].get("pattern_var") == var)):
                 return args[0]
             return dict(t, args=args)
 

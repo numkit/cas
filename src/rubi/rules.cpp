@@ -161,14 +161,16 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
             static_cast<std::int32_t>(c.childCount(e)) != arity)
             continue;
 
-        if (c.kind(e) == NodeKind::Mul && arity >= 2 && arity <= 4) {
+        if ((c.kind(e) == NodeKind::Mul && arity >= 2 && arity <= 4) ||
+            (c.kind(e) == NodeKind::Add && arity >= 2 && arity <= 3)) {
+            const bool nextInMul = (c.kind(e) == NodeKind::Mul) || inMul;
             std::array<std::size_t, 4> perm = {{0, 1, 2, 3}};
             do {
                 work.pop_back();
                 for (std::int32_t ci = arity; ci > 0; --ci)
                     work.push_back(
                         c.child(e, perm[static_cast<std::size_t>(ci - 1)]));
-                if (matchStep(t, c, next, work, acc, onLeaf, true))
+                if (matchStep(t, c, next, work, acc, onLeaf, nextInMul))
                     return true;
                 work.resize(work.size() - static_cast<std::size_t>(arity));
                 work.push_back(e);
@@ -213,7 +215,44 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
         }
     }
 
-    if (inMul && c.kind(e) != NodeKind::Add && c.kind(e) != NodeKind::Number) {
+    if (c.kind(e) == NodeKind::Add && c.childCount(e) == 2) {
+        const Expr zero = c.zero();
+        for (int ei = first; ei < first + nEdges; ++ei) {
+            if (t.edgeRow(ei, 0) != kTagOp ||
+                std::string(t.str(t.edgeRow(ei, 1))) != "+" ||
+                t.edgeRow(ei, 3) != 3)
+                continue;
+            const std::int32_t next = t.edgeRow(ei, 2);
+            const std::int32_t vFirst = t.nodeRow(next, 2);
+            const std::int32_t vCount = t.nodeRow(next, 3);
+            for (int ve = vFirst; ve < vFirst + vCount; ++ve) {
+                if (t.edgeRow(ve, 0) != kTagAny || !t.edgeRow(ve, 4))
+                    continue;
+                const std::string vName = t.str(t.edgeRow(ve, 1));
+                const std::int32_t afterV = t.edgeRow(ve, 2);
+                const Binding *existing = findBinding(acc, vName);
+                if (existing && !(existing->value == zero))
+                    continue;
+                const std::size_t mark = acc.size();
+                if (!existing)
+                    acc.push_back(Binding{vName, zero});
+                for (int ord = 0; ord < 2; ++ord) {
+                    work.pop_back();
+                    work.push_back(c.child(e, ord == 0 ? 1 : 0));
+                    work.push_back(c.child(e, ord == 0 ? 0 : 1));
+                    if (matchStep(t, c, afterV, work, acc, onLeaf, inMul))
+                        return true;
+                    work.pop_back();
+                    work.pop_back();
+                    work.push_back(e);
+                }
+                acc.resize(mark);
+            }
+        }
+    }
+
+    if (node != 0 && c.kind(e) != NodeKind::Add &&
+        c.kind(e) != NodeKind::Number) {
         const Expr zero = c.zero();
         for (int ei = first; ei < first + nEdges; ++ei) {
             if (t.edgeRow(ei, 0) != kTagOp ||
@@ -241,7 +280,8 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
         }
     }
 
-    if (inMul && c.kind(e) != NodeKind::Pow && c.kind(e) != NodeKind::Number) {
+    if ((node != 0 || c.kind(e) == NodeKind::Func) &&
+        c.kind(e) != NodeKind::Pow && c.kind(e) != NodeKind::Number) {
         for (int ei = first; ei < first + nEdges; ++ei) {
             if (t.edgeRow(ei, 0) != kTagOp ||
                 std::string(t.str(t.edgeRow(ei, 1))) != "^" ||
@@ -502,14 +542,15 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
     if (u.isNull())
         return Expr();
     if (c.kind(u) == NodeKind::Pow) {
-        // Keep degree-2 positive powers on 1.1.2.1's reduction cascade;
-        // expand other polynomial powers (e.g. (a + b*x^n)^p, n != 2).
+        // Keep pure binomial quadratics (a + b*x^2)^p on 1.1.2.1's reduction
+        // cascade; expand trinomials (a + b*x + c*x^2)^p (b != 0), higher-degree
+        // polynomials, and non-polynomial bases.
         UPoly N, D;
         if (c.kind(c.child(u, 1)) == NodeKind::Number &&
             c.numberValue(c.child(u, 1)).den() == BigInt(1) &&
             c.numberValue(c.child(u, 1)).signum() > 0 &&
-            toRational(c, c.child(u, 0), var, N, D) && D.isConst() &&
-            N.deg() != 2) {
+            (!toRational(c, c.child(u, 0), var, N, D) ||
+             (D.isConst() && (N.deg() != 2 || !N.coeff(1).isZero())))) {
             const Expr ex = c.expand(u);
             return (ex == u) ? Expr() : ex;
         }
@@ -662,34 +703,56 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 return b.value;
         if (c.kind(var) == NodeKind::Symbol && c.symbolName(var) == s)
             return var; // the integration variable itself
+        if (s == "E")
+            return c.symbol("e");
         return Expr(); // genuinely unbound
     }
     case kTagHead: {
         const std::string head = t.str(valId);
-        if (nkids == 1 && (head == "Log" || head == "ArcTan" ||
-                           head == "ArcTanh" || head == "ArcSinh" ||
-                           head == "ArcCosh" || head == "ArcSin" ||
-                           head == "ArcCos" || head == "Sin" ||
-                           head == "Cos" || head == "Tan" ||
-                           head == "Sinh" || head == "Cosh" ||
-                           head == "Tanh")) {
+        if (nkids == 1 && (head == "Exp" || head == "Log" ||
+                           head == "ArcTan" || head == "ArcCot" ||
+                           head == "ArcTanh" || head == "ArcCoth" ||
+                           head == "ArcSinh" || head == "ArcCosh" ||
+                           head == "ArcSin" || head == "ArcCos" ||
+                           head == "Sin" || head == "sin" ||
+                           head == "Cos" || head == "cos" ||
+                           head == "Tan" || head == "tan" ||
+                           head == "Cot" || head == "cot" ||
+                           head == "Sec" || head == "sec" ||
+                           head == "Csc" || head == "csc" ||
+                           head == "Sinh" || head == "sinh" ||
+                           head == "Cosh" || head == "cosh" ||
+                           head == "Tanh" || head == "tanh" ||
+                           head == "Coth" || head == "coth" ||
+                           head == "Sech" || head == "sech" ||
+                           head == "Csch" || head == "csch")) {
             const Expr arg = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             if (arg.isNull())
                 return Expr();
+            if (head == "Exp") return c.func("exp", arg);
             if (head == "Log") return c.func("log", arg);
             if (head == "ArcTan") return c.func("atan", arg);
+            if (head == "ArcCot") return c.func("acot", arg);
             if (head == "ArcTanh") return c.func("atanh", arg);
+            if (head == "ArcCoth") return c.func("acoth", arg);
             if (head == "ArcSinh") return c.func("asinh", arg);
             if (head == "ArcCosh") return c.func("acosh", arg);
             if (head == "ArcSin") return c.func("asin", arg);
             if (head == "ArcCos") return c.func("acos", arg);
-            if (head == "Sin") return c.func("sin", arg);
-            if (head == "Cos") return c.func("cos", arg);
-            if (head == "Tan") return c.func("tan", arg);
-            if (head == "Sinh") return c.func("sinh", arg);
-            if (head == "Cosh") return c.func("cosh", arg);
-            return c.func("tanh", arg);
+            if (head == "Sin" || head == "sin") return c.func("sin", arg);
+            if (head == "Cos" || head == "cos") return c.func("cos", arg);
+            if (head == "Tan" || head == "tan") return c.func("tan", arg);
+            if (head == "Cot" || head == "cot") return c.func("cot", arg);
+            if (head == "Sec" || head == "sec") return c.func("sec", arg);
+            if (head == "Csc" || head == "csc") return c.func("csc", arg);
+            if (head == "Sinh" || head == "sinh") return c.func("sinh", arg);
+            if (head == "Cosh" || head == "cosh") return c.func("cosh", arg);
+            if (head == "Tanh" || head == "tanh") return c.func("tanh", arg);
+            if (head == "Coth" || head == "coth") return c.func("coth", arg);
+            if (head == "Sech" || head == "sech") return c.func("sech", arg);
+            return c.func("csch", arg);
         }
         if (nkids == 1 && head == "Sqrt") {
             const Expr arg = buildReplacement(
@@ -708,14 +771,17 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                          c.number(Rational(BigInt(1), BigInt(2))));
         }
         if (nkids == 1 && (head == "IntPart" || head == "FracPart" ||
-                           head == "Simplify" || head == "Numerator" ||
+                           head == "Simplify" || head == "FullSimplify" ||
+                           head == "ActivateTrig" || head == "Numerator" ||
                            head == "Numer" || head == "Denominator" ||
                            head == "Denom")) {
             const Expr arg = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             if (arg.isNull())
                 return Expr();
-            if (head == "Simplify")
+            if (head == "Simplify" || head == "FullSimplify" ||
+                head == "ActivateTrig")
                 return arg;
             if (head == "Numerator" || head == "Numer")
                 return extractNumerDenom(c, arg, false);
@@ -730,10 +796,43 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 return c.number(Rational(q, BigInt(1)));
             return c.number(Rational(r, v.den()));
         }
-        if (nkids == 2 && head == "Simp") {
+        if (nkids == 2 && (head == "Simp" || head == "DeactivateTrig" ||
+                           head == "SimplifyIntegrand" ||
+                           head == "NormalizeIntegrand")) {
             return buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
                 budget);
+        }
+        if (nkids == 3 && head == "If") {
+            return evalCondition(t, terms, c, currentE, var, bnd,
+                                 childOf(terms, term, 0), depth)
+                       ? buildReplacement(t, terms, c, currentE, var, bnd,
+                                          childOf(terms, term, 1), depth, budget)
+                       : buildReplacement(t, terms, c, currentE, var, bnd,
+                                          childOf(terms, term, 2), depth, budget);
+        }
+        if (nkids == 2 && (head == "FreeFactors" || head == "NonfreeFactors")) {
+            const Expr u = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
+            const Expr xArg = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
+            if (u.isNull() || xArg.isNull())
+                return Expr();
+            const bool wantFree = (head == "FreeFactors");
+            if (c.kind(u) != NodeKind::Mul) {
+                const bool isFree = !mentionsVarRec(c, u, xArg);
+                return (isFree == wantFree) ? u : c.one();
+            }
+            std::vector<Expr> parts;
+            for (std::size_t i = 0; i < c.childCount(u); ++i) {
+                const Expr ch = c.child(u, i);
+                const bool isFree = !mentionsVarRec(c, ch, xArg);
+                if (isFree == wantFree)
+                    parts.push_back(ch);
+            }
+            return parts.empty() ? c.one() : c.mul(parts);
         }
         if (nkids == 3 && head == "Dist") {
             const Expr factor = buildReplacement(
@@ -902,13 +1001,17 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 N.coeff(static_cast<std::size_t>(ki * step)) / D.coeff(0));
         }
         if (nkids == 3 && (head == "PolynomialQuotient" ||
-                           head == "PolynomialRemainder")) {
+                           head == "PolynomialRemainder" ||
+                           head == "PolynomialDivide")) {
             const Expr u = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             const Expr v = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
             const Expr xArg = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth,
+                budget);
             if (u.isNull() || v.isNull() || !(xArg == var))
                 return Expr();
             UPoly Nu, Du, Nv, Dv;
@@ -920,43 +1023,89 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             const UPoly Pv = Nv * UPoly(Rational(std::int64_t{1}) / Dv.coeff(0));
             UPoly Q, R;
             UPoly::divMod(Pu, Pv, Q, R);
+            if (head == "PolynomialDivide") {
+                const Expr qExpr = c.expand(toExpr(c, Q, var));
+                if (R.isZero())
+                    return qExpr;
+                const Expr rExpr =
+                    c.mul({toExpr(c, R, var), c.pow(v, c.number(std::int64_t{-1}))});
+                return Q.isZero() ? rExpr : c.add({qExpr, rExpr});
+            }
             return toExpr(c, head == "PolynomialQuotient" ? Q : R, var);
         }
-        if (nkids == 2 && head == "ExpandToSum") {
+        if (nkids == 2 && (head == "ExpandToSum" || head == "Expand" ||
+                           head == "ExpandTrig" || head == "ExpandTrigReduce")) {
             const Expr u = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             const Expr xArg = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
             if (u.isNull() || !(xArg == var))
                 return Expr();
             return c.expand(u);
+        }
+        if (nkids == 3 && head == "ExpandTrigReduce") {
+            const Expr v = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
+            const Expr u = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
+            const Expr xArg = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth,
+                budget);
+            if (v.isNull() || u.isNull() || !(xArg == var))
+                return Expr();
+            return distributeMul(c, c.expand(u), c.expand(v));
+        }
+        if (nkids == 5 && head == "ExpandLinearProduct") {
+            const Expr u = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
+            const Expr v = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
+            const Expr xArg = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 4), depth,
+                budget);
+            if (u.isNull() || v.isNull() || !(xArg == var))
+                return Expr();
+            const Expr ex = expandIntegrandExpr(c, c.mul({u, v}), var);
+            return !ex.isNull() ? ex : distributeMul(c, c.expand(v), u);
         }
         if ((nkids == 2 || nkids == 3) && head == "ExpandIntegrand") {
             if (nkids == 2) {
                 const Expr u = buildReplacement(
                     t, terms, c, currentE, var, bnd, childOf(terms, term, 0),
-                    depth);
+                    depth, budget);
                 const Expr xArg = buildReplacement(
                     t, terms, c, currentE, var, bnd, childOf(terms, term, 1),
-                    depth);
+                    depth, budget);
                 if (u.isNull() || !(xArg == var))
                     return Expr();
                 return expandIntegrandExpr(c, u, var);
             }
             const Expr v = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
+                budget);
             const Expr u = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth,
+                budget);
             const Expr xArg = buildReplacement(
-                t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth);
+                t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth,
+                budget);
             if (v.isNull() || u.isNull() || !(xArg == var))
                 return Expr();
-            const Expr exU = expandIntegrandExpr(c, u, var);
+            Expr exU = expandIntegrandExpr(c, u, var);
+            if (exU.isNull() &&
+                (c.kind(u) == NodeKind::Add || c.kind(u) == NodeKind::Pow))
+                exU = c.expand(u);
             if (exU.isNull())
                 return Expr();
-            return distributeMul(c, exU, v);
+            return distributeMul(c, exU, c.expand(v));
         }
-        if (nkids == 2 && head == "Int") {
+        if (nkids == 2 && (head == "Int" || head == "IntHide")) {
             if (depth >= kMaxRubiDepth)
                 return Expr();
             const Expr integrand = buildReplacement(
@@ -1086,6 +1235,11 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             return c.div(a, bb);
         }
         if (op == "^") {
+            if (c.kind(a) == NodeKind::Symbol &&
+                (c.symbolName(a) == "e" || c.symbolName(a) == "E"))
+                return c.func("exp", bb);
+            if (c.kind(a) == NodeKind::Func && c.funcName(a) == "exp")
+                return c.func("exp", c.mul({c.child(a, 0), bb}));
             if (c.isZero(a) && c.kind(bb) == NodeKind::Number &&
                 c.numberValue(bb).signum() <= 0)
                 return Expr();
@@ -1166,9 +1320,49 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
     if (tag != kTagHead || nkids < 1)
         return false;
     const std::string pred = t.str(valId);
+    if (pred == "If" && nkids == 3) {
+        return evalCondition(t, terms, c, currentE, var, bnd,
+                             childOf(terms, term, 0), depth)
+                   ? evalCondition(t, terms, c, currentE, var, bnd,
+                                   childOf(terms, term, 1), depth)
+                   : evalCondition(t, terms, c, currentE, var, bnd,
+                                   childOf(terms, term, 2), depth);
+    }
     if (pred == "Not" && nkids == 1) {
         return !evalCondition(
             t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+    }
+    if (pred == "TrueQ" && nkids == 1)
+        return false;
+    if (pred == "ComplexFreeQ" && nkids == 1)
+        return true;
+    if (pred == "SumQ" && nkids == 1) {
+        const Expr u = buildReplacement(
+            t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+        return !u.isNull() && c.kind(u) == NodeKind::Add;
+    }
+    if ((pred == "SimplerQ" || pred == "SumSimplerQ") && nkids == 2)
+        return false;
+    if (pred == "SimplerSqrtQ" && nkids == 2) {
+        const Expr a = buildReplacement(
+            t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+        const Expr b = buildReplacement(
+            t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
+        if (a.isNull() || b.isNull() || c.kind(a) != NodeKind::Number ||
+            c.kind(b) != NodeKind::Number)
+            return false;
+        const Rational &va = c.numberValue(a);
+        const Rational &vb = c.numberValue(b);
+        if (va.signum() <= 0)
+            return false;
+        if (vb.signum() <= 0)
+            return true;
+        BigInt rna, rda, rnb, rdb;
+        const bool sqA = va.num().sqrtExact(rna) && va.den().sqrtExact(rda);
+        const bool sqB = vb.num().sqrtExact(rnb) && vb.den().sqrtExact(rdb);
+        if (sqA != sqB)
+            return sqA;
+        return (va.num() + va.den()) < (vb.num() + vb.den());
     }
     if (pred == "FreeQ" && nkids == 2) {
         return !termMentionsVar(t, terms, c, var, bnd, childOf(terms, term, 0));
@@ -1183,16 +1377,51 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
         }
         return true;
     }
-    if (pred == "LinearQ" && nkids == 2) {
-        const Expr u = buildReplacement(
+    if ((pred == "OddQ" || pred == "EvenQ") && nkids == 1) {
+        const Expr a = buildReplacement(
             t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+        if (a.isNull() || c.kind(a) != NodeKind::Number ||
+            !(c.numberValue(a).den() == BigInt(1)))
+            return false;
+        BigInt q, r;
+        BigInt::divMod(c.numberValue(a).num(), BigInt(2), q, r);
+        return pred == "OddQ" ? !r.isZero() : r.isZero();
+    }
+    if ((pred == "PerfectSquareQ" || pred == "NiceSqrtQ") && nkids == 1) {
+        const Expr a = buildReplacement(
+            t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
+        if (a.isNull() || c.kind(a) != NodeKind::Number)
+            return false;
+        const Rational &va = c.numberValue(a);
+        if (pred == "NiceSqrtQ" ? va.signum() <= 0 : va.signum() < 0)
+            return false;
+        BigInt rn, rd;
+        return va.num().sqrtExact(rn) && va.den().sqrtExact(rd);
+    }
+    if (pred == "LinearQ" && nkids == 2) {
         const Expr xArg = buildReplacement(
             t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
-        if (u.isNull() || !(xArg == var))
+        if (!(xArg == var))
             return false;
-        UPoly N, D;
-        return toRational(c, u, var, N, D) && D.isConst() && !D.isZero() &&
-               N.deg() == 1;
+        const std::int32_t uTerm = childOf(terms, term, 0);
+        auto checkOneLinear = [&](std::int32_t subTerm) -> bool {
+            const Expr u =
+                buildReplacement(t, terms, c, currentE, var, bnd, subTerm, depth);
+            if (u.isNull())
+                return false;
+            UPoly N, D;
+            return toRational(c, u, var, N, D) && D.isConst() && !D.isZero() &&
+                   N.deg() == 1;
+        };
+        if (t.termRow(terms, uTerm, 0) == kTagOp &&
+            std::string(t.str(t.termRow(terms, uTerm, 1))) == "list") {
+            const std::int32_t nItems = t.termRow(terms, uTerm, 3);
+            for (int i = 0; i < nItems; ++i)
+                if (!checkOneLinear(childOf(terms, uTerm, i)))
+                    return false;
+            return true;
+        }
+        return checkOneLinear(uTerm);
     }
     if ((pred == "PolyQ" || pred == "PolynomialQ") &&
         (nkids == 2 || nkids == 3)) {
@@ -1233,6 +1462,34 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             return N.deg() == static_cast<std::size_t>(di * step);
         }
         return true;
+    }
+    if (pred == "IntQuadraticQ" && nkids == 8) {
+        std::array<Rational, 7> v;
+        for (int i = 0; i < 7; ++i) {
+            const Expr ai = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
+            if (ai.isNull() || c.kind(ai) != NodeKind::Number)
+                return false;
+            v[static_cast<std::size_t>(i)] = c.numberValue(ai);
+        }
+        const auto isInt = [](const Rational &r) {
+            return r.den() == BigInt(1);
+        };
+        const Rational &a = v[0], &b = v[1], &cVal = v[2], &d = v[3], &e = v[4];
+        const Rational &m = v[5], &p = v[6];
+        if (isInt(p)) return true;
+        if (isInt(m) && m.signum() > 0) return true;
+        if (isInt(m * Rational(2)) && isInt(p * Rational(2))) return true;
+        if (isInt(m) && isInt(p * Rational(4))) return true;
+        if (isInt(m) && isInt(p + Rational(1, BigInt(3))) &&
+            ((cVal * cVal * d * d - b * cVal * d * e + b * b * e * e -
+              Rational(3) * a * cVal * e * e)
+                 .isZero() ||
+             (cVal * cVal * d * d - b * cVal * d * e - Rational(2) * b * b * e * e +
+              Rational(9) * a * cVal * e * e)
+                 .isZero()))
+            return true;
+        return false;
     }
     if (pred == "IntLinearQ" && nkids == 7) {
         const Expr em = buildReplacement(
@@ -1330,8 +1587,17 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             return true;
         return false;
     }
+    if (pred == "RationalQ") {
+        for (int i = 0; i < nkids; ++i) {
+            const Expr a = buildReplacement(
+                t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
+            if (a.isNull() || c.kind(a) != NodeKind::Number)
+                return false;
+        }
+        return true;
+    }
     if (pred == "PosQ" || pred == "NegQ" || pred == "IntegerQ" ||
-        pred == "FractionQ" || pred == "RationalQ") {
+        pred == "FractionQ") {
         if (nkids != 1)
             return false;
         const Expr a = buildReplacement(
@@ -1342,21 +1608,35 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
         if (pred == "PosQ") return va.signum() > 0;
         if (pred == "NegQ") return va.signum() < 0;
         if (pred == "IntegerQ") return va.den() == BigInt(1);
-        if (pred == "FractionQ") return !(va.den() == BigInt(1));
-        return true; // RationalQ
+        return !(va.den() == BigInt(1)); // FractionQ
     }
     if (pred == "NeQ" || pred == "EqQ" || pred == "GtQ" || pred == "LtQ" ||
         pred == "GeQ" || pred == "LeQ" || pred == "IGtQ" || pred == "ILtQ" ||
         pred == "IGeQ" || pred == "ILeQ") {
         if (nkids < 2 || nkids > 3)
             return false;
+        std::array<Expr, 3> exprs;
         std::array<Rational, 3> vals;
+        bool allNum = true;
         for (int i = 0; i < nkids; ++i) {
             const Expr ai = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
-            if (ai.isNull() || c.kind(ai) != NodeKind::Number)
+            if (ai.isNull())
                 return false;
-            vals[static_cast<std::size_t>(i)] = c.numberValue(ai);
+            exprs[static_cast<std::size_t>(i)] = ai;
+            if (c.kind(ai) == NodeKind::Number)
+                vals[static_cast<std::size_t>(i)] = c.numberValue(ai);
+            else
+                allNum = false;
+        }
+        if (!allNum) {
+            if (nkids == 2 && (pred == "EqQ" || pred == "NeQ")) {
+                const bool eq =
+                    (exprs[0] == exprs[1]) ||
+                    c.isZero(c.simplify(c.add({exprs[0], c.neg(exprs[1])})));
+                return pred == "EqQ" ? eq : !eq;
+            }
+            return false;
         }
         const Rational &va = vals[0];
         const Rational &vb = vals[1];
@@ -1660,6 +1940,207 @@ bool checkNormalizedCertificate(Ctx &c, Expr dF, Expr e, Expr var)
     return false;
 }
 
+Expr rewriteTrigToSinCos(Ctx &c, Expr e)
+{
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+        return e;
+    case NodeKind::Add: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
+        return c.add(ch);
+    }
+    case NodeKind::Mul: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
+        return c.mul(ch);
+    }
+    case NodeKind::Pow:
+        return c.pow(rewriteTrigToSinCos(c, c.child(e, 0)),
+                     rewriteTrigToSinCos(c, c.child(e, 1)));
+    case NodeKind::Func: {
+        const Expr u = rewriteTrigToSinCos(c, c.child(e, 0));
+        const std::string &fn = c.funcName(e);
+        if (fn == "tan")
+            return c.mul(
+                {c.func("sin", u), c.pow(c.func("cos", u), c.number(-1))});
+        if (fn == "cot")
+            return c.mul(
+                {c.func("cos", u), c.pow(c.func("sin", u), c.number(-1))});
+        if (fn == "sec")
+            return c.pow(c.func("cos", u), c.number(-1));
+        if (fn == "csc")
+            return c.pow(c.func("sin", u), c.number(-1));
+        if (fn == "tanh")
+            return c.mul(
+                {c.func("sinh", u), c.pow(c.func("cosh", u), c.number(-1))});
+        if (fn == "coth")
+            return c.mul(
+                {c.func("cosh", u), c.pow(c.func("sinh", u), c.number(-1))});
+        if (fn == "sech")
+            return c.pow(c.func("cosh", u), c.number(-1));
+        if (fn == "csch")
+            return c.pow(c.func("sinh", u), c.number(-1));
+        return c.func(fn, u);
+    }
+    }
+    return e;
+}
+
+Expr clearNestedDenominators(Ctx &c, Expr e)
+{
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+        return e;
+    case NodeKind::Add: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(clearNestedDenominators(c, c.child(e, i)));
+        return c.add(ch);
+    }
+    case NodeKind::Mul: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(clearNestedDenominators(c, c.child(e, i)));
+        return c.mul(ch);
+    }
+    case NodeKind::Pow: {
+        const Expr b = clearNestedDenominators(c, c.child(e, 0));
+        const Expr p = clearNestedDenominators(c, c.child(e, 1));
+        if (c.kind(b) == NodeKind::Add && c.kind(p) == NodeKind::Number) {
+            const Rational &pr = c.numberValue(p);
+            if (pr.den() == BigInt(1) && pr.num().isNegative()) {
+                std::vector<std::pair<Expr, Rational>> denBases;
+                auto recordFactor = [&](Expr f) {
+                    if (c.kind(f) == NodeKind::Pow &&
+                        c.kind(c.child(f, 1)) == NodeKind::Number) {
+                        const Rational &fr = c.numberValue(c.child(f, 1));
+                        if (fr.den() == BigInt(1) && fr.num().isNegative()) {
+                            const Expr db = c.child(f, 0);
+                            const Rational posExp = -fr;
+                            for (auto &kv : denBases) {
+                                if (kv.first == db) {
+                                    if (posExp > kv.second)
+                                        kv.second = posExp;
+                                    return;
+                                }
+                            }
+                            denBases.push_back({db, posExp});
+                        }
+                    }
+                };
+                for (std::size_t i = 0; i < c.childCount(b); ++i) {
+                    const Expr term = c.child(b, i);
+                    if (c.kind(term) == NodeKind::Mul) {
+                        for (std::size_t j = 0; j < c.childCount(term); ++j)
+                            recordFactor(c.child(term, j));
+                    } else {
+                        recordFactor(term);
+                    }
+                }
+                if (!denBases.empty()) {
+                    std::vector<Expr> dFactors;
+                    dFactors.reserve(denBases.size());
+                    for (const auto &kv : denBases)
+                        dFactors.push_back(c.pow(kv.first, c.number(kv.second)));
+                    const Expr D = c.mul(dFactors);
+                    const Expr clearedBase =
+                        c.simplify(c.expand(distributeMul(c, b, D)));
+                    const Expr dPow = c.pow(D, c.number(-pr));
+                    return c.mul({dPow, c.pow(clearedBase, p)});
+                }
+            }
+        }
+        return c.pow(b, p);
+    }
+    case NodeKind::Func:
+        return c.func(c.funcName(e), clearNestedDenominators(c, c.child(e, 0)));
+    }
+    return e;
+}
+
+bool isZeroOrClearedZero(Ctx &c, Expr delta, Expr var)
+{
+    if (c.isZero(delta))
+        return true;
+    UPoly nD, dD;
+    if (toRational(c, delta, var, nD, dD) && !dD.isZero() && nD.isZero())
+        return true;
+
+    if (c.kind(delta) == NodeKind::Add) {
+        std::vector<std::pair<Expr, Rational>> denBases;
+        auto recordNegPow = [&](Expr f) {
+            if (c.kind(f) == NodeKind::Pow &&
+                c.kind(c.child(f, 1)) == NodeKind::Number) {
+                const Rational &fr = c.numberValue(c.child(f, 1));
+                if (fr.num().isNegative()) {
+                    const Expr db = c.child(f, 0);
+                    const Rational posExp = -fr;
+                    for (auto &kv : denBases) {
+                        if (kv.first == db) {
+                            if (posExp > kv.second)
+                                kv.second = posExp;
+                            return;
+                        }
+                    }
+                    denBases.push_back({db, posExp});
+                }
+            }
+        };
+        for (std::size_t i = 0; i < c.childCount(delta); ++i) {
+            const Expr term = c.child(delta, i);
+            if (c.kind(term) == NodeKind::Mul) {
+                for (std::size_t j = 0; j < c.childCount(term); ++j)
+                    recordNegPow(c.child(term, j));
+            } else {
+                recordNegPow(term);
+            }
+        }
+        if (!denBases.empty()) {
+            std::vector<Expr> dFactors;
+            dFactors.reserve(denBases.size());
+            for (const auto &kv : denBases)
+                dFactors.push_back(c.pow(kv.first, c.number(kv.second)));
+            const Expr D = c.mul(dFactors);
+            const Expr cleared =
+                c.simplify(c.expand(distributeMul(c, delta, D)));
+            if (c.isZero(cleared))
+                return true;
+            if (toRational(c, cleared, var, nD, dD) && !dD.isZero() &&
+                nD.isZero())
+                return true;
+        }
+    }
+    return false;
+}
+
+bool checkSimplifiedDelta(Ctx &c, Expr dF, Expr e, Expr var)
+{
+    const Expr delta = c.simplify(c.expand(c.add({dF, c.neg(e)})));
+    if (isZeroOrClearedZero(c, delta, var))
+        return true;
+
+    const Expr dF2 =
+        normalizeRadicals(c, clearNestedDenominators(c, rewriteTrigToSinCos(c, dF)), var);
+    const Expr e2 =
+        normalizeRadicals(c, clearNestedDenominators(c, rewriteTrigToSinCos(c, e)), var);
+    if (checkNormalizedCertificate(c, dF2, e2, var))
+        return true;
+    const Expr delta2 = c.simplify(c.expand(c.add({dF2, c.neg(e2)})));
+    if (isZeroOrClearedZero(c, delta2, var))
+        return true;
+
+    return false;
+}
+
 bool certificateHolds(Ctx &c, Expr F, Expr e, Expr var)
 {
     if (F.isNull() || c.isZero(e))
@@ -1699,6 +2180,10 @@ bool certificateHolds(Ctx &c, Expr F, Expr e, Expr var)
                 return true;
         }
     }
+
+    if (checkSimplifiedDelta(c, dFNorm, eNorm, var))
+        return true;
+
     return false;
 }
 

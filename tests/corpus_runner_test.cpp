@@ -338,6 +338,11 @@ TEST(CorpusTask, RubiRoutingStatuses)
     EXPECT_GT(p.answerNodes, 0u);
 
     ASSERT_TRUE(parseCorpusLine("t2\tx\trubi\tsin(x)", t));
+    const TaskOutcome p2 = runTask(t);
+    EXPECT_EQ(p2.status, TaskStatus::Proved);
+    EXPECT_GT(p2.answerNodes, 0u);
+
+    ASSERT_TRUE(parseCorpusLine("t3\tx\trubi\tsin(x^2)", t));
     const TaskOutcome u = runTask(t);
     EXPECT_EQ(u.status, TaskStatus::Unevaluated);
     EXPECT_FALSE(u.detail.empty());

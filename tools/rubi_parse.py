@@ -53,7 +53,30 @@ LONG_NAME = {
 }
 
 
+def strip_comments(src):
+    out = []
+    i = 0
+    n = len(src)
+    depth = 0
+    while i < n:
+        if i + 1 < n and src[i] == "(" and src[i + 1] == "*":
+            depth += 1
+            i += 2
+            continue
+        if i + 1 < n and src[i] == "*" and src[i + 1] == ")" and depth > 0:
+            depth -= 1
+            i += 2
+            if depth == 0:
+                out.append(" ")
+            continue
+        if depth == 0:
+            out.append(src[i])
+        i += 1
+    return "".join(out)
+
+
 def tokenize(src):
+    src = strip_comments(src)
     toks = []
     pos = 0
     while pos < len(src):
@@ -102,7 +125,18 @@ class Parser:
     def parse_file(self):
         rules = []
         while self.peek() is not None:
-            if self.peek() == "Int":
+            if self.peek() == "If":
+                self.next()
+                if self.peek() == "[":
+                    depth = 1
+                    self.next()
+                    while self.peek() is not None and depth > 0:
+                        t = self.next()
+                        if t == "[":
+                            depth += 1
+                        elif t == "]":
+                            depth -= 1
+            elif self.peek() == "Int":
                 rules.append(self.parse_rule())
             else:
                 self.next()  # skip anything between rules
@@ -189,10 +223,18 @@ class Parser:
         return node
 
     def parse_cmp(self):
-        node = self.parse_sum()
+        lhs = self.parse_sum()
+        if self.peek() not in ("==", "!=", "<", ">", "<=", ">="):
+            return lhs
+        conj = []
         while self.peek() in ("==", "!=", "<", ">", "<=", ">="):
             op = self.next()
-            node = {"op": op, "args": [node, self.parse_sum()]}
+            rhs = self.parse_sum()
+            conj.append({"op": op, "args": [lhs, rhs]})
+            lhs = rhs
+        node = conj[0]
+        for c in conj[1:]:
+            node = {"op": "&&", "args": [node, c]}
         return node
 
     def parse_sum(self):
@@ -205,8 +247,11 @@ class Parser:
 
     def parse_product(self):
         node = self.parse_power()
-        while self.peek() in ("*", "/", "("):
-            if self.peek() == "(":
+        while (self.peek() in ("*", "/", "(") or
+               (self.peek() is not None and
+                self.peek() not in ("Int", "If") and
+                re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", self.peek()))):
+            if self.peek() not in ("*", "/"):
                 rhs = self.parse_power()
                 node = {"op": "*", "args": [node, rhs]}
             else:
@@ -216,6 +261,9 @@ class Parser:
         return node
 
     def parse_power(self):
+        if self.peek() == "-":
+            self.next()
+            return {"op": "neg", "args": [self.parse_power()]}
         base = self.parse_atom()
         if self.peek() == "^":
             self.next()
@@ -224,10 +272,19 @@ class Parser:
         return base
 
     def parse_atom(self):
-        t = self.peek()
-        if t == "-":
+        node = self._parse_atom_base()
+        while (self.peek() == "[" and self.i + 1 < len(self.toks)
+               and self.toks[self.i + 1] == "["):
             self.next()
-            return {"op": "neg", "args": [self.parse_atom()]}
+            self.next()
+            idx = self.parse_expr()
+            self.expect("]")
+            self.expect("]")
+            node = {"head": "Part", "args": [node, idx]}
+        return node
+
+    def _parse_atom_base(self):
+        t = self.peek()
         if t == "(":
             self.next()
             e = self.parse_expr()
@@ -257,7 +314,8 @@ class Parser:
                 if self.peek() == ".":
                     self.next()
                     blank = "_."     # optional (default) blank
-            if self.peek() == "[":
+            if (self.peek() == "[" and not (
+                    self.i + 1 < len(self.toks) and self.toks[self.i + 1] == "[")):
                 self.next()
                 args = []
                 if self.peek() != "]":

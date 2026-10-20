@@ -139,9 +139,18 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             result = mul({neg(func("sin", u)), du});
         else if (name == "tan")
             result = mul({du, add({one(), pow(e, number(std::int64_t{2}))})});
+        else if (name == "cot")
+            result = neg(mul({du, add({one(), pow(e, number(std::int64_t{2}))})}));
+        else if (name == "sec")
+            result = mul({e, func("tan", u), du});
+        else if (name == "csc")
+            result = neg(mul({e, func("cot", u), du}));
         else if (name == "atan")
             result = mul({du, pow(add({one(), pow(u, number(std::int64_t{2}))}),
                                   number(std::int64_t{-1}))});
+        else if (name == "acot")
+            result = neg(mul({du, pow(add({one(), pow(u, number(std::int64_t{2}))}),
+                                      number(std::int64_t{-1}))}));
         else if (name == "asin")
             result = mul({du, pow(add({one(), neg(pow(u, number(std::int64_t{2})))}),
                                   number(Rational(std::int64_t{-1}, BigInt(2))))});
@@ -154,6 +163,12 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             result = mul({func("sinh", u), du});
         else if (name == "tanh")
             result = mul({du, add({one(), neg(pow(e, number(std::int64_t{2})))})});
+        else if (name == "coth")
+            result = mul({du, add({one(), neg(pow(e, number(std::int64_t{2})))})});
+        else if (name == "sech")
+            result = neg(mul({e, func("tanh", u), du}));
+        else if (name == "csch")
+            result = neg(mul({e, func("coth", u), du}));
         else if (name == "asinh")
             result = mul({du, pow(add({one(), pow(u, number(std::int64_t{2}))}),
                                   number(Rational(std::int64_t{-1}, BigInt(2))))});

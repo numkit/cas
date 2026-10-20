@@ -9,9 +9,9 @@ Designed to be vendored into the Numkit tree as the `symbolic` toolbox core;
 integration constraints (C++17, no deps, single-threaded base, PMR) are
 binding for all code in this repository.
 
-**Current release: v0.1.0** — the standalone certified integrator
-core. Declared class, corpus metrics and the honest incompleteness
-list: `CHANGELOG.md`.
+**Current release: v0.2.0** — the standalone certified symbolic
+computation & integration toolbox core. Declared class, corpus metrics
+and changelog: `CHANGELOG.md`.
 
 Specification: `notes/cas-integrator-plan.md` (v0.4).
 

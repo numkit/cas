@@ -5,15 +5,18 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
-- **Released: v0.1.0** (standalone certified integrator core; criteria and
-  metrics in `CHANGELOG.md` and `notes/first-working-version.md`).
-- **Working goal: v0.2.0 "Symbolic Toolbox in Numkit" + SMT capability track** —
-  autonomous pool: items 32–37 in `notes/c1-algebraic-layer.md` (staged Rubi
-  scaling R1–R6, Mean Leaf Ratio, unified `integrate` cascade, and practical
-  MATLAB Symbolic Math Toolbox capabilities: numeric evaluation/`vpa` basis,
-  `taylor`/`limit`, symbolic matrices `jacobian`/`det`/`inv`/`linsolve`). The
-  Numkit vendoring spike (item 23 remainder) waits for the user's explicit
-  command.
+- **Released: v0.2.0** (Symbolic Toolbox in Numkit core: full Rubi 1.1
+  binomial section 1365 rules with MLR = 1.00, unified `integrate`
+  cascade with `Budget`, 128-bit `BigInt` SBO + `evalDouble`,
+  `taylor`/`laurent`/`limit`, and `SymMatrix` `jacobian`/`hessian`/
+  `det`/`inv`/`linsolve`/`charpoly`; see `CHANGELOG.md`).
+- **Working goal: v0.3.0 "Echelon 3 — Simplify, Transcendental Rubi, Symbolic Solve & ODEs"** —
+  autonomous pool: items 38–42 in `notes/c1-algebraic-layer.md`
+  (algebraic/trig `simplify` engine minimizing `exprCost`, Rubi R3–R5
+  trinomial/exp/log/trig scaling, symbolic `solve` in radicals &
+  polynomial systems, and certified 1st/2nd-order ODE solver `dsolve`).
+  The Numkit vendoring spike (item 23 remainder) waits for the user's
+  explicit command.
 - **Integration contract is BINDING for all code** (the core is vendored into
   the Numkit tree later; see `notes/integration-model.md`):
   - C++17 strict — no C++20/23 features;

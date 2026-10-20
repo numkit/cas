@@ -48,6 +48,8 @@ build/msvc/apps/Release/nkcas.exe limit "(expr)" x [x0]  # finite or inf / -inf
 build/msvc/apps/Release/nkcas.exe simplify "(expr)"      # cost-guided simplification
 build/msvc/apps/Release/nkcas.exe symsolve "(eqn)" x     # symbolic equation solver
 build/msvc/apps/Release/nkcas.exe dsolve "(rhs)" x       # certified 1st-order ODE solver
+build/msvc/apps/Release/nkcas.exe laplace "(expr)" [t] [s]   # forward Laplace transform
+build/msvc/apps/Release/nkcas.exe ilaplace "(expr)" [s] [t]  # certified inverse Laplace transform
 build/msvc/apps/Release/nkcas.exe eval "(expr)" [x val]  # IEEE-754 double evaluation
 build/msvc/apps/Release/nkcas.exe solve "x^2-2" x        # exact real roots
 build/msvc/apps/Release/nkcas.exe expand|factor|subs "(expr)" ...
@@ -138,6 +140,14 @@ system solver (`linsolve`).
 damped, and underdamped oscillatory regimes with resonant forcing and
 initial value problems), certifying every solution by substitution into
 the ODE.
+
+**Integral Transforms** (`transform/`): `laplace` and `ilaplace`
+(`transform/laplace.hpp`) compute forward and inverse unilateral
+Laplace transforms with frequency-shift, frequency-differentiation,
+trig/hyperbolic product reduction, partial-fraction inversion over
+$\mathbb{Q}[s]$ (including repeated complex-conjugate quadratic poles
+and parametric forms), and mandatory round-trip certification
+$\mathcal{L}\{\mathcal{L}^{-1}\{F\}\}(s) = F(s)$.
 
 **Cancellation** (`core/budget.hpp`): `Budget` token tracking step and
 arena-byte limits (`StepExhausted` / `ArenaExhausted`) across

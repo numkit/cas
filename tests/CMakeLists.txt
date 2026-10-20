@@ -34,6 +34,7 @@ add_executable(nkcas_gtest
     ode/dsolve_test.cpp
     corpus_runner_test.cpp
     rubi/rules_test.cpp
+    transform/laplace_test.cpp
     ../apps/corpus_runner.cpp
 )
 

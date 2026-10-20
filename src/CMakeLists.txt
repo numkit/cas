@@ -19,6 +19,7 @@ add_library(numkit_cas STATIC
     linalg/symmatrix.cpp
     ode/dsolve.cpp
     rubi/rules.cpp
+    transform/laplace.cpp
 )
 
 add_library(numkit::cas ALIAS numkit_cas)

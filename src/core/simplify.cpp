@@ -939,10 +939,31 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
     return e;
 }
 
+void collectTrigArgs(const Ctx &c, Expr e, std::vector<Expr> &args)
+{
+    if (e.isNull())
+        return;
+    if (c.kind(e) == NodeKind::Func) {
+        const std::string &fn = c.funcName(e);
+        if (fn == "sin" || fn == "cos" || fn == "tan" || fn == "cot" ||
+            fn == "sec" || fn == "csc" || fn == "sinh" || fn == "cosh" ||
+            fn == "tanh" || fn == "coth" || fn == "sech" || fn == "csch") {
+            const Expr arg = c.child(e, 0);
+            if (std::find(args.begin(), args.end(), arg) == args.end())
+                args.push_back(arg);
+        }
+    }
+    for (std::size_t i = 0; i < c.childCount(e); ++i)
+        collectTrigArgs(c, c.child(e, i), args);
+}
+
 // Convert tan/cot/sec/csc/tanh/coth/sech/csch into sin/cos and sinh/cosh,
-// and optionally expand double-angle arguments 2*u into u so cross-frequency
-// trig/hyperbolic identities cancel under rational normalization + Pythagoras.
-Expr toSinCos(Ctx &c, Expr e, bool expandDoubleAngle)
+// and optionally expand double-angle arguments 2*u into u when u (or a divisor
+// of u) appears as another trig/hyperbolic argument in the expression so
+// cross-frequency trig/hyperbolic identities cancel under rational normalization
+// + Pythagoras.
+Expr toSinCosRec(Ctx &c, Expr e, bool expandDoubleAngle,
+                 const std::vector<Expr> &trigArgs)
 {
     if (e.isNull())
         return Expr();
@@ -952,14 +973,15 @@ Expr toSinCos(Ctx &c, Expr e, bool expandDoubleAngle)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        const Expr u = toSinCos(c, c.child(e, 0), expandDoubleAngle);
+        const Expr u = toSinCosRec(c, c.child(e, 0), expandDoubleAngle, trigArgs);
         const std::string &fn = c.funcName(e);
 
         // Check if `u` is `2 * v` (even integer coefficient in Mul) when expandDoubleAngle is true
         Expr halfU;
         bool isDouble = false;
-        if (expandDoubleAngle && c.kind(u) == NodeKind::Mul &&
-            c.childCount(u) >= 2 && c.kind(c.child(u, 0)) == NodeKind::Number) {
+        if (expandDoubleAngle && trigArgs.size() >= 2 &&
+            c.kind(u) == NodeKind::Mul && c.childCount(u) >= 2 &&
+            c.kind(c.child(u, 0)) == NodeKind::Number) {
             const Rational &rv = c.numberValue(c.child(u, 0));
             std::int64_t p = 0;
             if (rv.den() == BigInt(1) && rv.num().fitsInt64(p) && p != 0 &&
@@ -970,7 +992,14 @@ Expr toSinCos(Ctx &c, Expr e, bool expandDoubleAngle)
                 for (std::size_t i = 1; i < c.childCount(u); ++i)
                     rest.push_back(c.child(u, i));
                 halfU = rest.empty() ? c.one() : c.mul(rest);
-                isDouble = true;
+                for (const Expr &ta : trigArgs) {
+                    if (ta == halfU || c.neg(ta) == halfU ||
+                        c.mul({c.number(std::int64_t{2}), ta}) == halfU ||
+                        c.mul({c.number(std::int64_t{-2}), ta}) == halfU) {
+                        isDouble = true;
+                        break;
+                    }
+                }
             }
         }
 
@@ -1012,18 +1041,28 @@ Expr toSinCos(Ctx &c, Expr e, bool expandDoubleAngle)
         return c.func(fn, u);
     }
     case NodeKind::Pow:
-        return c.pow(toSinCos(c, c.child(e, 0), expandDoubleAngle),
-                     toSinCos(c, c.child(e, 1), expandDoubleAngle));
+        return c.pow(
+            toSinCosRec(c, c.child(e, 0), expandDoubleAngle, trigArgs),
+            toSinCosRec(c, c.child(e, 1), expandDoubleAngle, trigArgs));
     case NodeKind::Add:
     case NodeKind::Mul: {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
         for (std::size_t i = 0; i < c.childCount(e); ++i)
-            kids.push_back(toSinCos(c, c.child(e, i), expandDoubleAngle));
+            kids.push_back(
+                toSinCosRec(c, c.child(e, i), expandDoubleAngle, trigArgs));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
     }
     }
     return e;
+}
+
+Expr toSinCos(Ctx &c, Expr e, bool expandDoubleAngle)
+{
+    std::vector<Expr> trigArgs;
+    if (expandDoubleAngle)
+        collectTrigArgs(c, e, trigArgs);
+    return toSinCosRec(c, e, expandDoubleAngle, trigArgs);
 }
 
 void collectSymbols(const Ctx &c, Expr e, std::vector<Expr> &syms)
@@ -1073,6 +1112,11 @@ Expr singleSimplifyPass(Ctx &c, Expr e, Budget *budget)
             break;
         const Expr sc = toSinCos(c, rw, expandDA);
         if (!sc.isNull() && !(sc == rw)) {
+            if (expandDA) {
+                const Expr scExp = c.expand(sc);
+                if (!scExp.isNull())
+                    best = pickBest(c, best, rewriteBottomUp(c, scExp));
+            }
             const Expr scRat = simplifyRationalExpr(c, sc);
             if (!scRat.isNull()) {
                 const Expr scRw = rewriteBottomUp(c, scRat);

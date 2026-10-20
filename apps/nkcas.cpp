@@ -18,6 +18,7 @@
 #include <numkit/cas/ode/dsolve.hpp>
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/rubi/rules.hpp>
+#include <numkit/cas/transform/laplace.hpp>
 
 #include "corpus_runner.hpp"
 
@@ -246,6 +247,32 @@ int runDefInt(const std::string &exprSrc, const std::string &varName,
     return 2;
 }
 
+int runLaplace(const std::string &exprSrc, const std::string &inVarName,
+               const std::string &outVarName, bool inverse)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr vIn = ctx.symbol(inVarName);
+    const numkit::cas::Expr vOut = ctx.symbol(outVarName);
+    const numkit::cas::LaplaceResult r =
+        inverse ? numkit::cas::ilaplace(ctx, f, vIn, vOut)
+                : numkit::cas::laplace(ctx, f, vIn, vOut);
+    if (r.proved()) {
+        std::cout << ctx.toString(r.F) << "\n";
+        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        return 0;
+    }
+    std::cout << "Unevaluated: " << r.reason << "\n";
+    return 2;
+}
+
 int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
@@ -297,6 +324,10 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         return runTaylor(exprSrc, varName, "", 6);
     if (cmd == "limit")
         return runLimit(exprSrc, varName, "");
+    if (cmd == "laplace")
+        return runLaplace(exprSrc, varName.empty() ? "t" : varName, "s", false);
+    if (cmd == "ilaplace")
+        return runLaplace(exprSrc, varName.empty() ? "s" : varName, "t", true);
     if (cmd == "integrate") {
         const numkit::cas::RationalIntegral r =
             numkit::cas::integrate(ctx, f, var);
@@ -465,6 +496,10 @@ int main(int argc, char **argv)
         return runSubs(argv[2], argv[3], argv[4]);
     if (argc == 5 && std::string(argv[1]) == "eval")
         return runEval(argv[2], argv[3], argv[4]);
+    if (argc == 5 && std::string(argv[1]) == "laplace")
+        return runLaplace(argv[2], argv[3], argv[4], false);
+    if (argc == 5 && std::string(argv[1]) == "ilaplace")
+        return runLaplace(argv[2], argv[3], argv[4], true);
     if (argc == 4)
         return runCommand(argv[1], argv[2], argv[3]);
     if (argc == 3 && std::string(argv[1]) == "print")
@@ -473,6 +508,10 @@ int main(int argc, char **argv)
         return runCommand(argv[1], argv[2], "");
     if (argc == 3 && std::string(argv[1]) == "simplify")
         return runCommand(argv[1], argv[2], "");
+    if (argc == 3 && std::string(argv[1]) == "laplace")
+        return runLaplace(argv[2], "t", "s", false);
+    if (argc == 3 && std::string(argv[1]) == "ilaplace")
+        return runLaplace(argv[2], "s", "t", true);
     if (argc == 3 && std::string(argv[1]) == "eval")
         return runEval(argv[2], "", "");
     if (argc == 3 && std::string(argv[1]) == "corpus")

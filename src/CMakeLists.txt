@@ -17,6 +17,7 @@ add_library(numkit_cas STATIC
     integrate/ratint.cpp
     integrate/verify.cpp
     linalg/symmatrix.cpp
+    ode/dsolve.cpp
     rubi/rules.cpp
 )
 

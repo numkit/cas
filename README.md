@@ -44,6 +44,9 @@ build/msvc/apps/Release/nkcas.exe rubi "(expr)" x        # Rubi fast path only
 build/msvc/apps/Release/nkcas.exe diff "(expr)" x
 build/msvc/apps/Release/nkcas.exe taylor "(expr)" x [x0] [order]
 build/msvc/apps/Release/nkcas.exe limit "(expr)" x [x0]
+build/msvc/apps/Release/nkcas.exe simplify "(expr)"      # cost-guided simplification
+build/msvc/apps/Release/nkcas.exe symsolve "(eqn)" x     # symbolic equation solver
+build/msvc/apps/Release/nkcas.exe dsolve "(rhs)" x       # certified 1st-order ODE solver
 build/msvc/apps/Release/nkcas.exe eval "(expr)" [x val]  # IEEE-754 double evaluation
 build/msvc/apps/Release/nkcas.exe solve "x^2-2" x        # exact real roots
 build/msvc/apps/Release/nkcas.exe expand|factor|subs "(expr)" ...
@@ -78,7 +81,12 @@ MATLAB-precedence text; `toString` prints round-trip-exact forms;
 `evalExact` evaluates exactly in Q with honest declines outside;
 `evalDouble` evaluates DAGs (including Sturm-refined `RootOf` atoms and
 special functions `erf`/`erfc`/`gamma`) to `double`; `leafCount` and
-`exprCost` measure expression size and DAG complexity; `taylor`,
+`exprCost` measure expression size and DAG complexity; `simplify`
+(`core/simplify.hpp`) performs cost-guided algebraic, trigonometric,
+hyperbolic, and logarithmic simplification; `solveSymbolic` and
+`solveSystem2` (`core/symsolve.hpp`) solve parametric polynomial/radical
+and single-occurrence transcendental equations and 2-variable polynomial
+systems via Sylvester resultants; `taylor`,
 `laurent`, and `limit` (`core/series.hpp`) compute truncated power/Laurent
 series and symbolic limits.
 
@@ -114,6 +122,14 @@ calculus (`jacobian`, `gradient`, `hessian`), division-free
 Faddeev–LeVerrier characteristic polynomial, determinant, adjugate,
 and inverse (`charpoly`, `det`, `adjugate`, `inv`), and exact linear
 system solver (`linsolve`).
+
+**Ordinary Differential Equations** (`ode/`): `dsolve1`, `dsolve1IVP`,
+`dsolve2Linear`, and `dsolve2LinearIVP` (`ode/dsolve.hpp`) solve
+1st-order quadrature, linear, separable, and Bernoulli ODEs and
+2nd-order constant-coefficient linear ODEs (overdamped, critically
+damped, and underdamped oscillatory regimes with resonant forcing and
+initial value problems), certifying every solution by substitution into
+the ODE.
 
 **Cancellation** (`core/budget.hpp`): `Budget` token tracking step and
 arena-byte limits (`StepExhausted` / `ArenaExhausted`) across

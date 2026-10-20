@@ -15,6 +15,7 @@
 #include <numkit/cas/core/simplify.hpp>
 #include <numkit/cas/core/symsolve.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/ode/dsolve.hpp>
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/rubi/rules.hpp>
 
@@ -290,6 +291,18 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         for (const auto &r : roots)
             std::cout << ctx.toString(r) << "\n";
         return 0;
+    }
+    if (cmd == "dsolve") {
+        const numkit::cas::Expr y = ctx.symbol("y");
+        const numkit::cas::OdeResult sol =
+            numkit::cas::dsolve1(ctx, f, var, y);
+        if (sol.proved()) {
+            std::cout << ctx.toString(sol.y) << "\n";
+            std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+            return 0;
+        }
+        std::cout << "Unevaluated: " << sol.reason << "\n";
+        return 2;
     }
     if (cmd == "factor") {
         numkit::cas::Expr factored;

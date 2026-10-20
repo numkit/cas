@@ -319,14 +319,17 @@
     свежие метрики корпусов (`rational-baseline` 500/500, медиана 9.89 мс;
     `rubi-slice` 500/500, медиана 47 мкс, $\text{MLR} = 1.00$), 212/212 тестов
     Release за 29.3 с, аннотированный тег `v0.2.0`.
-39. 🔶 (v0.3-пул, веха S1) Движок упрощения выражений `simplify(Ctx&, Expr)`:
-    канонический выбор представителя минимальной стоимости `Ctx::exprCost`
-    среди `expand`, рациональной редукции НОД `simplifyRationalExpr`,
+39. ✅ (v0.3-пул, веха S1) Движок упрощения выражений `simplify(Ctx&, Expr)`
+    (`core/simplify`): канонический выбор представителя минимальной стоимости
+    `(Ctx::exprCost, Ctx::leafCount)` среди переписываний снизу вверх,
+    `expand`, рациональной редукции НОД `simplifyRationalExpr`,
     факторизации `factorExpr`, пифагоровых и гиперболических тождеств
-    ($\sin^2 u + \cos^2 u \to 1$, $\cosh^2 u - \sinh^2 u \to 1$,
-    $1 + \tan^2 u \to \cos^{-2} u$), композиций обратных функций
-    ($\exp(\log u) \to u$, $\log(\exp u) \to u$, $\sin(\arcsin u) \to u$) и
-    логарифмических/степенных правил; CLI `nkcas simplify`.
+    ($A\sin^2 u + A\cos^2 u \to A$, $C - C\sin^2 u \to C\cos^2 u$,
+    $A\cosh^2 u - A\sinh^2 u \to A$, формул двойного угла), композиций
+    обратных функций ($\exp(\log u) \to u$, $\log(\exp u) \to u$,
+    $\sin(\arcsin u) \to u$, $\cos(\arcsin u) \to \sqrt{1-u^2}$ и т.д.),
+    перевода `tan/cot/sec/csc` в `sin/cos` и логарифмических/степенных правил;
+    CLI `nkcas simplify`.
 40. 🔶 (v0.3-пул, стадии R3–R5) Масштабирование базы Руби на триномы и
     трансцендентные функции (`1.2` триномы + `2` экспоненты + `3` логарифмы +
     `4` тригонометрия).
@@ -2197,6 +2200,51 @@ MATLAB Symbolic Math Toolbox (три эшелона):
      матрицах над $\mathbb{Q}[x]$.
    - Граничные случаи: $1\times 1$, вырожденные матрицы, несовпадение размерностей
      и исчерпание `Budget`.
+
+### Сессия: движок алгебраического и трансцендентного упрощения `simplify` (пункт 39 ЗАКРЫТ)
+
+1. **Архитектура `simplify(Ctx&, Expr, Budget*)` и `Ctx::simplify(Expr)` (`include/numkit/cas/core/simplify.hpp`, `src/core/simplify.cpp`)**:
+   - Итеративный выбор лучшего эквивалентного представителя по лексикографической
+     метрике `(c.exprCost(cand), c.leafCount(cand))` (до 3 проходов до достижения
+     неподвижной точки) среди 5 семейств кандидатов:
+     1) рекурсивное переписывание снизу вверх `rewriteBottomUp`;
+     2) рациональная нормализация `simplifyRationalExpr` (общий знаменатель +
+        сокращение полиномиального НОД в $\mathbb{Q}[x]$) + `rewriteBottomUp`;
+     3) раскрытие скобок `c.expand` + `rewriteBottomUp` (сворачивает
+        $(\sin x + \cos x)^2 - 2\sin x \cos x \to 1$);
+     4) перевод производных тригонометрических и гиперболических функций
+        (`tan`, `cot`, `sec`, `csc`, `tanh`, `coth`, `sech`, `csch`) в `sin/cos`
+        и `sinh/cosh` с рациональной редукцией и пифагоровой свёрткой;
+     5) факторизация одномерных рациональных выражений через `factorExpr`
+        (например, $1 + 2x + x^2 \to (1 + x)^2$).
+2. **Трансцендентные и алгебраические правила в `rewriteBottomUp`**:
+   - Пифагоровы, гиперболические и формулы двойного угла с произвольным
+     символьным кофактором $A$:
+     - $A \sin^2 u + A \cos^2 u \to A$ (например, $r\cos^2\theta + r\sin^2\theta \to r$),
+     - $B \cos^2 u - B \sin^2 u \to B \cos(2u)$,
+     - $B \cosh^2 u - B \sinh^2 u \to B$, $B \cosh^2 u + B \sinh^2 u \to B \cosh(2u)$,
+     - $C - C \sin^2 u \to C \cos^2 u$, $C - C \cos^2 u \to C \sin^2 u$,
+       $C + C \sinh^2 u \to C \cosh^2 u$, $-C + C \cosh^2 u \to C \sinh^2 u$,
+     - $2k \sin u \cos u \to k \sin(2u)$, $\sin^k u \cos^{-k} u \to \tan^k u$,
+       $\sinh^k u \cosh^{-k} u \to \tanh^k u$.
+   - Чётность и нечётность на отрицательных аргументах ($\sin(-u) \to -\sin u$,
+     $\cos(-u) \to \cos u$ и т.д.).
+   - Обратные функции и радикальные композиции: $\exp(\log u) \to u$,
+     $\log(\exp u) \to u$, $\sin(\arcsin u) \to u$, $\cos(\arcsin u) \to (1-u^2)^{1/2}$,
+     $\sin(\arccos u) \to (1-u^2)^{1/2}$, $\cos(\arctan u) \to (1+u^2)^{-1/2}$,
+     $\sin(\arctan u) \to u(1+u^2)^{-1/2}$, $\cosh(\operatorname{asinh} u) \to (1+u^2)^{1/2}$,
+     $\sinh(\operatorname{acosh} u) \to (u^2-1)^{1/2}$.
+   - Законы экспонент и логарифмов: $\exp(u)\exp(v) \to \exp(u+v)$,
+     $\exp(u)^v \to \exp(u v)$, $\exp(k \log u) \to u^k$,
+     $\log u \pm \log v \to \log(u v^{\pm 1})$ при уменьшении `exprCost`.
+3. **CLI и тесты**:
+   - В `apps/nkcas.cpp` добавлена команда `nkcas simplify "<expr>"`.
+   - Добавлен трёхуровневый тестовый набор `tests/core/simplify_test.cpp`
+     (6 сьютов: пифагоровы/гиперболические тождества, взаимные тригонометрические
+     сокращения и чётность, обратные функции и `exp`/`log`, НОД и факторизация,
+     150-итерационный property-тест нулевых тождеств, монотонности `exprCost`,
+     идемпотентности и численной эквивалентности `evalDouble`, граничные случаи).
+
 
 
 

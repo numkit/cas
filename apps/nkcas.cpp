@@ -12,6 +12,7 @@
 //                           (pass rate, verification rate, median/p95).
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/core/series.hpp>
+#include <numkit/cas/core/simplify.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/rubi/rules.hpp>
@@ -62,7 +63,7 @@ bool splitLine(const std::string &line, std::string &cmd,
     if (words.empty())
         return false;
     cmd = words.front();
-    if (cmd == "print" || cmd == "expand") {
+    if (cmd == "print" || cmd == "expand" || cmd == "simplify") {
         exprSrc = trim(line.substr(cmd.size()));
         return !exprSrc.empty();
     }
@@ -230,6 +231,10 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         std::cout << ctx.toString(ctx.expand(f)) << "\n";
         return 0;
     }
+    if (cmd == "simplify") {
+        std::cout << ctx.toString(ctx.simplify(f)) << "\n";
+        return 0;
+    }
     const numkit::cas::Expr var = ctx.symbol(varName);
     if (cmd == "diff") {
         std::cout << ctx.toString(ctx.diff(f, var)) << "\n";
@@ -388,6 +393,8 @@ int main(int argc, char **argv)
     if (argc == 3 && std::string(argv[1]) == "print")
         return runCommand(argv[1], argv[2], "");
     if (argc == 3 && std::string(argv[1]) == "expand")
+        return runCommand(argv[1], argv[2], "");
+    if (argc == 3 && std::string(argv[1]) == "simplify")
         return runCommand(argv[1], argv[2], "");
     if (argc == 3 && std::string(argv[1]) == "eval")
         return runEval(argv[2], "", "");

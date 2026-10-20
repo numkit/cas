@@ -150,6 +150,10 @@ public:
     // caller's responsibility (as in MATLAB's expand).
     Expr expand(Expr e);
 
+    // Cost-guided algebraic, rational, and trigonometric simplification
+    // minimizing (exprCost, leafCount).
+    Expr simplify(Expr e);
+
     // Exact rational evaluation of e with the given symbol values.
     // Returns false when any intermediate leaves Q: unresolved
     // symbols, RootOf atoms, fractional powers, transcendental

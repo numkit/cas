@@ -37,15 +37,14 @@ TEST(RubiMatcher, FixedVectors)
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
 
-    // x^7: pattern x_^m_. -> rule index 1, bindings x and m.
+    // x^7: pattern x_^m_. -> bindings m = 7.
     {
         std::vector<Binding> b;
         const int r = matchFirst(t, c, c.pow(x, c.number(std::int64_t{7})), b);
-        // specificity ordering: x_^m_. is the LEAST specific ^-rule
-        // -> last index after the generator's sort (77 with both new
-        // slices loaded). The x_ literal binds nothing (Symbol edge);
-        // only m is bound.
-        ASSERT_EQ(r, 77);
+        // specificity ordering: x_^m_. is near the bottom of ^-rules
+        // (1362 in the 1365-rule 1.1.x table). The x_
+        // literal binds nothing (Symbol edge); only m is bound.
+        ASSERT_EQ(r, 1362);
         ASSERT_EQ(b.size(), 1u);
         EXPECT_EQ(b[0].name, "m");
         EXPECT_EQ(b[0].value, c.number(std::int64_t{7}));
@@ -60,7 +59,7 @@ TEST(RubiMatcher, FixedVectors)
             c.number(std::int64_t{4}));
         std::vector<Binding> b;
         const int r = matchFirst(t, c, e, b);
-        ASSERT_EQ(r, 74); // the (a+b x)^m rule leads among ^-shapes
+        ASSERT_EQ(r, 1333); // the (a+b x)^m rule leads among linear ^-shapes
         // x_ binds nothing (Symbol edge); a, b, m remain.
         ASSERT_EQ(b.size(), 3u);
         EXPECT_EQ(b[0].name, "a");
@@ -78,13 +77,10 @@ TEST(RubiMatcher, BoundaryDeclines)
     const Expr x = c.symbol("x");
     std::vector<Binding> b;
 
-    // 1/x canonicalizes to x^-1 = Mul[x, Pow[x,-1]]... actually
-    // Pow(x,-1): the /-patterns of rules 0 and 2 cannot match (the
-    // DAG has no /); the ^-chain expects arity-2 shapes, x^-1 IS
-    // Pow[x,-1] with pattern x_^m_. matching! It selects rule 1.
+    // 1/x canonicalizes to Pow(x,-1): the div-twin of 1/x_ (Pow[x_, -1])
+    // beats x_^m_.
     const Expr oneOver = c.pow(x, c.number(std::int64_t{-1}));
-    // the div-twin of 1/x_ (now Pow[ANY, -1]) beats x_^m_.
-    EXPECT_EQ(matchFirst(t, c, oneOver, b), 76);
+    EXPECT_EQ(matchFirst(t, c, oneOver, b), 1332);
     // x_-literals bind NOTHING by design (Symbol edges) - only the
     // rule identity remains.
     EXPECT_EQ(b.size(), 0u);
@@ -100,20 +96,13 @@ TEST(RubiMatcher, BoundaryDeclines)
     b.clear();
     EXPECT_EQ(matchFirst(t, c, x, b), -1);
 
-    // Arity mismatch: x^(2+3) canonicalizes the exponent to a
-    // Number (rule 1 still fine); build a 3-child Add to break the
-    // exact-arity requirement through (a+b*x)^m's inner Add... our
-    // canonical Add flattens, so craft Pow with an Add exponent of a
-    // DIFFERENT pattern: (a+b*x)^(m+n) - exponent is an Add, not a
-    // wildcard-only leaf under rule 3's m_ chain position... m_ is a
-    // wildcard: it binds ANY subtree including Add - still rule 3.
-    // The true decline: Pow with a THREE-operand Mul base where the
-    // slice expects the two-term Add.
-    const Expr three = c.pow(
-        c.mul({c.number(std::int64_t{2}), x, c.symbol("y")}),
-        c.number(std::int64_t{4}));
+    // Arity mismatch: a 5-factor Mul exceeds the maximum 4-factor
+    // binomial product arity in 1.1.x and declines at the trie level.
+    const Expr fiveMul = c.mul({c.number(std::int64_t{2}), x,
+                                c.symbol("y"), c.symbol("z"),
+                                c.symbol("w")});
     b.clear();
-    EXPECT_EQ(matchFirst(t, c, three, b), -1);
+    EXPECT_EQ(matchFirst(t, c, fiveMul, b), -1);
 }
 
 TEST(RubiMatcher, Property)
@@ -146,7 +135,7 @@ TEST(RubiMatcher, Property)
         const Expr e = c.pow(base, c.number(Rational(BigInt(m), BigInt(3))));
         std::vector<Binding> bs;
         const int r = matchFirst(t, c, e, bs);
-        ASSERT_EQ(r, 74) << "iter " << iter << " e=" << c.toString(e);
+        ASSERT_EQ(r, 1333) << "iter " << iter << " e=" << c.toString(e);
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull()) << "iter " << iter << " e=" << c.toString(e);
         ASSERT_EQ(c.diff(F, x), e) << "iter " << iter;
@@ -560,12 +549,12 @@ TEST(RubiApply, R1aInverseTrigAndHyperbolic)
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "asin(x)");
     }
-    // 1/sqrt(2 - 9*x^2) -> 9^(-1/2)*asin(x*2^(-1/2)*9^(1/2))
+    // 1/sqrt(2 - 9*x^2) -> 1/3*asin(3*x*2^(-1/2))
     {
         const Expr e = numkit::cas::parseExpr(c, "(2 - 9*x^2)^(-1/2)");
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
-        EXPECT_EQ(c.toString(F), "9^(-1/2)*asin(x*2^(-1/2)*9^(1/2))");
+        EXPECT_EQ(c.toString(F), "1/3*asin(3*x*2^(-1/2))");
     }
     // 1/(sqrt(2 + 3*x)*sqrt(-2 + 3*x)) -> 1/3*acosh(3/2*x)
     {
@@ -676,6 +665,165 @@ TEST(RubiApply, PropertyR1aShapes)
         const Expr back = numkit::cas::parseExpr(c, c.toString(F));
         ASSERT_FALSE(back.isNull()) << c.toString(F);
         ASSERT_EQ(back, F);
+    }
+}
+
+TEST(RubiApply, R1bSubstWithAndMultiFactor)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // 1.1.1.2 Reduction + Subst: 1/((1 + x)*(2 + x)^(1/2))
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x)^-1*(2 + x)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.1.2 Subst with Sqrt[a + b*x]: 1/(sqrt(1 + x)*sqrt(3 + x))
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x)^(-1/2)*(3 + x)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.1.2 Fractional power reduction + Subst: (1 + x)^(-3/2)*(3 + x)^(-1/2)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x)^(-3/2)*(3 + x)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.1.3 Three-factor linear binomial product: 1/((1 + x)*(2 + x)*(3 + x))
+    {
+        const Expr e =
+            numkit::cas::parseExpr(c, "(1 + x)^-1*(2 + x)^-1*(3 + x)^-1");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.1.3 Positive powers with ExpandIntegrand: (1 + x)^2*(2 + x)*(3 + x)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x)^2*(2 + x)*(3 + x)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.1.4 Four-factor linear binomial product: 1/((1+x)*(2+x)*(3+x)*(4+x))
+    {
+        const Expr e = numkit::cas::parseExpr(
+            c, "(1 + x)^-1*(2 + x)^-1*(3 + x)^-1*(4 + x)^-1");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+}
+
+TEST(RubiApply, R2GeneralBinomialsAndExpandIntegrand)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+
+    // 1.1.2.2 (c*x)^m*(a + b*x^2)^p: x^3*(2 + 3*x^2)^(1/2)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "x^3*(2 + 3*x^2)^(1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.2.2 1/(x*sqrt(1 + x^2)) -> -atanh((1 + x^2)^(-1/2))
+    {
+        const Expr e = numkit::cas::parseExpr(c, "x^-1*(1 + x^2)^(-1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.2.3 (a + b*x^2)^p*(c + d*x^2)^q: 1/((1 + x^2)*(2 + x^2))
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x^2)^-1*(2 + x^2)^-1");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.2.7 (c + d*x)^n*(a + b*x^2)^p: (1 + 2*x)/(1 + x^2)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + 2*x)*(1 + x^2)^-1");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.2.10 P(x)*(a + b*x^2)^p via ExpandIntegrand: (1 + x + x^2)/(2 + 3*x^2)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 + x + x^2)*(2 + 3*x^2)^-1");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.3.1 1/(a - b*x^4) via With + Rt: 1/(1 - x^4)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(1 - x^4)^-1");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.3.2 x^2*sqrt(1 + x^3)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "x^2*(1 + x^3)^(1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+    // 1.1.4.1 Improper binomial (a*x^j + b*x^n)^p: (x^2 + x^4)^(1/2)
+    {
+        const Expr e = numkit::cas::parseExpr(c, "(x^2 + x^4)^(1/2)");
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull());
+    }
+}
+
+TEST(RubiApply, PropertyR1bR2Shapes)
+{
+    Ctx c;
+    const RuleTables t = sliceTables();
+    const Expr x = c.symbol("x");
+    std::uint64_t st = 0x52B2026ULL;
+    for (int iter = 0; iter < 500; ++iter) {
+        const std::int64_t a = 1 + static_cast<std::int64_t>(nextU64(st) % 5);
+        const std::int64_t b = 1 + static_cast<std::int64_t>(nextU64(st) % 5);
+        const std::int64_t d = a + 1 + static_cast<std::int64_t>(nextU64(st) % 4);
+        const int shape = static_cast<int>(nextU64(st) % 5);
+        Expr e;
+        if (shape == 0) {
+            // 1.1.2.2: x^m * (a + b*x^2)^(1/2), m in {1, 3}
+            const std::int64_t m = (nextU64(st) % 2 == 0) ? 1 : 3;
+            e = c.mul({c.pow(x, c.number(m)),
+                       c.pow(c.add({c.number(a),
+                                    c.mul({c.number(b),
+                                           c.pow(x, c.number(std::int64_t{2}))})}),
+                             c.number(Rational(std::int64_t{1}, BigInt(2))))});
+        } else if (shape == 1) {
+            // 1.1.2.3: 1/((a + x^2)*(d + x^2))
+            e = c.mul({c.pow(c.add({c.number(a),
+                                    c.pow(x, c.number(std::int64_t{2}))}),
+                             c.number(std::int64_t{-1})),
+                       c.pow(c.add({c.number(d),
+                                    c.pow(x, c.number(std::int64_t{2}))}),
+                             c.number(std::int64_t{-1}))});
+        } else if (shape == 2) {
+            // 1.1.1.3: 1/((a + x)*(d + x)*(d + b + x))
+            e = c.mul({c.pow(c.add({c.number(a), x}), c.number(std::int64_t{-1})),
+                       c.pow(c.add({c.number(d), x}), c.number(std::int64_t{-1})),
+                       c.pow(c.add({c.number(d + b), x}),
+                             c.number(std::int64_t{-1}))});
+        } else if (shape == 3) {
+            // 1.1.2.10: (a + b*x + d*x^2)/(a + b*x^2)
+            const Expr poly = c.add(
+                {c.number(a), c.mul({c.number(b), x}),
+                 c.mul({c.number(d), c.pow(x, c.number(std::int64_t{2}))})});
+            const Expr quad = c.add(
+                {c.number(a),
+                 c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})});
+            e = c.mul({poly, c.pow(quad, c.number(std::int64_t{-1}))});
+        } else {
+            // 1.1.3.2: x^(n-1) * (a + b*x^n)^(-1/2), n in {3, 4}
+            const std::int64_t n = (nextU64(st) % 2 == 0) ? 3 : 4;
+            e = c.mul({c.pow(x, c.number(n - 1)),
+                       c.pow(c.add({c.number(a),
+                                    c.mul({c.number(b), c.pow(x, c.number(n))})}),
+                             c.number(Rational(std::int64_t{-1}, BigInt(2))))});
+        }
+        const Expr F = rubiApply(t, c, e, x);
+        ASSERT_FALSE(F.isNull())
+            << "shape=" << shape << " e=" << c.toString(e);
     }
 }
 

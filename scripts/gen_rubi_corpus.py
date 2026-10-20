@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
-"""Generate the Rubi-slice corpus (section 7, C2 metrics).
+"""Generate the Rubi-slice corpus (section 7, C2 metrics, Stage R1b+R2).
 
-Tasks shaped like the committed rule slices (1.1.1.1 (a+b x)^m,
-1.1.1.2 (a+b x)^m (c+d x)^n, and 1.1.2.1 (a+b x^2)^p), all with
-op=rubi so the corpus runner routes them through the rule engine:
+Tasks shaped across the full 1.1 Binomial products section (33 rule files,
+1365 rules: 1.1.1 Linear, 1.1.2 Quadratic, 1.1.3 General, 1.1.4 Improper),
+all with op=rubi so the corpus runner routes them through the rule engine:
 
-  0: x^m                                (m >= 1, incl. bare x at m=1)
-  1: (a + b x)^m                        (m fractional or integral != -1)
-  2: 1/(a + b x)                        (log rule with RemoveContent)
-  3: (a +/- b x^2)^p                    (p positive integer; cascade)
-  4: 1/(a + b x^2), a,b > 0             (atan rule; Rt folding)
-  5: 1/(a - b x^2), a,b > 0             (atanh rule; R1a)
-  6: (a + b x^2)^(-1/2), a,b > 0        (asinh rule; R1a radical gate)
-  7: (a - b x^2)^(-1/2), a > 9/4 b > 0  (asin rule; R1a radical gate)
-  8: (a + b x^2)^(-3/2 | -5/2)          (half-integer reduction; R1a)
-  9: ((a + b x)^-1)*((c + d x)^-1)      (1.1.1.2 two-factor log/atanh)
+  0: x^m                                (1.1.1.1 bare power)
+  1: (a + b x)^m                        (1.1.1.1 fractional/integer power)
+  2: 1/(a + b x)                        (1.1.1.1 log rule with RemoveContent)
+  3: (a +/- b x^2)^p                    (1.1.2.1 positive integer cascade)
+  4: 1/(a + b x^2), a,b > 0             (1.1.2.1 atan rule; Rt folding)
+  5: 1/(a - b x^2), a,b > 0             (1.1.2.1 atanh rule; R1a)
+  6: (a + b x^2)^(-1/2), a,b > 0        (1.1.2.1 asinh rule; R1a)
+  7: (a - b x^2)^(-1/2), a > 9/4 b > 0  (1.1.2.1 asin rule; R1a)
+  8: (a + b x^2)^(-3/2 | -5/2)          (1.1.2.1 half-integer reduction; R1a)
+  9: 1/((a + b x)*(c +/- d x))          (1.1.1.2 two-factor log/atanh)
+ 10: 1/(sqrt(a + x)*sqrt(c + x))        (1.1.1.2 Subst + radical norm; R1b)
+ 11: 3-factor linear binomials          (1.1.1.3 1/((a+x)(c+x)(d+x)) & ExpandIntegrand)
+ 12: x^m*(a + b*x^2)^(1/2)              (1.1.2.2 Subst + ExpandIntegrand; R2)
+ 13: 2-factor quadratic & mixed         (1.1.2.3 & 1.1.2.7; R2)
+ 14: P(x)/(a + b*x^2)                   (1.1.2.10 P(x) ExpandIntegrand; R2)
+ 15: General & improper binomials       (1.1.3.1, 1.1.3.2, 1.1.4.1; R2)
 
 Deterministic: fixed seed.
 """
@@ -23,14 +29,14 @@ import random
 from fractions import Fraction
 
 SEED = 20261005
-TASKS = 300
+TASKS = 500
 
 
 def main():
     rnd = random.Random(SEED)
     made = 0
     while made < TASKS:
-        kind = rnd.randrange(10)
+        kind = rnd.randrange(16)
         a = rnd.randint(1, 6)
         b = rnd.randint(1, 6)
         if kind == 0:
@@ -60,13 +66,46 @@ def main():
         elif kind == 8:
             num = -3 if rnd.randrange(2) == 0 else -5
             expr = f"({a} + {b}*x^2)^({num}/2)"
-        else:
+        elif kind == 9:
             c_coef = rnd.randint(1, 6)
             d_coef = rnd.randint(1, 6)
             if a * d_coef == b * c_coef:
                 c_coef += 1
             sign = "+" if rnd.randrange(2) == 0 else "-"
             expr = f"1/(({a} + {b}*x)*({c_coef} {sign} {d_coef}*x))"
+        elif kind == 10:
+            c_coef = a + rnd.randint(1, 5)
+            p1 = "-1/2" if rnd.randrange(2) == 0 else "-3/2"
+            expr = f"({a} + x)^({p1})*({c_coef} + x)^(-1/2)"
+        elif kind == 11:
+            c_coef = a + rnd.randint(1, 3)
+            d_coef = c_coef + rnd.randint(1, 3)
+            if rnd.randrange(2) == 0:
+                expr = f"1/(({a} + x)*({c_coef} + x)*({d_coef} + x))"
+            else:
+                expr = f"({a} + x)^2*({c_coef} + x)*({d_coef} + x)"
+        elif kind == 12:
+            m = 1 if rnd.randrange(2) == 0 else 3
+            expr = f"x^{m}*({a} + {b}*x^2)^(1/2)"
+        elif kind == 13:
+            c_coef = a + rnd.randint(1, 4)
+            if rnd.randrange(2) == 0:
+                expr = f"1/(({a} + x^2)*({c_coef} + x^2))"
+            else:
+                expr = f"({a} + {b}*x)/({c_coef} + x^2)"
+        elif kind == 14:
+            c_coef = rnd.randint(1, 5)
+            expr = f"({a} + {b}*x + {c_coef}*x^2)/({a} + {b}*x^2)"
+        else:
+            sub = rnd.randrange(3)
+            if sub == 0:
+                a4 = a ** 4
+                expr = f"1/({a4} - x^4)"
+            elif sub == 1:
+                n = 3 if rnd.randrange(2) == 0 else 4
+                expr = f"x^{n - 1}*({a} + {b}*x^{n})^(-1/2)"
+            else:
+                expr = f"(x^2 + {b}*x^4)^(1/2)"
         made += 1
         print(f"rs{made:04d}\tx\trubi\t{expr}")
 

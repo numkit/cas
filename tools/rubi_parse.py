@@ -31,11 +31,12 @@ TOKEN_RE = re.compile(r"""
   | \(\*.*?\*\)               # comment (skipped, non-greedy)
   | :=                        # rule separator
   | /;                        # condition separator
+  | ->                        # Mathematica Rule arrow (e.g. ReplaceAll)
   | \\\[[A-Za-z]+]            # Mathematica long name, e.g. \[Star]
   | [A-Za-z$][A-Za-z0-9$]*    # symbol
-  | \d+(\.\d+)?               # number
+  | \d+(?:\.\d+)?\.?          # number (incl. trailing dot typo 2.)
   | ==|!=|<=|>=               # two-char comparisons
-  | [-+*/^,.()\[\]{}<>!=&_|=] # punctuation/operators (one char each)
+  | [-+*/^,.()\[\]{}<>!=&_|=;] # punctuation/operators (one char each)
 """, re.VERBOSE | re.DOTALL)
 
 
@@ -145,20 +146,38 @@ class Parser:
     # arithmetic ones.
 
     def parse_expr(self):
-        node = self.parse_and()
-        while self.peek() == "|":
-            self.next()
-            self.expect("|")
-            node = {"op": "||", "args": [node, self.parse_and()]}
-        # local bindings inside With[{q = ...}] bodies
-        if self.peek() == "=":
-            self.next()
-            return {"op": "bind", "args": [node, self.parse_expr()]}
+        node = self.parse_semi()
         # Condition head INSIDE expressions: Rubi writes nested
         # Int[..., x] /; cond, x] replacements.
         if self.peek() == "/;":
             self.next()
             return {"op": "/;", "args": [node, self.parse_expr()]}
+        return node
+
+    def parse_semi(self):
+        node = self.parse_bind()
+        while self.peek() == ";":
+            self.next()
+            node = {"op": ";", "args": [node, self.parse_bind()]}
+        return node
+
+    def parse_bind(self):
+        node = self.parse_or()
+        # local bindings inside With[{q = ...}] bodies or Rule x -> v
+        if self.peek() == "=":
+            self.next()
+            return {"op": "bind", "args": [node, self.parse_bind()]}
+        if self.peek() == "->":
+            self.next()
+            return {"op": "->", "args": [node, self.parse_bind()]}
+        return node
+
+    def parse_or(self):
+        node = self.parse_and()
+        while self.peek() == "|":
+            self.next()
+            self.expect("|")
+            node = {"op": "||", "args": [node, self.parse_and()]}
         return node
 
     def parse_and(self):
@@ -186,10 +205,14 @@ class Parser:
 
     def parse_product(self):
         node = self.parse_power()
-        while self.peek() in ("*", "/"):
-            op = self.next()
-            rhs = self.parse_power()
-            node = {"op": op, "args": [node, rhs]}
+        while self.peek() in ("*", "/", "("):
+            if self.peek() == "(":
+                rhs = self.parse_power()
+                node = {"op": "*", "args": [node, rhs]}
+            else:
+                op = self.next()
+                rhs = self.parse_power()
+                node = {"op": op, "args": [node, rhs]}
         return node
 
     def parse_power(self):
@@ -220,10 +243,10 @@ class Parser:
                     args.append(self.parse_expr())
             self.expect("}")
             return {"op": "list", "args": args}
-        m = re.fullmatch(r"\d+(\.\d+)?", t or "")
+        m = re.fullmatch(r"\d+(?:\.\d+)?\.?", t or "")
         if m:
             self.next()
-            return {"num": t}
+            return {"num": t[:-1] if t.endswith(".") else t}
         if t is not None and re.fullmatch(r"[A-Za-z$][A-Za-z0-9$]*", t):
             self.next()
             name = t
@@ -255,11 +278,50 @@ def parse_file(path):
     return Parser(tokenize(src)).parse_file()
 
 
+# Exact load order from upstream Rubi.m for 1.1 Binomial products.
+_RUBI_1_1_ORDER = [
+    "1.1.1.1", "1.1.1.2", "1.1.1.3", "1.1.1.4",
+    "1.1.2.1", "1.1.2.2", "1.1.2.3", "1.1.2.4", "1.1.2.5",
+    "1.1.2.6", "1.1.2.7", "1.1.2.8", "1.1.2.9",
+    "1.1.3.1", "1.1.3.2", "1.1.3.3", "1.1.3.4", "1.1.3.5", "1.1.3.6",
+    "1.1.4.1", "1.1.4.2", "1.1.4.3",
+    "1.1.1.7", "1.1.1.6", "1.1.1.5",
+    "1.1.2.11", "1.1.2.10", "1.1.2.14", "1.1.2.13", "1.1.2.12",
+    "1.1.3.8", "1.1.3.7",
+    "1.1.4.4",
+]
+_RUBI_1_1_RANK = {sec: i for i, sec in enumerate(_RUBI_1_1_ORDER)}
+
+
+def _section_sort_key(path):
+    import os
+    base = os.path.basename(path)
+    sec = base.split(" ", 1)[0]
+    if sec in _RUBI_1_1_RANK:
+        return (0, [_RUBI_1_1_RANK[sec]], base)
+    is_px = " P(x) " in base
+    parts = [int(p) if p.isdigit() else 999 for p in sec.split(".")]
+    return (1 if is_px else 0, parts, base)
+
+
+def parse_path(path):
+    import glob
+    import os
+    if os.path.isdir(path):
+        files = glob.glob(os.path.join(path, "**", "*.m"), recursive=True)
+        files.sort(key=_section_sort_key)
+        rules = []
+        for f in files:
+            rules.extend(parse_file(f))
+        return rules
+    return parse_file(path)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 1
-    rules = parse_file(sys.argv[1])
+    rules = parse_path(sys.argv[1])
     out = json.dumps(rules, indent=1)
     if len(sys.argv) > 2:
         open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(out + "\n")

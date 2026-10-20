@@ -60,9 +60,26 @@ def fmt_frac(f):
             if f.denominator != 1 else str(f.numerator))
 
 
+def has_opt_var(node):
+    return any("pattern_var" in c and c.get("blank") == "_."
+               for c in node.get("args", []))
+
+
+def flatten_mul(node):
+    if node.get("op") != "*":
+        return node
+    flat = []
+    for a in node["args"]:
+        if a.get("op") == "*" and not has_opt_var(a):
+            flat.extend(a["args"])
+        else:
+            flat.append(a)
+    return {"op": "*", "args": flat}
+
+
 def make_pow(base, exp):
-    """Canonicalize (u^r)^n -> u^(r*n) for numeric r and integer n,
-    mirroring Ctx::pow (src/core/expr.cpp)."""
+    """Canonicalize (u^r)^n -> u^(r*n) and (u*v)^n -> u^n*v^n for
+    integer n, mirroring Ctx::pow (src/core/expr.cpp)."""
     if (base.get("op") == "^" and "num" in base["args"][1]
             and "num" in exp):
         n = Fraction(exp["num"])
@@ -70,6 +87,10 @@ def make_pow(base, exp):
             r = Fraction(base["args"][1]["num"])
             return {"op": "^", "args": [base["args"][0],
                                         {"num": fmt_frac(r * n)}]}
+    if (base.get("op") == "*" and not has_opt_var(base)
+            and "num" in exp and Fraction(exp["num"]).denominator == 1):
+        return flatten_mul({"op": "*",
+                            "args": [make_pow(f, exp) for f in base["args"]]})
     return {"op": "^", "args": [base, exp]}
 
 
@@ -82,6 +103,7 @@ def rewrite_div(node):
         ^ [^[u, r], n]  ->  ^ [u, r*n]  (integer n, numeric r)
         / [1, d]        ->  ^ [d, -1]   (distributed over * factors)
         / [a, b]        ->  * [a, ^ [b, -1]]
+        * [*[a, b], c]  ->  * [a, b, c] (flattened unless inner * is v_.*w)
     Children are rewritten recursively. REPLACEMENTS keep their
     spelling (the replacement builder evaluates / through div)."""
     if "args" not in node:
@@ -99,17 +121,13 @@ def rewrite_div(node):
             return {"num": fmt_frac(
                 Fraction(num["num"]) / Fraction(den["num"]))}
         if num.get("num") == "1":
-            # 1/(p*q*...) DISTRIBUTES in the canonical DAG into a
-            # flat Mul of negative powers - mirror that here so the
-            # twin matches what the canonicalizer actually builds.
-            if den.get("op") == "*":
-                factors = [make_pow(f, {"num": "-1"})
-                           for f in den["args"]]
-                return {"op": "*", "args": factors}
             return make_pow(den, {"num": "-1"})
-        return {"op": "*", "args": [num, make_pow(den, {"num": "-1"})]}
+        return flatten_mul({"op": "*",
+                            "args": [num, make_pow(den, {"num": "-1"})]})
     out = dict(node)
     out["args"] = args
+    if out.get("op") == "*":
+        return flatten_mul(out)
     return out
 
 
@@ -164,20 +182,48 @@ class Codegen:
         # serialization carries, the more specific it is; stable
         # sort keeps the file order among equals (Rubi lists the
         # x-forms before the u-forms, which is the right tie-break).
-        def specificity(rule):
-            return sum(1 for t in prefix_terms(rule["pattern"])
-                       if term_tag(t)[0] != TAG_ANY)
-
-        self.rules.sort(key=specificity, reverse=True)
         # Canonical-twin rewrite of the patterns: division must go,
         # or /-rules could never match the DAG (see rewrite_div).
         self.rules = [dict(r, pattern=rewrite_div(r["pattern"]))
                       for r in self.rules]
 
+        def spec_norm(t, var):
+            if "args" not in t:
+                return t
+            op = t.get("op")
+            args = [spec_norm(a, var) for a in t["args"]]
+            # Strip optional coefficient wrapper *[c_., w] -> w so
+            # (c_.*x) has the same structural specificity as bare x.
+            if (op == "*" and len(args) == 2
+                    and "pattern_var" in args[0]
+                    and args[0].get("blank") == "_."):
+                return args[1]
+            # Collapse monomial wildcard power ^[x_, m_|m_.] -> x_ so
+            # x_, x_^m_., x_^m_, and (c_.*x_)^m_. share the same
+            # structural rank and preserve Rubi's intra-file rule order.
+            if (op == "^" and len(args) == 2
+                    and args[0].get("pattern_var") == var
+                    and "pattern_var" in args[1]):
+                return args[0]
+            return dict(t, args=args)
+
+        def specificity(rule):
+            var = rule.get("var")
+            terms = prefix_terms(spec_norm(rule["pattern"], var))
+            non_any = sum(
+                1 for t in terms
+                if term_tag(t)[0] != TAG_ANY or t.get("pattern_var") == var
+            )
+            has_var = sum(1 for t in terms if t.get("pattern_var") == var)
+            return (non_any, has_var)
+
+        self.rules.sort(key=specificity, reverse=True)
+
         # ---- pattern trie ----
         nodes = [[0, -1, 0, 0, -1]]  # tag, valId, firstEdge, nEdges, rule
         edges = []  # tag, valId, next, arity, optional(blank `_.`)
         node_edges = {0: []}
+        rule_leaves = []
         for rid, rule in enumerate(self.rules):
             node = 0
             for t in prefix_terms(rule["pattern"]):
@@ -194,11 +240,11 @@ class Codegen:
                     val = t["pattern_var"]
                 vid = self.sid(val) if val else -1
                 arity = len(t.get("args", []))
-                opt = 1 if "pattern_var" in t and t.get("blank") == "_." else 0
+                opt = 1 if ("pattern_var" in t and t.get("blank") == "_.") else 0
                 nxt = None
                 for e in node_edges[node]:
                     et, ev, en, ea, eo = edges[e]
-                    if et == tag and ev == vid:
+                    if et == tag and ev == vid and ea == arity and eo == opt:
                         nxt = en
                         break
                 if nxt is None:
@@ -208,6 +254,7 @@ class Codegen:
                     nodes.append([tag, vid, 0, 0, -1])
                     node_edges[nxt] = []
                 node = nxt
+            rule_leaves.append(node)
             # The leaf carries the FIRST rule of its chain (identical
             # patterns overwrite otherwise and the earlier twins -
             # e.g. the PosQ variant before NegQ - become unreachable;
@@ -254,20 +301,7 @@ class Codegen:
                                        cond_off + co, cn))
             else:
                 cond_off = -1
-            # leaf of this rule's pattern (same x_->Symbol encoding
-            # as the insertion pass above)
-            node = 0
-            for t in prefix_terms(rule["pattern"]):
-                tag, val = term_tag(t)
-                if tag == TAG_ANY and t.get("pattern_var") == rule.get("var"):
-                    tag = TAG_SYM
-                    val = t["pattern_var"]
-                vid = self.sid(val) if val else -1
-                for e in range(nodes[node][2], nodes[node][2] + nodes[node][3]):
-                    et, ev, en, _, _ = edges[e]
-                    if et == tag and ev == vid:
-                        node = en
-                        break
+            node = rule_leaves[rid]
             rule_rows.append([rep_off, cond_off, node, -1])
             # IDENTICAL patterns from different rules (Rubi's
             # sign-variant twins) share ONE leaf; chain them in

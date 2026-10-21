@@ -357,6 +357,72 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 }
             }
         }
+
+        // 4. Error-function complement identities:
+        //    k*erf(u) + k*erfc(u) -> k,
+        //    k - k*erf(u) -> k*erfc(u),
+        //    k - k*erfc(u) -> k*erf(u).
+        auto matchErfTerm = [&](Expr t, Expr &coefOut, std::string &fnOut,
+                                Expr &argOut) -> bool {
+            if (c.kind(t) == NodeKind::Func &&
+                (c.funcName(t) == "erf" || c.funcName(t) == "erfc")) {
+                coefOut = c.one();
+                fnOut = c.funcName(t);
+                argOut = c.child(t, 0);
+                return true;
+            }
+            if (c.kind(t) == NodeKind::Mul) {
+                std::vector<Expr> others;
+                std::string fn;
+                Expr arg;
+                for (std::size_t k = 0; k < c.childCount(t); ++k) {
+                    const Expr ch = c.child(t, k);
+                    if (fn.empty() && c.kind(ch) == NodeKind::Func &&
+                        (c.funcName(ch) == "erf" || c.funcName(ch) == "erfc")) {
+                        fn = c.funcName(ch);
+                        arg = c.child(ch, 0);
+                    } else {
+                        others.push_back(ch);
+                    }
+                }
+                if (!fn.empty() && !others.empty()) {
+                    coefOut = others.size() == 1 ? others[0] : c.mul(others);
+                    fnOut = fn;
+                    argOut = arg;
+                    return true;
+                }
+            }
+            return false;
+        };
+        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+            Expr coefI, argI;
+            std::string fnI;
+            if (!matchErfTerm(terms[i], coefI, fnI, argI))
+                continue;
+            const Expr negCoefI = c.neg(coefI);
+            const std::string compFn = (fnI == "erf") ? "erfc" : "erf";
+            for (std::size_t j = 0; j < terms.size() && !changed; ++j) {
+                if (i == j)
+                    continue;
+                Expr coefJ, argJ;
+                std::string fnJ;
+                if (j > i && matchErfTerm(terms[j], coefJ, fnJ, argJ) &&
+                    fnJ == compFn && argI == argJ && coefI == coefJ) {
+                    terms[i] = coefI;
+                    terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                    changed = true;
+                    break;
+                }
+                if (terms[j] == negCoefI) {
+                    terms[std::min(i, j)] =
+                        c.mul({negCoefI, c.func(compFn, argI)});
+                    terms.erase(terms.begin() +
+                                static_cast<std::ptrdiff_t>(std::max(i, j)));
+                    changed = true;
+                    break;
+                }
+            }
+        }
     }
 
     return terms.empty() ? c.zero() : c.add(terms);
@@ -516,7 +582,9 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     if (extractNegativeArg(c, arg, posArg)) {
         if (fn == "sin" || fn == "tan" || fn == "cot" || fn == "csc" ||
             fn == "asin" || fn == "atan" || fn == "sinh" || fn == "tanh" ||
-            fn == "coth" || fn == "csch" || fn == "asinh" || fn == "atanh") {
+            fn == "coth" || fn == "csch" || fn == "asinh" || fn == "atanh" ||
+            fn == "erf" || fn == "erfi" || fn == "Si" || fn == "FresnelS" ||
+            fn == "FresnelC") {
             return c.neg(c.func(fn, posArg));
         }
         if (fn == "cos" || fn == "sec" || fn == "cosh" || fn == "sech" ||

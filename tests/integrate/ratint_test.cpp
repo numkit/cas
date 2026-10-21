@@ -1513,4 +1513,143 @@ TEST_F(RatIntTest, DefiniteIntegrateAdditivityAndOrientationProperty)
     }
 }
 
+TEST_F(RatIntTest, SpecialFunctionsIndefiniteAndDefinite)
+{
+    // 1. Parity & complement simplifications and numerical evaluations
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "erf(-x) + erf(x)")),
+              c.zero());
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "erfi(-x) + erfi(x)")),
+              c.zero());
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "Si(-x) + Si(x)")),
+              c.zero());
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "FresnelS(-x) + FresnelS(x)")),
+              c.zero());
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "FresnelC(-x) + FresnelC(x)")),
+              c.zero());
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "erf(x) + erfc(x)")),
+              c.one());
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "1 - erf(x)")),
+              numkit::cas::parseExpr(c, "erfc(x)"));
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "1 - erfc(x)")),
+              numkit::cas::parseExpr(c, "erf(x)"));
+
+    double dVal = 0.0;
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "erfi(1)"), {}, dVal));
+    EXPECT_NEAR(dVal, 1.6504257587975429, 1e-12);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "Ei(1)"), {}, dVal));
+    EXPECT_NEAR(dVal, 1.8951178163559368, 1e-12);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "Ei(-1)"), {}, dVal));
+    EXPECT_NEAR(dVal, -0.21938393439552027, 1e-12);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "li(2)"), {}, dVal));
+    EXPECT_NEAR(dVal, 1.0451637801174928, 1e-12);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "Si(1)"), {}, dVal));
+    EXPECT_NEAR(dVal, 0.9460830703671830, 1e-12);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "Ci(1)"), {}, dVal));
+    EXPECT_NEAR(dVal, 0.33740392290096813, 1e-12);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "FresnelS(1)"), {}, dVal));
+    EXPECT_NEAR(dVal, 0.43825914739035476, 1e-12);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "FresnelC(1)"), {}, dVal));
+    EXPECT_NEAR(dVal, 0.7798934003768228, 1e-12);
+
+    // 2. Indefinite special-function integrals with symbolic certificate D(F) == f
+    const char *indefCases[] = {
+        "exp(-x^2)",
+        "exp(-3*x^2 + 2*x - 1)",
+        "(x^2 + 2*x + 3)*exp(-x^2)",
+        "exp(x^2)",
+        "(x^2 - 1)*exp(2*x^2)",
+        "exp(x)/x",
+        "exp(2*x + 1)/(x + 3)",
+        "exp(x)/x^2",
+        "(x^2 + x + 1)*exp(x)/x",
+        "1/log(x)",
+        "1/log(3*x + 2)",
+        "x/log(x)",
+        "sin(x)/x",
+        "sin(3*x)/x",
+        "cos(x)/x",
+        "cos(2*x)/x",
+        "sin(x)/x^2",
+        "cos(x)/x^2",
+        "sin(x^2)",
+        "cos(x^2)",
+        "sin(1/2*pi*x^2)",
+        "cos(1/2*pi*x^2)",
+        "(x^2 + 1)*sin(x^2)",
+        "(x^2 + 1)*cos(x^2)",
+    };
+
+    for (const char *src : indefCases) {
+        const Expr f = numkit::cas::parseExpr(c, src);
+        const numkit::cas::RationalIntegral r = numkit::cas::integrate(c, f, x);
+        ASSERT_TRUE(r.proved()) << "failed to integrate: " << src
+                                << " (" << r.reason << ")";
+        const Expr diffErr = c.simplify(c.add({c.diff(r.F, x), c.neg(f)}));
+        EXPECT_TRUE(!diffErr.isNull() && c.isZero(diffErr))
+            << "certificate failed for " << src
+            << ": F = " << c.toString(r.F)
+            << ", diffErr = " << c.toString(diffErr);
+    }
+
+    // 3. Definite Gaussian, Dirichlet, and Fresnel integrals
+    struct DefCase
+    {
+        const char *f;
+        const char *a;
+        const char *b;
+        const char *expected;
+    };
+    const DefCase defCases[] = {
+        {"exp(-x^2)", "-inf", "inf", "pi^(1/2)"},
+        {"exp(-x^2)", "0", "inf", "1/2*pi^(1/2)"},
+        {"x^2*exp(-x^2)", "-inf", "inf", "1/2*pi^(1/2)"},
+        {"x^2*exp(-x^2)", "0", "inf", "1/4*pi^(1/2)"},
+        {"exp(-4*x^2)", "-inf", "inf", "1/2*pi^(1/2)"},
+        {"sin(x)/x", "0", "inf", "1/2*pi"},
+        {"sin(x)/x", "-inf", "inf", "pi"},
+        {"sin(3*x)/x", "0", "inf", "1/2*pi"},
+        {"sin(-3*x)/x", "0", "inf", "-1/2*pi"},
+        {"sin(1/2*pi*x^2)", "0", "inf", "1/2"},
+        {"cos(1/2*pi*x^2)", "0", "inf", "1/2"},
+        {"sin(x^2)", "0", "inf", "1/2*2^(-1/2)*pi^(1/2)"},
+        {"cos(x^2)", "0", "inf", "1/2*2^(-1/2)*pi^(1/2)"},
+    };
+    for (const auto &tc : defCases) {
+        const Expr f = numkit::cas::parseExpr(c, tc.f);
+        const Expr a = numkit::cas::parseExpr(c, tc.a);
+        const Expr b = numkit::cas::parseExpr(c, tc.b);
+        const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
+        const numkit::cas::DefiniteIntegral r =
+            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        ASSERT_TRUE(r.proved())
+            << "definiteIntegrate failed for " << tc.f << " on [" << tc.a
+            << ", " << tc.b << "]: " << r.reason;
+        EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
+            << "for " << tc.f << ": got " << c.toString(r.value)
+            << ", expected " << c.toString(expVal);
+    }
+
+    // Symbolic parameter Gaussian and Dirichlet with AssumeDomain::Positive
+    c.assume("a", numkit::cas::AssumeDomain::Positive);
+    const auto gaussSym = numkit::cas::definiteIntegrate(
+        c, numkit::cas::parseExpr(c, "exp(-a*x^2)"), x,
+        numkit::cas::parseExpr(c, "-inf"), numkit::cas::parseExpr(c, "inf"));
+    ASSERT_TRUE(gaussSym.proved()) << gaussSym.reason;
+    EXPECT_EQ(
+        c.simplify(c.add({gaussSym.value,
+                          c.neg(numkit::cas::parseExpr(c, "a^(-1/2)*pi^(1/2)"))})),
+        c.zero());
+
+    const auto dirichSym = numkit::cas::definiteIntegrate(
+        c, numkit::cas::parseExpr(c, "sin(a*x)/x"), x, c.zero(),
+        numkit::cas::parseExpr(c, "inf"));
+    ASSERT_TRUE(dirichSym.proved()) << dirichSym.reason;
+    EXPECT_EQ(
+        c.simplify(c.add({dirichSym.value,
+                          c.neg(numkit::cas::parseExpr(c, "1/2*pi"))})),
+        c.zero());
+    c.clearAssumptions();
+}
+
+
 

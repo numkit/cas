@@ -2,6 +2,7 @@
 #include <numkit/cas/integrate/verify.hpp>
 
 #include <numkit/cas/core/series.hpp>
+#include <numkit/cas/core/simplify.hpp>
 #include <numkit/cas/poly/modcpoly.hpp>
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/poly/sturm.hpp>
@@ -1650,6 +1651,723 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var, Budget *budget)
     return out;
 }
 
+namespace {
+
+bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
+                      std::vector<Expr> &coeffsOut)
+{
+    if (e.isNull() || maxDeg < 0)
+        return false;
+    const Expr ex = c.expand(e);
+    if (!mentionsVar(c, ex, var)) {
+        coeffsOut.clear();
+        if (!c.isZero(ex))
+            coeffsOut.push_back(ex);
+        return true;
+    }
+
+    auto matchMonomial = [&](Expr term, int &degOut, Expr &cfOut) -> bool {
+        if (!mentionsVar(c, term, var)) {
+            degOut = 0;
+            cfOut = term;
+            return true;
+        }
+        if (term == var) {
+            degOut = 1;
+            cfOut = c.one();
+            return true;
+        }
+        if (c.kind(term) == NodeKind::Pow && c.child(term, 0) == var &&
+            c.kind(c.child(term, 1)) == NodeKind::Number) {
+            const Rational &re = c.numberValue(c.child(term, 1));
+            std::int64_t d = 0;
+            if (re.den() == BigInt(1) && re.num().fitsInt64(d) && d >= 1 &&
+                d <= maxDeg) {
+                degOut = static_cast<int>(d);
+                cfOut = c.one();
+                return true;
+            }
+            return false;
+        }
+        if (c.kind(term) == NodeKind::Mul) {
+            std::vector<Expr> others;
+            int deg = 0;
+            for (std::size_t i = 0; i < c.childCount(term); ++i) {
+                const Expr ch = c.child(term, i);
+                if (ch == var) {
+                    deg += 1;
+                } else if (c.kind(ch) == NodeKind::Pow &&
+                           c.child(ch, 0) == var &&
+                           c.kind(c.child(ch, 1)) == NodeKind::Number) {
+                    const Rational &re = c.numberValue(c.child(ch, 1));
+                    std::int64_t d = 0;
+                    if (re.den() == BigInt(1) && re.num().fitsInt64(d) &&
+                        d >= 1 && d <= maxDeg) {
+                        deg += static_cast<int>(d);
+                    } else {
+                        return false;
+                    }
+                } else if (!mentionsVar(c, ch, var)) {
+                    others.push_back(ch);
+                } else {
+                    return false;
+                }
+            }
+            if (deg >= 0 && deg <= maxDeg) {
+                degOut = deg;
+                cfOut = others.empty() ? c.one() : c.mul(others);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    std::vector<std::vector<Expr>> buckets(static_cast<std::size_t>(maxDeg + 1));
+    if (c.kind(ex) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(ex); ++i) {
+            int d = 0;
+            Expr cf;
+            if (!matchMonomial(c.child(ex, i), d, cf))
+                return false;
+            buckets[static_cast<std::size_t>(d)].push_back(cf);
+        }
+    } else {
+        int d = 0;
+        Expr cf;
+        if (!matchMonomial(ex, d, cf))
+            return false;
+        buckets[static_cast<std::size_t>(d)].push_back(cf);
+    }
+
+    coeffsOut.assign(static_cast<std::size_t>(maxDeg + 1), c.zero());
+    for (int d = 0; d <= maxDeg; ++d) {
+        const auto &b = buckets[static_cast<std::size_t>(d)];
+        if (!b.empty())
+            coeffsOut[static_cast<std::size_t>(d)] =
+                b.size() == 1 ? b[0] : c.simplify(c.add(b));
+    }
+    while (!coeffsOut.empty() && c.isZero(coeffsOut.back()))
+        coeffsOut.pop_back();
+    return true;
+}
+
+Expr evalSymbolicPoly(Ctx &c, const std::vector<Expr> &coeffs, Expr var)
+{
+    std::vector<Expr> terms;
+    for (std::size_t d = 0; d < coeffs.size(); ++d) {
+        if (c.isZero(coeffs[d]))
+            continue;
+        if (d == 0) {
+            terms.push_back(coeffs[d]);
+        } else if (d == 1) {
+            terms.push_back(c.mul({coeffs[d], var}));
+        } else {
+            terms.push_back(c.mul(
+                {coeffs[d], c.pow(var, c.number(static_cast<std::int64_t>(d)))}));
+        }
+    }
+    return terms.empty() ? c.zero() : c.add(terms);
+}
+
+bool isNegativeSymbolicFactor(const Ctx &c, Expr a)
+{
+    if (a.isNull())
+        return false;
+    if (c.isAssumedNegative(a))
+        return true;
+    if (c.kind(a) == NodeKind::Number)
+        return c.numberValue(a).signum() < 0;
+    if (c.kind(a) == NodeKind::Mul && c.childCount(a) > 0 &&
+        c.kind(c.child(a, 0)) == NodeKind::Number) {
+        return c.numberValue(c.child(a, 0)).signum() < 0;
+    }
+    return false;
+}
+
+// Compute sqrt(expr) and 1/sqrt(expr) factor-by-factor across a product so that
+// c.mul({sqrtOut, invSqrtOut}) == 1 and c.pow(sqrtOut, 2) == expr in Ctx.
+void sqrtFactorPair(Ctx &c, Expr expr, Expr &sqrtOut, Expr &invSqrtOut)
+{
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr negHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+    auto single = [&](Expr f, Expr &s, Expr &invS) {
+        if (c.kind(f) == NodeKind::Number && c.numberValue(f).signum() > 0) {
+            const Rational &r = c.numberValue(f);
+            BigInt rn, rd;
+            if (r.num().sqrtExact(rn) && r.den().sqrtExact(rd)) {
+                s = c.number(Rational(rn, rd));
+                invS = c.number(Rational(rd, rn));
+                return;
+            }
+        }
+        if (c.kind(f) == NodeKind::Pow &&
+            c.kind(c.child(f, 1)) == NodeKind::Number) {
+            const Expr base = c.child(f, 0);
+            const Rational halfExp =
+                c.numberValue(c.child(f, 1)) * Rational(std::int64_t{1}, BigInt(2));
+            s = c.pow(base, c.number(halfExp));
+            invS = c.pow(base, c.number(-halfExp));
+            return;
+        }
+        s = c.pow(f, half);
+        invS = c.pow(f, negHalf);
+    };
+    if (c.kind(expr) == NodeKind::Mul) {
+        std::vector<Expr> sFactors, invFactors;
+        for (std::size_t i = 0; i < c.childCount(expr); ++i) {
+            Expr si, isi;
+            single(c.child(expr, i), si, isi);
+            sFactors.push_back(si);
+            invFactors.push_back(isi);
+        }
+        sqrtOut = c.mul(sFactors);
+        invSqrtOut = c.mul(invFactors);
+        return;
+    }
+    single(expr, sqrtOut, invSqrtOut);
+}
+
+Expr expandFuncArgs(Ctx &c, Expr e)
+{
+    if (e.isNull())
+        return Expr();
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func:
+        return c.func(c.funcName(e), c.expand(expandFuncArgs(c, c.child(e, 0))));
+    case NodeKind::Pow:
+        return c.pow(expandFuncArgs(c, c.child(e, 0)),
+                     expandFuncArgs(c, c.child(e, 1)));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(expandFuncArgs(c, c.child(e, i)));
+        return c.kind(e) == NodeKind::Add ? c.add(ch) : c.mul(ch);
+    }
+    }
+    return e;
+}
+
+bool certifySpecialIntegral(Ctx &c, Expr F, Expr f, Expr var)
+{
+    if (F.isNull() || f.isNull())
+        return false;
+    const Expr diffRaw = c.add({c.diff(F, var), c.neg(f)});
+    if (c.isZero(diffRaw))
+        return true;
+    const Expr diffSimp = c.simplify(diffRaw);
+    if (!diffSimp.isNull() && c.isZero(diffSimp))
+        return true;
+    const Expr diffExp = c.simplify(c.expand(expandFuncArgs(c, diffRaw)));
+    return !diffExp.isNull() && c.isZero(diffExp);
+}
+
+RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
+                                           Budget *budget)
+{
+    RationalIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+
+    // Collect top-level multiplicative factors of `f`.
+    std::vector<Expr> factors;
+    if (c.kind(f) == NodeKind::Mul) {
+        for (std::size_t i = 0; i < c.childCount(f); ++i)
+            factors.push_back(c.child(f, i));
+    } else {
+        factors.push_back(f);
+    }
+
+    // 1. Check for exp(...) factor (Gaussian erf/erfi or Exponential Integral Ei).
+    std::vector<Expr> expArgs;
+    std::vector<Expr> nonExpFactors;
+    for (const Expr &fac : factors) {
+        if (c.kind(fac) == NodeKind::Func && c.funcName(fac) == "exp") {
+            expArgs.push_back(c.child(fac, 0));
+        } else if (c.kind(fac) == NodeKind::Pow &&
+                   c.kind(c.child(fac, 0)) == NodeKind::Func &&
+                   c.funcName(c.child(fac, 0)) == "exp") {
+            expArgs.push_back(c.mul({c.child(fac, 1), c.child(c.child(fac, 0), 0)}));
+        } else {
+            nonExpFactors.push_back(fac);
+        }
+    }
+    if (!expArgs.empty()) {
+        const Expr qExpr =
+            expArgs.size() == 1 ? expArgs[0] : c.add(expArgs);
+        const Expr rest =
+            nonExpFactors.empty() ? c.one() : c.mul(nonExpFactors);
+        std::vector<Expr> qCoeffs;
+        if (extractPolyInVar(c, qExpr, var, 2, qCoeffs)) {
+            // 1a. Gaussian integral: int P(x) * exp(a*x^2 + b*x + d) dx.
+            std::vector<Expr> pCoeffs;
+            if (qCoeffs.size() == 3 && !c.isZero(qCoeffs[2]) &&
+                extractPolyInVar(c, rest, var, 12, pCoeffs) &&
+                !pCoeffs.empty()) {
+                const Expr d = qCoeffs[0];
+                const Expr b = qCoeffs[1];
+                const Expr a = qCoeffs[2];
+                const Expr twoA = c.mul({c.number(std::int64_t{2}), a});
+                std::vector<Expr> qPoly(
+                    pCoeffs.size() >= 2 ? pCoeffs.size() - 1 : 0, c.zero());
+                for (int m = static_cast<int>(pCoeffs.size()) - 1; m >= 1; --m) {
+                    const Expr pm = pCoeffs[static_cast<std::size_t>(m)];
+                    if (c.isZero(pm))
+                        continue;
+                    const Expr cm1 = c.simplify(c.div(pm, twoA));
+                    qPoly[static_cast<std::size_t>(m - 1)] = cm1;
+                    pCoeffs[static_cast<std::size_t>(m - 1)] = c.simplify(c.add(
+                        {pCoeffs[static_cast<std::size_t>(m - 1)],
+                         c.neg(c.mul({b, cm1}))}));
+                    if (m >= 2) {
+                        pCoeffs[static_cast<std::size_t>(m - 2)] =
+                            c.simplify(c.add(
+                                {pCoeffs[static_cast<std::size_t>(m - 2)],
+                                 c.neg(c.mul(
+                                     {c.number(static_cast<std::int64_t>(m - 1)),
+                                      cm1}))}));
+                    }
+                }
+                const Expr p0 = pCoeffs[0];
+                const Expr elemPart = c.mul(
+                    {evalSymbolicPoly(c, qPoly, var), c.func("exp", qExpr)});
+                const bool useErf = isNegativeSymbolicFactor(c, a);
+                const Expr alpha = useErf ? c.neg(a) : a;
+                Expr sqrtAlpha, invSqrtAlpha;
+                sqrtFactorPair(c, alpha, sqrtAlpha, invSqrtAlpha);
+                const Expr shift =
+                    c.isZero(b) ? var : c.add({var, c.div(b, twoA)});
+                const Expr constExp = c.simplify(c.add(
+                    {d, c.neg(c.div(c.pow(b, c.number(std::int64_t{2})),
+                                    c.mul({c.number(std::int64_t{4}), a})))}));
+                const Expr u = c.mul({sqrtAlpha, shift});
+                const Expr erfPart = c.mul(
+                    {p0, half, c.pow(c.symbol("pi"), half), invSqrtAlpha,
+                     c.func("exp", constExp),
+                     c.func(useErf ? "erf" : "erfi", u)});
+                const Expr F = c.add({elemPart, erfPart});
+                if (certifySpecialIntegral(c, F, f, var)) {
+                    out.F = F;
+                    out.status = RationalIntegral::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+
+            // 1b. Exponential integral: int P(x) * exp(a*x + b) / (c1*x + c0)^k dx.
+            if (qCoeffs.size() == 2 && !c.isZero(qCoeffs[1])) {
+                const Expr b = qCoeffs[0];
+                const Expr a = qCoeffs[1];
+                std::vector<Expr> numFacs;
+                Expr linBase;
+                std::int64_t poleK = 0;
+                for (const Expr &rf : nonExpFactors) {
+                    if (poleK == 0 && c.kind(rf) == NodeKind::Pow &&
+                        c.kind(c.child(rf, 1)) == NodeKind::Number) {
+                        const Rational &re = c.numberValue(c.child(rf, 1));
+                        std::int64_t kVal = 0;
+                        std::vector<Expr> lCoeffs;
+                        if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
+                            kVal <= -1 && kVal >= -6 &&
+                            extractPolyInVar(c, c.child(rf, 0), var, 1, lCoeffs) &&
+                            lCoeffs.size() == 2 && !c.isZero(lCoeffs[1])) {
+                            linBase = c.child(rf, 0);
+                            poleK = -kVal;
+                            continue;
+                        }
+                    }
+                    numFacs.push_back(rf);
+                }
+                if (poleK >= 1) {
+                    std::vector<Expr> lCoeffs;
+                    extractPolyInVar(c, linBase, var, 1, lCoeffs);
+                    const Expr c0 = lCoeffs[0];
+                    const Expr c1 = lCoeffs[1];
+                    const Expr numExpr =
+                        numFacs.empty() ? c.one() : c.mul(numFacs);
+                    // Rewrite numExpr in powers of L = c1*var + c0 via var = (L - c0)/c1.
+                    const Expr lSym = c.symbol("_L_ei");
+                    const Expr varInL =
+                        c.div(c.add({lSym, c.neg(c0)}), c1);
+                    std::vector<Expr> lPoly;
+                    if (extractPolyInVar(c, c.subs(numExpr, var, varInL), lSym,
+                                         8, lPoly)) {
+                        std::vector<Expr> fPieces;
+                        bool okPieces = true;
+                        // Precompute I_m = int exp(a*x+b) / L^m dx for m = 1..poleK.
+                        std::vector<Expr> iPow(static_cast<std::size_t>(poleK + 1));
+                        const Expr shiftExp = c.simplify(
+                            c.add({b, c.neg(c.div(c.mul({a, c0}), c1))}));
+                        const Expr uEi = c.mul({c.div(a, c1), linBase});
+                        iPow[1] = c.mul({c.pow(c1, c.number(std::int64_t{-1})),
+                                         c.func("exp", shiftExp),
+                                         c.func("Ei", uEi)});
+                        for (std::int64_t m = 2; m <= poleK; ++m) {
+                            const Expr denom = c.mul(
+                                {c1, c.number(m - 1)});
+                            const Expr boundary = c.neg(c.div(
+                                c.mul({c.func("exp", qExpr),
+                                       c.pow(linBase, c.number(-(m - 1)))}),
+                                denom));
+                            const Expr rec =
+                                c.mul({c.div(a, denom),
+                                       iPow[static_cast<std::size_t>(m - 1)]});
+                            iPow[static_cast<std::size_t>(m)] =
+                                c.add({boundary, rec});
+                        }
+                        for (std::size_t j = 0; j < lPoly.size(); ++j) {
+                            if (c.isZero(lPoly[j]))
+                                continue;
+                            const std::int64_t m =
+                                poleK - static_cast<std::int64_t>(j);
+                            if (m >= 1) {
+                                fPieces.push_back(c.mul(
+                                    {lPoly[j],
+                                     iPow[static_cast<std::size_t>(m)]}));
+                            } else {
+                                const Expr elemIntegrand = c.mul(
+                                    {lPoly[j], c.pow(linBase, c.number(-m)),
+                                     c.func("exp", qExpr)});
+                                const RationalIntegral elemInt =
+                                    integrate(c, elemIntegrand, var, budget);
+                                if (!elemInt.proved()) {
+                                    okPieces = false;
+                                    break;
+                                }
+                                fPieces.push_back(elemInt.F);
+                            }
+                        }
+                        if (okPieces) {
+                            const Expr F =
+                                fPieces.empty() ? c.zero() : c.add(fPieces);
+                            if (certifySpecialIntegral(c, F, f, var)) {
+                                out.F = F;
+                                out.status =
+                                    RationalIntegral::Status::ProvedSymbolic;
+                                return out;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Logarithmic integral: int (a*x + b)^m / log(a*x + b) dx.
+    {
+        Expr logArg;
+        std::vector<Expr> restFacs;
+        for (const Expr &fac : factors) {
+            if (logArg.isNull() && c.kind(fac) == NodeKind::Pow &&
+                c.child(fac, 1) == c.number(std::int64_t{-1}) &&
+                c.kind(c.child(fac, 0)) == NodeKind::Func &&
+                c.funcName(c.child(fac, 0)) == "log") {
+                logArg = c.child(c.child(fac, 0), 0);
+            } else {
+                restFacs.push_back(fac);
+            }
+        }
+        std::vector<Expr> lCoeffs;
+        if (!logArg.isNull() && extractPolyInVar(c, logArg, var, 1, lCoeffs) &&
+            lCoeffs.size() == 2 && !c.isZero(lCoeffs[1])) {
+            const Expr a = lCoeffs[1];
+            const Expr rest =
+                restFacs.empty() ? c.one() : c.mul(restFacs);
+            if (!mentionsVar(c, rest, var)) {
+                const Expr F = c.mul(
+                    {rest, c.pow(a, c.number(std::int64_t{-1})),
+                     c.func("li", logArg)});
+                if (certifySpecialIntegral(c, F, f, var)) {
+                    out.F = F;
+                    out.status = RationalIntegral::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+            // Check if rest == const * logArg^m (m != -1).
+            const Expr lSym = c.symbol("_L_li");
+            const Expr varInL = c.div(c.add({lSym, c.neg(lCoeffs[0])}), a);
+            const Expr restInL = c.simplify(c.subs(rest, var, varInL));
+            std::vector<Expr> mPoly;
+            if (extractPolyInVar(c, restInL, lSym, 8, mPoly)) {
+                std::vector<Expr> pieces;
+                for (std::size_t m = 0; m < mPoly.size(); ++m) {
+                    if (c.isZero(mPoly[m]))
+                        continue;
+                    if (m == 0) {
+                        pieces.push_back(
+                            c.mul({mPoly[0], c.pow(a, c.number(std::int64_t{-1})),
+                                   c.func("li", logArg)}));
+                    } else {
+                        const Expr mPlus1 =
+                            c.number(static_cast<std::int64_t>(m + 1));
+                        pieces.push_back(c.mul(
+                            {mPoly[m], c.pow(a, c.number(std::int64_t{-1})),
+                             c.func("Ei",
+                                    c.mul({mPlus1, c.func("log", logArg)}))}));
+                    }
+                }
+                const Expr F = pieces.empty() ? c.zero() : c.add(pieces);
+                if (certifySpecialIntegral(c, F, f, var)) {
+                    out.F = F;
+                    out.status = RationalIntegral::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+        }
+    }
+
+    // 3. Sine/Cosine integrals (Si, Ci) and Fresnel integrals (FresnelS, FresnelC).
+    {
+        std::string trigFn;
+        Expr trigArg;
+        std::vector<Expr> nonTrigFacs;
+        for (const Expr &fac : factors) {
+            if (trigFn.empty() && c.kind(fac) == NodeKind::Func &&
+                (c.funcName(fac) == "sin" || c.funcName(fac) == "cos")) {
+                trigFn = c.funcName(fac);
+                trigArg = c.child(fac, 0);
+            } else {
+                nonTrigFacs.push_back(fac);
+            }
+        }
+        std::vector<Expr> tCoeffs;
+        if (!trigFn.empty() && extractPolyInVar(c, trigArg, var, 2, tCoeffs)) {
+            const Expr rest =
+                nonTrigFacs.empty() ? c.one() : c.mul(nonTrigFacs);
+
+            // 3a. Sine / Cosine integral: sin(a*x + b) / (c1*x + c0)^k or cos(a*x + b) / (c1*x + c0)^k.
+            if (tCoeffs.size() == 2 && !c.isZero(tCoeffs[1])) {
+                const Expr b = tCoeffs[0];
+                const Expr a = tCoeffs[1];
+                std::vector<Expr> numFacs;
+                Expr linBase;
+                std::int64_t poleK = 0;
+                for (const Expr &rf : nonTrigFacs) {
+                    if (poleK == 0 && c.kind(rf) == NodeKind::Pow &&
+                        c.kind(c.child(rf, 1)) == NodeKind::Number) {
+                        const Rational &re = c.numberValue(c.child(rf, 1));
+                        std::int64_t kVal = 0;
+                        std::vector<Expr> lCoeffs;
+                        if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
+                            kVal <= -1 && kVal >= -4 &&
+                            extractPolyInVar(c, c.child(rf, 0), var, 1, lCoeffs) &&
+                            lCoeffs.size() == 2 && !c.isZero(lCoeffs[1])) {
+                            linBase = c.child(rf, 0);
+                            poleK = -kVal;
+                            continue;
+                        }
+                    }
+                    numFacs.push_back(rf);
+                }
+                if (poleK >= 1) {
+                    std::vector<Expr> lCoeffs;
+                    extractPolyInVar(c, linBase, var, 1, lCoeffs);
+                    const Expr c0 = lCoeffs[0];
+                    const Expr c1 = lCoeffs[1];
+                    const Expr numExpr =
+                        numFacs.empty() ? c.one() : c.mul(numFacs);
+                    const Expr lSym = c.symbol("_L_si");
+                    const Expr varInL = c.div(c.add({lSym, c.neg(c0)}), c1);
+                    std::vector<Expr> lPoly;
+                    if (extractPolyInVar(c, c.subs(numExpr, var, varInL), lSym,
+                                         6, lPoly)) {
+                        const Expr phi = c.simplify(
+                            c.add({b, c.neg(c.div(c.mul({a, c0}), c1))}));
+                        const Expr uSi = c.isZero(phi)
+                                             ? trigArg
+                                             : c.mul({c.div(a, c1), linBase});
+                        const Expr invC1 = c.pow(c1, c.number(std::int64_t{-1}));
+                        std::vector<Expr> sinInt(
+                            static_cast<std::size_t>(poleK + 1));
+                        std::vector<Expr> cosInt(
+                            static_cast<std::size_t>(poleK + 1));
+                        if (c.isZero(phi)) {
+                            sinInt[1] = c.mul({invC1, c.func("Si", uSi)});
+                            cosInt[1] = c.mul({invC1, c.func("Ci", uSi)});
+                        } else {
+                            const Expr cosPhi = c.simplify(c.func("cos", phi));
+                            const Expr sinPhi = c.simplify(c.func("sin", phi));
+                            sinInt[1] = c.mul(
+                                {invC1,
+                                 c.add({c.mul({cosPhi, c.func("Si", uSi)}),
+                                        c.mul({sinPhi, c.func("Ci", uSi)})})});
+                            cosInt[1] = c.mul(
+                                {invC1,
+                                 c.add({c.mul({cosPhi, c.func("Ci", uSi)}),
+                                        c.neg(c.mul(
+                                            {sinPhi, c.func("Si", uSi)}))})});
+                        }
+                        for (std::int64_t m = 2; m <= poleK; ++m) {
+                            const Expr denom = c.mul({c1, c.number(m - 1)});
+                            const Expr lPow =
+                                c.pow(linBase, c.number(-(m - 1)));
+                            sinInt[static_cast<std::size_t>(m)] = c.add(
+                                {c.neg(c.div(
+                                     c.mul({c.func("sin", trigArg), lPow}),
+                                     denom)),
+                                 c.mul({c.div(a, denom),
+                                        cosInt[static_cast<std::size_t>(m - 1)]})});
+                            cosInt[static_cast<std::size_t>(m)] = c.add(
+                                {c.neg(c.div(
+                                     c.mul({c.func("cos", trigArg), lPow}),
+                                     denom)),
+                                 c.neg(c.mul(
+                                     {c.div(a, denom),
+                                      sinInt[static_cast<std::size_t>(m - 1)]}))});
+                        }
+                        std::vector<Expr> fPieces;
+                        bool okPieces = true;
+                        for (std::size_t j = 0; j < lPoly.size(); ++j) {
+                            if (c.isZero(lPoly[j]))
+                                continue;
+                            const std::int64_t m =
+                                poleK - static_cast<std::int64_t>(j);
+                            if (m >= 1) {
+                                const Expr baseInt =
+                                    (trigFn == "sin")
+                                        ? sinInt[static_cast<std::size_t>(m)]
+                                        : cosInt[static_cast<std::size_t>(m)];
+                                fPieces.push_back(c.mul({lPoly[j], baseInt}));
+                            } else {
+                                const Expr elemIntegrand =
+                                    c.mul({lPoly[j], c.pow(linBase, c.number(-m)),
+                                           c.func(trigFn, trigArg)});
+                                const RationalIntegral elemInt =
+                                    integrate(c, elemIntegrand, var, budget);
+                                if (!elemInt.proved()) {
+                                    okPieces = false;
+                                    break;
+                                }
+                                fPieces.push_back(elemInt.F);
+                            }
+                        }
+                        if (okPieces) {
+                            const Expr F =
+                                fPieces.empty() ? c.zero() : c.add(fPieces);
+                            if (certifySpecialIntegral(c, F, f, var)) {
+                                out.F = c.simplify(F);
+                                out.status =
+                                    RationalIntegral::Status::ProvedSymbolic;
+                                return out;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3b. Fresnel integrals: int P(x) * sin(a*x^2 + b*x + d) dx and cos.
+            std::vector<Expr> pCoeffs;
+            if (tCoeffs.size() == 3 && !c.isZero(tCoeffs[2]) &&
+                extractPolyInVar(c, rest, var, 8, pCoeffs) &&
+                !pCoeffs.empty()) {
+                const Expr d = tCoeffs[0];
+                const Expr b = tCoeffs[1];
+                const Expr a = tCoeffs[2];
+                const Expr twoA = c.mul({c.number(std::int64_t{2}), a});
+                const std::size_t degP = pCoeffs.size();
+                std::vector<Expr> sPoly(degP, c.zero());
+                std::vector<Expr> cPoly(degP, c.zero());
+                if (trigFn == "sin")
+                    sPoly = pCoeffs;
+                else
+                    cPoly = pCoeffs;
+
+                std::vector<Expr> elemSin(degP >= 2 ? degP - 1 : 0, c.zero());
+                std::vector<Expr> elemCos(degP >= 2 ? degP - 1 : 0, c.zero());
+                for (int m = static_cast<int>(degP) - 1; m >= 1; --m) {
+                    const Expr sm = sPoly[static_cast<std::size_t>(m)];
+                    if (!c.isZero(sm)) {
+                        const Expr k = c.simplify(c.div(sm, twoA));
+                        elemCos[static_cast<std::size_t>(m - 1)] = c.simplify(
+                            c.add({elemCos[static_cast<std::size_t>(m - 1)],
+                                   c.neg(k)}));
+                        sPoly[static_cast<std::size_t>(m - 1)] = c.simplify(
+                            c.add({sPoly[static_cast<std::size_t>(m - 1)],
+                                   c.neg(c.mul({b, k}))}));
+                        if (m >= 2) {
+                            cPoly[static_cast<std::size_t>(m - 2)] = c.simplify(
+                                c.add({cPoly[static_cast<std::size_t>(m - 2)],
+                                       c.mul({c.number(
+                                                  static_cast<std::int64_t>(m - 1)),
+                                              k})}));
+                        }
+                    }
+                    const Expr cm = cPoly[static_cast<std::size_t>(m)];
+                    if (!c.isZero(cm)) {
+                        const Expr k = c.simplify(c.div(cm, twoA));
+                        elemSin[static_cast<std::size_t>(m - 1)] = c.simplify(
+                            c.add({elemSin[static_cast<std::size_t>(m - 1)], k}));
+                        cPoly[static_cast<std::size_t>(m - 1)] = c.simplify(
+                            c.add({cPoly[static_cast<std::size_t>(m - 1)],
+                                   c.neg(c.mul({b, k}))}));
+                        if (m >= 2) {
+                            sPoly[static_cast<std::size_t>(m - 2)] = c.simplify(
+                                c.add({sPoly[static_cast<std::size_t>(m - 2)],
+                                       c.neg(c.mul(
+                                           {c.number(
+                                                static_cast<std::int64_t>(m - 1)),
+                                            k}))}));
+                        }
+                    }
+                }
+
+                const Expr elemPart = c.add(
+                    {c.mul({evalSymbolicPoly(c, elemSin, var),
+                            c.func("sin", trigArg)}),
+                     c.mul({evalSymbolicPoly(c, elemCos, var),
+                            c.func("cos", trigArg)})});
+                const bool negA = isNegativeSymbolicFactor(c, a);
+                const Expr alpha = negA ? c.neg(a) : a;
+                const Expr twoAlphaOverPi = c.mul(
+                    {c.number(std::int64_t{2}), alpha,
+                     c.pow(c.symbol("pi"), c.number(std::int64_t{-1}))});
+                Expr scale, invScale;
+                sqrtFactorPair(c, twoAlphaOverPi, scale, invScale);
+                const Expr shift =
+                    c.isZero(b) ? var : c.add({var, c.div(b, twoA)});
+                const Expr phi = c.simplify(c.add(
+                    {d, c.neg(c.div(c.pow(b, c.number(std::int64_t{2})),
+                                    c.mul({c.number(std::int64_t{4}), a})))}));
+                const Expr u = c.mul({scale, shift});
+                const Expr baseS =
+                    c.mul({invScale, c.func("FresnelS", u),
+                           c.number(negA ? std::int64_t{-1} : std::int64_t{1})});
+                const Expr baseC = c.mul({invScale, c.func("FresnelC", u)});
+
+                Expr intSinQ, intCosQ;
+                if (c.isZero(phi)) {
+                    intSinQ = baseS;
+                    intCosQ = baseC;
+                } else {
+                    const Expr cosPhi = c.simplify(c.func("cos", phi));
+                    const Expr sinPhi = c.simplify(c.func("sin", phi));
+                    intSinQ = c.add(
+                        {c.mul({cosPhi, baseS}), c.mul({sinPhi, baseC})});
+                    intCosQ = c.add(
+                        {c.mul({cosPhi, baseC}), c.neg(c.mul({sinPhi, baseS}))});
+                }
+                const Expr F = c.add({elemPart, c.mul({sPoly[0], intSinQ}),
+                                      c.mul({cPoly[0], intCosQ})});
+                if (certifySpecialIntegral(c, F, f, var)) {
+                    out.F = F;
+                    out.status = RationalIntegral::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+        }
+    }
+
+    return out;
+}
+
+} // namespace
+
 RationalIntegral integrate(Ctx &c, Expr f, Expr var, Budget *budget)
 {
     RationalIntegral out;
@@ -1700,8 +2418,14 @@ RationalIntegral integrate(Ctx &c, Expr f, Expr var, Budget *budget)
         }
     }
 
-    // 4. Additive linearity over `Add` (mixed sums where summands are
-    //    handled by either Rubi or the algebraic/Liouvillian kernel).
+    // 4. Non-elementary Liouvillian special-function storey (`erf`, `erfi`,
+    //    `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`).
+    const RationalIntegral spec = integrateSpecialFunctions(c, f, var, budget);
+    if (spec.proved() || (budget && !budget->ok()))
+        return spec;
+
+    // 5. Additive linearity over `Add` (mixed sums where summands are
+    //    handled by Rubi, the algebraic/Liouvillian kernel, or special functions).
     if (c.kind(f) == NodeKind::Add) {
         std::vector<Expr> pieces;
         pieces.reserve(c.childCount(f));

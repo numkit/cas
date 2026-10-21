@@ -409,6 +409,20 @@
 48. ✅ Релизная отсечка `v0.4.0` и переезд в `git@github.com:numkit/cas.git` (`C:\Users\User\Projects\numkit\cas`):
     обновление `CHANGELOG.md`, `CMakeLists.txt` (`VERSION 0.4.0`), `README.md`, `AGENTS.md`,
     251/251 тестов Release, аннотированный тег `v0.4.0`.
+49. ✅ (v0.5-пул, Эшелон 5) Неэлементарные специальные функции (`erf`, `erfc`, `erfi`,
+    `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`) сквозь всё ядро (`diff`, `evalExact`/`evalDouble`,
+    `simplify`, `taylor`/`laurent`, `limit`/`limitAtInfinity`, лиувиллев спецфункциональный
+    этаж `integrateSpecialFunctions` в `integrate` с символьным сертификатом $D(F) \equiv f$ и
+    определённые интегралы Гаусса, Дирихле и Френеля в `definiteIntegrate`).
+50. ⬜ (v0.5-пул, Эшелон 5) Вычеты `residue(c, f, var, z0)` (`core/series` + CLI `nkcas residue`)
+    и контурные методы интегрирования в `definiteIntegrate` ($\int_{-\infty}^{\infty} R(x)\cos(\omega x)/\sin(\omega x)\,dx$
+    через лемму Жордана и $\int_0^{2\pi} R(\cos\theta, \sin\theta)\,d\theta$ по единичной окружности).
+51. ⬜ (v0.5-пул, Эшелон 5) Прямое и обратное Z-преобразования (`ztrans` / `iztrans` с круговым
+    сертификатом в `transform/ztrans`) и решатель линейных разностных уравнений (`rsolve` / `rsolveIVP`).
+52. ⬜ (v0.5-пул, Эшелон 5) Канонические точные матричные разложения в `linalg/symmatrix`
+    (`rref`, `rank`, `lu` ($PA = LU$), `gramSchmidt` / `qr` и жорданова нормальная форма `jordanForm`
+    с сертификатом $PJ = AP$).
+53. ⬜ Релизная отсечка `v0.5.0` (Эшелон 5 завершён).
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
 
@@ -2543,3 +2557,26 @@ MATLAB Symbolic Math Toolbox (три эшелона):
    - `dsolveSystem1Linear(c, A, [f,] x, budget)` решает однородные и неоднородные системы $\mathbf{y}'(x) = A\mathbf{y}(x) + \mathbf{f}(x)$ с константами интегрирования `C1..Cn`: однородная часть $\Phi(x)\mathbf{C}$ + частное решение методом вариации постоянных $\mathbf{y}_p(x) = \Phi(x)\int \Phi(-x)\mathbf{f}(x)\,dx$ (используя тождество $\Phi(x)^{-1} = e^{-Ax} = \Phi(-x)$ без обращения матрицы от $x$).
    - `dsolveSystem1LinearIVP(c, A, [f,] x, x0, y0, budget)` решает задачу Коши $\mathbf{y}(x_0) = \mathbf{y}_0$ по формуле $\mathbf{y}(x) = \Phi(x - x_0)(\mathbf{y}_0 - \mathbf{y}_p(x_0)) + \mathbf{y}_p(x)$.
    - Каждое решение проходит обязательную покомпонентную сертификацию $\text{simplify}(y'_i(x) - (A\mathbf{y}(x) + \mathbf{f}(x))_i) = 0$ (и $y_i(x_0) = y_{0,i}$ для задачи Коши).
+
+
+## 2026-10-21: Реализация пункта 49 — Неэлементарные специальные функции (`erf`, `erfc`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`)
+
+Реализован первый пакет Эшелона 5 (пул `v0.5.0`):
+
+1. **Производные, точная и численная оценка, предположения и упрощение (`src/core/diff.cpp`, `src/core/expr.cpp`, `src/core/simplify.cpp`)**:
+   - В `Ctx::diff` добавлены аналитические производные для всех 9 функций:
+     $\operatorname{erf}'(u) = \frac{2}{\sqrt{\pi}}e^{-u^2}u'$, $\operatorname{erfc}'(u) = -\frac{2}{\sqrt{\pi}}e^{-u^2}u'$,
+     $\operatorname{erfi}'(u) = \frac{2}{\sqrt{\pi}}e^{u^2}u'$, $\operatorname{Ei}'(u) = \frac{e^u}{u}u'$,
+     $\operatorname{li}'(u) = \frac{u'}{\log u}$, $\operatorname{Si}'(u) = \frac{\sin u}{u}u'$,
+     $\operatorname{Ci}'(u) = \frac{\cos u}{u}u'$, $\operatorname{FresnelS}'(u) = \sin(\frac{\pi}{2}u^2)u'$,
+     $\operatorname{FresnelC}'(u) = \cos(\frac{\pi}{2}u^2)u'$.
+   - В `Ctx::evalExact` поддержаны нули в начале координат (`erf(0)=erfi(0)=li(0)=Si(0)=FresnelS(0)=FresnelC(0)=0`, `erfc(0)=1`).
+   - В `Ctx::evalDouble` реализованы автономные вычислители двойной точности без внешних зависимостей (ряды Тейлора, непрерывная дробь для $E_1(z)$, составная 8-точечная квадратура Гаусса–Лежандра и асимптотические разложения при больших $|x|$).
+   - В `simplify` добавлена канонизация нечётности (`erf(-u)`, `erfi(-u)`, `Si(-u)`, `FresnelS(-u)`, `FresnelC(-u)`) и тождества дополнительных функций ошибок ($k\operatorname{erf}(u) + k\operatorname{erfc}(u) \to k$, $k - k\operatorname{erf}(u) \to k\operatorname{erfc}(u)$, $k - k\operatorname{erfc}(u) \to k\operatorname{erf}(u)$).
+
+2. **Ряды Тейлора/Лорана и асимптотические пределы (`src/core/series.cpp`)**:
+   - В `evalFuncSeries` реализовано разложение всех 9 спецфункций в конечных точках через дифференциально-интегральную композицию `integrateSeriesZeroConst` (и прямое знакопеременное разложение $\operatorname{Si}(u)$ при $c_0 = 0$ без потери порядка точности при сокращении $0/0$) и асимптотические пределы при $u \to \pm\infty$ ($\operatorname{erf}(\pm\infty) = \pm 1$, $\operatorname{erfc}(+\infty) = 0$, $\operatorname{erfc}(-\infty) = 2$, $\operatorname{Si}(\pm\infty) = \pm\frac{\pi}{2}$, $\operatorname{Ci}(+\infty) = 0$, $\operatorname{Ei}(-\infty) = 0$, $\operatorname{FresnelS}(\pm\infty) = \operatorname{FresnelC}(\pm\infty) = \pm\frac{1}{2}$), с учётом символьных предположений `isAssumedPositive`/`Negative` в `exprSign`.
+
+3. **Спецфункциональный этаж интегрирования (`src/integrate/ratint.cpp`)**:
+   - В каскад `integrate` добавлен этаж `integrateSpecialFunctions` (для гауссовых интегралов $\int P(x)e^{ax^2+bx+d}\,dx$, интегральной показательной функции $\int \frac{P(x)e^{ax+b}}{(c_1 x + c_0)^k}\,dx$, интегрального логарифма $\int \frac{(ax+b)^m}{\log(ax+b)}\,dx$, интегральных синуса и косинуса $\int \frac{P(x)\sin/\cos(ax+b)}{(c_1 x + c_0)^k}\,dx$ и интегралов Френеля $\int P(x)\sin/\cos(ax^2+bx+d)\,dx$) с пофакторным расщеплением радикалов `sqrtFactorPair` и строгой символьной сертификацией $D(F) \equiv f$.
+   - За счёт связки с `definiteIntegrate` автоматически берутся определённые интегралы Гаусса ($\int_{-\infty}^{\infty} e^{-ax^2}\,dx = \sqrt{\pi/a}$), Дирихле ($\int_0^\infty \frac{\sin(ax)}{x}\,dx = \frac{\pi}{2}\operatorname{sgn}(a)$) и Френеля ($\int_0^\infty \sin(x^2)\,dx = \int_0^\infty \cos(x^2)\,dx = \frac{1}{2}\sqrt{\frac{\pi}{2}}$).

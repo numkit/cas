@@ -178,6 +178,45 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         else if (name == "atanh")
             result = mul({du, pow(add({one(), neg(pow(u, number(std::int64_t{2})))}),
                                   number(std::int64_t{-1}))});
+        else if (name == "erf")
+            result = mul({number(std::int64_t{2}),
+                          pow(symbol("pi"),
+                              number(Rational(std::int64_t{-1}, BigInt(2)))),
+                          func("exp", neg(pow(u, number(std::int64_t{2})))),
+                          du});
+        else if (name == "erfc")
+            result = neg(mul({number(std::int64_t{2}),
+                              pow(symbol("pi"),
+                                  number(Rational(std::int64_t{-1}, BigInt(2)))),
+                              func("exp", neg(pow(u, number(std::int64_t{2})))),
+                              du}));
+        else if (name == "erfi")
+            result = mul({number(std::int64_t{2}),
+                          pow(symbol("pi"),
+                              number(Rational(std::int64_t{-1}, BigInt(2)))),
+                          func("exp", pow(u, number(std::int64_t{2}))),
+                          du});
+        else if (name == "Ei")
+            result = mul({func("exp", u), pow(u, number(std::int64_t{-1})), du});
+        else if (name == "li")
+            result = mul(
+                {pow(func("log", u), number(std::int64_t{-1})), du});
+        else if (name == "Si")
+            result = mul({func("sin", u), pow(u, number(std::int64_t{-1})), du});
+        else if (name == "Ci")
+            result = mul({func("cos", u), pow(u, number(std::int64_t{-1})), du});
+        else if (name == "FresnelS")
+            result = mul(
+                {func("sin", mul({number(Rational(std::int64_t{1}, BigInt(2))),
+                                  symbol("pi"),
+                                  pow(u, number(std::int64_t{2}))})),
+                 du});
+        else if (name == "FresnelC")
+            result = mul(
+                {func("cos", mul({number(Rational(std::int64_t{1}, BigInt(2))),
+                                  symbol("pi"),
+                                  pow(u, number(std::int64_t{2}))})),
+                 du});
         else {
             assert(!"diff: unsupported function");
             result = Expr();

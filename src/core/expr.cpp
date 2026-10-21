@@ -622,11 +622,14 @@ bool Ctx::evalExact(
         if (name == "log" && a == one) { out = zero; return true; }
         if ((name == "sin" || name == "tan" || name == "atan" ||
              name == "asin" || name == "sinh" || name == "tanh" ||
-             name == "asinh" || name == "atanh") && a == zero) {
+             name == "asinh" || name == "atanh" || name == "erf" ||
+             name == "erfi" || name == "li" || name == "Si" ||
+             name == "FresnelS" || name == "FresnelC") && a == zero) {
             out = zero;
             return true;
         }
-        if ((name == "cos" || name == "cosh" || name == "sec" || name == "sech") &&
+        if ((name == "cos" || name == "cosh" || name == "sec" ||
+             name == "sech" || name == "erfc") &&
             a == zero) {
             out = one;
             return true;
@@ -674,6 +677,258 @@ bool Ctx::evalExact(
 }
 
 namespace {
+
+constexpr double kPiDouble = 3.141592653589793238462643383279502884;
+constexpr double kEulerGamma = 0.577215664901532860606512090082402431;
+
+double evalErfiDouble(double x)
+{
+    if (x == 0.0)
+        return 0.0;
+    const double sgn = x < 0.0 ? -1.0 : 1.0;
+    const double ax = std::abs(x);
+    if (ax > 26.5)
+        return sgn * HUGE_VAL;
+    const double x2 = ax * ax;
+    double term = ax;
+    double sum = term;
+    for (int n = 1; n <= 200; ++n) {
+        term *= x2 / static_cast<double>(n);
+        const double contrib = term / static_cast<double>(2 * n + 1);
+        sum += contrib;
+        if (contrib <= sum * 1e-16)
+            break;
+    }
+    return sgn * (2.0 / std::sqrt(kPiDouble)) * sum;
+}
+
+bool evalEiDouble(double x, double &out)
+{
+    if (x == 0.0)
+        return false;
+    if (x > 0.0) {
+        if (x > 700.0)
+            return false;
+        double sum = 0.0;
+        double term = 1.0;
+        for (int n = 1; n <= 300; ++n) {
+            term *= x / static_cast<double>(n);
+            const double contrib = term / static_cast<double>(n);
+            sum += contrib;
+            if (contrib <= sum * 1e-16 && n > x)
+                break;
+        }
+        out = kEulerGamma + std::log(x) + sum;
+        return std::isfinite(out);
+    }
+    const double z = -x;
+    if (z <= 4.0) {
+        double sum = 0.0;
+        double term = 1.0;
+        for (int n = 1; n <= 120; ++n) {
+            term *= x / static_cast<double>(n);
+            const double contrib = term / static_cast<double>(n);
+            sum += contrib;
+            if (std::abs(contrib) <= 1e-16)
+                break;
+        }
+        out = kEulerGamma + std::log(z) + sum;
+        return std::isfinite(out);
+    }
+    // Continued fraction for E_1(z) (z > 4):
+    // E_1(z) = exp(-z) / (z + 1/(1 + 1/(z + 2/(1 + 2/(z + ...)))))
+    double b = z + 1.0;
+    double c = 1.0 / 1e-30;
+    double d = 1.0 / b;
+    double h = d;
+    for (int i = 1; i <= 100; ++i) {
+        const double a = -static_cast<double>(i * i);
+        b += 2.0;
+        d = a * d + b;
+        if (std::abs(d) < 1e-30)
+            d = 1e-30;
+        c = b + a / c;
+        if (std::abs(c) < 1e-30)
+            c = 1e-30;
+        d = 1.0 / d;
+        const double del = d * c;
+        h *= del;
+        if (std::abs(del - 1.0) <= 1e-16)
+            break;
+    }
+    out = -std::exp(-z) * h;
+    return std::isfinite(out);
+}
+
+// 8-point Gauss-Legendre quadrature on [a, b].
+template <typename Fn>
+double gauss8Integrate(Fn &&fn, double a, double b, int panels)
+{
+    static constexpr double kNodes[4] = {
+        0.183434642495649805, 0.525532409916328986,
+        0.796666477413626740, 0.960289856497536232};
+    static constexpr double kWeights[4] = {
+        0.362683783378361983, 0.313706645877887287,
+        0.222381034453374471, 0.101228536290376259};
+    const double h = (b - a) / static_cast<double>(panels);
+    double total = 0.0;
+    for (int p = 0; p < panels; ++p) {
+        const double x0 = a + p * h;
+        const double mid = x0 + 0.5 * h;
+        const double half = 0.5 * h;
+        double sub = 0.0;
+        for (int i = 0; i < 4; ++i) {
+            const double dx = half * kNodes[i];
+            sub += kWeights[i] * (fn(mid - dx) + fn(mid + dx));
+        }
+        total += half * sub;
+    }
+    return total;
+}
+
+double evalSiDouble(double x)
+{
+    if (x == 0.0)
+        return 0.0;
+    const double sgn = x < 0.0 ? -1.0 : 1.0;
+    const double ax = std::abs(x);
+    if (ax <= 4.0) {
+        const double x2 = ax * ax;
+        double term = ax;
+        double sum = term;
+        for (int n = 1; n <= 50; ++n) {
+            term *= -x2 / static_cast<double>((2 * n) * (2 * n + 1));
+            const double contrib = term / static_cast<double>(2 * n + 1);
+            sum += contrib;
+            if (std::abs(contrib) <= 1e-16)
+                break;
+        }
+        return sgn * sum;
+    }
+    if (ax <= 32.0) {
+        const double si4 = evalSiDouble(4.0);
+        const int panels = std::max(8, static_cast<int>(std::ceil((ax - 4.0) * 2.0)));
+        const double tail = gauss8Integrate(
+            [](double t) { return std::sin(t) / t; }, 4.0, ax, panels);
+        return sgn * (si4 + tail);
+    }
+    // Asymptotic expansion via f(z), g(z) for z > 32.
+    const double invZ2 = 1.0 / (ax * ax);
+    double fSum = 1.0, gSum = 1.0;
+    double fTerm = 1.0, gTerm = 1.0;
+    for (int k = 1; k <= 12; ++k) {
+        fTerm *= -static_cast<double>((2 * k - 1) * (2 * k)) * invZ2;
+        if (std::abs(fTerm) > 1e-3 && k > 4)
+            break;
+        fSum += fTerm;
+        gTerm *= -static_cast<double>((2 * k) * (2 * k + 1)) * invZ2;
+        gSum += gTerm;
+    }
+    const double fVal = fSum / ax;
+    const double gVal = gSum * invZ2;
+    return sgn * (0.5 * kPiDouble - fVal * std::cos(ax) - gVal * std::sin(ax));
+}
+
+bool evalCiDouble(double x, double &out)
+{
+    if (x <= 0.0)
+        return false;
+    if (x <= 4.0) {
+        const double x2 = x * x;
+        double term = 1.0;
+        double sum = 0.0;
+        for (int n = 1; n <= 50; ++n) {
+            term *= -x2 / static_cast<double>((2 * n - 1) * (2 * n));
+            const double contrib = term / static_cast<double>(2 * n);
+            sum += contrib;
+            if (std::abs(contrib) <= 1e-16)
+                break;
+        }
+        out = kEulerGamma + std::log(x) + sum;
+        return std::isfinite(out);
+    }
+    if (x <= 32.0) {
+        double ci4 = 0.0;
+        evalCiDouble(4.0, ci4);
+        const int panels = std::max(8, static_cast<int>(std::ceil((x - 4.0) * 2.0)));
+        const double tail = gauss8Integrate(
+            [](double t) { return std::cos(t) / t; }, 4.0, x, panels);
+        out = ci4 + tail;
+        return std::isfinite(out);
+    }
+    const double invZ2 = 1.0 / (x * x);
+    double fSum = 1.0, gSum = 1.0;
+    double fTerm = 1.0, gTerm = 1.0;
+    for (int k = 1; k <= 12; ++k) {
+        fTerm *= -static_cast<double>((2 * k - 1) * (2 * k)) * invZ2;
+        if (std::abs(fTerm) > 1e-3 && k > 4)
+            break;
+        fSum += fTerm;
+        gTerm *= -static_cast<double>((2 * k) * (2 * k + 1)) * invZ2;
+        gSum += gTerm;
+    }
+    const double fVal = fSum / x;
+    const double gVal = gSum * invZ2;
+    out = fVal * std::sin(x) - gVal * std::cos(x);
+    return std::isfinite(out);
+}
+
+double evalFresnelDouble(double x, bool isSine)
+{
+    if (x == 0.0)
+        return 0.0;
+    const double sgn = x < 0.0 ? -1.0 : 1.0;
+    const double ax = std::abs(x);
+    if (ax <= 2.5) {
+        const double halfPi = 0.5 * kPiDouble;
+        const double x2 = ax * ax;
+        const double x4 = x2 * x2;
+        if (isSine) {
+            double term = halfPi * ax * x2;
+            double sum = term / 3.0;
+            for (int n = 1; n <= 45; ++n) {
+                term *= -(halfPi * halfPi * x4) /
+                        static_cast<double>((2 * n) * (2 * n + 1));
+                const double contrib = term / static_cast<double>(4 * n + 3);
+                sum += contrib;
+                if (std::abs(contrib) <= 1e-16)
+                    break;
+            }
+            return sgn * sum;
+        }
+        double term = ax;
+        double sum = term;
+        for (int n = 1; n <= 45; ++n) {
+            term *= -(halfPi * halfPi * x4) /
+                    static_cast<double>((2 * n - 1) * (2 * n));
+            const double contrib = term / static_cast<double>(4 * n + 1);
+            sum += contrib;
+            if (std::abs(contrib) <= 1e-16)
+                break;
+        }
+        return sgn * sum;
+    }
+    if (ax <= 12.0) {
+        const double base = evalFresnelDouble(2.5, isSine);
+        const int panels = std::max(16, static_cast<int>(std::ceil((ax * ax - 6.25) * 4.0)));
+        const double tail = gauss8Integrate(
+            [isSine](double t) {
+                const double arg = 0.5 * kPiDouble * t * t;
+                return isSine ? std::sin(arg) : std::cos(arg);
+            },
+            2.5, ax, panels);
+        return sgn * (base + tail);
+    }
+    // Asymptotic expansion for ax > 12.
+    const double z = 0.5 * kPiDouble * ax * ax;
+    const double invPiAx = 1.0 / (kPiDouble * ax);
+    const double inv2Z = 1.0 / (2.0 * z);
+    const double fVal = invPiAx * (1.0 - 3.0 * inv2Z * inv2Z);
+    const double gVal = invPiAx * inv2Z * (1.0 - 15.0 * inv2Z * inv2Z);
+    if (isSine)
+        return sgn * (0.5 - fVal * std::cos(z) - gVal * std::sin(z));
+    return sgn * (0.5 + fVal * std::sin(z) - gVal * std::cos(z));
+}
 
 bool evalDoubleRec(
     const Ctx &c, Expr e,
@@ -867,6 +1122,25 @@ bool evalDoubleRec(
             res = std::erf(a);
         } else if (fn == "erfc") {
             res = std::erfc(a);
+        } else if (fn == "erfi") {
+            res = evalErfiDouble(a);
+        } else if (fn == "Ei") {
+            if (!evalEiDouble(a, res)) return false;
+        } else if (fn == "li") {
+            if (a == 0.0) {
+                res = 0.0;
+            } else {
+                if (a < 0.0 || a == 1.0) return false;
+                if (!evalEiDouble(std::log(a), res)) return false;
+            }
+        } else if (fn == "Si") {
+            res = evalSiDouble(a);
+        } else if (fn == "Ci") {
+            if (!evalCiDouble(a, res)) return false;
+        } else if (fn == "FresnelS") {
+            res = evalFresnelDouble(a, true);
+        } else if (fn == "FresnelC") {
+            res = evalFresnelDouble(a, false);
         } else if (fn == "gamma") {
             if (a <= 0.0 && std::floor(a) == a) return false;
             res = std::tgamma(a);
@@ -1186,7 +1460,8 @@ bool Ctx::isAssumedPositive(Expr e) const
         if (fn == "abs")
             return isAssumedPositive(u) || isAssumedNegative(u);
         if (fn == "sqrt" || fn == "sinh" || fn == "tanh" || fn == "asinh" ||
-            fn == "atan" || fn == "erf" || fn == "gamma")
+            fn == "atan" || fn == "erf" || fn == "erfi" || fn == "Si" ||
+            fn == "FresnelS" || fn == "FresnelC" || fn == "gamma")
             return isAssumedPositive(u);
         return false;
     }
@@ -1245,7 +1520,8 @@ bool Ctx::isAssumedNegative(Expr e) const
         const std::string &fn = funcName(e);
         const Expr u = child(e, 0);
         if (fn == "sinh" || fn == "tanh" || fn == "asinh" || fn == "atan" ||
-            fn == "erf")
+            fn == "erf" || fn == "erfi" || fn == "Si" || fn == "FresnelS" ||
+            fn == "FresnelC")
             return isAssumedNegative(u);
         return false;
     }
@@ -1311,7 +1587,8 @@ bool Ctx::isAssumedNonNegative(Expr e) const
         if (fn == "abs")
             return isAssumedReal(u);
         if (fn == "sqrt" || fn == "sinh" || fn == "tanh" || fn == "asinh" ||
-            fn == "atan" || fn == "erf")
+            fn == "atan" || fn == "erf" || fn == "erfi" || fn == "Si" ||
+            fn == "FresnelS" || fn == "FresnelC")
             return isAssumedNonNegative(u);
         return false;
     }
@@ -1371,15 +1648,18 @@ bool Ctx::isAssumedReal(Expr e) const
     case NodeKind::Func: {
         const std::string &fn = funcName(e);
         const Expr u = child(e, 0);
-        if (fn == "log")
+        if (fn == "log" || fn == "Ci")
             return isAssumedPositive(u);
+        if (fn == "Ei")
+            return isAssumedPositive(u) || isAssumedNegative(u);
         if (fn == "sqrt")
             return isAssumedNonNegative(u);
         if (fn == "exp" || fn == "abs" || fn == "sin" || fn == "cos" ||
             fn == "tan" || fn == "cot" || fn == "sec" || fn == "csc" ||
             fn == "atan" || fn == "acot" || fn == "sinh" || fn == "cosh" ||
             fn == "tanh" || fn == "coth" || fn == "sech" || fn == "csch" ||
-            fn == "asinh" || fn == "erf" || fn == "erfc")
+            fn == "asinh" || fn == "erf" || fn == "erfc" || fn == "erfi" ||
+            fn == "Si" || fn == "FresnelS" || fn == "FresnelC")
             return isAssumedReal(u);
         return false;
     }

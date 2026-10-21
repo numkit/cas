@@ -121,7 +121,10 @@ Expr safeSubsAndFold(Ctx &c, Expr e, Expr from, Expr to)
         if (a.isNull())
             return Expr();
         const std::string &fn = c.funcName(e);
-        if (fn == "log" && isZeroCoeff(c, a))
+        if ((fn == "log" || fn == "Ei" || fn == "Ci") && isZeroCoeff(c, a))
+            return Expr();
+        if (fn == "li" &&
+            isZeroCoeff(c, c.add({a, c.number(std::int64_t{-1})})))
             return Expr();
         return foldConst(c, c.func(fn, a));
     }
@@ -443,6 +446,10 @@ int exprSign(Ctx &c, Expr e)
     Rational r;
     if (c.evalExact(e, {}, r))
         return r.signum();
+    if (c.isAssumedPositive(e))
+        return +1;
+    if (c.isAssumedNegative(e))
+        return -1;
     double dVal = 0.0;
     if (c.evalDouble(e, {}, dVal)) {
         if (dVal > 1e-12)
@@ -498,9 +505,36 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
             out = makeConstSeries(c, c.zero(), highDeg);
             return true;
         }
-        if (fn == "tanh" || fn == "coth") {
+        if (fn == "tanh" || fn == "coth" || fn == "erf") {
             out = makeConstSeries(
                 c, c.number(static_cast<std::int64_t>(sgn)), highDeg);
+            return true;
+        }
+        if (fn == "erfc") {
+            out = makeConstSeries(
+                c, c.number(static_cast<std::int64_t>(1 - sgn)), highDeg);
+            return true;
+        }
+        if (fn == "Si") {
+            const Expr halfPi = c.mul(
+                {c.number(Rational(static_cast<std::int64_t>(sgn), BigInt(2))),
+                 c.symbol("pi")});
+            out = makeConstSeries(c, halfPi, highDeg);
+            return true;
+        }
+        if (fn == "Ci" && sgn > 0) {
+            out = makeConstSeries(c, c.zero(), highDeg);
+            return true;
+        }
+        if (fn == "Ei" && sgn < 0) {
+            out = makeConstSeries(c, c.zero(), highDeg);
+            return true;
+        }
+        if (fn == "FresnelS" || fn == "FresnelC") {
+            out = makeConstSeries(
+                c,
+                c.number(Rational(static_cast<std::int64_t>(sgn), BigInt(2))),
+                highDeg);
             return true;
         }
         if (fn == "sech" || fn == "csch") {
@@ -660,6 +694,106 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
         }
         Laurent intPart;
         if (!integrateSeriesZeroConst(c, mulSeries(c, dA, factor), intPart))
+            return false;
+        const Expr f0 = foldConst(c, c.func(fn, c0));
+        out = addSeries(c, makeConstSeries(c, f0, L), intPart);
+        return true;
+    }
+    if (fn == "erf" || fn == "erfc" || fn == "erfi") {
+        const Laurent dA = diffSeries(c, arg);
+        const Laurent a2 = mulSeries(c, arg, arg);
+        const Laurent expArg =
+            (fn == "erfi") ? a2 : scaleSeries(c, a2, c.number(std::int64_t{-1}));
+        Laurent expS;
+        if (!evalFuncSeries(c, "exp", expArg, expS, positiveT))
+            return false;
+        const Expr twoOverSqrtPi = c.mul(
+            {c.number(std::int64_t{fn == "erfc" ? -2 : 2}),
+             c.pow(c.symbol("pi"),
+                   c.number(Rational(std::int64_t{-1}, BigInt(2))))});
+        Laurent intPart;
+        if (!integrateSeriesZeroConst(
+                c, scaleSeries(c, mulSeries(c, dA, expS), twoOverSqrtPi),
+                intPart))
+            return false;
+        const Expr f0 = foldConst(c, c.func(fn, c0));
+        out = addSeries(c, makeConstSeries(c, f0, L), intPart);
+        return true;
+    }
+    if (fn == "Si") {
+        if (isZeroCoeff(c, c0)) {
+            Laurent sum = makeConstSeries(c, c.zero(), L);
+            const Laurent u2 = mulSeries(c, u, u);
+            Laurent upow = u;
+            BigInt fact(1);
+            for (int m = 0; 2 * m + 1 <= L && !upow.coeffs.empty(); ++m) {
+                if (m > 0) {
+                    fact = fact * BigInt(2 * m) * BigInt(2 * m + 1);
+                }
+                const std::int64_t sgn =
+                    (m % 2 == 0) ? std::int64_t{1} : std::int64_t{-1};
+                const Expr coef = c.number(
+                    Rational(sgn, fact * BigInt(2 * m + 1)));
+                sum = addSeries(c, sum, scaleSeries(c, upow, coef));
+                if (2 * (m + 1) + 1 <= L)
+                    upow = mulSeries(c, upow, u2);
+            }
+            out = sum;
+            return true;
+        }
+        Laurent sinA, invA, intPart;
+        if (!evalFuncSeries(c, "sin", arg, sinA, positiveT) ||
+            !invSeries(c, arg, invA))
+            return false;
+        const Laurent dA = diffSeries(c, arg);
+        if (!integrateSeriesZeroConst(
+                c, mulSeries(c, mulSeries(c, sinA, invA), dA), intPart))
+            return false;
+        const Expr f0 = foldConst(c, c.func(fn, c0));
+        out = addSeries(c, makeConstSeries(c, f0, L), intPart);
+        return true;
+    }
+    if (fn == "Ci" || fn == "Ei") {
+        if (isZeroCoeff(c, c0))
+            return false;
+        Laurent numS, invA, intPart;
+        const std::string numFn = (fn == "Ci") ? "cos" : "exp";
+        if (!evalFuncSeries(c, numFn, arg, numS, positiveT) ||
+            !invSeries(c, arg, invA))
+            return false;
+        const Laurent dA = diffSeries(c, arg);
+        if (!integrateSeriesZeroConst(
+                c, mulSeries(c, mulSeries(c, numS, invA), dA), intPart))
+            return false;
+        const Expr f0 = foldConst(c, c.func(fn, c0));
+        out = addSeries(c, makeConstSeries(c, f0, L), intPart);
+        return true;
+    }
+    if (fn == "li") {
+        if (isZeroCoeff(c, c0) ||
+            isZeroCoeff(c, c.add({c0, c.number(std::int64_t{-1})})))
+            return false;
+        Laurent logA, invLogA, intPart;
+        if (!evalFuncSeries(c, "log", arg, logA, positiveT) ||
+            !invSeries(c, logA, invLogA))
+            return false;
+        const Laurent dA = diffSeries(c, arg);
+        if (!integrateSeriesZeroConst(c, mulSeries(c, invLogA, dA), intPart))
+            return false;
+        const Expr f0 = foldConst(c, c.func(fn, c0));
+        out = addSeries(c, makeConstSeries(c, f0, L), intPart);
+        return true;
+    }
+    if (fn == "FresnelS" || fn == "FresnelC") {
+        const Laurent dA = diffSeries(c, arg);
+        const Laurent a2 = mulSeries(c, arg, arg);
+        const Expr halfPi = c.mul(
+            {c.number(Rational(std::int64_t{1}, BigInt(2))), c.symbol("pi")});
+        const Laurent trigArg = scaleSeries(c, a2, halfPi);
+        Laurent trigS, intPart;
+        if (!evalFuncSeries(c, fn == "FresnelS" ? "sin" : "cos", trigArg, trigS,
+                            positiveT) ||
+            !integrateSeriesZeroConst(c, mulSeries(c, dA, trigS), intPart))
             return false;
         const Expr f0 = foldConst(c, c.func(fn, c0));
         out = addSeries(c, makeConstSeries(c, f0, L), intPart);
@@ -1024,25 +1158,41 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
     if (c.kind(f) == NodeKind::Func) {
         const std::string &fn = c.funcName(f);
         const Expr arg = c.child(f, 0);
-        if (fn == "log") {
+        if (fn == "log" || fn == "Ei" || fn == "Ci") {
             const LimitResult argLim =
                 limitDepth(c, arg, var, x0, budget, depth + 1, positiveT);
             if ((argLim.proved() && isZeroCoeff(c, argLim.value)) ||
-                argLim.status == LimitResult::Status::Divergent) {
+                (fn == "log" &&
+                 argLim.status == LimitResult::Status::Divergent)) {
                 out.status = LimitResult::Status::Divergent;
                 out.poleOrder = 1;
                 out.reason = "logarithmic singularity at limit point";
                 return out;
             }
-        } else if (fn == "exp" && positiveT) {
+        } else if (fn == "li") {
+            const LimitResult argLim =
+                limitDepth(c, arg, var, x0, budget, depth + 1, positiveT);
+            if ((argLim.proved() &&
+                 isZeroCoeff(
+                     c, c.add({argLim.value, c.number(std::int64_t{-1})}))) ||
+                argLim.status == LimitResult::Status::Divergent) {
+                out.status = LimitResult::Status::Divergent;
+                out.poleOrder = 1;
+                out.reason = "logarithmic integral singularity at limit point";
+                return out;
+            }
+        }
+        if ((fn == "exp" || fn == "Ei" || fn == "erfi") && positiveT) {
             Laurent argS;
             if (computeLaurent(c, arg, var, x0, 4, budget, argS, positiveT) &&
-                !argS.coeffs.empty() && argS.val < 0 &&
-                exprSign(c, argS.coeffs.front()) > 0) {
-                out.status = LimitResult::Status::Divergent;
-                out.poleOrder = -argS.val;
-                out.reason = "essential exponential growth at limit point";
-                return out;
+                !argS.coeffs.empty() && argS.val < 0) {
+                const int s = exprSign(c, argS.coeffs.front());
+                if (s > 0 || (fn == "erfi" && s != 0)) {
+                    out.status = LimitResult::Status::Divergent;
+                    out.poleOrder = -argS.val;
+                    out.reason = "essential exponential growth at limit point";
+                    return out;
+                }
             }
         }
     }

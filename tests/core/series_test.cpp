@@ -399,5 +399,70 @@ TEST(SeriesTest, BoundaryCases)
     EXPECT_TRUE(exprEq(c, lr.value, constExpr));
 }
 
+TEST(SeriesTest, SpecialFunctionsTaylorAndLimits)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    // 1. Taylor series of erf, erfi, Si, FresnelS, FresnelC around x0 = 0
+    EXPECT_TRUE(exprEq(
+        c, taylor(c, parseExpr(c, "erf(x)"), x, c.zero(), 5),
+        parseExpr(c, "(2*x - 2/3*x^3 + 1/5*x^5)*pi^(-1/2)")));
+    EXPECT_TRUE(exprEq(
+        c, taylor(c, parseExpr(c, "erfc(x)"), x, c.zero(), 5),
+        parseExpr(c, "1 - (2*x - 2/3*x^3 + 1/5*x^5)*pi^(-1/2)")));
+    EXPECT_TRUE(exprEq(
+        c, taylor(c, parseExpr(c, "erfi(x)"), x, c.zero(), 5),
+        parseExpr(c, "(2*x + 2/3*x^3 + 1/5*x^5)*pi^(-1/2)")));
+    EXPECT_TRUE(exprEq(
+        c, taylor(c, parseExpr(c, "Si(x)"), x, c.zero(), 5),
+        parseExpr(c, "x - 1/18*x^3 + 1/600*x^5")));
+    EXPECT_TRUE(exprEq(
+        c, taylor(c, parseExpr(c, "FresnelC(x)"), x, c.zero(), 5),
+        parseExpr(c, "x - 1/40*pi^2*x^5")));
+    EXPECT_TRUE(exprEq(
+        c, taylor(c, parseExpr(c, "FresnelS(x)"), x, c.zero(), 7),
+        parseExpr(c, "1/6*pi*x^3 - 1/336*pi^3*x^7")));
+
+    // 2. Taylor series of Ei, Ci around x0 = 1 and li around x0 = 2
+    const Expr tEi = taylor(c, parseExpr(c, "Ei(x)"), x, c.one(), 2);
+    ASSERT_FALSE(tEi.isNull());
+    EXPECT_TRUE(exprEq(c, tEi, parseExpr(c, "Ei(1) + exp(1)*(x - 1)")));
+
+    const Expr tCi = taylor(c, parseExpr(c, "Ci(x)"), x, c.one(), 2);
+    ASSERT_FALSE(tCi.isNull());
+    EXPECT_TRUE(exprEq(
+        c, tCi,
+        parseExpr(c, "Ci(1) + cos(1)*(x - 1) - 1/2*(cos(1) + sin(1))*(x - 1)^2")));
+
+    const Expr tLi = taylor(c, parseExpr(c, "li(x)"), x, c.number(std::int64_t{2}), 1);
+    ASSERT_FALSE(tLi.isNull());
+    EXPECT_TRUE(exprEq(c, tLi, parseExpr(c, "li(2) + (x - 2)/log(2)")));
+
+    // 3. Asymptotic limits at +/- infinity
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erf(x)"), x, +1).value, c.one());
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erf(x)"), x, -1).value,
+              c.number(std::int64_t{-1}));
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erfc(x)"), x, +1).value, c.zero());
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erfc(x)"), x, -1).value,
+              c.number(std::int64_t{2}));
+    EXPECT_TRUE(exprEq(c, limitAtInfinity(c, parseExpr(c, "Si(x)"), x, +1).value,
+                       parseExpr(c, "1/2*pi")));
+    EXPECT_TRUE(exprEq(c, limitAtInfinity(c, parseExpr(c, "Si(x)"), x, -1).value,
+                       parseExpr(c, "-1/2*pi")));
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "Ci(x)"), x, +1).value, c.zero());
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "Ei(x)"), x, -1).value, c.zero());
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "Ei(x)"), x, +1).status,
+              LimitResult::Status::Divergent);
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erfi(x)"), x, +1).status,
+              LimitResult::Status::Divergent);
+    EXPECT_TRUE(exprEq(
+        c, limitAtInfinity(c, parseExpr(c, "FresnelS(x)"), x, +1).value,
+        parseExpr(c, "1/2")));
+    EXPECT_TRUE(exprEq(
+        c, limitAtInfinity(c, parseExpr(c, "FresnelC(x)"), x, -1).value,
+        parseExpr(c, "-1/2")));
+}
+
 } // namespace
 } // namespace numkit::cas

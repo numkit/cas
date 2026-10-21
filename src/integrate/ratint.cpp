@@ -2596,6 +2596,422 @@ Expr realizeLogAbsAtEndpoint(Ctx &c, Expr e, Expr var, Expr pt)
     return e;
 }
 
+bool matchRationalMultipleOfPi(Ctx &c, Expr e, Rational &kOut)
+{
+    if (e.isNull())
+        return false;
+    if (c.isZero(e)) {
+        kOut = Rational(std::int64_t{0});
+        return true;
+    }
+    const Expr piSym = c.symbol("pi");
+    if (e == piSym) {
+        kOut = Rational(std::int64_t{1});
+        return true;
+    }
+    if (c.kind(e) == NodeKind::Mul && c.childCount(e) == 2 &&
+        c.kind(c.child(e, 0)) == NodeKind::Number &&
+        c.child(e, 1) == piSym) {
+        kOut = c.numberValue(c.child(e, 0));
+        return true;
+    }
+    return false;
+}
+
+// Expand multiple-angle sin(n*var) and cos(n*var) (|n| <= 6) into polynomials
+// in sin(var) and cos(var) so substituteTangent can rationalize them.
+Expr expandMultipleAngleTrig(Ctx &c, Expr e, Expr var)
+{
+    if (e.isNull() || !mentionsVar(c, e, var))
+        return e;
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func: {
+        const std::string &fn = c.funcName(e);
+        const Expr arg = expandMultipleAngleTrig(c, c.child(e, 0), var);
+        if ((fn == "sin" || fn == "cos") && c.kind(arg) == NodeKind::Mul &&
+            c.childCount(arg) == 2 &&
+            c.kind(c.child(arg, 0)) == NodeKind::Number &&
+            c.child(arg, 1) == var) {
+            const Rational &r = c.numberValue(c.child(arg, 0));
+            std::int64_t n = 0;
+            if (r.den() == BigInt(1) && r.num().fitsInt64(n) && n != 0 &&
+                std::abs(n) <= 6) {
+                const std::int64_t an = std::abs(n);
+                const Expr s1 = c.func("sin", var);
+                const Expr c1 = c.func("cos", var);
+                Expr sn = s1, cn = c1;
+                for (std::int64_t k = 2; k <= an; ++k) {
+                    const Expr nextC =
+                        c.add({c.mul({cn, c1}), c.neg(c.mul({sn, s1}))});
+                    const Expr nextS =
+                        c.add({c.mul({sn, c1}), c.mul({cn, s1})});
+                    cn = nextC;
+                    sn = nextS;
+                }
+                if (fn == "cos")
+                    return cn;
+                return n > 0 ? sn : c.neg(sn);
+            }
+        }
+        return c.func(fn, arg);
+    }
+    case NodeKind::Pow:
+        return c.pow(expandMultipleAngleTrig(c, c.child(e, 0), var),
+                     expandMultipleAngleTrig(c, c.child(e, 1), var));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(expandMultipleAngleTrig(c, c.child(e, i), var));
+        return c.kind(e) == NodeKind::Add ? c.add(ch) : c.mul(ch);
+    }
+    }
+    return e;
+}
+
+bool mentionsBranchTrigOrAtan(const Ctx &c, Expr e, Expr var)
+{
+    if (e.isNull() || !mentionsVar(c, e, var))
+        return false;
+    if (c.kind(e) == NodeKind::Func) {
+        const std::string &fn = c.funcName(e);
+        if (fn == "atan" || fn == "acot" || fn == "tan" || fn == "cot" ||
+            fn == "sec" || fn == "csc" || fn == "log") {
+            return true;
+        }
+    }
+    if (c.kind(e) == NodeKind::Pow &&
+        c.kind(c.child(e, 1)) == NodeKind::Number &&
+        c.numberValue(c.child(e, 1)).signum() < 0) {
+        return true;
+    }
+    for (std::size_t i = 0; i < c.childCount(e); ++i)
+        if (mentionsBranchTrigOrAtan(c, c.child(e, i), var))
+            return true;
+    return false;
+}
+
+// Evaluate int_{-inf}^{+inf} ((A*x + B) / ((x - alpha)^2 + betaSq)^k) * cos(omega*x) or sin(omega*x) dx
+// via upper-half-plane residue calculus at z = alpha + i*sqrt(betaSq) (Jordan's lemma).
+Expr evalQuadraticFourierResidue(Ctx &c, Expr A, Expr B, Expr alpha,
+                                 Expr betaSq, int k, Expr absOmega, int sgnOmega,
+                                 bool isSin)
+{
+    Expr beta, invBeta;
+    sqrtFactorPair(c, betaSq, beta, invBeta);
+    const Expr piSym = c.symbol("pi");
+    const Expr expDecay = c.func("exp", c.neg(c.mul({absOmega, beta})));
+    std::vector<Expr> J(static_cast<std::size_t>(k + 1));
+    std::vector<Expr> K(static_cast<std::size_t>(k + 1));
+    J[1] = c.mul({piSym, invBeta, expDecay});
+    K[1] = c.mul({piSym, expDecay});
+    for (int m = 2; m <= k; ++m) {
+        const Expr twoM1 = c.number(static_cast<std::int64_t>(2 * (m - 1)));
+        K[static_cast<std::size_t>(m)] = c.simplify(
+            c.div(c.mul({absOmega, J[static_cast<std::size_t>(m - 1)]}), twoM1));
+        const Expr numJ = c.add(
+            {c.mul({c.number(static_cast<std::int64_t>(2 * m - 3)),
+                    J[static_cast<std::size_t>(m - 1)]}),
+             c.mul({absOmega, K[static_cast<std::size_t>(m - 1)]})});
+        J[static_cast<std::size_t>(m)] =
+            c.simplify(c.div(numJ, c.mul({twoM1, betaSq})));
+    }
+    const Expr bTilde = c.simplify(c.add({B, c.mul({A, alpha})}));
+    const Expr jk = J[static_cast<std::size_t>(k)];
+    const Expr kk = K[static_cast<std::size_t>(k)];
+    const Expr sgnExpr = c.number(static_cast<std::int64_t>(sgnOmega));
+    if (c.isZero(alpha)) {
+        if (!isSin)
+            return c.simplify(c.mul({bTilde, jk}));
+        return c.simplify(c.mul({sgnExpr, A, kk}));
+    }
+    const Expr wAlpha = c.mul({sgnExpr, absOmega, alpha});
+    const Expr cosWA = c.simplify(c.func("cos", wAlpha));
+    const Expr sinWA = c.simplify(c.func("sin", wAlpha));
+    if (!isSin) {
+        return c.simplify(
+            c.add({c.mul({bTilde, cosWA, jk}),
+                   c.neg(c.mul({sgnExpr, A, sinWA, kk}))}));
+    }
+    return c.simplify(
+        c.add({c.mul({bTilde, sinWA, jk}), c.mul({sgnExpr, A, cosWA, kk})}));
+}
+
+bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
+{
+    std::string why;
+    if (!checkBudget(c, budget, why))
+        return false;
+    if (c.kind(f) == NodeKind::Add) {
+        std::vector<Expr> parts;
+        for (std::size_t i = 0; i < c.childCount(f); ++i) {
+            Expr pi;
+            if (!contourFourierTerm(c, c.child(f, i), var, budget, pi))
+                return false;
+            parts.push_back(pi);
+        }
+        valOut = c.simplify(c.add(parts));
+        return true;
+    }
+
+    std::vector<Expr> factors;
+    if (c.kind(f) == NodeKind::Mul) {
+        for (std::size_t i = 0; i < c.childCount(f); ++i)
+            factors.push_back(c.child(f, i));
+    } else {
+        factors.push_back(f);
+    }
+
+    std::string trigFn;
+    Expr trigArg;
+    std::vector<Expr> ratFacs;
+    for (const Expr &fac : factors) {
+        if (trigFn.empty() && c.kind(fac) == NodeKind::Func &&
+            (c.funcName(fac) == "sin" || c.funcName(fac) == "cos") &&
+            mentionsVar(c, c.child(fac, 0), var)) {
+            trigFn = c.funcName(fac);
+            trigArg = c.child(fac, 0);
+        } else {
+            ratFacs.push_back(fac);
+        }
+    }
+    if (trigFn.empty())
+        return false;
+
+    std::vector<Expr> wCoeffs;
+    if (!extractPolyInVar(c, trigArg, var, 1, wCoeffs) ||
+        wCoeffs.size() != 2 || c.isZero(wCoeffs[1]))
+        return false;
+    const Expr phase = wCoeffs[0];
+    const Expr omega = wCoeffs[1];
+    const Expr ratPart = ratFacs.empty() ? c.one() : c.mul(ratFacs);
+    if (!c.isZero(phase)) {
+        const Expr cosP = c.simplify(c.func("cos", phase));
+        const Expr sinP = c.simplify(c.func("sin", phase));
+        const Expr wx = c.mul({omega, var});
+        Expr vSin, vCos;
+        if (!contourFourierTerm(c, c.mul({ratPart, c.func("sin", wx)}), var,
+                                budget, vSin) ||
+            !contourFourierTerm(c, c.mul({ratPart, c.func("cos", wx)}), var,
+                                budget, vCos))
+            return false;
+        if (trigFn == "sin") {
+            valOut = c.simplify(
+                c.add({c.mul({cosP, vSin}), c.mul({sinP, vCos})}));
+        } else {
+            valOut = c.simplify(
+                c.add({c.mul({cosP, vCos}), c.neg(c.mul({sinP, vSin}))}));
+        }
+        return true;
+    }
+
+    int sgnOmega = 0;
+    if (isNegativeSymbolicFactor(c, omega)) {
+        sgnOmega = -1;
+    } else if (c.isAssumedPositive(omega)) {
+        sgnOmega = +1;
+    } else {
+        double wVal = 0.0;
+        if (c.evalDouble(omega, {}, wVal)) {
+            if (wVal > 1e-12)
+                sgnOmega = +1;
+            else if (wVal < -1e-12)
+                sgnOmega = -1;
+        }
+    }
+    if (sgnOmega == 0)
+        return false;
+    const Expr absOmega = (sgnOmega < 0) ? c.neg(omega) : omega;
+    const bool isSin = (trigFn == "sin");
+
+    // Path A: Rational function R(x) = N(x) / D(x) over Q[x].
+    UPoly N, D;
+    if (toRational(c, ratPart, var, N, D) && !D.isZero() && D.deg() >= 1) {
+        if (N.isZero()) {
+            valOut = c.zero();
+            return true;
+        }
+        const UPoly gnd = UPoly::gcd(N, D);
+        if (gnd.deg() >= 1) {
+            UPoly qN, rN, qD, rD;
+            UPoly::divMod(N, gnd, qN, rN);
+            UPoly::divMod(D, gnd, qD, rD);
+            N = qN;
+            D = qD;
+        }
+        // Jordan's lemma decay check at infinity:
+        //   deg(N) <= deg(D) - 1 (and if deg(N) == deg(D) - 1 with cos, only
+        //   convergent if R(x) is odd so the integral is 0).
+        if (N.deg() >= D.deg())
+            return false;
+
+        std::vector<Expr> totalTerms;
+        // Handle removable singularity at x = 0 for sin(omega*x) / x * ...
+        if (isSin && D.coeff(0).isZero()) {
+            const UPoly xPoly({Rational(std::int64_t{0}), Rational(std::int64_t{1})});
+            UPoly dTilde, rX;
+            UPoly::divMod(D, xPoly, dTilde, rX);
+            if (dTilde.coeff(0).isZero())
+                return false; // double pole at 0: sin(wx)/x^2 diverges
+            const Rational c0 = N.coeff(0) / dTilde.coeff(0);
+            // int_{-inf}^{inf} c0 * sin(omega*x)/x dx = c0 * sgn(omega) * pi
+            totalTerms.push_back(c.mul(
+                {c.number(c0 * Rational(static_cast<std::int64_t>(sgnOmega))),
+                 c.symbol("pi")}));
+            const UPoly remNum = N - (dTilde * UPoly({c0}));
+            UPoly nNext, rNext;
+            UPoly::divMod(remNum, xPoly, nNext, rNext);
+            N = nNext;
+            D = dTilde;
+        }
+        if (N.isZero()) {
+            valOut = totalTerms.empty() ? c.zero() : c.simplify(c.add(totalTerms));
+            return true;
+        }
+        if (!solveRealRoots(D).empty())
+            return false; // real pole on contour
+        if (!isSin && N.deg() >= D.deg() - 1) {
+            // Check if N(x)/D(x) is odd (so int_{-inf}^{inf} R(x)*cos(wx) dx = 0).
+            const Expr rNeg = c.subs(ratPart, var, c.neg(var));
+            if (c.isZero(c.simplify(c.add({ratPart, rNeg})))) {
+                valOut = totalTerms.empty() ? c.zero() : c.simplify(c.add(totalTerms));
+                return true;
+            }
+            return false;
+        }
+
+        const Rational dLc = D.lc();
+        UPoly dMonic = D;
+        dMonic.makeMonic();
+        N = N * UPoly({Rational(std::int64_t{1}) / dLc});
+
+        // Factor dMonic into distinct irreducible quadratics Q_j^{m_j}.
+        std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+        if (budget && !budget->ok())
+            return false;
+        struct QuadFactor
+        {
+            UPoly q;
+            int mult = 0;
+            UPoly qPow;
+        };
+        std::vector<QuadFactor> qfs;
+        for (const UPoly &ir : irreds) {
+            if (ir.deg() != 2)
+                return false;
+            bool found = false;
+            for (auto &qf : qfs) {
+                if (qf.q == ir) {
+                    qf.mult += 1;
+                    qf.qPow = qf.qPow * ir;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                qfs.push_back(QuadFactor{ir, 1, ir});
+        }
+
+        for (std::size_t j = 0; j < qfs.size(); ++j) {
+            UPoly mj({Rational(std::int64_t{1})});
+            for (std::size_t i = 0; i < qfs.size(); ++i) {
+                if (i != j)
+                    mj = mj * qfs[i].qPow;
+            }
+            const UPoly invMj = UPoly::invMod(mj % qfs[j].qPow, qfs[j].qPow);
+            UPoly pj = (N * invMj) % qfs[j].qPow;
+
+            const Rational bCoeff = qfs[j].q.coeff(1);
+            const Rational cCoeff = qfs[j].q.coeff(0);
+            const Rational alphaRat =
+                -bCoeff * Rational(std::int64_t{1}, BigInt(2));
+            const Rational betaSqRat = cCoeff - alphaRat * alphaRat;
+            if (betaSqRat.signum() <= 0)
+                return false;
+            const Expr alphaExpr = c.number(alphaRat);
+            const Expr betaSqExpr = c.number(betaSqRat);
+
+            // Expand pj in powers of qfs[j].q: pj / q^m = sum_{k=1}^m (A_k x + B_k) / q^k.
+            UPoly cur = pj;
+            for (int k = qfs[j].mult; k >= 1 && !cur.isZero(); --k) {
+                UPoly quot, rem;
+                UPoly::divMod(cur, qfs[j].q, quot, rem);
+                cur = quot;
+                if (rem.isZero())
+                    continue;
+                const Expr aExpr = c.number(rem.coeff(1));
+                const Expr bExpr = c.number(rem.coeff(0));
+                totalTerms.push_back(evalQuadraticFourierResidue(
+                    c, aExpr, bExpr, alphaExpr, betaSqExpr, k, absOmega,
+                    sgnOmega, isSin));
+            }
+        }
+        valOut = totalTerms.empty() ? c.zero() : c.simplify(c.add(totalTerms));
+        return true;
+    }
+
+    // Path B: Symbolic parameter quadratic (A*x + B) / (a2*x^2 + a1*x + a0)^k.
+    std::vector<Expr> numFacs;
+    Expr quadBase;
+    int quadK = 0;
+    for (const Expr &rf : ratFacs) {
+        if (quadK == 0 && c.kind(rf) == NodeKind::Pow &&
+            c.kind(c.child(rf, 1)) == NodeKind::Number) {
+            const Rational &re = c.numberValue(c.child(rf, 1));
+            std::int64_t kVal = 0;
+            std::vector<Expr> qCoeffs;
+            if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
+                kVal <= -1 && kVal >= -4 &&
+                extractPolyInVar(c, c.child(rf, 0), var, 2, qCoeffs) &&
+                qCoeffs.size() == 3 && !c.isZero(qCoeffs[2])) {
+                quadBase = c.child(rf, 0);
+                quadK = static_cast<int>(-kVal);
+                continue;
+            }
+        }
+        numFacs.push_back(rf);
+    }
+    if (quadK >= 1) {
+        std::vector<Expr> qCoeffs, nCoeffs;
+        extractPolyInVar(c, quadBase, var, 2, qCoeffs);
+        const Expr numExpr = numFacs.empty() ? c.one() : c.mul(numFacs);
+        if (extractPolyInVar(c, numExpr, var, 1, nCoeffs)) {
+            const Expr a0 = qCoeffs[0];
+            const Expr a1 = qCoeffs[1];
+            const Expr a2 = qCoeffs[2];
+            const Expr alpha = c.simplify(
+                c.neg(c.div(a1, c.mul({c.number(std::int64_t{2}), a2}))));
+            const Expr betaSq = c.simplify(
+                c.add({c.div(a0, a2), c.neg(c.pow(alpha, c.number(std::int64_t{2})))}));
+            if (c.isAssumedPositive(betaSq)) {
+                const Expr bCoeff = nCoeffs.size() >= 1 ? nCoeffs[0] : c.zero();
+                const Expr aCoeff = nCoeffs.size() >= 2 ? nCoeffs[1] : c.zero();
+                if (!isSin && !c.isZero(aCoeff) && quadK == 1 &&
+                    c.isZero(alpha) && c.isZero(bCoeff)) {
+                    valOut = c.zero();
+                    return true;
+                }
+                if (!isSin && quadK == 1 && !c.isZero(aCoeff))
+                    return false;
+                const Expr scale =
+                    c.pow(a2, c.number(static_cast<std::int64_t>(-quadK)));
+                const Expr res = evalQuadraticFourierResidue(
+                    c, aCoeff, bCoeff, alpha, betaSq, quadK, absOmega, sgnOmega,
+                    isSin);
+                valOut = c.simplify(c.mul({scale, res}));
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 } // namespace
 
 DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
@@ -2669,7 +3085,103 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 
     // 2. Compute certified indefinite antiderivative F(var).
     const RationalIntegral indef = integrate(c, f, var, budget);
+
+    // 2a. Unit-circle / Cayley contour transformation for periodic rational
+    //     trigonometric integrals R(cos(var), sin(var)) over [a, a + 2*k*pi]
+    //     or [0, pi] when the indefinite antiderivative crosses the Weierstrass
+    //     branch cut t = tan(var/2) at var = pi (or when indef was not found).
+    if (!aIsInf && !bIsInf) {
+        Rational diffPi;
+        if (matchRationalMultipleOfPi(
+                c, c.simplify(c.add({b, c.neg(a)})), diffPi)) {
+            std::int64_t mPi = 0;
+            const bool isFullPeriods =
+                diffPi.den() == BigInt(1) && diffPi.num().fitsInt64(mPi) &&
+                mPi != 0 && (mPi % 2 == 0);
+            Rational aPi, bPi;
+            const bool isHalfPeriod0Pi =
+                matchRationalMultipleOfPi(c, a, aPi) &&
+                matchRationalMultipleOfPi(c, b, bPi) &&
+                ((aPi.isZero() && bPi == Rational(std::int64_t{1})) ||
+                 (aPi == Rational(std::int64_t{1}) && bPi.isZero()));
+            if ((isFullPeriods || isHalfPeriod0Pi) &&
+                (!indef.proved() || mentionsBranchTrigOrAtan(c, indef.F, var))) {
+                const Expr tSym = c.symbol("_t_uc");
+                bool okTan = true;
+                const Expr fTrig = expandMultipleAngleTrig(c, f, var);
+                const Expr g = substituteTangent(c, fTrig, var, tSym, okTan);
+                if (okTan) {
+                    const LimitResult limPi =
+                        limitOneSided(c, f, var, c.symbol("pi"), -1, budget);
+                    if (limPi.status == LimitResult::Status::Divergent) {
+                        out.status = DefiniteIntegral::Status::Divergent;
+                        out.reason = "divergent trigonometric pole at pi";
+                        return out;
+                    }
+                    const Expr t2p1 =
+                        c.add({c.one(), c.pow(tSym, c.number(std::int64_t{2}))});
+                    const Expr gJac =
+                        c.div(c.mul({c.number(std::int64_t{2}), g}), t2p1);
+                    const Expr infSym = c.symbol("inf");
+                    const Expr loT = isFullPeriods ? c.neg(infSym) : c.zero();
+                    const DefiniteIntegral sub =
+                        definiteIntegrate(c, gJac, tSym, loT, infSym, budget);
+                    if (sub.status == DefiniteIntegral::Status::Divergent)
+                        return sub;
+                    if (sub.proved()) {
+                        const std::int64_t factor =
+                            isFullPeriods ? (mPi / 2)
+                                          : (aPi.isZero() ? std::int64_t{1}
+                                                          : std::int64_t{-1});
+                        out.F = indef.F;
+                        out.value = c.simplify(
+                            c.mul({c.number(factor), sub.value}));
+                        out.status = DefiniteIntegral::Status::ProvedSymbolic;
+                        return out;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2b. Upper-half-plane Jordan's lemma contour integration for Fourier
+    //     integrals int_{-inf}^{+inf} R(x)*cos(w*x)/sin(w*x) dx and even
+    //     half-line integrals int_0^{+inf} R(x)*cos(w*x)/sin(w*x) dx.
     if (!indef.proved()) {
+        const bool fullLine =
+            aIsInf && bIsInf && aInfDir != bInfDir;
+        const bool halfLineZeroInf =
+            (c.isZero(a) && bIsInf) || (aIsInf && c.isZero(b));
+        if (fullLine || halfLineZeroInf) {
+            bool canContour = fullLine;
+            int orientSign = 1;
+            if (fullLine) {
+                orientSign = (aInfDir < 0 && bInfDir > 0) ? +1 : -1;
+            } else {
+                // On [0, +inf) or (-inf, 0], require f(-x) == f(x) (even integrand).
+                const Expr fNeg = c.subs(f, var, c.neg(var));
+                if (c.isZero(c.simplify(c.add({f, c.neg(fNeg)})))) {
+                    canContour = true;
+                    orientSign = (c.isZero(a) && bInfDir > 0) ||
+                                         (aInfDir < 0 && c.isZero(b))
+                                     ? +1
+                                     : -1;
+                }
+            }
+            if (canContour) {
+                Expr val;
+                if (contourFourierTerm(c, c.expand(f), var, budget, val)) {
+                    const Rational scale =
+                        fullLine
+                            ? Rational(static_cast<std::int64_t>(orientSign))
+                            : Rational(static_cast<std::int64_t>(orientSign),
+                                       BigInt(2));
+                    out.value = c.simplify(c.mul({c.number(scale), val}));
+                    out.status = DefiniteIntegral::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+        }
         out.reason = indef.reason;
         return out;
     }
@@ -2716,7 +3228,44 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
         return out;
     }
 
-    out.value = c.simplify(c.add({limB.value, c.neg(limA.value)}));
+    std::vector<Expr> jumpTerms{limB.value, c.neg(limA.value)};
+    if (hasNumA && hasNumB) {
+        const double xMin = std::min(aVal, bVal);
+        const double xMax = std::max(aVal, bVal);
+        std::vector<UPoly> fDenPolys;
+        collectPoleDenominators(c, indef.F, var, fDenPolys);
+        std::vector<Rational> jumpPts;
+        for (const UPoly &D : fDenPolys) {
+            const std::vector<RealRootSolution> roots = solveRealRoots(D);
+            for (const RealRootSolution &rt : roots) {
+                if (!rt.isRational)
+                    continue;
+                const double rVal = rt.value.toDouble();
+                if (rVal > xMin + 1e-11 && rVal < xMax - 1e-11) {
+                    bool seen = false;
+                    for (const Rational &prev : jumpPts) {
+                        if (prev == rt.value) {
+                            seen = true;
+                            break;
+                        }
+                    }
+                    if (!seen)
+                        jumpPts.push_back(rt.value);
+                }
+            }
+        }
+        for (const Rational &ptRat : jumpPts) {
+            const Expr ptExpr = c.number(ptRat);
+            const LimitResult limLeft = evalEndpoint(ptExpr, false, 0, dirB);
+            const LimitResult limRight = evalEndpoint(ptExpr, false, 0, dirA);
+            if (limLeft.proved() && limRight.proved()) {
+                jumpTerms.push_back(limLeft.value);
+                jumpTerms.push_back(c.neg(limRight.value));
+            }
+        }
+    }
+
+    out.value = c.simplify(c.add(jumpTerms));
     out.status = DefiniteIntegral::Status::ProvedSymbolic;
     return out;
 }

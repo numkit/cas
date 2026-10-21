@@ -1409,4 +1409,57 @@ LimitResult limit(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget)
     return limitDepth(c, fNorm, var, x0, budget, 0, false);
 }
 
+Expr residue(Ctx &c, Expr f, Expr var, Expr z0, Budget *budget)
+{
+    if (f.isNull() || var.isNull() || z0.isNull())
+        return Expr();
+    if (!checkSeriesBudget(c, budget))
+        return Expr();
+
+    int infDir = 0;
+    if (isSymbolicInfinity(c, z0, infDir)) {
+        const Expr tSym = c.symbol("_t_res_inf");
+        const Expr fSub = c.subs(f, var, c.pow(tSym, c.number(std::int64_t{-1})));
+        const Expr fInf =
+            c.neg(c.mul({c.pow(tSym, c.number(std::int64_t{-2})), fSub}));
+        return residue(c, fInf, tSym, c.zero(), budget);
+    }
+
+    if (!mentionsSymbol(c, f, var))
+        return c.zero();
+
+    // 1. Primary path: truncated Laurent expansion around t = var - z0.
+    for (int pad : {8, 16, 24}) {
+        Laurent s;
+        if (computeLaurent(c, f, var, z0, pad, budget, s)) {
+            if (s.maxDeg >= -1)
+                return c.simplify(coeffAt(c, s, -1));
+        }
+        if (budget && !budget->ok())
+            return Expr();
+    }
+
+    // 2. Fallback: pole-order multiplier (var - z0)^m * f(var) for m = 1..5.
+    const Expr dz = c.isZero(z0) ? var : c.add({var, c.neg(z0)});
+    BigInt fact(1);
+    for (int m = 1; m <= 5; ++m) {
+        if (!checkSeriesBudget(c, budget))
+            return Expr();
+        if (m >= 2)
+            fact = fact * BigInt(m - 1);
+        const Expr gm = c.simplify(
+            c.mul({c.pow(dz, c.number(static_cast<std::int64_t>(m))), f}));
+        Expr deriv = gm;
+        for (int k = 1; k < m; ++k)
+            deriv = c.diff(deriv, var);
+        const LimitResult lr = limit(c, deriv, var, z0, budget);
+        if (lr.proved()) {
+            return c.simplify(
+                c.mul({c.number(Rational(BigInt(1), fact)), lr.value}));
+        }
+    }
+
+    return Expr();
+}
+
 } // namespace numkit::cas

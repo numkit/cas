@@ -84,13 +84,14 @@ bool splitLine(const std::string &line, std::string &cmd,
         var = varTok + "\t" + aTok + "\t" + bTok;
         return !exprSrc.empty();
     }
-    if (cmd == "subs" || cmd == "eval") {
-        if (cmd == "eval" && words.size() == 2) {
+    if (cmd == "subs" || cmd == "eval" || cmd == "residue") {
+        if ((cmd == "eval" || cmd == "residue") && words.size() == 2) {
             exprSrc = trim(line.substr(cmd.size()));
             var.clear();
             return !exprSrc.empty();
         }
-        // "subs <expr...> <from> <to>" / "eval <expr...> <var> <val>":
+        // "subs <expr...> <from> <to>" / "eval <expr...> <var> <val>" /
+        // "residue <expr...> <var> <z0>":
         // the last two tokens are the pair, everything between is the
         // expression.
         if (words.size() < 4)
@@ -217,6 +218,29 @@ int runLimit(const std::string &exprSrc, const std::string &varName,
     return 2;
 }
 
+int runResidue(const std::string &exprSrc, const std::string &varName,
+               const std::string &z0Src)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f, z0;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+        z0 = z0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, z0Src);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr var = ctx.symbol(varName.empty() ? "x" : varName);
+    const numkit::cas::Expr res = numkit::cas::residue(ctx, f, var, z0);
+    if (res.isNull()) {
+        std::cout << "Unevaluated (essential singularity, branch point, or beyond domain)\n";
+        return 2;
+    }
+    std::cout << ctx.toString(res) << "\n";
+    return 0;
+}
+
 int runDefInt(const std::string &exprSrc, const std::string &varName,
               const std::string &aSrc, const std::string &bSrc)
 {
@@ -293,6 +317,14 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
             return runEval(exprSrc, "", "");
         const std::size_t tab = varName.find('\t');
         return runEval(exprSrc, varName.substr(0, tab), varName.substr(tab + 1));
+    }
+    if (cmd == "residue") {
+        if (varName.empty())
+            return runResidue(exprSrc, "x", "0");
+        const std::size_t tab = varName.find('\t');
+        if (tab == std::string::npos)
+            return runResidue(exprSrc, varName, "0");
+        return runResidue(exprSrc, varName.substr(0, tab), varName.substr(tab + 1));
     }
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f;
@@ -492,6 +524,8 @@ int main(int argc, char **argv)
         return runTaylor(argv[2], argv[3], "", std::atoi(argv[4]));
     if (argc == 5 && std::string(argv[1]) == "limit")
         return runLimit(argv[2], argv[3], argv[4]);
+    if (argc == 5 && std::string(argv[1]) == "residue")
+        return runResidue(argv[2], argv[3], argv[4]);
     if (argc == 5 && std::string(argv[1]) == "subs")
         return runSubs(argv[2], argv[3], argv[4]);
     if (argc == 5 && std::string(argv[1]) == "eval")

@@ -24,6 +24,12 @@ Expr taylor(Ctx &c, Expr f, Expr var, Expr x0, int order,
 Expr laurent(Ctx &c, Expr f, Expr var, Expr x0, int order,
              Budget *budget = nullptr);
 
+// Symbolic residue Res(f, var = z0) = [(var - z0)^(-1)] f(var) at a
+// finite point `z0` or at `inf`/`oo`/`infinity` (where Res_{z=inf} f(z) =
+// -Res_{t=0} t^(-2) f(1/t)). Returns a null Expr if `f` has an essential
+// singularity or branch point at `z0` or if the budget is exhausted.
+Expr residue(Ctx &c, Expr f, Expr var, Expr z0, Budget *budget = nullptr);
+
 struct LimitResult
 {
     enum class Status

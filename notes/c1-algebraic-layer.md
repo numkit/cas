@@ -414,7 +414,7 @@
     `simplify`, `taylor`/`laurent`, `limit`/`limitAtInfinity`, лиувиллев спецфункциональный
     этаж `integrateSpecialFunctions` в `integrate` с символьным сертификатом $D(F) \equiv f$ и
     определённые интегралы Гаусса, Дирихле и Френеля в `definiteIntegrate`).
-50. ⬜ (v0.5-пул, Эшелон 5) Вычеты `residue(c, f, var, z0)` (`core/series` + CLI `nkcas residue`)
+50. ✅ (v0.5-пул, Эшелон 5) Вычеты `residue(c, f, var, z0)` (`core/series` + CLI `nkcas residue`)
     и контурные методы интегрирования в `definiteIntegrate` ($\int_{-\infty}^{\infty} R(x)\cos(\omega x)/\sin(\omega x)\,dx$
     через лемму Жордана и $\int_0^{2\pi} R(\cos\theta, \sin\theta)\,d\theta$ по единичной окружности).
 51. ⬜ (v0.5-пул, Эшелон 5) Прямое и обратное Z-преобразования (`ztrans` / `iztrans` с круговым
@@ -2580,3 +2580,18 @@ MATLAB Symbolic Math Toolbox (три эшелона):
 3. **Спецфункциональный этаж интегрирования (`src/integrate/ratint.cpp`)**:
    - В каскад `integrate` добавлен этаж `integrateSpecialFunctions` (для гауссовых интегралов $\int P(x)e^{ax^2+bx+d}\,dx$, интегральной показательной функции $\int \frac{P(x)e^{ax+b}}{(c_1 x + c_0)^k}\,dx$, интегрального логарифма $\int \frac{(ax+b)^m}{\log(ax+b)}\,dx$, интегральных синуса и косинуса $\int \frac{P(x)\sin/\cos(ax+b)}{(c_1 x + c_0)^k}\,dx$ и интегралов Френеля $\int P(x)\sin/\cos(ax^2+bx+d)\,dx$) с пофакторным расщеплением радикалов `sqrtFactorPair` и строгой символьной сертификацией $D(F) \equiv f$.
    - За счёт связки с `definiteIntegrate` автоматически берутся определённые интегралы Гаусса ($\int_{-\infty}^{\infty} e^{-ax^2}\,dx = \sqrt{\pi/a}$), Дирихле ($\int_0^\infty \frac{\sin(ax)}{x}\,dx = \frac{\pi}{2}\operatorname{sgn}(a)$) и Френеля ($\int_0^\infty \sin(x^2)\,dx = \int_0^\infty \cos(x^2)\,dx = \frac{1}{2}\sqrt{\frac{\pi}{2}}$).
+
+
+## 2026-10-21: Реализация пункта 50 — Вычеты `residue` и контурные методы в `definiteIntegrate`
+
+Реализован второй пакет Эшелона 5 (пул `v0.5.0`):
+
+1. **Символьные вычеты `residue(c, f, var, z0, budget)` (`include/numkit/cas/core/series.hpp`, `src/core/series.cpp`)**:
+   - Для конечных точек $z_0$ вычет $\operatorname{Res}_{z=z_0} f(z) = [(z - z_0)^{-1}]\,f(z)$ вычисляется через усечённое разложение Лорана `computeLaurent` (с запасом точности `pad` $\in \{8, 16, 24\}$ для сохранения коэффициента при $(z - z_0)^{-1}$ после сокращения нулей и полюсов) и фоллбэк $\frac{1}{(m-1)!}\lim_{z \to z_0} \frac{d^{m-1}}{dz^{m-1}}((z - z_0)^m f(z))$ для полюсов порядка $m \le 5$ (включая символьные параметры $z_0 = a$).
+   - Для бесконечно удалённой точки (`inf`/`oo`/`infinity`) вычет вычисляется по формуле $\operatorname{Res}_{z=\infty} f(z) = -\operatorname{Res}_{t=0}\left(t^{-2} f(1/t)\right)$ (теорема о полной сумме вычетов $\sum_{p} \operatorname{Res}_p f + \operatorname{Res}_\infty f = 0$ проверена в `SeriesTest.SymbolicResiduesAndResidueSumTheorem`).
+   - Добавлена команда CLI `nkcas residue "<expr>" <var> <z0>`.
+
+2. **Контурные методы в `definiteIntegrate` (`src/integrate/ratint.cpp`)**:
+   - **Интегралы по единичной окружности / конформное отображение Кэли–Вейерштрасса**: для рациональных тригонометрических подынтегральных функций $R(\cos x, \sin x)$ (с предварительным раскрытием кратных дуг $\sin(nx), \cos(nx)$ при $|n| \le 6$) на полных периодах $[a, a + 2k\pi]$ и полупериоде $[0, \pi]$ замена $t = \tan(x/2)$ биективно переводит контур без ветвлений в $\int_{-\infty}^{+\infty} R\left(\frac{1-t^2}{1+t^2}, \frac{2t}{1+t^2}\right)\frac{2\,dt}{1+t^2}$ (и $\int_0^{+\infty}$ для $[0, \pi]$), устраняя скачки ветвей $\arctan(\tan(x/2))$ в точке $x = \pi$.
+   - **Учёт внутренних скачков ветвей первообразной**: при вычислении $\int_a^b f(x)\,dx$ по формуле Ньютона–Лейбница автоматически находятся внутренние рациональные нули знаменателей самой первообразной $F(x)$ на $(a, b)$ (например, $t = 0$ в первообразной Руби $\frac{1}{2}\arctan\frac{t^2-1}{t}$ для $\frac{1+t^2}{2(t^4-t^2+1)}$) и суммируются односторонние скачки $\lim_{x \to r^-} F(x) - \lim_{x \to r^+} F(x)$.
+   - **Интегралы Фурье по лемме Жордана в верхней полуплоскости**: для интегралов $\int_{-\infty}^{+\infty} R(x)\cos(\omega x)\,dx$, $\int_{-\infty}^{+\infty} R(x)\sin(\omega x)\,dx$ и чётных полубесконечных интегралов $\int_0^{+\infty}$ реализовано точное разложение $R(x) = N(x)/D(x)$ по неприводимым квадратичным факторам $((x-\alpha)^2 + \beta^2)^k$ через `UPoly::invMod` и рекуррентные вычеты $(J_k, K_k)$ в полюсах $z = \alpha + i\beta$ верхней полуплоскости (плюс обработка устранимого полюса $x = 0$ для $\frac{\sin(\omega x)}{x\,\widetilde{D}(x)}$ и параметрических квадратичных знаменателей при `AssumeDomain::Positive`).

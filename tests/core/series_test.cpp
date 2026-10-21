@@ -464,5 +464,50 @@ TEST(SeriesTest, SpecialFunctionsTaylorAndLimits)
         parseExpr(c, "-1/2")));
 }
 
+TEST(SeriesTest, SymbolicResiduesAndResidueSumTheorem)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    // 1. Simple and higher-order rational and transcendental poles
+    EXPECT_EQ(residue(c, parseExpr(c, "1/x"), x, c.zero()), c.one());
+    EXPECT_EQ(residue(c, parseExpr(c, "1/x^2"), x, c.zero()), c.zero());
+    EXPECT_EQ(residue(c, parseExpr(c, "exp(x)/x^3"), x, c.zero()),
+              parseExpr(c, "1/2"));
+    EXPECT_EQ(residue(c, parseExpr(c, "sin(x)/x^4"), x, c.zero()),
+              parseExpr(c, "-1/6"));
+    EXPECT_EQ(residue(c, parseExpr(c, "1/sin(x)"), x, c.zero()), c.one());
+    EXPECT_EQ(residue(c, parseExpr(c, "cot(x)"), x, c.zero()), c.one());
+    EXPECT_EQ(residue(c, parseExpr(c, "cot(x)/x^2"), x, c.zero()),
+              parseExpr(c, "-1/3"));
+    EXPECT_EQ(residue(c, parseExpr(c, "1/(x*(x - 1)^2)"), x, c.one()),
+              c.number(std::int64_t{-1}));
+    EXPECT_EQ(residue(c, parseExpr(c, "(2*x + 3)/((x - 1)*(x + 2))"), x,
+                      c.one()),
+              parseExpr(c, "5/3"));
+    // Analytic point -> residue 0
+    EXPECT_EQ(residue(c, parseExpr(c, "sin(x)/x"), x, c.zero()), c.zero());
+
+    // Symbolic pole parameter z0 = a
+    EXPECT_TRUE(exprEq(
+        c, residue(c, parseExpr(c, "exp(x)/(x - a)^2"), x, c.symbol("a")),
+        parseExpr(c, "exp(a)")));
+
+    // 2. Residue at infinity and Cauchy global residue theorem:
+    //    For f(x) = (3*x^2 + 2*x + 1)/((x - 1)*(x + 2)*(x - 3)),
+    //    Res(f, 1) + Res(f, -2) + Res(f, 3) + Res(f, inf) == 0.
+    const Expr fRat = parseExpr(c, "(3*x^2 + 2*x + 1)/((x - 1)*(x + 2)*(x - 3))");
+    const Expr r1 = residue(c, fRat, x, c.one());
+    const Expr r2 = residue(c, fRat, x, c.number(std::int64_t{-2}));
+    const Expr r3 = residue(c, fRat, x, c.number(std::int64_t{3}));
+    const Expr rInf = residue(c, fRat, x, c.symbol("inf"));
+    ASSERT_FALSE(r1.isNull());
+    ASSERT_FALSE(r2.isNull());
+    ASSERT_FALSE(r3.isNull());
+    ASSERT_FALSE(rInf.isNull());
+    EXPECT_EQ(rInf, c.number(std::int64_t{-3}));
+    EXPECT_EQ(c.simplify(c.add({r1, r2, r3, rInf})), c.zero());
+}
+
 } // namespace
 } // namespace numkit::cas

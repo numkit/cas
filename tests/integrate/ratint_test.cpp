@@ -1651,5 +1651,87 @@ TEST_F(RatIntTest, SpecialFunctionsIndefiniteAndDefinite)
     c.clearAssumptions();
 }
 
+TEST_F(RatIntTest, ContourDefiniteIntegralsUnitCircleAndJordan)
+{
+    struct ContourCase
+    {
+        const char *f;
+        const char *a;
+        const char *b;
+        const char *expected;
+    };
+    const ContourCase cases[] = {
+        // 1. Unit-circle rational trigonometric integrals on [0, 2*pi], [-pi, pi], [0, pi]
+        {"1/(2 + cos(x))", "0", "2*pi", "2*3^(-1/2)*pi"},
+        {"1/(2 + cos(x))", "-pi", "pi", "2*3^(-1/2)*pi"},
+        {"1/(2 + cos(x))", "0", "pi", "3^(-1/2)*pi"},
+        {"1/(2 + sin(x))", "0", "2*pi", "2*3^(-1/2)*pi"},
+        {"1/(5 - 3*cos(x))", "0", "2*pi", "1/2*pi"},
+        {"cos(2*x)/(5 - 4*cos(x))", "0", "2*pi", "1/6*pi"},
+        {"1/(2 + cos(x))^2", "0", "2*pi", "4/3*3^(-1/2)*pi"},
+        {"1/(3 + cos(x) + sin(x))", "0", "2*pi", "2*7^(-1/2)*pi"},
+        {"1/(1 + 3*cos(x)^2)", "0", "2*pi", "pi"},
+
+        // 2. Upper-half-plane Jordan's lemma Fourier integrals on (-inf, inf) and [0, inf)
+        {"cos(x)/(x^2 + 1)", "-inf", "inf", "pi*exp(-1)"},
+        {"cos(x)/(x^2 + 1)", "0", "inf", "1/2*pi*exp(-1)"},
+        {"cos(3*x)/(x^2 + 4)", "-inf", "inf", "1/2*pi*exp(-6)"},
+        {"x*sin(x)/(x^2 + 1)", "-inf", "inf", "pi*exp(-1)"},
+        {"x*sin(2*x)/(x^2 + 9)", "0", "inf", "1/2*pi*exp(-6)"},
+        {"cos(x)/(x^2 + 1)^2", "-inf", "inf", "pi*exp(-1)"},
+        {"x*sin(x)/(x^2 + 1)^2", "-inf", "inf", "1/2*pi*exp(-1)"},
+        {"cos(x)/((x^2 + 1)*(x^2 + 4))", "-inf", "inf",
+         "1/3*pi*exp(-1) - 1/6*pi*exp(-2)"},
+        {"sin(x)/(x*(x^2 + 1))", "-inf", "inf", "pi*(1 - exp(-1))"},
+        {"sin(x)/(x*(x^2 + 1))", "0", "inf", "1/2*pi*(1 - exp(-1))"},
+        {"cos(x)/(x^2 + 2*x + 2)", "-inf", "inf", "pi*cos(1)*exp(-1)"},
+        {"sin(x)/(x^2 + 2*x + 2)", "-inf", "inf", "-pi*sin(1)*exp(-1)"},
+    };
+
+    for (const auto &tc : cases) {
+        const Expr f = numkit::cas::parseExpr(c, tc.f);
+        const Expr a = numkit::cas::parseExpr(c, tc.a);
+        const Expr b = numkit::cas::parseExpr(c, tc.b);
+        const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
+        const numkit::cas::DefiniteIntegral r =
+            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        ASSERT_TRUE(r.proved())
+            << "contour definiteIntegrate failed for " << tc.f << " on ["
+            << tc.a << ", " << tc.b << "]: " << r.reason;
+        EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
+            << "for " << tc.f << " on [" << tc.a << ", " << tc.b << "]: got "
+            << c.toString(r.value) << ", expected " << c.toString(expVal);
+    }
+
+    // Parametric Jordan's lemma integral with AssumeDomain::Positive
+    c.assume("a", numkit::cas::AssumeDomain::Positive);
+    c.assume("w", numkit::cas::AssumeDomain::Positive);
+    const auto paramCos = numkit::cas::definiteIntegrate(
+        c, numkit::cas::parseExpr(c, "cos(w*x)/(x^2 + a^2)"), x,
+        numkit::cas::parseExpr(c, "-inf"), numkit::cas::parseExpr(c, "inf"));
+    ASSERT_TRUE(paramCos.proved()) << paramCos.reason;
+    EXPECT_EQ(c.simplify(c.add(
+                  {paramCos.value,
+                   c.neg(numkit::cas::parseExpr(c, "pi*a^(-1)*exp(-w*a)"))})),
+              c.zero());
+
+    const auto paramSin = numkit::cas::definiteIntegrate(
+        c, numkit::cas::parseExpr(c, "x*sin(w*x)/(x^2 + a^2)"), x, c.zero(),
+        numkit::cas::parseExpr(c, "inf"));
+    ASSERT_TRUE(paramSin.proved()) << paramSin.reason;
+    EXPECT_EQ(c.simplify(c.add(
+                  {paramSin.value,
+                   c.neg(numkit::cas::parseExpr(c, "1/2*pi*exp(-w*a)"))})),
+              c.zero());
+    c.clearAssumptions();
+
+    // Divergent pole on unit circle: 1/(1 + cos(x)) on [0, 2*pi] (pole at x = pi)
+    const auto divUc = numkit::cas::definiteIntegrate(
+        c, numkit::cas::parseExpr(c, "1/(1 + cos(x))"), x, c.zero(),
+        numkit::cas::parseExpr(c, "2*pi"));
+    EXPECT_EQ(divUc.status, numkit::cas::DefiniteIntegral::Status::Divergent);
+}
+
+
 
 

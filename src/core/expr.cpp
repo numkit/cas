@@ -640,6 +640,16 @@ bool Ctx::evalExact(
             out = zero;
             return true;
         }
+        if (name == "factorial" && a.den() == BigInt(1)) {
+            std::int64_t k = 0;
+            if (a.num().fitsInt64(k) && k >= 0 && k <= 30) {
+                BigInt fact(1);
+                for (std::int64_t i = 2; i <= k; ++i)
+                    fact = fact * BigInt(i);
+                out = Rational(fact, BigInt(1));
+                return true;
+            }
+        }
         return false;
     }
     case NodeKind::Pow: {
@@ -1202,6 +1212,9 @@ bool evalDoubleRec(
         } else if (fn == "gamma") {
             if (a <= 0.0 && std::floor(a) == a) return false;
             res = std::tgamma(a);
+        } else if (fn == "factorial") {
+            if (a < 0.0 && std::floor(a) == a) return false;
+            res = std::tgamma(a + 1.0);
         } else {
             return false;
         }

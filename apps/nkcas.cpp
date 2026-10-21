@@ -71,8 +71,8 @@ bool splitLine(const std::string &line, std::string &cmd,
         exprSrc = trim(line.substr(cmd.size()));
         return !exprSrc.empty();
     }
-    if (cmd == "defint") {
-        // "defint <expr...> <var> <a> <b>": last three tokens are var, a, b.
+    if (cmd == "defint" || cmd == "symsum") {
+        // "defint/symsum <expr...> <var> <a> <b>": last three tokens are var, a, b.
         if (words.size() < 5)
             return false;
         const std::string &bTok = words.back();
@@ -272,6 +272,36 @@ int runDefInt(const std::string &exprSrc, const std::string &varName,
     return 2;
 }
 
+int runSymSum(const std::string &exprSrc, const std::string &varName,
+              const std::string &aSrc, const std::string &bSrc)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f, a, b;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+        a = numkit::cas::parseExpr(ctx, aSrc);
+        b = numkit::cas::parseExpr(ctx, bSrc);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr var = ctx.symbol(varName);
+    const numkit::cas::SymSumResult r =
+        numkit::cas::symsum(ctx, f, var, a, b);
+    if (r.proved()) {
+        std::cout << ctx.toString(r.value) << "\n";
+        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        return 0;
+    }
+    if (r.status == numkit::cas::SymSumResult::Status::Divergent) {
+        std::cout << "Divergent: " << r.reason << "\n";
+        return 2;
+    }
+    std::cout << "Unevaluated: " << r.reason << "\n";
+    return 2;
+}
+
 int runLaplace(const std::string &exprSrc, const std::string &inVarName,
                const std::string &outVarName, bool inverse)
 {
@@ -327,9 +357,14 @@ int runZTrans(const std::string &exprSrc, const std::string &inVarName,
 int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
-    if (cmd == "defint") {
+    if (cmd == "defint" || cmd == "symsum") {
         const std::size_t t1 = varName.find('\t');
         const std::size_t t2 = varName.find('\t', t1 + 1);
+        if (cmd == "symsum") {
+            return runSymSum(exprSrc, varName.substr(0, t1),
+                             varName.substr(t1 + 1, t2 - t1 - 1),
+                             varName.substr(t2 + 1));
+        }
         return runDefInt(exprSrc, varName.substr(0, t1),
                          varName.substr(t1 + 1, t2 - t1 - 1),
                          varName.substr(t2 + 1));
@@ -551,6 +586,8 @@ int main(int argc, char **argv)
         return runTaylor(argv[2], argv[3], argv[4], std::atoi(argv[5]));
     if (argc == 6 && std::string(argv[1]) == "defint")
         return runDefInt(argv[2], argv[3], argv[4], argv[5]);
+    if (argc == 6 && std::string(argv[1]) == "symsum")
+        return runSymSum(argv[2], argv[3], argv[4], argv[5]);
     if (argc == 5 && std::string(argv[1]) == "taylor")
         return runTaylor(argv[2], argv[3], "", std::atoi(argv[4]));
     if (argc == 5 && std::string(argv[1]) == "limit")

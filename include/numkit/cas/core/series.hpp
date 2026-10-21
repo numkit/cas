@@ -68,4 +68,34 @@ LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
 LimitResult limitAtInfinity(Ctx &c, Expr f, Expr var, int dir = +1,
                             Budget *budget = nullptr);
 
+struct SymSumResult
+{
+    enum class Status
+    {
+        Unevaluated,
+        ProvedSymbolic,
+        Divergent,
+    };
+
+    Status status = Status::Unevaluated;
+    Expr value;    // closed-form sum when status == ProvedSymbolic
+    Expr antidiff; // discrete antidifference G(var) with G(var + 1) - G(var) == f(var) when applicable
+    std::string reason;
+
+    bool proved() const { return status == Status::ProvedSymbolic; }
+};
+
+// Symbolic finite and infinite summation sum_{var = a}^{b} f(var):
+//   1. Faulhaber-Bernoulli polynomial summation for arbitrary degree polynomials P(var).
+//   2. Geometric and arithmetico-geometric summation sum P(var) * r^(c1*var + c0)
+//      via upper-triangular finite-difference back-substitution.
+//   3. Rational partial-fraction / Gosper integer-shift telescoping.
+//   4. Classical infinite series (b = inf/oo/infinity): Euler-Riemann zeta(2m),
+//      Dirichlet alternating eta(2m), alternating harmonic / Gregory-Leibniz,
+//      and exponential factorial series sum P(var)*x^var/factorial(var).
+//   5. Certified by finite-difference identity G(var + 1) - G(var) == f(var)
+//      for antidifference-backed sums.
+SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b,
+                    Budget *budget = nullptr);
+
 } // namespace numkit::cas

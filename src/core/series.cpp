@@ -1,5 +1,6 @@
 #include <numkit/cas/core/series.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -1625,6 +1626,1213 @@ Expr residue(Ctx &c, Expr f, Expr var, Expr z0, Budget *budget)
     }
 
     return Expr();
+}
+
+namespace {
+
+Rational binomRational(int n, int k)
+{
+    if (k < 0 || k > n)
+        return Rational(std::int64_t{0});
+    if (k == 0 || k == n)
+        return Rational(std::int64_t{1});
+    if (k > n - k)
+        k = n - k;
+    BigInt num(1);
+    BigInt den(1);
+    for (int i = 1; i <= k; ++i) {
+        num = num * BigInt(n - k + i);
+        den = den * BigInt(i);
+    }
+    return Rational(num, den);
+}
+
+// Compute classical Bernoulli numbers B_0 = 1, B_1 = -1/2, B_2 = 1/6, B_3 = 0, ...
+std::vector<Rational> bernoulliNumbers(int maxN)
+{
+    std::vector<Rational> B(static_cast<std::size_t>(maxN + 1),
+                            Rational(std::int64_t{0}));
+    B[0] = Rational(std::int64_t{1});
+    for (int m = 1; m <= maxN; ++m) {
+        if (m >= 3 && (m % 2 == 1)) {
+            B[static_cast<std::size_t>(m)] = Rational(std::int64_t{0});
+            continue;
+        }
+        Rational sum(std::int64_t{0});
+        for (int j = 0; j < m; ++j) {
+            if (!B[static_cast<std::size_t>(j)].isZero())
+                sum = sum + binomRational(m + 1, j) * B[static_cast<std::size_t>(j)];
+        }
+        B[static_cast<std::size_t>(m)] =
+            -sum / Rational(static_cast<std::int64_t>(m + 1));
+    }
+    return B;
+}
+
+// Euler's exact formula for zeta(2*m) (m >= 1):
+//   zeta(2*m) = (-1)^(m-1) * 2^(2*m - 1) * B_{2m} / (2*m)! * pi^(2*m).
+Expr eulerZetaEven(Ctx &c, int twoM)
+{
+    const int m = twoM / 2;
+    const std::vector<Rational> B = bernoulliNumbers(twoM);
+    Rational bVal = B[static_cast<std::size_t>(twoM)];
+    if (bVal.signum() < 0)
+        bVal = -bVal;
+    BigInt fact(1);
+    for (int i = 2; i <= twoM; ++i)
+        fact = fact * BigInt(i);
+    const BigInt pow2 = BigInt(1) << static_cast<std::size_t>(twoM - 1);
+    const Rational coef =
+        bVal * Rational(pow2, fact);
+    return c.mul({c.number(coef),
+                  c.pow(c.symbol("pi"),
+                        c.number(static_cast<std::int64_t>(twoM)))});
+}
+
+bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
+                            std::vector<Expr> &coeffs)
+{
+    const Expr expanded = c.expand(e);
+    std::vector<Expr> terms;
+    if (c.kind(expanded) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(expanded); ++i)
+            terms.push_back(c.child(expanded, i));
+    } else {
+        terms.push_back(expanded);
+    }
+
+    coeffs.assign(1, c.zero());
+    for (const Expr &t : terms) {
+        if (!mentionsSymbol(c, t, var)) {
+            coeffs[0] = c.add({coeffs[0], t});
+            continue;
+        }
+        std::vector<Expr> facs;
+        if (c.kind(t) == NodeKind::Mul) {
+            for (std::size_t i = 0; i < c.childCount(t); ++i)
+                facs.push_back(c.child(t, i));
+        } else {
+            facs.push_back(t);
+        }
+        int deg = 0;
+        std::vector<Expr> cFacs;
+        for (const Expr &f : facs) {
+            if (!mentionsSymbol(c, f, var)) {
+                cFacs.push_back(f);
+            } else if (f == var) {
+                deg += 1;
+            } else if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == var &&
+                       c.kind(c.child(f, 1)) == NodeKind::Number) {
+                const Rational &re = c.numberValue(c.child(f, 1));
+                std::int64_t k = 0;
+                if (!(re.den() == BigInt(1)) || !re.num().fitsInt64(k) ||
+                    k < 0 || deg + k > maxDeg) {
+                    return false;
+                }
+                deg += static_cast<int>(k);
+            } else {
+                return false;
+            }
+        }
+        if (deg > maxDeg)
+            return false;
+        if (static_cast<std::size_t>(deg) >= coeffs.size())
+            coeffs.resize(static_cast<std::size_t>(deg + 1), c.zero());
+        const Expr cf = cFacs.empty() ? c.one() : c.mul(cFacs);
+        coeffs[static_cast<std::size_t>(deg)] =
+            c.add({coeffs[static_cast<std::size_t>(deg)], cf});
+    }
+    for (Expr &cf : coeffs)
+        cf = c.simplify(cf);
+    while (coeffs.size() > 1 && c.isZero(coeffs.back()))
+        coeffs.pop_back();
+    return true;
+}
+
+Expr evalSymbolicPolyInVar(Ctx &c, const std::vector<Expr> &coeffs, Expr var)
+{
+    std::vector<Expr> terms;
+    for (std::size_t i = 0; i < coeffs.size(); ++i) {
+        if (c.isZero(coeffs[i]))
+            continue;
+        if (i == 0) {
+            terms.push_back(coeffs[0]);
+        } else if (i == 1) {
+            terms.push_back(c.mul({coeffs[1], var}));
+        } else {
+            terms.push_back(c.mul(
+                {coeffs[i],
+                 c.pow(var, c.number(static_cast<std::int64_t>(i)))}));
+        }
+    }
+    return terms.empty() ? c.zero() : c.add(terms);
+}
+
+Expr expandShiftPowers(Ctx &c, Expr e, Expr var)
+{
+    if (e.isNull())
+        return Expr();
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Pow: {
+        const Expr b = expandShiftPowers(c, c.child(e, 0), var);
+        const Expr ex = c.expand(expandShiftPowers(c, c.child(e, 1), var));
+        if (!mentionsSymbol(c, b, var) && c.kind(ex) == NodeKind::Add) {
+            std::vector<Expr> varTerms, constTerms;
+            for (std::size_t i = 0; i < c.childCount(ex); ++i) {
+                const Expr ch = c.child(ex, i);
+                if (mentionsSymbol(c, ch, var))
+                    varTerms.push_back(ch);
+                else
+                    constTerms.push_back(ch);
+            }
+            if (!varTerms.empty() && !constTerms.empty()) {
+                return c.mul({c.pow(b, c.add(constTerms)),
+                              c.pow(b, c.add(varTerms))});
+            }
+        }
+        return c.pow(b, ex);
+    }
+    case NodeKind::Func: {
+        const std::string &fn = c.funcName(e);
+        const Expr arg = c.expand(expandShiftPowers(c, c.child(e, 0), var));
+        if (fn == "exp" && c.kind(arg) == NodeKind::Add) {
+            std::vector<Expr> varTerms, constTerms;
+            for (std::size_t i = 0; i < c.childCount(arg); ++i) {
+                const Expr ch = c.child(arg, i);
+                if (mentionsSymbol(c, ch, var))
+                    varTerms.push_back(ch);
+                else
+                    constTerms.push_back(ch);
+            }
+            if (!varTerms.empty() && !constTerms.empty()) {
+                return c.mul({c.func("exp", c.add(constTerms)),
+                              c.func("exp", c.add(varTerms))});
+            }
+        }
+        return c.func(fn, arg);
+    }
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            ch.push_back(expandShiftPowers(c, c.child(e, i), var));
+        return c.kind(e) == NodeKind::Add ? c.add(ch) : c.mul(ch);
+    }
+    }
+    return e;
+}
+
+bool certifyDiscreteAntidiff(Ctx &c, Expr G, Expr f, Expr var)
+{
+    if (G.isNull() || f.isNull())
+        return false;
+    const Expr gNext = c.subs(G, var, c.add({var, c.one()}));
+    const Expr raw = c.add({gNext, c.neg(G), c.neg(f)});
+    if (c.isZero(raw))
+        return true;
+    const Expr simp = c.simplify(raw);
+    if (!simp.isNull() && c.isZero(simp))
+        return true;
+    const Expr expSimp =
+        c.simplify(c.expand(expandShiftPowers(c, raw, var)));
+    return !expSimp.isNull() && c.isZero(expSimp);
+}
+
+// Faulhaber-Bernoulli polynomial antidifference:
+//   Delta(G(var)) == P(var) where P(var) = sum_{m=0}^d p_m * var^m.
+Expr polyDiscreteAntidiff(Ctx &c, const std::vector<Expr> &pCoeffs, Expr var)
+{
+    const int d = static_cast<int>(pCoeffs.size()) - 1;
+    if (d < 0)
+        return c.zero();
+    const std::vector<Rational> B = bernoulliNumbers(d + 1);
+    std::vector<Expr> terms;
+    for (int m = 0; m <= d; ++m) {
+        const Expr &pm = pCoeffs[static_cast<std::size_t>(m)];
+        if (c.isZero(pm))
+            continue;
+        std::vector<Expr> mTerms;
+        for (int j = 0; j <= m; ++j) {
+            if (B[static_cast<std::size_t>(j)].isZero())
+                continue;
+            const Rational coef =
+                (binomRational(m + 1, j) * B[static_cast<std::size_t>(j)]) /
+                Rational(static_cast<std::int64_t>(m + 1));
+            const int degK = m + 1 - j;
+            const Expr kPow =
+                (degK == 1)
+                    ? var
+                    : c.pow(var, c.number(static_cast<std::int64_t>(degK)));
+            mTerms.push_back(c.mul({c.number(coef), kPow}));
+        }
+        if (!mTerms.empty())
+            terms.push_back(c.mul({pm, c.add(mTerms)}));
+    }
+    return terms.empty() ? c.zero() : c.simplify(c.add(terms));
+}
+
+bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
+                      Expr *geomRatioOut = nullptr)
+{
+    if (!checkSeriesBudget(c, budget))
+        return false;
+    if (!mentionsSymbol(c, f, var)) {
+        gOut = c.mul({f, var});
+        return true;
+    }
+
+    // 1. Polynomial in `var` (Faulhaber-Bernoulli).
+    std::vector<Expr> pCoeffs;
+    if (extractPolyCoeffsInVar(c, f, var, 16, pCoeffs)) {
+        const Expr G = polyDiscreteAntidiff(c, pCoeffs, var);
+        if (certifyDiscreteAntidiff(c, G, f, var)) {
+            gOut = G;
+            return true;
+        }
+    }
+
+    // 2. Geometric and arithmetico-geometric terms: P(var) * R(var)
+    //    where q = R(var + 1) / R(var) is independent of `var` and q != 1.
+    std::vector<Expr> factors;
+    if (c.kind(f) == NodeKind::Mul) {
+        for (std::size_t i = 0; i < c.childCount(f); ++i)
+            factors.push_back(c.child(f, i));
+    } else {
+        factors.push_back(f);
+    }
+    std::vector<Expr> geomFacs, otherFacs;
+    for (const Expr &fac : factors) {
+        bool isGeom = false;
+        if (c.kind(fac) == NodeKind::Pow &&
+            !mentionsSymbol(c, c.child(fac, 0), var) &&
+            mentionsSymbol(c, c.child(fac, 1), var)) {
+            std::vector<Expr> eCoeffs;
+            if (extractPolyCoeffsInVar(c, c.child(fac, 1), var, 1, eCoeffs) &&
+                eCoeffs.size() == 2 && !c.isZero(eCoeffs[1])) {
+                isGeom = true;
+            }
+        } else if (c.kind(fac) == NodeKind::Func &&
+                   c.funcName(fac) == "exp" &&
+                   mentionsSymbol(c, c.child(fac, 0), var)) {
+            std::vector<Expr> eCoeffs;
+            if (extractPolyCoeffsInVar(c, c.child(fac, 0), var, 1, eCoeffs) &&
+                eCoeffs.size() == 2 && !c.isZero(eCoeffs[1])) {
+                isGeom = true;
+            }
+        }
+        if (isGeom)
+            geomFacs.push_back(fac);
+        else
+            otherFacs.push_back(fac);
+    }
+    if (!geomFacs.empty()) {
+        const Expr R = geomFacs.size() == 1 ? geomFacs[0] : c.mul(geomFacs);
+        const Expr rest = otherFacs.empty() ? c.one() : c.mul(otherFacs);
+        const Expr rNext = expandShiftPowers(
+            c, c.subs(R, var, c.add({var, c.one()})), var);
+        const Expr q = c.simplify(c.div(rNext, R));
+        std::vector<Expr> polyP;
+        if (!q.isNull() && !mentionsSymbol(c, q, var) &&
+            extractPolyCoeffsInVar(c, rest, var, 10, polyP)) {
+            const Expr qMinus1 =
+                c.simplify(c.add({q, c.number(std::int64_t{-1})}));
+            if (c.isZero(qMinus1)) {
+                const Expr G = polyDiscreteAntidiff(c, polyP, var);
+                if (certifyDiscreteAntidiff(c, G, f, var)) {
+                    gOut = G;
+                    return true;
+                }
+            } else {
+                const int d = static_cast<int>(polyP.size()) - 1;
+                std::vector<Expr> qCoeffs(static_cast<std::size_t>(d + 1),
+                                          c.zero());
+                for (int m = d; m >= 0; --m) {
+                    std::vector<Expr> upperTerms;
+                    for (int j = m + 1; j <= d; ++j) {
+                        const Expr &qj = qCoeffs[static_cast<std::size_t>(j)];
+                        if (!c.isZero(qj)) {
+                            upperTerms.push_back(
+                                c.mul({c.number(binomRational(j, m)), qj}));
+                        }
+                    }
+                    Expr rhs = polyP[static_cast<std::size_t>(m)];
+                    if (!upperTerms.empty()) {
+                        rhs = c.add(
+                            {rhs, c.neg(c.mul({q, c.add(upperTerms)}))});
+                    }
+                    qCoeffs[static_cast<std::size_t>(m)] =
+                        c.simplify(c.div(rhs, qMinus1));
+                }
+                const Expr G =
+                    c.mul({evalSymbolicPolyInVar(c, qCoeffs, var), R});
+                if (certifyDiscreteAntidiff(c, G, f, var)) {
+                    gOut = G;
+                    if (geomRatioOut)
+                        *geomRatioOut = q;
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 3. Rational telescoping over Q(var) via partial fractions and Z-shift cosets.
+    UPoly N, D;
+    if (toRational(c, f, var, N, D) && !D.isZero() && D.deg() >= 1) {
+        const UPoly gnd = UPoly::gcd(N, D);
+        if (gnd.deg() >= 1) {
+            UPoly qN, rN, qD, rD;
+            UPoly::divMod(N, gnd, qN, rN);
+            UPoly::divMod(D, gnd, qD, rD);
+            N = qN;
+            D = qD;
+        }
+        const Rational dLc = D.lc();
+        UPoly dMonic = D;
+        dMonic.makeMonic();
+        N = N * UPoly({Rational(std::int64_t{1}) / dLc});
+        UPoly qPoly, rPoly;
+        UPoly::divMod(N, dMonic, qPoly, rPoly);
+
+        std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+        struct LinFactor
+        {
+            Rational root;
+            UPoly lin;
+            int mult = 0;
+            UPoly linPow;
+        };
+        std::vector<LinFactor> lfs;
+        bool allLinear = !(budget && !budget->ok());
+        for (const UPoly &ir : irreds) {
+            if (ir.deg() != 1) {
+                allLinear = false;
+                break;
+            }
+            const Rational rt = -ir.coeff(0) / ir.coeff(1);
+            bool found = false;
+            for (auto &lf : lfs) {
+                if (lf.root == rt) {
+                    lf.mult += 1;
+                    lf.linPow = lf.linPow * ir;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                lfs.push_back(LinFactor{rt, ir, 1, ir});
+        }
+        if (allLinear && !lfs.empty()) {
+            struct PoleTerm
+            {
+                Rational root;
+                int order = 0;
+                Rational coeff;
+            };
+            std::vector<PoleTerm> poleTerms;
+            for (std::size_t j = 0; j < lfs.size(); ++j) {
+                UPoly mj({Rational(std::int64_t{1})});
+                for (std::size_t i = 0; i < lfs.size(); ++i) {
+                    if (i != j)
+                        mj = mj * lfs[i].linPow;
+                }
+                const UPoly invMj =
+                    UPoly::invMod(mj % lfs[j].linPow, lfs[j].linPow);
+                UPoly cur = (rPoly * invMj) % lfs[j].linPow;
+                for (int p = lfs[j].mult; p >= 1 && !cur.isZero(); --p) {
+                    UPoly quot, rem;
+                    UPoly::divMod(cur, lfs[j].lin, quot, rem);
+                    cur = quot;
+                    if (!rem.isZero() && !rem.coeff(0).isZero()) {
+                        poleTerms.push_back(
+                            PoleTerm{lfs[j].root, p, rem.coeff(0)});
+                    }
+                }
+            }
+
+            // Group by (order, root mod Z).
+            std::vector<bool> used(poleTerms.size(), false);
+            std::vector<Expr> gPieces;
+            if (!qPoly.isZero()) {
+                std::vector<Expr> qCoeffs;
+                for (int i = 0; i <= qPoly.deg(); ++i)
+                    qCoeffs.push_back(c.number(qPoly.coeff(i)));
+                gPieces.push_back(polyDiscreteAntidiff(c, qCoeffs, var));
+            }
+            bool canTelescope = true;
+            for (std::size_t i = 0; i < poleTerms.size() && canTelescope; ++i) {
+                if (used[i])
+                    continue;
+                std::vector<std::size_t> group{i};
+                used[i] = true;
+                Rational sumCoeff = poleTerms[i].coeff;
+                Rational maxRoot = poleTerms[i].root;
+                for (std::size_t j = i + 1; j < poleTerms.size(); ++j) {
+                    if (used[j] || poleTerms[j].order != poleTerms[i].order)
+                        continue;
+                    const Rational diffR =
+                        poleTerms[i].root - poleTerms[j].root;
+                    if (diffR.den() == BigInt(1)) {
+                        used[j] = true;
+                        group.push_back(j);
+                        sumCoeff = sumCoeff + poleTerms[j].coeff;
+                        if (maxRoot < poleTerms[j].root)
+                            maxRoot = poleTerms[j].root;
+                    }
+                }
+                if (!sumCoeff.isZero()) {
+                    canTelescope = false;
+                    break;
+                }
+                const int p = poleTerms[i].order;
+                const Expr baseL =
+                    maxRoot.isZero()
+                        ? var
+                        : c.add({var, c.number(-maxRoot)});
+                for (std::size_t idx : group) {
+                    const Rational shiftRat = maxRoot - poleTerms[idx].root;
+                    std::int64_t s = 0;
+                    if (!shiftRat.num().fitsInt64(s) || s < 0 || s > 64) {
+                        canTelescope = false;
+                        break;
+                    }
+                    if (s == 0)
+                        continue;
+                    std::vector<Expr> shiftSum;
+                    for (std::int64_t m = 0; m < s; ++m) {
+                        const Expr denomBase =
+                            (m == 0) ? baseL
+                                     : c.add({baseL, c.number(m)});
+                        shiftSum.push_back(c.pow(
+                            denomBase,
+                            c.number(static_cast<std::int64_t>(-p))));
+                    }
+                    gPieces.push_back(c.mul(
+                        {c.number(poleTerms[idx].coeff), c.add(shiftSum)}));
+                }
+            }
+            if (canTelescope) {
+                const Expr G =
+                    gPieces.empty() ? c.zero() : c.simplify(c.add(gPieces));
+                if (certifyDiscreteAntidiff(c, G, f, var)) {
+                    gOut = G;
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 4. Logarithmic telescoping: c0 * log((a*var + b1) / (a*var + b0))
+    //    where (b1 - b0)/a = s is a non-zero integer.
+    {
+        Expr logArg;
+        std::vector<Expr> cFacs;
+        for (const Expr &fac : factors) {
+            if (logArg.isNull() && c.kind(fac) == NodeKind::Func &&
+                c.funcName(fac) == "log") {
+                logArg = c.child(fac, 0);
+            } else if (!mentionsSymbol(c, fac, var)) {
+                cFacs.push_back(fac);
+            } else {
+                logArg = Expr();
+                break;
+            }
+        }
+        UPoly lN, lD;
+        if (!logArg.isNull() && toRational(c, logArg, var, lN, lD) &&
+            lN.deg() == 1 && lD.deg() == 1 && lN.coeff(1) == lD.coeff(1)) {
+            const Rational aRat = lD.coeff(1);
+            const Rational sRat = (lN.coeff(0) - lD.coeff(0)) / aRat;
+            std::int64_t s = 0;
+            if (sRat.den() == BigInt(1) && sRat.num().fitsInt64(s) && s != 0 &&
+                std::abs(s) <= 32) {
+                const Expr coef = cFacs.empty() ? c.one() : c.mul(cFacs);
+                const UPoly &basePoly = (s > 0) ? lD : lN;
+                const Expr baseExpr = toExpr(c, basePoly, var);
+                const std::int64_t absS = std::abs(s);
+                std::vector<Expr> logTerms;
+                for (std::int64_t m = 0; m < absS; ++m) {
+                    const Expr shifted =
+                        (m == 0)
+                            ? baseExpr
+                            : c.add({baseExpr,
+                                     c.number(aRat * Rational(m))});
+                    logTerms.push_back(c.func("log", shifted));
+                }
+                const Expr G = c.mul(
+                    {coef,
+                     c.number(s > 0 ? std::int64_t{1} : std::int64_t{-1}),
+                     c.add(logTerms)});
+                if (certifyDiscreteAntidiff(c, G, f, var)) {
+                    gOut = G;
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 5. Additive linearity over expanded sum.
+    const Expr fExp = c.expand(f);
+    if (c.kind(fExp) == NodeKind::Add) {
+        std::vector<Expr> pieces;
+        pieces.reserve(c.childCount(fExp));
+        for (std::size_t i = 0; i < c.childCount(fExp); ++i) {
+            Expr gi;
+            if (!discreteAntidiff(c, c.child(fExp, i), var, budget, gi))
+                return false;
+            pieces.push_back(gi);
+        }
+        const Expr G = c.simplify(c.add(pieces));
+        if (certifyDiscreteAntidiff(c, G, f, var)) {
+            gOut = G;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+} // namespace
+
+SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
+{
+    SymSumResult out;
+    if (f.isNull() || var.isNull() || a.isNull() || b.isNull()) {
+        out.reason = "null input expression";
+        return out;
+    }
+    if (!checkSeriesBudget(c, budget)) {
+        out.reason = budget->status() == BudgetStatus::StepExhausted
+                         ? "step budget exhausted"
+                         : "arena byte budget exhausted";
+        return out;
+    }
+
+    int aInfDir = 0, bInfDir = 0;
+    const bool aIsInf = isSymbolicInfinity(c, a, aInfDir);
+    const bool bIsInf = isSymbolicInfinity(c, b, bInfDir);
+    if (aIsInf) {
+        out.reason = "infinite lower summation bound is not supported";
+        return out;
+    }
+
+    // Case 1: Finite summation bounds [a, b].
+    if (!bIsInf) {
+        Rational spanRat;
+        std::int64_t spanInt = 0;
+        const bool hasIntSpan =
+            c.evalExact(c.simplify(c.add({b, c.neg(a)})), {}, spanRat) &&
+            spanRat.den() == BigInt(1) && spanRat.num().fitsInt64(spanInt);
+        if (hasIntSpan) {
+            if (spanInt == -1) {
+                out.value = c.zero();
+                out.status = SymSumResult::Status::ProvedSymbolic;
+                return out;
+            }
+            if (spanInt < -1) {
+                out.reason = "upper summation bound is less than a - 1";
+                return out;
+            }
+            if (spanInt <= 128) {
+                for (std::int64_t j = 0; j <= spanInt; ++j) {
+                    const Expr kVal = c.add({a, c.number(j)});
+                    if (safeSubsAndFold(c, f, var, kVal).isNull()) {
+                        out.status = SymSumResult::Status::Divergent;
+                        out.reason = "summand pole on summation range";
+                        return out;
+                    }
+                }
+            }
+        }
+
+        Expr G;
+        if (discreteAntidiff(c, f, var, budget, G)) {
+            const Expr gB1 =
+                safeSubsAndFold(c, G, var, c.add({b, c.one()}));
+            const Expr gA = safeSubsAndFold(c, G, var, a);
+            if (!gB1.isNull() && !gA.isNull()) {
+                out.antidiff = G;
+                out.value = c.simplify(c.add({gB1, c.neg(gA)}));
+                out.status = SymSumResult::Status::ProvedSymbolic;
+                return out;
+            }
+        }
+
+        // Direct finite evaluation fallback for concrete integer spans <= 128.
+        if (hasIntSpan && spanInt >= 0 && spanInt <= 128) {
+            std::vector<Expr> terms;
+            terms.reserve(static_cast<std::size_t>(spanInt + 1));
+            for (std::int64_t j = 0; j <= spanInt; ++j) {
+                const Expr term =
+                    safeSubsAndFold(c, f, var, c.add({a, c.number(j)}));
+                if (term.isNull()) {
+                    out.status = SymSumResult::Status::Divergent;
+                    out.reason = "summand pole on summation range";
+                    return out;
+                }
+                terms.push_back(term);
+            }
+            out.value = c.simplify(c.add(terms));
+            out.status = SymSumResult::Status::ProvedSymbolic;
+            return out;
+        }
+
+        out.reason = "no closed-form discrete antidifference found";
+        return out;
+    }
+
+    // Case 2: Infinite series sum_{var = a}^{+inf} f(var).
+    if (bInfDir < 0) {
+        out.reason = "negative infinity upper bound is not supported";
+        return out;
+    }
+    if (!mentionsSymbol(c, f, var)) {
+        if (isZeroCoeff(c, f)) {
+            out.value = c.zero();
+            out.status = SymSumResult::Status::ProvedSymbolic;
+            return out;
+        }
+        out.status = SymSumResult::Status::Divergent;
+        out.reason = "non-zero constant summand over infinite range";
+        return out;
+    }
+
+    // 2a. Discrete antidifference G(var) with lim_{var -> +inf} G(var).
+    Expr G, geomRatio;
+    if (discreteAntidiff(c, f, var, budget, G, &geomRatio)) {
+        const Expr gA = safeSubsAndFold(c, G, var, a);
+        if (gA.isNull()) {
+            out.status = SymSumResult::Status::Divergent;
+            out.reason = "summand pole at lower bound";
+            return out;
+        }
+        if (!geomRatio.isNull()) {
+            double qVal = 0.0;
+            if (c.evalDouble(geomRatio, {}, qVal)) {
+                if (std::abs(qVal) < 1.0 - 1e-12) {
+                    out.antidiff = G;
+                    out.value = c.simplify(c.neg(gA));
+                    out.status = SymSumResult::Status::ProvedSymbolic;
+                    return out;
+                }
+                out.status = SymSumResult::Status::Divergent;
+                out.reason = "geometric ratio |q| >= 1";
+                return out;
+            }
+        }
+        const LimitResult limInf = limitAtInfinity(c, G, var, +1, budget);
+        if (limInf.status == LimitResult::Status::Divergent) {
+            out.status = SymSumResult::Status::Divergent;
+            out.reason = "divergent partial sums at infinity";
+            return out;
+        }
+        if (limInf.proved()) {
+            out.antidiff = G;
+            out.value = c.simplify(c.add({limInf.value, c.neg(gA)}));
+            out.status = SymSumResult::Status::ProvedSymbolic;
+            return out;
+        }
+    }
+
+    // Check if lower bound `a` is an integer a0.
+    Rational aRat;
+    std::int64_t a0 = 0;
+    const bool hasIntA =
+        c.evalExact(a, {}, aRat) && aRat.den() == BigInt(1) &&
+        aRat.num().fitsInt64(a0);
+
+    // 2b. Rational infinite series sum_{k = a0}^{inf} N(k)/D(k) over Q(k):
+    //     Euler-Riemann zeta(2*m) and mixed telescoping + zeta(2*m).
+    UPoly N, D;
+    if (hasIntA && toRational(c, f, var, N, D) && !D.isZero() && D.deg() >= 1) {
+        if (N.isZero()) {
+            out.value = c.zero();
+            out.status = SymSumResult::Status::ProvedSymbolic;
+            return out;
+        }
+        const UPoly gnd = UPoly::gcd(N, D);
+        if (gnd.deg() >= 1) {
+            UPoly qN, rN, qD, rD;
+            UPoly::divMod(N, gnd, qN, rN);
+            UPoly::divMod(D, gnd, qD, rD);
+            N = qN;
+            D = qD;
+        }
+        if (N.deg() >= D.deg() - 1) {
+            // Since discreteAntidiff already checked whether p = 1 residues
+            // cancel, deg(N) >= deg(D) - 1 here guarantees divergence.
+            out.status = SymSumResult::Status::Divergent;
+            out.reason = "rational series of degree >= -1 does not converge";
+            return out;
+        }
+        const Rational dLc = D.lc();
+        UPoly dMonic = D;
+        dMonic.makeMonic();
+        N = N * UPoly({Rational(std::int64_t{1}) / dLc});
+        std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+        struct LinFactor
+        {
+            Rational root;
+            UPoly lin;
+            int mult = 0;
+            UPoly linPow;
+        };
+        std::vector<LinFactor> lfs;
+        bool allLinear = !(budget && !budget->ok());
+        for (const UPoly &ir : irreds) {
+            if (ir.deg() != 1) {
+                allLinear = false;
+                break;
+            }
+            const Rational rt = -ir.coeff(0) / ir.coeff(1);
+            std::int64_t rtInt = 0;
+            if (rt.den() == BigInt(1) && rt.num().fitsInt64(rtInt) &&
+                rtInt >= a0) {
+                out.status = SymSumResult::Status::Divergent;
+                out.reason = "pole of rational summand on summation range";
+                return out;
+            }
+            bool found = false;
+            for (auto &lf : lfs) {
+                if (lf.root == rt) {
+                    lf.mult += 1;
+                    lf.linPow = lf.linPow * ir;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                lfs.push_back(LinFactor{rt, ir, 1, ir});
+        }
+        if (allLinear && !lfs.empty()) {
+            struct PoleTerm
+            {
+                Rational root;
+                int order = 0;
+                Rational coeff;
+            };
+            std::vector<PoleTerm> poleTerms;
+            for (std::size_t j = 0; j < lfs.size(); ++j) {
+                UPoly mj({Rational(std::int64_t{1})});
+                for (std::size_t i = 0; i < lfs.size(); ++i) {
+                    if (i != j)
+                        mj = mj * lfs[i].linPow;
+                }
+                const UPoly invMj =
+                    UPoly::invMod(mj % lfs[j].linPow, lfs[j].linPow);
+                UPoly cur = (N * invMj) % lfs[j].linPow;
+                for (int p = lfs[j].mult; p >= 1 && !cur.isZero(); --p) {
+                    UPoly quot, rem;
+                    UPoly::divMod(cur, lfs[j].lin, quot, rem);
+                    cur = quot;
+                    if (!rem.isZero() && !rem.coeff(0).isZero()) {
+                        poleTerms.push_back(
+                            PoleTerm{lfs[j].root, p, rem.coeff(0)});
+                    }
+                }
+            }
+
+            std::vector<bool> used(poleTerms.size(), false);
+            std::vector<Expr> sumPieces;
+            bool okZeta = true;
+            for (std::size_t i = 0; i < poleTerms.size() && okZeta; ++i) {
+                if (used[i])
+                    continue;
+                std::vector<std::size_t> group{i};
+                used[i] = true;
+                Rational sumCoeff = poleTerms[i].coeff;
+                Rational maxRoot = poleTerms[i].root;
+                for (std::size_t j = i + 1; j < poleTerms.size(); ++j) {
+                    if (used[j] || poleTerms[j].order != poleTerms[i].order)
+                        continue;
+                    if ((poleTerms[i].root - poleTerms[j].root).den() ==
+                        BigInt(1)) {
+                        used[j] = true;
+                        group.push_back(j);
+                        sumCoeff = sumCoeff + poleTerms[j].coeff;
+                        if (maxRoot < poleTerms[j].root)
+                            maxRoot = poleTerms[j].root;
+                    }
+                }
+                const int p = poleTerms[i].order;
+                if (p == 1 && !sumCoeff.isZero()) {
+                    out.status = SymSumResult::Status::Divergent;
+                    out.reason = "non-zero logarithmic residue sum (harmonic divergence)";
+                    return out;
+                }
+                if (sumCoeff.isZero()) {
+                    // Telescoping coset: sum_{k=a0}^{inf} = -G_coset(a0).
+                    const Rational baseVal = Rational(a0) - maxRoot;
+                    for (std::size_t idx : group) {
+                        const Rational shiftRat = maxRoot - poleTerms[idx].root;
+                        std::int64_t s = 0;
+                        if (!shiftRat.num().fitsInt64(s) || s < 0 || s > 64) {
+                            okZeta = false;
+                            break;
+                        }
+                        Rational partial(std::int64_t{0});
+                        for (std::int64_t m = 0; m < s; ++m) {
+                            const Rational dVal = baseVal + Rational(m);
+                            if (dVal.isZero()) {
+                                okZeta = false;
+                                break;
+                            }
+                            partial = partial +
+                                      Rational(std::int64_t{1}) /
+                                          Rational::powUInt(
+                                              dVal,
+                                              static_cast<std::uint64_t>(p));
+                        }
+                        sumPieces.push_back(
+                            c.number(-poleTerms[idx].coeff * partial));
+                    }
+                    continue;
+                }
+                if (p >= 2 && (p % 2 == 0) && p <= 16) {
+                    const Expr zetaP = eulerZetaEven(c, p);
+                    for (std::size_t idx : group) {
+                        const Rational rt = poleTerms[idx].root;
+                        const Rational cf = poleTerms[idx].coeff;
+                        if (rt.den() == BigInt(1)) {
+                            std::int64_t nStart = 0;
+                            if (!(Rational(a0) - rt).num().fitsInt64(nStart) ||
+                                nStart < 1 || nStart > 64) {
+                                okZeta = false;
+                                break;
+                            }
+                            Rational headSum(std::int64_t{0});
+                            for (std::int64_t n = 1; n < nStart; ++n) {
+                                headSum = headSum +
+                                          Rational(
+                                              BigInt(1),
+                                              BigInt::powUInt(
+                                                  BigInt(n),
+                                                  static_cast<std::uint64_t>(p)));
+                            }
+                            sumPieces.push_back(c.mul(
+                                {c.number(cf),
+                                 c.add({zetaP, c.number(-headSum)})}));
+                        } else if (rt.den() == BigInt(2)) {
+                            std::int64_t twoNPlus1 = 0;
+                            if (!((Rational(a0) - rt) * Rational(std::int64_t{2}))
+                                     .num()
+                                     .fitsInt64(twoNPlus1) ||
+                                twoNPlus1 < 1 || (twoNPlus1 % 2 == 0) ||
+                                twoNPlus1 > 65) {
+                                okZeta = false;
+                                break;
+                            }
+                            const std::int64_t nStart = (twoNPlus1 - 1) / 2;
+                            const BigInt pow2P =
+                                BigInt(1) << static_cast<std::size_t>(p);
+                            const Rational oddFactor(pow2P - BigInt(1), pow2P);
+                            Rational headSum(std::int64_t{0});
+                            for (std::int64_t n = 0; n < nStart; ++n) {
+                                headSum = headSum +
+                                          Rational(
+                                              BigInt(1),
+                                              BigInt::powUInt(
+                                                  BigInt(2 * n + 1),
+                                                  static_cast<std::uint64_t>(p)));
+                            }
+                            const Expr oddZeta = c.add(
+                                {c.mul({c.number(oddFactor), zetaP}),
+                                 c.number(-headSum)});
+                            sumPieces.push_back(c.mul(
+                                {c.number(cf * Rational(pow2P, BigInt(1))),
+                                 oddZeta}));
+                        } else {
+                            okZeta = false;
+                            break;
+                        }
+                    }
+                } else {
+                    okZeta = false;
+                    break;
+                }
+            }
+            if (okZeta) {
+                out.value = sumPieces.empty() ? c.zero()
+                                              : c.simplify(c.add(sumPieces));
+                out.status = SymSumResult::Status::ProvedSymbolic;
+                return out;
+            }
+        }
+    }
+
+    // 2c. Alternating rational series sum_{k = a0}^{inf} (-1)^(c1*k + c0) * R(k)
+    //     and exponential factorial series sum_{k = a0}^{inf} P(k) * R(k) / factorial(k).
+    if (hasIntA) {
+        std::vector<Expr> facs;
+        if (c.kind(f) == NodeKind::Mul) {
+            for (std::size_t i = 0; i < c.childCount(f); ++i)
+                facs.push_back(c.child(f, i));
+        } else {
+            facs.push_back(f);
+        }
+
+        // Check for (-1)^(k + s0) alternating factor.
+        Expr altExp;
+        std::vector<Expr> nonAltFacs;
+        for (const Expr &fac : facs) {
+            if (altExp.isNull() && c.kind(fac) == NodeKind::Pow &&
+                c.child(fac, 0) == c.number(std::int64_t{-1}) &&
+                mentionsSymbol(c, c.child(fac, 1), var)) {
+                altExp = c.child(fac, 1);
+            } else {
+                nonAltFacs.push_back(fac);
+            }
+        }
+        std::vector<Expr> altCoeffs;
+        if (!altExp.isNull() &&
+            extractPolyCoeffsInVar(c, altExp, var, 1, altCoeffs) &&
+            altCoeffs.size() == 2) {
+            Rational c0Rat, c1Rat;
+            std::int64_t c0Int = 0, c1Int = 0;
+            if (c.evalExact(altCoeffs[0], {}, c0Rat) &&
+                c.evalExact(altCoeffs[1], {}, c1Rat) &&
+                c0Rat.den() == BigInt(1) && c1Rat.den() == BigInt(1) &&
+                c0Rat.num().fitsInt64(c0Int) && c1Rat.num().fitsInt64(c1Int) &&
+                (std::abs(c1Int) % 2 == 1)) {
+                const Expr ratPart =
+                    nonAltFacs.empty() ? c.one() : c.mul(nonAltFacs);
+                UPoly rN, rD;
+                if (toRational(c, ratPart, var, rN, rD) && !rD.isZero() &&
+                    rN.deg() == 0 && rD.deg() >= 1) {
+                    // Check (k + s)^(-p) or (2*k + 1)^(-1)
+                    const Rational lcD = rD.lc();
+                    UPoly dMon = rD;
+                    dMon.makeMonic();
+                    const std::vector<UPoly> irs = factorOverQ(dMon, budget);
+                    if (!irs.empty()) {
+                        bool sameRoot = true;
+                        const Rational rt = -irs[0].coeff(0) / irs[0].coeff(1);
+                        for (const UPoly &ir : irs) {
+                            if (ir.deg() != 1 ||
+                                (-ir.coeff(0) / ir.coeff(1)) != rt) {
+                                sameRoot = false;
+                                break;
+                            }
+                        }
+                        const int p = static_cast<int>(irs.size());
+                        const Rational scale =
+                            rN.coeff(0) /
+                            Rational::powUInt(lcD, static_cast<std::uint64_t>(p));
+                        if (sameRoot && rt.den() == BigInt(1)) {
+                            std::int64_t rtInt = 0;
+                            if (rt.num().fitsInt64(rtInt) && a0 - rtInt >= 1 &&
+                                a0 - rtInt <= 32) {
+                                const std::int64_t nStart = a0 - rtInt;
+                                // For n = k - rtInt >= nStart:
+                                // (-1)^(c1*k + c0) = (-1)^(c1*rtInt + c0 + 1) * (-1)^(n - 1).
+                                const std::int64_t parity =
+                                    (((c1Int * rtInt + c0Int + 1) % 2) + 2) % 2;
+                                const std::int64_t sgn =
+                                    parity == 0 ? std::int64_t{1}
+                                                : std::int64_t{-1};
+                                Expr baseSeries;
+                                if (p == 1) {
+                                    baseSeries =
+                                        c.func("log", c.number(std::int64_t{2}));
+                                } else if (p >= 2 && (p % 2 == 0) && p <= 16) {
+                                    const BigInt pow2 =
+                                        BigInt(1)
+                                        << static_cast<std::size_t>(p - 1);
+                                    const Rational etaFactor(pow2 - BigInt(1),
+                                                             pow2);
+                                    baseSeries = c.mul(
+                                        {c.number(etaFactor),
+                                         eulerZetaEven(c, p)});
+                                }
+                                if (!baseSeries.isNull()) {
+                                    Rational head(std::int64_t{0});
+                                    for (std::int64_t n = 1; n < nStart; ++n) {
+                                        const std::int64_t nSgn =
+                                            (n % 2 == 1) ? std::int64_t{1}
+                                                         : std::int64_t{-1};
+                                        head = head +
+                                               Rational(
+                                                   BigInt(nSgn),
+                                                   BigInt::powUInt(
+                                                       BigInt(n),
+                                                       static_cast<std::uint64_t>(
+                                                           p)));
+                                    }
+                                    out.value = c.simplify(c.mul(
+                                        {c.number(scale * Rational(sgn)),
+                                         c.add({baseSeries, c.number(-head)})}));
+                                    out.status =
+                                        SymSumResult::Status::ProvedSymbolic;
+                                    return out;
+                                }
+                            }
+                        } else if (sameRoot && p == 1 && rt.den() == BigInt(2)) {
+                            // Gregory-Leibniz: sum (-1)^n / (2*n + 1) = pi/4.
+                            std::int64_t twoNPlus1 = 0;
+                            if (((Rational(a0) - rt) * Rational(std::int64_t{2}))
+                                    .num()
+                                    .fitsInt64(twoNPlus1) &&
+                                twoNPlus1 >= 1 && (twoNPlus1 % 2 == 1) &&
+                                twoNPlus1 <= 65) {
+                                const std::int64_t nStart = (twoNPlus1 - 1) / 2;
+                                const std::int64_t kShift =
+                                    a0 - nStart; // k = n + kShift
+                                const std::int64_t parity =
+                                    (((c1Int * kShift + c0Int) % 2) + 2) % 2;
+                                const std::int64_t sgn =
+                                    parity == 0 ? std::int64_t{1}
+                                                : std::int64_t{-1};
+                                Rational head(std::int64_t{0});
+                                for (std::int64_t n = 0; n < nStart; ++n) {
+                                    const std::int64_t nSgn =
+                                        (n % 2 == 0) ? std::int64_t{1}
+                                                     : std::int64_t{-1};
+                                    head = head +
+                                           Rational(nSgn, BigInt(2 * n + 1));
+                                }
+                                const Expr piOver4 = c.mul(
+                                    {c.number(Rational(std::int64_t{1}, BigInt(4))),
+                                     c.symbol("pi")});
+                                out.value = c.simplify(c.mul(
+                                    {c.number(scale * Rational(std::int64_t{2} * sgn)),
+                                     c.add({piOver4, c.number(-head)})}));
+                                out.status =
+                                    SymSumResult::Status::ProvedSymbolic;
+                                return out;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Exponential / factorial series: sum_{k = a0}^{inf} P(k) * R(k) / factorial(k)
+        // for a0 >= 0.
+        if (a0 >= 0 && a0 <= 32) {
+            bool hasFactDenom = false;
+            std::vector<Expr> remFacs;
+            for (const Expr &fac : facs) {
+                if (!hasFactDenom && c.kind(fac) == NodeKind::Pow &&
+                    c.child(fac, 1) == c.number(std::int64_t{-1}) &&
+                    c.kind(c.child(fac, 0)) == NodeKind::Func &&
+                    c.funcName(c.child(fac, 0)) == "factorial" &&
+                    c.child(c.child(fac, 0), 0) == var) {
+                    hasFactDenom = true;
+                } else {
+                    remFacs.push_back(fac);
+                }
+            }
+            if (hasFactDenom) {
+                std::vector<Expr> gFacs, pFacs;
+                for (const Expr &rf : remFacs) {
+                    if (c.kind(rf) == NodeKind::Pow &&
+                        !mentionsSymbol(c, c.child(rf, 0), var) &&
+                        mentionsSymbol(c, c.child(rf, 1), var)) {
+                        gFacs.push_back(rf);
+                    } else if (c.kind(rf) == NodeKind::Func &&
+                               c.funcName(rf) == "exp" &&
+                               mentionsSymbol(c, c.child(rf, 0), var)) {
+                        gFacs.push_back(rf);
+                    } else {
+                        pFacs.push_back(rf);
+                    }
+                }
+                const Expr R = gFacs.empty() ? c.one() : c.mul(gFacs);
+                const Expr r0 = safeSubsAndFold(c, R, var, c.zero());
+                const Expr rNext = expandShiftPowers(
+                    c, c.subs(R, var, c.add({var, c.one()})), var);
+                const Expr q = c.simplify(c.div(rNext, R));
+                const Expr pExpr = pFacs.empty() ? c.one() : c.mul(pFacs);
+                std::vector<Expr> polyP;
+                if (!r0.isNull() && !q.isNull() &&
+                    !mentionsSymbol(c, q, var) &&
+                    extractPolyCoeffsInVar(c, pExpr, var, 8, polyP)) {
+                    // Convert P(k) into falling-factorial basis sum_{j=0}^d beta_j * k^(j)_falling
+                    // using forward finite differences at k = 0: beta_j = Delta^j P(0) / j!.
+                    const int d = static_cast<int>(polyP.size()) - 1;
+                    std::vector<Expr> vals(static_cast<std::size_t>(d + 1));
+                    for (int k = 0; k <= d; ++k) {
+                        vals[static_cast<std::size_t>(k)] =
+                            evalSymbolicPolyInVar(
+                                c, polyP,
+                                c.number(static_cast<std::int64_t>(k)));
+                    }
+                    std::vector<Expr> bellTerms;
+                    BigInt factJ(1);
+                    for (int j = 0; j <= d; ++j) {
+                        if (j >= 2)
+                            factJ = factJ * BigInt(j);
+                        const Expr betaJ = c.simplify(c.mul(
+                            {c.number(Rational(BigInt(1), factJ)), vals[0]}));
+                        if (!c.isZero(betaJ)) {
+                            const Expr qPow =
+                                (j == 0)
+                                    ? c.one()
+                                    : c.pow(q, c.number(
+                                                   static_cast<std::int64_t>(j)));
+                            bellTerms.push_back(c.mul({betaJ, qPow}));
+                        }
+                        for (int m = 0; m < d - j; ++m) {
+                            vals[static_cast<std::size_t>(m)] = c.simplify(c.add(
+                                {vals[static_cast<std::size_t>(m + 1)],
+                                 c.neg(vals[static_cast<std::size_t>(m)])}));
+                        }
+                    }
+                    const Expr fullSum = c.mul(
+                        {r0, c.func("exp", q),
+                         bellTerms.empty() ? c.zero() : c.add(bellTerms)});
+                    std::vector<Expr> headTerms{fullSum};
+                    for (std::int64_t k = 0; k < a0; ++k) {
+                        const Expr fk =
+                            safeSubsAndFold(c, f, var, c.number(k));
+                        if (!fk.isNull())
+                            headTerms.push_back(c.neg(fk));
+                    }
+                    out.value = c.simplify(c.add(headTerms));
+                    out.status = SymSumResult::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+        }
+
+        // Additive linearity over Add for infinite series when every summand
+        // converges (or exactly one summand diverges).
+        const Expr fExp = c.expand(f);
+        if (c.kind(fExp) == NodeKind::Add) {
+            std::vector<Expr> pieceVals;
+            std::size_t divCount = 0;
+            std::size_t unevalCount = 0;
+            SymSumResult firstDiv;
+            for (std::size_t i = 0; i < c.childCount(fExp); ++i) {
+                const SymSumResult si =
+                    symsum(c, c.child(fExp, i), var, a, b, budget);
+                if (si.proved()) {
+                    pieceVals.push_back(si.value);
+                } else if (si.status == SymSumResult::Status::Divergent) {
+                    ++divCount;
+                    if (divCount == 1)
+                        firstDiv = si;
+                } else {
+                    ++unevalCount;
+                    break;
+                }
+            }
+            if (divCount == 0 && unevalCount == 0) {
+                out.value = c.simplify(c.add(pieceVals));
+                out.status = SymSumResult::Status::ProvedSymbolic;
+                return out;
+            }
+            if (divCount == 1 && unevalCount == 0)
+                return firstDiv;
+        }
+    }
+
+    out.reason = "unable to evaluate infinite series in closed form";
+    return out;
 }
 
 } // namespace numkit::cas

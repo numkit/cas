@@ -521,5 +521,101 @@ TEST(SeriesTest, SymbolicResiduesAndResidueSumTheorem)
     EXPECT_EQ(c.simplify(c.add({r1, r2, r3, rInf})), c.zero());
 }
 
+TEST(SeriesTest, SymbolicSummationFiniteAndInfinite)
+{
+    Ctx c;
+    const Expr k = c.symbol("k");
+    const Expr n = c.symbol("n");
+
+    struct SumCase
+    {
+        const char *f;
+        const char *a;
+        const char *b;
+        const char *expected;
+    };
+    const SumCase cases[] = {
+        // 1. Faulhaber-Bernoulli polynomial sums
+        {"1", "1", "n", "n"},
+        {"k", "1", "n", "1/2*n*(n + 1)"},
+        {"k^2", "1", "n", "1/6*n*(n + 1)*(2*n + 1)"},
+        {"k^3", "1", "n", "1/4*n^2*(n + 1)^2"},
+        {"k^4", "1", "n", "1/30*n*(n + 1)*(2*n + 1)*(3*n^2 + 3*n - 1)"},
+        {"3*k^2 + 3*k + 1", "0", "n", "(n + 1)^3"},
+
+        // 2. Geometric and arithmetico-geometric finite and infinite sums
+        {"r^k", "0", "n", "(r^(n + 1) - 1)/(r - 1)"},
+        {"k*2^k", "1", "n", "(n - 1)*2^(n + 1) + 2"},
+        {"(1/2)^k", "0", "inf", "2"},
+        {"(-1/2)^k", "0", "inf", "2/3"},
+        {"k*(1/2)^k", "0", "inf", "2"},
+        {"k^2*(1/2)^k", "0", "inf", "6"},
+        {"k*(1/3)^k", "1", "inf", "3/4"},
+        {"exp(-2*k)", "0", "inf", "1/(1 - exp(-2))"},
+
+        // 3. Rational and logarithmic telescoping sums (finite & infinite)
+        {"1/(k*(k + 1))", "1", "n", "n/(n + 1)"},
+        {"1/(k*(k + 1))", "1", "inf", "1"},
+        {"1/(k*(k + 2))", "1", "inf", "3/4"},
+        {"1/(k*(k + 1)*(k + 2))", "1", "inf", "1/4"},
+        {"(2*k + 1)/(k^2*(k + 1)^2)", "1", "n", "1 - 1/(n + 1)^2"},
+        {"(2*k + 1)/(k^2*(k + 1)^2)", "1", "inf", "1"},
+        {"log((k + 1)/k)", "1", "n", "log(n + 1)"},
+
+        // 4. Classical Euler-Riemann zeta, Dirichlet eta, Gregory-Leibniz, and factorial series
+        {"1/k^2", "1", "inf", "1/6*pi^2"},
+        {"1/k^2", "2", "inf", "1/6*pi^2 - 1"},
+        {"1/k^4", "1", "inf", "1/90*pi^4"},
+        {"1/k^6", "1", "inf", "1/945*pi^6"},
+        {"1/(2*k + 1)^2", "0", "inf", "1/8*pi^2"},
+        {"1/(2*k + 1)^4", "0", "inf", "1/96*pi^4"},
+        {"1/(k^2*(k + 1)^2)", "1", "inf", "1/3*pi^2 - 3"},
+        {"(-1)^(k - 1)/k", "1", "inf", "log(2)"},
+        {"(-1)^k/k", "1", "inf", "-log(2)"},
+        {"(-1)^k/(2*k + 1)", "0", "inf", "1/4*pi"},
+        {"(-1)^(k - 1)/k^2", "1", "inf", "1/12*pi^2"},
+        {"(-1)^(k - 1)/k^4", "1", "inf", "7/720*pi^4"},
+        {"1/factorial(k)", "0", "inf", "exp(1)"},
+        {"x^k/factorial(k)", "0", "inf", "exp(x)"},
+        {"x^k/factorial(k)", "1", "inf", "exp(x) - 1"},
+        {"k*x^k/factorial(k)", "0", "inf", "x*exp(x)"},
+        {"k^2*x^k/factorial(k)", "0", "inf", "(x^2 + x)*exp(x)"},
+    };
+
+    for (const auto &tc : cases) {
+        const Expr f = parseExpr(c, tc.f);
+        const Expr a = parseExpr(c, tc.a);
+        const Expr b = parseExpr(c, tc.b);
+        const Expr expVal = parseExpr(c, tc.expected);
+        const SymSumResult r = symsum(c, f, k, a, b);
+        ASSERT_TRUE(r.proved())
+            << "symsum failed for " << tc.f << " on [" << tc.a << ", " << tc.b
+            << "]: " << r.reason;
+        EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
+            << "for " << tc.f << " on [" << tc.a << ", " << tc.b
+            << "]: got " << c.toString(r.value) << ", expected "
+            << c.toString(expVal);
+
+        // When upper bound is symbolic `n`, verify S(5) - S(4) == f(5).
+        if (b == n) {
+            const Expr s5 = c.subs(r.value, n, c.number(std::int64_t{5}));
+            const Expr s4 = c.subs(r.value, n, c.number(std::int64_t{4}));
+            const Expr f5 = c.subs(f, k, c.number(std::int64_t{5}));
+            EXPECT_EQ(c.simplify(c.add({s5, c.neg(s4), c.neg(f5)})), c.zero())
+                << "backward difference S(5) - S(4) != f(5) for " << tc.f;
+        }
+    }
+
+    // 5. Divergence checks
+    EXPECT_EQ(symsum(c, parseExpr(c, "1/k"), k, c.one(), parseExpr(c, "inf")).status,
+              SymSumResult::Status::Divergent);
+    EXPECT_EQ(symsum(c, parseExpr(c, "1/(2*k + 1)"), k, c.zero(), parseExpr(c, "inf")).status,
+              SymSumResult::Status::Divergent);
+    EXPECT_EQ(symsum(c, parseExpr(c, "2^k"), k, c.zero(), parseExpr(c, "inf")).status,
+              SymSumResult::Status::Divergent);
+    EXPECT_EQ(symsum(c, parseExpr(c, "k/(k + 1)"), k, c.one(), parseExpr(c, "inf")).status,
+              SymSumResult::Status::Divergent);
+}
+
 } // namespace
 } // namespace numkit::cas

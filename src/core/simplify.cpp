@@ -751,7 +751,29 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         }
         if (arg == c.number(Rational(std::int64_t{-1}, BigInt(2))) && fn == "acos")
             return c.mul({c.number(Rational(std::int64_t{2}, BigInt(3))), piSym});
+        const Expr sqrt2 = c.pow(c.number(std::int64_t{2}), half);
+        const Expr invSqrt2 = c.pow(
+            c.number(std::int64_t{2}),
+            c.number(Rational(std::int64_t{-1}, BigInt(2))));
+        const Expr halfSqrt2 = c.mul({half, sqrt2});
+        if (arg == invSqrt2 || arg == halfSqrt2) {
+            if (fn == "asin" || fn == "acos")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(4))), piSym});
+        }
+        if ((arg == c.neg(invSqrt2) || arg == c.neg(halfSqrt2)) && fn == "acos") {
+            return c.mul({c.number(Rational(std::int64_t{3}, BigInt(4))), piSym});
+        }
         const Expr sqrt3 = c.pow(c.number(std::int64_t{3}), half);
+        const Expr halfSqrt3 = c.mul({half, sqrt3});
+        if (arg == halfSqrt3) {
+            if (fn == "asin")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), piSym});
+            if (fn == "acos")
+                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), piSym});
+        }
+        if (arg == c.neg(halfSqrt3) && fn == "acos") {
+            return c.mul({c.number(Rational(std::int64_t{5}, BigInt(6))), piSym});
+        }
         const Expr invSqrt3 = c.pow(
             c.number(std::int64_t{3}),
             c.number(Rational(std::int64_t{-1}, BigInt(2))));
@@ -866,6 +888,8 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
     case NodeKind::Pow: {
         const Expr b = rewriteBottomUp(c, c.child(e, 0));
         const Expr ex = rewriteBottomUp(c, c.child(e, 1));
+        if (b == c.one())
+            return c.one();
         const Expr p = c.pow(b, ex);
         if (c.evalExact(p, {}, r))
             return c.number(r);

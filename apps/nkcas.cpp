@@ -19,6 +19,7 @@
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/rubi/rules.hpp>
 #include <numkit/cas/transform/laplace.hpp>
+#include <numkit/cas/transform/ztrans.hpp>
 
 #include "corpus_runner.hpp"
 
@@ -297,6 +298,32 @@ int runLaplace(const std::string &exprSrc, const std::string &inVarName,
     return 2;
 }
 
+int runZTrans(const std::string &exprSrc, const std::string &inVarName,
+              const std::string &outVarName, bool inverse)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr vIn = ctx.symbol(inVarName);
+    const numkit::cas::Expr vOut = ctx.symbol(outVarName);
+    const numkit::cas::ZTransResult r =
+        inverse ? numkit::cas::iztrans(ctx, f, vIn, vOut)
+                : numkit::cas::ztrans(ctx, f, vIn, vOut);
+    if (r.proved()) {
+        std::cout << ctx.toString(r.F) << "\n";
+        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        return 0;
+    }
+    std::cout << "Unevaluated: " << r.reason << "\n";
+    return 2;
+}
+
 int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
@@ -360,6 +387,10 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         return runLaplace(exprSrc, varName.empty() ? "t" : varName, "s", false);
     if (cmd == "ilaplace")
         return runLaplace(exprSrc, varName.empty() ? "s" : varName, "t", true);
+    if (cmd == "ztrans")
+        return runZTrans(exprSrc, varName.empty() ? "n" : varName, "z", false);
+    if (cmd == "iztrans")
+        return runZTrans(exprSrc, varName.empty() ? "z" : varName, "n", true);
     if (cmd == "integrate") {
         const numkit::cas::RationalIntegral r =
             numkit::cas::integrate(ctx, f, var);
@@ -534,6 +565,10 @@ int main(int argc, char **argv)
         return runLaplace(argv[2], argv[3], argv[4], false);
     if (argc == 5 && std::string(argv[1]) == "ilaplace")
         return runLaplace(argv[2], argv[3], argv[4], true);
+    if (argc == 5 && std::string(argv[1]) == "ztrans")
+        return runZTrans(argv[2], argv[3], argv[4], false);
+    if (argc == 5 && std::string(argv[1]) == "iztrans")
+        return runZTrans(argv[2], argv[3], argv[4], true);
     if (argc == 4)
         return runCommand(argv[1], argv[2], argv[3]);
     if (argc == 3 && std::string(argv[1]) == "print")
@@ -546,6 +581,10 @@ int main(int argc, char **argv)
         return runLaplace(argv[2], "t", "s", false);
     if (argc == 3 && std::string(argv[1]) == "ilaplace")
         return runLaplace(argv[2], "s", "t", true);
+    if (argc == 3 && std::string(argv[1]) == "ztrans")
+        return runZTrans(argv[2], "n", "z", false);
+    if (argc == 3 && std::string(argv[1]) == "iztrans")
+        return runZTrans(argv[2], "z", "n", true);
     if (argc == 3 && std::string(argv[1]) == "eval")
         return runEval(argv[2], "", "");
     if (argc == 3 && std::string(argv[1]) == "corpus")

@@ -1867,6 +1867,72 @@ bool certifySpecialIntegral(Ctx &c, Expr F, Expr f, Expr var)
     return !diffExp.isNull() && c.isZero(diffExp);
 }
 
+bool integrateLinearLogOverLinearPole(Ctx &c, Expr logArg, Expr a, Expr b,
+                                      Expr linBase, Expr c1, Expr c0,
+                                      std::int64_t poleK, Expr numExpr,
+                                      Expr var, Budget *budget, Expr &fOut)
+{
+    const Expr lSym = c.symbol("_L_dilog");
+    const Expr varInL = c.div(c.add({lSym, c.neg(c0)}), c1);
+    std::vector<Expr> lPoly;
+    if (!extractPolyInVar(c, c.subs(numExpr, var, varInL), lSym, 8, lPoly))
+        return false;
+
+    const Expr invC1 = c.pow(c1, c.number(std::int64_t{-1}));
+    const Expr W =
+        c.simplify(c.add({c.mul({a, c0}), c.neg(c.mul({b, c1}))}));
+    Expr baseI1;
+    if (c.isZero(W)) {
+        baseI1 = c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))), invC1,
+                        c.pow(c.func("log", logArg), c.number(std::int64_t{2}))});
+    } else if (c.isZero(c.simplify(c.add({W, c1})))) {
+        const Expr u = c.simplify(c.add({c.one(), c.neg(logArg)}));
+        baseI1 = c.neg(c.mul({invC1, c.func("dilog", u)}));
+    } else {
+        const Expr w = c.simplify(c.neg(c.div(c.mul({c1, logArg}), W)));
+        const Expr oneMinusW = c.simplify(c.add({c.one(), c.neg(w)}));
+        baseI1 = c.mul(
+            {invC1,
+             c.add({c.mul({c.func("log", logArg), c.func("log", oneMinusW)}),
+                    c.func("dilog", w)})});
+    }
+
+    std::vector<Expr> pieces;
+    for (std::size_t j = 0; j < lPoly.size(); ++j) {
+        if (c.isZero(lPoly[j]))
+            continue;
+        const std::int64_t m = poleK - static_cast<std::int64_t>(j);
+        if (m == 1) {
+            pieces.push_back(c.mul({lPoly[j], baseI1}));
+        } else if (m >= 2) {
+            const Expr denom = c.mul({c1, c.number(m - 1)});
+            const Expr lPow = c.pow(linBase, c.number(-(m - 1)));
+            const Expr ibpBoundary =
+                c.neg(c.div(c.mul({c.func("log", logArg), lPow}), denom));
+            const Expr ratIntegrand =
+                c.mul({c.div(a, denom),
+                       c.pow(logArg, c.number(std::int64_t{-1})), lPow});
+            const RationalIntegral ratInt =
+                integrate(c, ratIntegrand, var, budget);
+            if (!ratInt.proved())
+                return false;
+            pieces.push_back(
+                c.mul({lPoly[j], c.add({ibpBoundary, ratInt.F})}));
+        } else {
+            const Expr elemIntegrand =
+                c.mul({lPoly[j], c.pow(linBase, c.number(-m)),
+                       c.func("log", logArg)});
+            const RationalIntegral elemInt =
+                integrate(c, elemIntegrand, var, budget);
+            if (!elemInt.proved())
+                return false;
+            pieces.push_back(elemInt.F);
+        }
+    }
+    fOut = pieces.empty() ? c.zero() : c.add(pieces);
+    return true;
+}
+
 RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                                            Budget *budget)
 {
@@ -2358,6 +2424,269 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                     out.F = F;
                     out.status = RationalIntegral::Status::ProvedSymbolic;
                     return out;
+                }
+            }
+        }
+    }
+
+    // 4. Dilogarithm (Spence's Li_2 / `dilog`).
+    {
+        Expr logArg;
+        std::vector<Expr> nonLogFacs;
+        for (const Expr &fac : factors) {
+            if (logArg.isNull() && c.kind(fac) == NodeKind::Func &&
+                c.funcName(fac) == "log") {
+                logArg = c.child(fac, 0);
+            } else {
+                nonLogFacs.push_back(fac);
+            }
+        }
+        if (!logArg.isNull()) {
+            const Expr rest =
+                nonLogFacs.empty() ? c.one() : c.mul(nonLogFacs);
+
+            // 4a. Direct logarithmic-derivative pattern:
+            //     int rest(x) * log(1 - u(x)) dx = -q * dilog(u(x))
+            //     whenever q = rest(x) * u(x) / u'(x) is independent of `var`
+            //     (covers int log(1 + a*exp(b*x + d)) dx, int log(1 + a*x^m)/x dx, etc.).
+            const Expr uCand = c.simplify(c.add({c.one(), c.neg(logArg)}));
+            if (!c.isZero(uCand)) {
+                const Expr duCand = c.diff(uCand, var);
+                if (!c.isZero(duCand)) {
+                    const Expr q = c.simplify(c.div(c.mul({rest, uCand}), duCand));
+                    if (!q.isNull() && !mentionsVar(c, q, var)) {
+                        const Expr F =
+                            c.simplify(c.neg(c.mul({q, c.func("dilog", uCand)})));
+                        if (certifySpecialIntegral(c, F, f, var)) {
+                            out.F = F;
+                            out.status = RationalIntegral::Status::ProvedSymbolic;
+                            return out;
+                        }
+                    }
+                }
+            }
+
+            // 4b. Rational-logarithmic integrand: int R(x) * log(a*x + b) dx.
+            std::vector<Expr> aCoeffs;
+            if (extractPolyInVar(c, logArg, var, 1, aCoeffs) &&
+                aCoeffs.size() == 2 && !c.isZero(aCoeffs[1])) {
+                const Expr b = aCoeffs[0];
+                const Expr a = aCoeffs[1];
+
+                // Single symbolic/numeric linear pole (c1*x + c0)^(-poleK).
+                std::vector<Expr> numFacs;
+                Expr linBase;
+                std::int64_t poleK = 0;
+                for (const Expr &rf : nonLogFacs) {
+                    if (poleK == 0 && c.kind(rf) == NodeKind::Pow &&
+                        c.kind(c.child(rf, 1)) == NodeKind::Number) {
+                        const Rational &re = c.numberValue(c.child(rf, 1));
+                        std::int64_t kVal = 0;
+                        std::vector<Expr> lCoeffs;
+                        if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
+                            kVal <= -1 && kVal >= -6 &&
+                            extractPolyInVar(c, c.child(rf, 0), var, 1, lCoeffs) &&
+                            lCoeffs.size() == 2 && !c.isZero(lCoeffs[1])) {
+                            linBase = c.child(rf, 0);
+                            poleK = -kVal;
+                            continue;
+                        }
+                    }
+                    numFacs.push_back(rf);
+                }
+                if (poleK >= 1) {
+                    std::vector<Expr> lCoeffs;
+                    extractPolyInVar(c, linBase, var, 1, lCoeffs);
+                    const Expr numExpr =
+                        numFacs.empty() ? c.one() : c.mul(numFacs);
+                    Expr F;
+                    if (integrateLinearLogOverLinearPole(
+                            c, logArg, a, b, linBase, lCoeffs[1], lCoeffs[0],
+                            poleK, numExpr, var, budget, F) &&
+                        certifySpecialIntegral(c, F, f, var)) {
+                        out.F = c.simplify(F);
+                        out.status = RationalIntegral::Status::ProvedSymbolic;
+                        return out;
+                    }
+                }
+
+                // Partial-fraction decomposition when R(x) = N(x)/D(x) in Q(x)
+                // and D(x) splits completely into linear factors over Q.
+                UPoly N, D;
+                if (toRational(c, rest, var, N, D) && !D.isZero() &&
+                    D.deg() >= 1) {
+                    const UPoly gnd = UPoly::gcd(N, D);
+                    if (gnd.deg() >= 1) {
+                        UPoly qN, rN, qD, rD;
+                        UPoly::divMod(N, gnd, qN, rN);
+                        UPoly::divMod(D, gnd, qD, rD);
+                        N = qN;
+                        D = qD;
+                    }
+                    const Rational dLc = D.lc();
+                    UPoly dMonic = D;
+                    dMonic.makeMonic();
+                    N = N * UPoly({Rational(std::int64_t{1}) / dLc});
+                    UPoly qPoly, rPoly;
+                    UPoly::divMod(N, dMonic, qPoly, rPoly);
+
+                    std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+                    struct LinFactor
+                    {
+                        UPoly lin;
+                        int mult = 0;
+                        UPoly linPow;
+                    };
+                    std::vector<LinFactor> lfs;
+                    bool allLinear = !(budget && !budget->ok());
+                    for (const UPoly &ir : irreds) {
+                        if (ir.deg() != 1) {
+                            allLinear = false;
+                            break;
+                        }
+                        bool found = false;
+                        for (auto &lf : lfs) {
+                            if (lf.lin == ir) {
+                                lf.mult += 1;
+                                lf.linPow = lf.linPow * ir;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found)
+                            lfs.push_back(LinFactor{ir, 1, ir});
+                    }
+                    if (allLinear && !lfs.empty()) {
+                        std::vector<Expr> pfPieces;
+                        bool okPF = true;
+                        if (!qPoly.isZero()) {
+                            const Expr elemPart = c.mul(
+                                {toExpr(c, qPoly, var), c.func("log", logArg)});
+                            const RationalIntegral elemInt =
+                                integrate(c, elemPart, var, budget);
+                            if (!elemInt.proved())
+                                okPF = false;
+                            else
+                                pfPieces.push_back(elemInt.F);
+                        }
+                        for (std::size_t j = 0; j < lfs.size() && okPF; ++j) {
+                            UPoly mj({Rational(std::int64_t{1})});
+                            for (std::size_t i = 0; i < lfs.size(); ++i) {
+                                if (i != j)
+                                    mj = mj * lfs[i].linPow;
+                            }
+                            const UPoly invMj = UPoly::invMod(
+                                mj % lfs[j].linPow, lfs[j].linPow);
+                            const UPoly pj = (rPoly * invMj) % lfs[j].linPow;
+                            if (pj.isZero())
+                                continue;
+                            const Expr c0Expr = c.number(lfs[j].lin.coeff(0));
+                            const Expr c1Expr = c.number(lfs[j].lin.coeff(1));
+                            const Expr linExpr =
+                                c.add({c0Expr, c.mul({c1Expr, var})});
+                            const Expr numPart = toExpr(c, pj, var);
+                            Expr pieceF;
+                            if (!integrateLinearLogOverLinearPole(
+                                    c, logArg, a, b, linExpr, c1Expr, c0Expr,
+                                    lfs[j].mult, numPart, var, budget,
+                                    pieceF)) {
+                                okPF = false;
+                                break;
+                            }
+                            pfPieces.push_back(pieceF);
+                        }
+                        if (okPF) {
+                            const Expr F =
+                                pfPieces.empty() ? c.zero() : c.add(pfPieces);
+                            if (certifySpecialIntegral(c, F, f, var)) {
+                                out.F = c.simplify(F);
+                                out.status =
+                                    RationalIntegral::Status::ProvedSymbolic;
+                                return out;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4c. Bose-Einstein / Fermi-Dirac / Debye integrand:
+        //     int (p1*x + p0) / (A * exp(b*x + d) + B) dx.
+        Expr expDenom;
+        std::vector<Expr> numFacs;
+        for (const Expr &fac : factors) {
+            if (expDenom.isNull() && c.kind(fac) == NodeKind::Pow &&
+                c.child(fac, 1) == c.number(std::int64_t{-1}) &&
+                c.kind(c.child(fac, 0)) == NodeKind::Add &&
+                c.childCount(c.child(fac, 0)) == 2) {
+                expDenom = c.child(fac, 0);
+            } else {
+                numFacs.push_back(fac);
+            }
+        }
+        if (!expDenom.isNull()) {
+            const Expr numExpr = numFacs.empty() ? c.one() : c.mul(numFacs);
+            std::vector<Expr> pCoeffs;
+            if (extractPolyInVar(c, numExpr, var, 1, pCoeffs) &&
+                pCoeffs.size() == 2 && !c.isZero(pCoeffs[1])) {
+                Expr term0 = c.child(expDenom, 0);
+                Expr term1 = c.child(expDenom, 1);
+                if (mentionsVar(c, term0, var) && !mentionsVar(c, term1, var))
+                    std::swap(term0, term1);
+                if (!mentionsVar(c, term0, var) && mentionsVar(c, term1, var)) {
+                    const Expr B = term0;
+                    Expr A = c.one();
+                    Expr expArg;
+                    if (c.kind(term1) == NodeKind::Func &&
+                        c.funcName(term1) == "exp") {
+                        expArg = c.child(term1, 0);
+                    } else if (c.kind(term1) == NodeKind::Mul) {
+                        std::vector<Expr> aFacs;
+                        for (std::size_t i = 0; i < c.childCount(term1); ++i) {
+                            const Expr ch = c.child(term1, i);
+                            if (expArg.isNull() && c.kind(ch) == NodeKind::Func &&
+                                c.funcName(ch) == "exp") {
+                                expArg = c.child(ch, 0);
+                            } else {
+                                aFacs.push_back(ch);
+                            }
+                        }
+                        if (!expArg.isNull() && !aFacs.empty()) {
+                            A = aFacs.size() == 1 ? aFacs[0] : c.mul(aFacs);
+                        }
+                    }
+                    std::vector<Expr> eCoeffs;
+                    if (!expArg.isNull() && !mentionsVar(c, A, var) &&
+                        extractPolyInVar(c, expArg, var, 1, eCoeffs) &&
+                        eCoeffs.size() == 2 && !c.isZero(eCoeffs[1])) {
+                        const Expr b = eCoeffs[1];
+                        const Expr p0 = pCoeffs[0];
+                        const Expr p1 = pCoeffs[1];
+                        const Expr expNeg = c.func("exp", c.neg(expArg));
+                        const Expr u =
+                            c.simplify(c.neg(c.mul({c.div(B, A), expNeg})));
+                        const Expr oneMinusU =
+                            c.add({c.one(), c.mul({c.div(B, A), expNeg})});
+                        const Expr b2 = c.pow(b, c.number(std::int64_t{2}));
+                        const Expr f1 = c.neg(c.div(
+                            c.mul({p1,
+                                   c.add({c.mul({b, var,
+                                                 c.func("log", oneMinusU)}),
+                                          c.neg(c.func("dilog", u))})}),
+                            c.mul({B, b2})));
+                        const Expr f0 = c.isZero(p0)
+                                            ? c.zero()
+                                            : c.neg(c.div(
+                                                  c.mul({p0,
+                                                         c.func("log", oneMinusU)}),
+                                                  c.mul({B, b})));
+                        const Expr F = c.add({f1, f0});
+                        if (certifySpecialIntegral(c, F, f, var)) {
+                            out.F = F;
+                            out.status = RationalIntegral::Status::ProvedSymbolic;
+                            return out;
+                        }
+                    }
                 }
             }
         }

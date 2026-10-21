@@ -624,7 +624,9 @@ bool Ctx::evalExact(
              name == "asin" || name == "sinh" || name == "tanh" ||
              name == "asinh" || name == "atanh" || name == "erf" ||
              name == "erfi" || name == "li" || name == "Si" ||
-             name == "FresnelS" || name == "FresnelC") && a == zero) {
+             name == "FresnelS" || name == "FresnelC" || name == "dilog" ||
+             name == "Li2" || name == "polylog2") &&
+            a == zero) {
             out = zero;
             return true;
         }
@@ -930,6 +932,60 @@ double evalFresnelDouble(double x, bool isSine)
     return sgn * (0.5 + fVal * std::sin(z) - gVal * std::cos(z));
 }
 
+bool evalDilogDouble(double x, double &out)
+{
+    if (!std::isfinite(x) || x > 1.0)
+        return false;
+    if (x == 0.0) {
+        out = 0.0;
+        return true;
+    }
+    const double pi2Over6 = (kPiDouble * kPiDouble) / 6.0;
+    if (x == 1.0) {
+        out = pi2Over6;
+        return true;
+    }
+    if (x == -1.0) {
+        out = -0.5 * pi2Over6;
+        return true;
+    }
+    if (x < -1.0) {
+        double sub = 0.0;
+        if (!evalDilogDouble(1.0 / x, sub))
+            return false;
+        const double lnx = std::log(-x);
+        out = -sub - pi2Over6 - 0.5 * lnx * lnx;
+        return std::isfinite(out);
+    }
+    if (x < -0.5) {
+        double sub = 0.0;
+        if (!evalDilogDouble(x / (x - 1.0), sub))
+            return false;
+        const double ln1mx = std::log(1.0 - x);
+        out = -sub - 0.5 * ln1mx * ln1mx;
+        return std::isfinite(out);
+    }
+    if (x > 0.5) {
+        double sub = 0.0;
+        if (!evalDilogDouble(1.0 - x, sub))
+            return false;
+        out = pi2Over6 - std::log(x) * std::log(1.0 - x) - sub;
+        return std::isfinite(out);
+    }
+    double sum = 0.0;
+    double xPow = x;
+    for (int k = 1; k <= 60; ++k) {
+        const double kd = static_cast<double>(k);
+        const double contrib = xPow / (kd * kd);
+        sum += contrib;
+        if (std::abs(contrib) <= 1e-16 * std::abs(sum))
+            break;
+        xPow *= x;
+    }
+    out = sum;
+    return std::isfinite(out);
+}
+
 bool evalDoubleRec(
     const Ctx &c, Expr e,
     const std::vector<std::pair<std::string, double>> &vals,
@@ -1141,6 +1197,8 @@ bool evalDoubleRec(
             res = evalFresnelDouble(a, true);
         } else if (fn == "FresnelC") {
             res = evalFresnelDouble(a, false);
+        } else if (fn == "dilog" || fn == "Li2" || fn == "polylog2") {
+            if (!evalDilogDouble(a, res)) return false;
         } else if (fn == "gamma") {
             if (a <= 0.0 && std::floor(a) == a) return false;
             res = std::tgamma(a);

@@ -799,6 +799,39 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
         out = addSeries(c, makeConstSeries(c, f0, L), intPart);
         return true;
     }
+    if (fn == "dilog" || fn == "Li2" || fn == "polylog2") {
+        if (isZeroCoeff(c, c0)) {
+            Laurent sum = makeConstSeries(c, c.zero(), L);
+            Laurent upow = u;
+            for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                const Expr coef = c.number(
+                    Rational(BigInt(1), BigInt(k) * BigInt(k)));
+                sum = addSeries(c, sum, scaleSeries(c, upow, coef));
+                if (k + 1 <= L)
+                    upow = mulSeries(c, upow, u);
+            }
+            out = sum;
+            return true;
+        }
+        if (isZeroCoeff(c, c.add({c0, c.number(std::int64_t{-1})})))
+            return false;
+        const Laurent oneMinusA = addSeries(
+            c, makeConstSeries(c, c.one(), L),
+            scaleSeries(c, arg, c.number(std::int64_t{-1})));
+        Laurent log1mA, invA, intPart;
+        if (!evalFuncSeries(c, "log", oneMinusA, log1mA, positiveT) ||
+            !invSeries(c, arg, invA))
+            return false;
+        const Laurent dA = diffSeries(c, arg);
+        const Laurent deriv = scaleSeries(
+            c, mulSeries(c, mulSeries(c, log1mA, invA), dA),
+            c.number(std::int64_t{-1}));
+        if (!integrateSeriesZeroConst(c, deriv, intPart))
+            return false;
+        const Expr f0 = foldConst(c, c.func("dilog", c0));
+        out = addSeries(c, makeConstSeries(c, f0, L), intPart);
+        return true;
+    }
     return false;
 }
 
@@ -1181,6 +1214,15 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                 out.reason = "logarithmic integral singularity at limit point";
                 return out;
             }
+        } else if (fn == "dilog" || fn == "Li2" || fn == "polylog2") {
+            const LimitResult argLim =
+                limitDepth(c, arg, var, x0, budget, depth + 1, positiveT);
+            if (argLim.status == LimitResult::Status::Divergent) {
+                out.status = LimitResult::Status::Divergent;
+                out.poleOrder = 1;
+                out.reason = "dilogarithmic singularity at limit point";
+                return out;
+            }
         }
         if ((fn == "exp" || fn == "Ei" || fn == "erfi") && positiveT) {
             Laurent argS;
@@ -1223,6 +1265,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
         std::vector<Expr> numFactors;
         std::vector<Expr> denFactors;
         std::vector<Expr> logFactors;
+        std::vector<std::int64_t> logExps;
         for (std::size_t i = 0; i < c.childCount(f); ++i) {
             const Expr ch = c.child(f, i);
             if (c.kind(ch) == NodeKind::Pow &&
@@ -1230,24 +1273,47 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                 c.numberValue(c.child(ch, 1)).signum() < 0) {
                 denFactors.push_back(
                     c.pow(c.child(ch, 0), c.number(-c.numberValue(c.child(ch, 1)))));
-            } else if (c.kind(ch) == NodeKind::Func && c.funcName(ch) == "log") {
+            } else if (c.kind(ch) == NodeKind::Func && c.funcName(ch) == "log" &&
+                       safeSubsAndFold(c, ch, var, x0).isNull()) {
                 logFactors.push_back(ch);
+                logExps.push_back(1);
+            } else if (c.kind(ch) == NodeKind::Pow &&
+                       c.kind(c.child(ch, 0)) == NodeKind::Func &&
+                       c.funcName(c.child(ch, 0)) == "log" &&
+                       c.kind(c.child(ch, 1)) == NodeKind::Number &&
+                       safeSubsAndFold(c, c.child(ch, 0), var, x0).isNull()) {
+                const Rational &re = c.numberValue(c.child(ch, 1));
+                std::int64_t kExp = 0;
+                if (re.den() == BigInt(1) && re.num().fitsInt64(kExp) &&
+                    kExp >= 1) {
+                    logFactors.push_back(c.child(ch, 0));
+                    logExps.push_back(kExp);
+                } else {
+                    numFactors.push_back(ch);
+                }
             } else {
                 numFactors.push_back(ch);
             }
         }
-        // 0 * log(B) rewrite: A(x) * log(B(x)) = log(B(x)) / (1 / A(x))
-        // -> L'Hopital derivative ratio is (B'/B) / (-A'/A^2) = -A^2 * B' / (A' * B).
+        // 0 * log(B)^k rewrite: A(x) * log(B(x))^k = log(B(x))^k / (1 / A(x))
+        // -> L'Hopital derivative ratio is -k * A^2 * B' * log(B)^(k-1) / (A' * B).
         if (denFactors.empty() && logFactors.size() == 1 && !numFactors.empty()) {
             const Expr A = c.mul(numFactors);
             const Expr B = c.child(logFactors[0], 0);
+            const std::int64_t kExp = logExps[0];
             const Expr aAt0 = safeSubsAndFold(c, A, var, x0);
             if (!aAt0.isNull() && isZeroCoeff(c, aAt0)) {
                 const Expr dA = c.diff(A, var);
                 const Expr dB = c.diff(B, var);
                 if (!c.isZero(dA)) {
+                    const Expr logPowM1 =
+                        (kExp == 1)
+                            ? c.one()
+                            : c.pow(logFactors[0], c.number(kExp - 1));
                     const Expr lhop = c.div(
-                        c.neg(c.mul({c.pow(A, c.number(std::int64_t{2})), dB})),
+                        c.neg(c.mul({c.number(kExp),
+                                     c.pow(A, c.number(std::int64_t{2})), dB,
+                                     logPowM1})),
                         c.mul({dA, B}));
                     return limitDepth(c, lhop, var, x0, budget, depth + 1,
                                       positiveT);
@@ -1260,8 +1326,12 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
             }
         }
         if (!denFactors.empty()) {
-            for (const Expr &lf : logFactors)
-                numFactors.push_back(lf);
+            for (std::size_t i = 0; i < logFactors.size(); ++i) {
+                numFactors.push_back(
+                    logExps[i] == 1
+                        ? logFactors[i]
+                        : c.pow(logFactors[i], c.number(logExps[i])));
+            }
             const Expr N = numFactors.empty() ? c.one() : c.mul(numFactors);
             const Expr D = c.mul(denFactors);
             const Expr nAt0 = safeSubsAndFold(c, N, var, x0);
@@ -1343,6 +1413,96 @@ bool isSymbolicInfinity(const Ctx &c, Expr e, int &dirOut)
     return false;
 }
 
+// Expand asymptotic dilog(u(t)) (for u(t) -> -infinity as t -> 0+) using
+// Euler's inversion identity:
+//   dilog(u) -> -dilog(1/u) - pi^2/6 - (1/2)*log(-u)^2,
+// and split singular log(v(t)) (for v(t) ~ c0 * t^k with k != 0, c0 > 0) into:
+//   log(v(t)) -> log(c0) + k*log(t) + log(v(t) / (c0 * t^k)),
+// so canceling log(t) and log(t)^2 singularities cancel algebraically.
+Expr expandAsymptoticLogsAndDilog(Ctx &c, Expr e, Expr tSym, Budget *budget,
+                                  bool &changedOut)
+{
+    if (e.isNull() || !mentionsSymbol(c, e, tSym))
+        return e;
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Pow:
+        return c.pow(expandAsymptoticLogsAndDilog(c, c.child(e, 0), tSym,
+                                                  budget, changedOut),
+                     expandAsymptoticLogsAndDilog(c, c.child(e, 1), tSym,
+                                                  budget, changedOut));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> ch;
+        ch.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            ch.push_back(expandAsymptoticLogsAndDilog(c, c.child(e, i), tSym,
+                                                      budget, changedOut));
+        }
+        return c.kind(e) == NodeKind::Add ? c.add(ch) : c.mul(ch);
+    }
+    case NodeKind::Func: {
+        const std::string &fn = c.funcName(e);
+        const Expr arg = expandAsymptoticLogsAndDilog(c, c.child(e, 0), tSym,
+                                                      budget, changedOut);
+        if (fn == "dilog" || fn == "Li2" || fn == "polylog2") {
+            Laurent s;
+            if (computeLaurent(c, arg, tSym, c.zero(), 4, budget, s, true) &&
+                !s.coeffs.empty() && s.val < 0 &&
+                exprSign(c, s.coeffs.front()) < 0) {
+                changedOut = true;
+                const Expr invArg =
+                    c.simplify(c.pow(arg, c.number(std::int64_t{-1})));
+                const Expr negArg = c.simplify(c.neg(arg));
+                const Expr logNegArg = expandAsymptoticLogsAndDilog(
+                    c, c.func("log", negArg), tSym, budget, changedOut);
+                const Expr pi2Over6 = c.mul(
+                    {c.number(Rational(std::int64_t{1}, BigInt(6))),
+                     c.pow(c.symbol("pi"), c.number(std::int64_t{2}))});
+                const Expr halfLogSq = c.mul(
+                    {c.number(Rational(std::int64_t{1}, BigInt(2))),
+                     c.pow(logNegArg, c.number(std::int64_t{2}))});
+                return c.add({c.neg(c.func("dilog", invArg)), c.neg(pi2Over6),
+                              c.neg(halfLogSq)});
+            }
+            return c.func("dilog", arg);
+        }
+        if (fn == "log" && !(arg == tSym)) {
+            Laurent s;
+            if (computeLaurent(c, arg, tSym, c.zero(), 4, budget, s, true) &&
+                !s.coeffs.empty() && s.val != 0 &&
+                exprSign(c, s.coeffs.front()) > 0) {
+                const int k = s.val;
+                const Expr c0 = s.coeffs.front();
+                const Expr uTilde = c.simplify(c.mul(
+                    {arg, c.pow(c0, c.number(std::int64_t{-1})),
+                     c.pow(tSym, c.number(static_cast<std::int64_t>(-k)))}));
+                const Expr uAt0 = safeSubsAndFold(c, uTilde, tSym, c.zero());
+                if (!uAt0.isNull() &&
+                    isZeroCoeff(c, c.add({uAt0, c.number(std::int64_t{-1})}))) {
+                    changedOut = true;
+                    const Expr logC0 = c.simplify(c.func("log", c0));
+                    const Expr kLogT = c.mul(
+                        {c.number(static_cast<std::int64_t>(k)),
+                         c.func("log", tSym)});
+                    const Expr logUTilde =
+                        isZeroCoeff(
+                            c, c.add({uTilde, c.number(std::int64_t{-1})}))
+                            ? c.zero()
+                            : c.func("log", uTilde);
+                    return c.add({logC0, kLogT, logUTilde});
+                }
+            }
+        }
+        return c.func(fn, arg);
+    }
+    }
+    return e;
+}
+
 } // namespace
 
 LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
@@ -1361,7 +1521,12 @@ LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
     const Expr tSym = c.symbol("_t_lim");
     const std::int64_t sgn = dir >= 0 ? std::int64_t{1} : std::int64_t{-1};
     const Expr xSub = c.add({x0, c.mul({c.number(sgn), tSym})});
-    const Expr fSub = c.subs(fNorm, var, xSub);
+    Expr fSub = c.subs(fNorm, var, xSub);
+    bool changedAsym = false;
+    const Expr fAsym =
+        expandAsymptoticLogsAndDilog(c, fSub, tSym, budget, changedAsym);
+    if (changedAsym && !fAsym.isNull())
+        fSub = combineLogsForLimit(c, c.expand(fAsym));
     LimitResult res = limitDepth(c, fSub, tSym, c.zero(), budget, 0, true);
     if (res.status != LimitResult::Status::Unevaluated)
         return res;

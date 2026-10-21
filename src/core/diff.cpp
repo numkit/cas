@@ -217,6 +217,9 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                                   symbol("pi"),
                                   pow(u, number(std::int64_t{2}))})),
                  du});
+        else if (name == "dilog" || name == "Li2" || name == "polylog2")
+            result = neg(mul({func("log", add({one(), neg(u)})),
+                              pow(u, number(std::int64_t{-1})), du}));
         else {
             assert(!"diff: unsupported function");
             result = Expr();

@@ -423,6 +423,66 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 }
             }
         }
+
+        // 5. Euler dilogarithm reflection identity:
+        //    k*dilog(u) + k*dilog(v) -> k*((1/6)*pi^2 - log(u)*log(v)) when u + v == 1.
+        auto matchDilogTerm = [&](Expr t, Expr &coefOut, Expr &argOut) -> bool {
+            if (c.kind(t) == NodeKind::Func &&
+                (c.funcName(t) == "dilog" || c.funcName(t) == "Li2" ||
+                 c.funcName(t) == "polylog2")) {
+                coefOut = c.one();
+                argOut = c.child(t, 0);
+                return true;
+            }
+            if (c.kind(t) == NodeKind::Mul) {
+                std::vector<Expr> others;
+                Expr arg;
+                bool hasDilog = false;
+                for (std::size_t k = 0; k < c.childCount(t); ++k) {
+                    const Expr ch = c.child(t, k);
+                    if (!hasDilog && c.kind(ch) == NodeKind::Func &&
+                        (c.funcName(ch) == "dilog" || c.funcName(ch) == "Li2" ||
+                         c.funcName(ch) == "polylog2")) {
+                        hasDilog = true;
+                        arg = c.child(ch, 0);
+                    } else {
+                        others.push_back(ch);
+                    }
+                }
+                if (hasDilog && !others.empty()) {
+                    coefOut = others.size() == 1 ? others[0] : c.mul(others);
+                    argOut = arg;
+                    return true;
+                }
+            }
+            return false;
+        };
+        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+            Expr coefI, argI;
+            if (!matchDilogTerm(terms[i], coefI, argI) || c.isZero(argI))
+                continue;
+            for (std::size_t j = i + 1; j < terms.size() && !changed; ++j) {
+                Expr coefJ, argJ;
+                if (!matchDilogTerm(terms[j], coefJ, argJ) || c.isZero(argJ) ||
+                    !(coefI == coefJ))
+                    continue;
+                const Expr sumMinus1 = simplifyRationalExpr(
+                    c, c.add({argI, argJ, c.number(std::int64_t{-1})}));
+                if (!sumMinus1.isNull() && c.isZero(sumMinus1)) {
+                    const Expr pi2Over6 = c.mul(
+                        {c.number(Rational(std::int64_t{1}, BigInt(6))),
+                         c.pow(c.symbol("pi"), c.number(std::int64_t{2}))});
+                    const Expr eulerVal = c.add(
+                        {pi2Over6,
+                         c.neg(c.mul(
+                             {c.func("log", argI), c.func("log", argJ)}))});
+                    terms[i] = c.mul({coefI, eulerVal});
+                    terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                    changed = true;
+                    break;
+                }
+            }
+        }
     }
 
     return terms.empty() ? c.zero() : c.add(terms);
@@ -567,6 +627,26 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     // Canonicalize sqrt(u) -> u^(1/2)
     if (fn == "sqrt") {
         return c.pow(arg, c.number(Rational(std::int64_t{1}, BigInt(2))));
+    }
+
+    // Canonicalize Li2(u) / polylog2(u) -> dilog(u) and evaluate exact special values.
+    if (fn == "Li2" || fn == "polylog2") {
+        return simplifyFuncNode(c, c.func("dilog", arg));
+    }
+    if (fn == "dilog") {
+        const Expr pi2 = c.pow(c.symbol("pi"), c.number(std::int64_t{2}));
+        if (arg == c.one()) {
+            return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), pi2});
+        }
+        if (arg == c.number(std::int64_t{-1})) {
+            return c.mul({c.number(Rational(std::int64_t{-1}, BigInt(12))), pi2});
+        }
+        if (arg == c.number(Rational(std::int64_t{1}, BigInt(2)))) {
+            const Expr log2 = c.func("log", c.number(std::int64_t{2}));
+            return c.add({c.mul({c.number(Rational(std::int64_t{1}, BigInt(12))), pi2}),
+                          c.mul({c.number(Rational(std::int64_t{-1}, BigInt(2))),
+                                 c.pow(log2, c.number(std::int64_t{2}))})});
+        }
     }
 
     // Assumption-driven abs(u) simplification: abs(u) -> u for u >= 0, -u for u < 0.
@@ -845,6 +925,15 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         c.kind(c.child(arg, 1)) == NodeKind::Func &&
         c.funcName(c.child(arg, 1)) == "log") {
         return c.pow(c.child(c.child(arg, 1), 0), c.child(arg, 0));
+    }
+
+    // log(1/q) -> -log(q) for integer q > 1.
+    if (fn == "log" && c.kind(arg) == NodeKind::Number) {
+        const Rational &ra = c.numberValue(arg);
+        if (ra.num() == BigInt(1) && ra.den() > BigInt(1)) {
+            return c.neg(
+                c.func("log", c.number(Rational(ra.den(), BigInt(1)))));
+        }
     }
 
     // log(u^k) -> k * log(u) when u > 0 (and k real), or when k is an odd

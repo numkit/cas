@@ -462,6 +462,18 @@ TEST(SeriesTest, SpecialFunctionsTaylorAndLimits)
     EXPECT_TRUE(exprEq(
         c, limitAtInfinity(c, parseExpr(c, "FresnelC(x)"), x, -1).value,
         parseExpr(c, "-1/2")));
+
+    // 3. Dilogarithm Taylor series and asymptotic limits
+    const Expr tDilog = taylor(c, parseExpr(c, "dilog(x)"), x, c.zero(), 4);
+    EXPECT_TRUE(
+        exprEq(c, tDilog, parseExpr(c, "x + 1/4*x^2 + 1/9*x^3 + 1/16*x^4")));
+    EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "dilog(-x)"), x, +1).status,
+              LimitResult::Status::Divergent);
+    EXPECT_TRUE(exprEq(
+        c,
+        limitAtInfinity(c, parseExpr(c, "dilog(-x) + 1/2*log(x)^2"), x, +1)
+            .value,
+        parseExpr(c, "-1/6*pi^2")));
 }
 
 TEST(SeriesTest, SymbolicResiduesAndResidueSumTheorem)

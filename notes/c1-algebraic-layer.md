@@ -423,6 +423,11 @@
     (`rref`, `rank`, `lu` ($PA = LU$), `gramSchmidt` / `qr` и жорданова нормальная форма `jordanForm`
     с сертификатом $PJ = AP$).
 53. ✅ Релизная отсечка `v0.5.0` (Эшелон 5 завершён: `CHANGELOG.md`, `CMakeLists.txt` `VERSION 0.5.0`, `README.md`, `AGENTS.md`, `tools/vendor_sync.py`, 264/264 тестов Release за 27.3 с, тег `v0.5.0`).
+54. ✅ (v0.6-пул, Эшелон 6) Дилогарифм Спенса $\operatorname{Li}_2$ (`dilog`) сквозь всё ядро (`diff`, `evalExact`/`evalDouble`, `simplify`, `taylor`/`laurent`/`limitAtInfinity`, интегрирование логарифмически-рациональных и Бозе–Ферми подынтегральных функций $\int \frac{P(x)\log(ax+b)}{(cx+d)^k}\,dx$, $\int \log(1 + a e^{bx})\,dx$, $\int \frac{x}{e^{bx}\pm 1}\,dx$ с сертификатом $D(F) \equiv f$ и определённые интегралы Эйлера–Базеля в `definiteIntegrate`).
+55. ⬜ (v0.6-пул, Эшелон 6) Символьное суммирование рядов и конечных сумм `symsum(c, f, var, a, b)` (`core/series` + CLI `nkcas symsum`): формула Фаульхабера–Бернулли $\sum_{k=a}^b P(k)$, геометрические и арифметико-геометрические суммы $\sum P(k)r^k$, рациональный телескопинг Госпера / разложение на простейшие дроби и классические бесконечные ряды ($\zeta(2k)$, знакопеременные ряды Дирихле–Лейбница, экспоненциальные ряды) с конечно-разностным сертификатом $S(n) - S(n-1) \equiv f(n)$.
+56. ⬜ (v0.6-пул, Эшелон 6) Уравнения Эйлера–Коши, уравнения в полных дифференциалах с интегрирующим множителем и линейные ОДУ $N$-го порядка (`dsolve2EulerCauchy`, расширение `dsolve1`, `dsolveNLinear` / `dsolveNLinearIVP` в `ode/dsolve`).
+57. ⬜ (v0.6-пул, Эшелон 6) Аппроксимации Паде `pade(c, f, var, x0, m, n)` с сертификатом совпадения ряда Тейлора до порядка $m+n$ и многомерный ряд Тейлора `mtaylor` (`core/series` + CLI `nkcas pade`).
+58. ⬜ Релизная отсечка `v0.6.0` (Эшелон 6 завершён).
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
 
@@ -2639,3 +2644,22 @@ MATLAB Symbolic Math Toolbox (три эшелона):
 - Обновлены `CMakeLists.txt` (`VERSION 0.5.0`), `CHANGELOG.md`, `README.md` и `AGENTS.md`.
 - Полный тест-сьют Release: **264/264 тестов в 74 сьютах пройдены за 27.3 с** (0 провалов, 0 отключённых гардов).
 - Выставлен аннотированный тег `v0.5.0` и синхронизирован с `git@github.com:numkit/cas.git`.
+
+
+## 2026-10-21: Реализация пункта 54 — Дилогарифм Спенса $\operatorname{Li}_2$ (`dilog`) и полилогарифмическое интегрирование
+
+Реализован первый пакет Эшелона 6 (пул `v0.6.0`):
+
+1. **Ядро (`diff`, `evalExact`, `evalDouble`, `simplify`, `series`)**:
+   - Производная `dilog(u)` (и синонимов `Li2`, `polylog2`, канонизируемых к `dilog`): $\frac{d}{dx}\operatorname{dilog}(u) = -\frac{\log(1 - u)}{u}u'$.
+   - Точные и табличные значения в `evalExact` и `simplifyFuncNode`: $\operatorname{dilog}(0) = 0$, $\operatorname{dilog}(1) = \frac{\pi^2}{6}$, $\operatorname{dilog}(-1) = -\frac{\pi^2}{12}$, $\operatorname{dilog}(1/2) = \frac{\pi^2}{12} - \frac{1}{2}\log^2(2)$, а также канонизация $\log(1/q) \to -\log(q)$ для целых $q > 1$.
+   - В `simplifyAddNode` добавлено тождество отражения Эйлера: $k\operatorname{dilog}(u) + k\operatorname{dilog}(1 - u) \to k\left(\frac{\pi^2}{6} - \log(u)\log(1 - u)\right)$.
+   - Численное вычисление `evalDilogDouble(x)` на $(-\infty, 1]$ сведением областей $x < -1$ (инверсия Эйлера), $x \in (-1, -0.5)$ (тождество Ландена) и $x \in (0.5, 1)$ (отражение Эйлера) к быстро сходящемуся степенному ряду $\sum_{k=1}^{60} y^k / k^2$ на $[-0.5, 0.5]$.
+   - В `evalFuncSeries` добавлено разложение $\operatorname{dilog}(u) = \sum_{k=1}^L \frac{u^k}{k^2}$ при $c_0 = 0$ и почленное интегрирование $-\frac{\log(1-A)}{A}A'$ вокруг $c_0 \ne 0, 1$.
+   - В `limitOneSided` добавлено асимптотическое раскрытие `expandAsymptoticLogsAndDilog` при $t \to 0^+$: инверсия $\operatorname{dilog}(u) \to -\operatorname{dilog}(1/u) - \frac{\pi^2}{6} - \frac{1}{2}\log^2(-u)$ при $u(t) \to -\infty$ и выделение сингулярной части $\log(c_0 t^k \tilde{u}) \to \log(c_0) + k\log(t) + \log(\tilde{u})$, благодаря чему квадратичные полюса $\log^2(t)$ сокращаются алгебраически до взятия предела, а в `limitDepth` поддержана форма Лопиталя $A(x)\log^k(B(x))$ при $A(x_0) = 0$.
+
+2. **Символьное и определённое интегрирование (`src/integrate/ratint.cpp`)**:
+   - Прямой паттерн логарифмической производной $\int g(x)\log(1 - u(x))\,dx = -q\operatorname{dilog}(u(x))$ при $\frac{\partial}{\partial x}\!\left(\frac{g(x)u(x)}{u'(x)}\right) = 0$ (покрывает $\int \log(1 + a e^{bx+d})\,dx$, $\int \frac{\log(1 + a x^m)}{x}\,dx$ и др.).
+   - Интегрирование рационально-логарифмических функций $\int \frac{P(x)\log(ax+b)}{(c_1 x + c_0)^k}\,dx$ и $\int \frac{N(x)}{D(x)}\log(ax+b)\,dx$ при распадении $D(x)$ на линейные множители над $\mathbb{Q}$ (`factorOverQ` + `invMod`).
+   - Интегралы Бозе–Эйнштейна / Ферми–Дирака / Дебая $\int \frac{p_1 x + p_0}{A e^{bx+d} + B}\,dx$ в представлении через $e^{-(bx+d)}$, свободном от неопределённости $\infty - \infty$ на $+\infty$.
+   - Все первообразные проходят символьный сертификат $D(F) \equiv f$, а `definiteIntegrate` вычисляет в замкнутом виде классические интегралы Эйлера–Базеля и Бозе–Ферми ($\int_0^1 \frac{\log(1\pm x)}{x}\,dx$, $\int_0^1 \frac{\log(x)}{1\pm x}\,dx$, $\int_0^\infty \frac{\log(x)}{x^2-1}\,dx = \frac{\pi^2}{4}$, $\int_0^\infty \frac{\log(x)}{(x+1)(x+2)}\,dx = \frac{1}{2}\log^2(2)$, $\int_0^\infty \frac{x}{e^x \pm 1}\,dx$).

@@ -1732,6 +1732,98 @@ TEST_F(RatIntTest, ContourDefiniteIntegralsUnitCircleAndJordan)
     EXPECT_EQ(divUc.status, numkit::cas::DefiniteIntegral::Status::Divergent);
 }
 
+TEST_F(RatIntTest, DilogarithmIdentitiesIndefiniteAndDefinite)
+{
+    // 1. Exact special values, Euler reflection identity, and evalDouble
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "dilog(0)")), c.zero());
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "dilog(1)")),
+              numkit::cas::parseExpr(c, "1/6*pi^2"));
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "Li2(-1)")),
+              numkit::cas::parseExpr(c, "-1/12*pi^2"));
+    EXPECT_EQ(c.simplify(numkit::cas::parseExpr(c, "dilog(1/2)")),
+              numkit::cas::parseExpr(c, "1/12*pi^2 - 1/2*log(2)^2"));
+    EXPECT_EQ(
+        c.simplify(numkit::cas::parseExpr(
+            c, "dilog(x) + dilog(1 - x) + log(x)*log(1 - x) - 1/6*pi^2")),
+        c.zero());
+
+    double dVal = 0.0;
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "dilog(1/2)"), {}, dVal));
+    EXPECT_NEAR(dVal, 0.5822405264650125, 1e-13);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "dilog(3/4)"), {}, dVal));
+    EXPECT_NEAR(dVal, 0.9784693929303061, 1e-13);
+    ASSERT_TRUE(c.evalDouble(numkit::cas::parseExpr(c, "dilog(-2)"), {}, dVal));
+    EXPECT_NEAR(dVal, -1.4367463668836809, 1e-13);
+
+    // 2. Indefinite dilogarithm integrals with symbolic certificate D(F) == f
+    const char *indefCases[] = {
+        "log(1 + x)/x",
+        "log(1 - x)/x",
+        "log(1 + 3*x)/x",
+        "log(x)/(1 - x)",
+        "log(x)/(1 + x)",
+        "log(2*x + 3)/(x + 1)",
+        "(x + 2)*log(1 + x)/x^2",
+        "log(x)/(x^2 - 1)",
+        "log(x)/((x + 1)*(x + 2))",
+        "log(1 + x^2)/x",
+        "log(1 - x^3)/x",
+        "log(1 + exp(x))",
+        "log(1 + 2*exp(-3*x))",
+        "x/(exp(x) + 1)",
+        "x/(exp(x) - 1)",
+        "(2*x + 1)/(exp(3*x) + 2)",
+    };
+    for (const char *src : indefCases) {
+        const Expr f = numkit::cas::parseExpr(c, src);
+        const numkit::cas::RationalIntegral r = numkit::cas::integrate(c, f, x);
+        ASSERT_TRUE(r.proved()) << "failed to integrate: " << src
+                                << " (" << r.reason << ")";
+        const Expr diffErr = c.simplify(c.add({c.diff(r.F, x), c.neg(f)}));
+        EXPECT_TRUE(!diffErr.isNull() && c.isZero(diffErr))
+            << "certificate failed for " << src << ": F = " << c.toString(r.F)
+            << ", diffErr = " << c.toString(diffErr);
+    }
+
+    // 3. Classical Euler-Basel and Bose-Fermi definite integrals
+    struct DefCase
+    {
+        const char *f;
+        const char *a;
+        const char *b;
+        const char *expected;
+    };
+    const DefCase defCases[] = {
+        {"log(1 + x)/x", "0", "1", "1/12*pi^2"},
+        {"log(1 - x)/x", "0", "1", "-1/6*pi^2"},
+        {"log(x)/(1 - x)", "0", "1", "-1/6*pi^2"},
+        {"log(x)/(1 + x)", "0", "1", "-1/12*pi^2"},
+        {"log(1 - x)/x", "0", "1/2", "-1/12*pi^2 + 1/2*log(2)^2"},
+        {"log(1 + x^2)/x", "0", "1", "1/24*pi^2"},
+        {"log(x)/(x^2 - 1)", "0", "1", "1/8*pi^2"},
+        {"log(x)/(x^2 - 1)", "0", "inf", "1/4*pi^2"},
+        {"log(x)/((x + 1)*(x + 2))", "0", "inf", "1/2*log(2)^2"},
+        {"x/(exp(x) + 1)", "0", "inf", "1/12*pi^2"},
+        {"x/(exp(x) - 1)", "0", "inf", "1/6*pi^2"},
+    };
+    for (const auto &tc : defCases) {
+        const Expr f = numkit::cas::parseExpr(c, tc.f);
+        const Expr a = numkit::cas::parseExpr(c, tc.a);
+        const Expr b = numkit::cas::parseExpr(c, tc.b);
+        const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
+        const numkit::cas::DefiniteIntegral r =
+            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        ASSERT_TRUE(r.proved())
+            << "definiteIntegrate failed for " << tc.f << " on [" << tc.a
+            << ", " << tc.b << "]: " << r.reason;
+        EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
+            << "for " << tc.f << " on [" << tc.a << ", " << tc.b
+            << "]: got " << c.toString(r.value) << ", expected "
+            << c.toString(expVal);
+    }
+}
+
+
 
 
 

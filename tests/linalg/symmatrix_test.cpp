@@ -474,5 +474,224 @@ TEST(SymMatrixTest, MatrixExponentialIdentities)
     }
 }
 
+TEST(SymMatrixTest, RrefRankAndLUDecomposition)
+{
+    Ctx c;
+
+    // 1. RREF and rank on rank-2 3x4 matrix
+    {
+        const SymMatrix A = parseMat(
+            c, 3, 4,
+            {"1", "2", "1", "1",
+             "2", "4", "2", "2",
+             "1", "2", "3", "4"});
+        std::vector<std::size_t> pivs;
+        const SymMatrix R = rref(c, A, &pivs);
+        ASSERT_FALSE(R.empty());
+        EXPECT_EQ(rank(c, A), 2u);
+        ASSERT_EQ(pivs.size(), 2u);
+        EXPECT_EQ(pivs[0], 0u);
+        EXPECT_EQ(pivs[1], 2u);
+        const SymMatrix wantR = parseMat(
+            c, 3, 4,
+            {"1", "2", "0", "-1/2",
+             "0", "0", "1", "3/2",
+             "0", "0", "0", "0"});
+        EXPECT_TRUE(matEq(c, R, wantR));
+    }
+
+    // 2. Pivoted LU decomposition on matrix with zero leading entry:
+    //    [0, 2, 1; 1, 1, 2; 2, 3, 1]
+    {
+        const SymMatrix A = parseMat(
+            c, 3, 3,
+            {"0", "2", "1",
+             "1", "1", "2",
+             "2", "3", "1"});
+        const LUDecomposition d = lu(c, A);
+        ASSERT_TRUE(d.proved()) << d.reason;
+        EXPECT_TRUE(matEq(c, d.P.mul(c, A), d.L.mul(c, d.U)));
+        // det(A) = sign * U(0,0) * U(1,1) * U(2,2)
+        const Expr detFromLU = c.mul(
+            {c.number(d.sign), d.U.at(0, 0), d.U.at(1, 1), d.U.at(2, 2)});
+        EXPECT_EQ(c.simplify(c.add({detFromLU, c.neg(det(c, A))})), c.zero());
+    }
+
+    // 3. Symbolic LU decomposition: [a, b; c, d]
+    {
+        const SymMatrix A = parseMat(c, 2, 2, {"a", "b", "c", "d"});
+        const LUDecomposition d = lu(c, A);
+        ASSERT_TRUE(d.proved()) << d.reason;
+        EXPECT_TRUE(matEq(c, d.P.mul(c, A), d.L.mul(c, d.U)));
+    }
+
+    // 4. Property: 50 random 3x4 and 4x3 integer matrices satisfy P * A == L * U
+    std::mt19937_64 rng(0x4C5550524F50ULL);
+    std::uniform_int_distribution<int> entryDist(-4, 4);
+    for (int iter = 0; iter < 50; ++iter) {
+        const std::size_t rows = (iter % 2 == 0) ? 3 : 4;
+        const std::size_t cols = (iter % 2 == 0) ? 4 : 3;
+        SymMatrix M(rows, cols);
+        for (std::size_t r = 0; r < rows; ++r)
+            for (std::size_t j = 0; j < cols; ++j)
+                M.at(r, j) = c.number(entryDist(rng));
+        const LUDecomposition d = lu(c, M);
+        ASSERT_TRUE(d.proved()) << "iter " << iter << ": " << d.reason;
+        EXPECT_TRUE(matEq(c, d.P.mul(c, M), d.L.mul(c, d.U)));
+    }
+}
+
+TEST(SymMatrixTest, GramSchmidtAndQRDecomposition)
+{
+    Ctx c;
+
+    // 1. Classical 3x3 matrix with integer column norms (3-4-5 / 1-2-2):
+    //    A = [12, -51, 4; 6, 167, -68; -4, 24, -41]
+    {
+        const SymMatrix A = parseMat(
+            c, 3, 3,
+            {"12", "-51", "4",
+             "6", "167", "-68",
+             "-4", "24", "-41"});
+        const QRDecomposition d = qr(c, A);
+        ASSERT_TRUE(d.proved()) << d.reason;
+        EXPECT_TRUE(matEq(c, d.Q.mul(c, d.R), A));
+        EXPECT_TRUE(matEq(c, d.Q.transpose().mul(c, d.Q), SymMatrix::eye(c, 3)));
+        EXPECT_EQ(d.R.at(0, 0), c.number(14));
+        EXPECT_EQ(d.R.at(1, 1), c.number(175));
+        EXPECT_EQ(d.R.at(2, 2), c.number(35));
+    }
+
+    // 2. Rectangular 3x2 matrix with radical norms: A = [1, 1; 1, 0; 0, 1]
+    {
+        const SymMatrix A = parseMat(
+            c, 3, 2,
+            {"1", "1",
+             "1", "0",
+             "0", "1"});
+        const QRDecomposition d = qr(c, A);
+        ASSERT_TRUE(d.proved()) << d.reason;
+        for (std::size_t r = 0; r < 3; ++r) {
+            for (std::size_t j = 0; j < 2; ++j) {
+                const Expr diffEntry =
+                    c.add({d.Q.mul(c, d.R).at(r, j), c.neg(A.at(r, j))});
+                EXPECT_EQ(c.simplify(diffEntry), c.zero());
+            }
+        }
+        const SymMatrix QtQ = d.Q.transpose().mul(c, d.Q);
+        for (std::size_t i = 0; i < 2; ++i) {
+            for (std::size_t j = 0; j < 2; ++j) {
+                const Expr want = (i == j) ? c.one() : c.zero();
+                EXPECT_EQ(c.simplify(c.add({QtQ.at(i, j), c.neg(want)})),
+                          c.zero());
+            }
+        }
+    }
+
+    // 3. gramSchmidt drops linearly dependent columns
+    {
+        const SymMatrix v1 = SymMatrix::column({c.one(), c.one(), c.zero()});
+        const SymMatrix v2 = SymMatrix::column({c.number(2), c.number(2), c.zero()});
+        const SymMatrix v3 = SymMatrix::column({c.one(), c.zero(), c.one()});
+        const std::vector<SymMatrix> ortho =
+            gramSchmidt(c, {v1, v2, v3}, false);
+        ASSERT_EQ(ortho.size(), 2u);
+        const SymMatrix ip = ortho[0].transpose().mul(c, ortho[1]);
+        EXPECT_EQ(c.simplify(ip.at(0, 0)), c.zero());
+    }
+}
+
+TEST(SymMatrixTest, JordanCanonicalForm)
+{
+    Ctx c;
+
+    // 1. Diagonalizable 2x2 matrix: [4, 1; 2, 3] -> eigenvalues 2, 5
+    {
+        const SymMatrix A = parseMat(c, 2, 2, {"4", "1", "2", "3"});
+        const JordanDecomposition jd = jordanForm(c, A);
+        ASSERT_TRUE(jd.proved()) << jd.reason;
+        EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
+        EXPECT_TRUE(matEq(c, jd.P.mul(c, jd.PInv), SymMatrix::eye(c, 2)));
+        EXPECT_EQ(jd.J.at(0, 0), c.number(2));
+        EXPECT_EQ(jd.J.at(1, 1), c.number(5));
+        EXPECT_EQ(jd.J.at(0, 1), c.zero());
+    }
+
+    // 2. Defective 2x2 matrix: [3, 1; -1, 1] -> double eigenvalue 2, single 2x2 Jordan block
+    {
+        const SymMatrix A = parseMat(c, 2, 2, {"3", "1", "-1", "1"});
+        const JordanDecomposition jd = jordanForm(c, A);
+        ASSERT_TRUE(jd.proved()) << jd.reason;
+        EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
+        EXPECT_TRUE(matEq(c, jd.P.mul(c, jd.PInv), SymMatrix::eye(c, 2)));
+        EXPECT_EQ(jd.J.at(0, 0), c.number(2));
+        EXPECT_EQ(jd.J.at(0, 1), c.one());
+        EXPECT_EQ(jd.J.at(1, 0), c.zero());
+        EXPECT_EQ(jd.J.at(1, 1), c.number(2));
+    }
+
+    // 3. Defective 3x3 matrix with a single 3x3 Jordan block at lambda = 2:
+    //    P * [2, 1, 0; 0, 2, 1; 0, 0, 2] * P^(-1)
+    {
+        const SymMatrix P0 = parseMat(
+            c, 3, 3,
+            {"1", "1", "0",
+             "0", "1", "1",
+             "1", "0", "1"});
+        const SymMatrix J0 = parseMat(
+            c, 3, 3,
+            {"2", "1", "0",
+             "0", "2", "1",
+             "0", "0", "2"});
+        const SymMatrix A = P0.mul(c, J0).mul(c, inv(c, P0));
+        const JordanDecomposition jd = jordanForm(c, A);
+        ASSERT_TRUE(jd.proved()) << jd.reason;
+        EXPECT_TRUE(matEq(c, jd.J, J0));
+        EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
+    }
+
+    // 4. Defective 3x3 matrix with mixed (2 + 1) Jordan blocks at the SAME eigenvalue lambda = 3:
+    //    J0 = [3, 1, 0; 0, 3, 0; 0, 0, 3]
+    {
+        const SymMatrix P0 = parseMat(
+            c, 3, 3,
+            {"1", "2", "1",
+             "0", "1", "1",
+             "1", "1", "2"});
+        const SymMatrix J0 = parseMat(
+            c, 3, 3,
+            {"3", "1", "0",
+             "0", "3", "0",
+             "0", "0", "3"});
+        const SymMatrix A = P0.mul(c, J0).mul(c, inv(c, P0));
+        const JordanDecomposition jd = jordanForm(c, A);
+        ASSERT_TRUE(jd.proved()) << jd.reason;
+        EXPECT_TRUE(matEq(c, jd.J, J0));
+        EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
+    }
+
+    // 5. Defective 4x4 matrix with two 2x2 Jordan blocks at the SAME eigenvalue lambda = -1:
+    //    J0 = [-1, 1, 0, 0; 0, -1, 0, 0; 0, 0, -1, 1; 0, 0, 0, -1]
+    {
+        const SymMatrix P0 = parseMat(
+            c, 4, 4,
+            {"1", "1", "0", "0",
+             "0", "1", "1", "0",
+             "0", "0", "1", "1",
+             "1", "0", "0", "2"});
+        const SymMatrix J0 = parseMat(
+            c, 4, 4,
+            {"-1", "1", "0", "0",
+             "0", "-1", "0", "0",
+             "0", "0", "-1", "1",
+             "0", "0", "0", "-1"});
+        const SymMatrix A = P0.mul(c, J0).mul(c, inv(c, P0));
+        const JordanDecomposition jd = jordanForm(c, A);
+        ASSERT_TRUE(jd.proved()) << jd.reason;
+        EXPECT_TRUE(matEq(c, jd.J, J0));
+        EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

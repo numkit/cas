@@ -1245,4 +1245,522 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
     return SymMatrix();
 }
 
+SymMatrix rref(Ctx &c, const SymMatrix &A,
+               std::vector<std::size_t> *pivotColsOut, Budget *budget)
+{
+    if (A.empty()) {
+        if (pivotColsOut)
+            pivotColsOut->clear();
+        return SymMatrix();
+    }
+    SymMatrix M = A;
+    std::vector<std::size_t> pivotCols;
+    if (!computeRREF(c, M, A.cols(), pivotCols, budget))
+        return SymMatrix();
+    if (pivotColsOut)
+        *pivotColsOut = std::move(pivotCols);
+    return M;
+}
+
+std::size_t rank(Ctx &c, const SymMatrix &A, Budget *budget)
+{
+    if (A.empty())
+        return 0;
+    SymMatrix M = A;
+    std::vector<std::size_t> pivotCols;
+    if (!computeRREF(c, M, A.cols(), pivotCols, budget))
+        return 0;
+    return pivotCols.size();
+}
+
+LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
+{
+    LUDecomposition out;
+    if (A.empty()) {
+        out.reason = "empty matrix in lu";
+        return out;
+    }
+    const std::size_t m = A.rows();
+    const std::size_t n = A.cols();
+    if (!checkLinalgBudget(c, budget)) {
+        out.reason = "budget exhausted in lu";
+        return out;
+    }
+
+    SymMatrix U = A;
+    for (std::size_t r = 0; r < m; ++r)
+        for (std::size_t j = 0; j < n; ++j)
+            U.at(r, j) = normLinalg(c, U.at(r, j), budget);
+
+    SymMatrix L = SymMatrix::zeros(c, m, m);
+    std::vector<std::size_t> perm(m);
+    for (std::size_t i = 0; i < m; ++i)
+        perm[i] = i;
+    int sign = 1;
+
+    const std::size_t steps = std::min(m, n);
+    for (std::size_t k = 0; k < steps; ++k) {
+        if (!checkLinalgBudget(c, budget)) {
+            out.reason = "budget exhausted in lu";
+            return out;
+        }
+        std::size_t pivotRow = m;
+        std::size_t bestCost = static_cast<std::size_t>(-1);
+        for (std::size_t r = k; r < m; ++r) {
+            const Expr cand = U.at(r, k);
+            if (!isZeroLinalg(c, cand, budget)) {
+                const std::size_t cost = c.exprCost(cand);
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    pivotRow = r;
+                }
+            } else {
+                U.at(r, k) = c.zero();
+            }
+        }
+        if (pivotRow == m)
+            continue;
+
+        if (pivotRow != k) {
+            for (std::size_t j = 0; j < n; ++j)
+                std::swap(U.at(k, j), U.at(pivotRow, j));
+            for (std::size_t j = 0; j < k; ++j)
+                std::swap(L.at(k, j), L.at(pivotRow, j));
+            std::swap(perm[k], perm[pivotRow]);
+            sign = -sign;
+        }
+
+        const Expr pivot = U.at(k, k);
+        const Expr invPivot = c.pow(pivot, c.number(std::int64_t{-1}));
+
+        for (std::size_t r = k + 1; r < m; ++r) {
+            if (!checkLinalgBudget(c, budget)) {
+                out.reason = "budget exhausted in lu";
+                return out;
+            }
+            const Expr entry = U.at(r, k);
+            if (isZeroLinalg(c, entry, budget)) {
+                U.at(r, k) = c.zero();
+                L.at(r, k) = c.zero();
+                continue;
+            }
+            L.at(r, k) = normLinalg(c, c.mul({entry, invPivot}), budget);
+            U.at(r, k) = c.zero();
+            for (std::size_t j = k + 1; j < n; ++j) {
+                const Expr crossNum = c.expand(
+                    c.add({c.mul({pivot, U.at(r, j)}),
+                           c.neg(c.mul({entry, U.at(k, j)}))}));
+                if (isZeroLinalg(c, crossNum, budget)) {
+                    U.at(r, j) = c.zero();
+                } else {
+                    U.at(r, j) =
+                        normLinalg(c, c.mul({crossNum, invPivot}), budget);
+                }
+            }
+        }
+    }
+
+    for (std::size_t i = 0; i < m; ++i)
+        L.at(i, i) = c.one();
+
+    SymMatrix P = SymMatrix::zeros(c, m, m);
+    for (std::size_t i = 0; i < m; ++i)
+        P.at(i, perm[i]) = c.one();
+
+    // Certificate: verify P * A == L * U, L unit lower-triangular, U upper-triangular.
+    const SymMatrix PA = P.mul(c, A);
+    const SymMatrix LU = L.mul(c, U);
+    for (std::size_t r = 0; r < m; ++r) {
+        for (std::size_t j = 0; j < m; ++j) {
+            if (r < j && !isZeroLinalg(c, L.at(r, j), budget)) {
+                out.reason = "L is not lower triangular";
+                return out;
+            }
+            if (r == j &&
+                !isZeroLinalg(c, c.add({L.at(r, j), c.neg(c.one())}), budget)) {
+                out.reason = "L is not unit diagonal";
+                return out;
+            }
+        }
+        for (std::size_t j = 0; j < n; ++j) {
+            if (!checkLinalgBudget(c, budget)) {
+                out.reason = "budget exhausted during lu verification";
+                return out;
+            }
+            if (r > j && !isZeroLinalg(c, U.at(r, j), budget)) {
+                out.reason = "U is not upper triangular";
+                return out;
+            }
+            const Expr diffEntry = c.add({PA.at(r, j), c.neg(LU.at(r, j))});
+            if (!isZeroLinalg(c, diffEntry, budget)) {
+                out.reason = "LU decomposition certificate P*A == L*U failed";
+                return out;
+            }
+        }
+    }
+
+    out.L = std::move(L);
+    out.U = std::move(U);
+    out.P = std::move(P);
+    out.perm = std::move(perm);
+    out.sign = sign;
+    out.status = LUDecomposition::Status::ProvedSymbolic;
+    return out;
+}
+
+namespace {
+
+Expr dotCols(Ctx &c, const SymMatrix &u, const SymMatrix &v, Budget *budget)
+{
+    std::vector<Expr> terms;
+    terms.reserve(u.rows());
+    for (std::size_t r = 0; r < u.rows(); ++r)
+        terms.push_back(c.mul({u.at(r, 0), v.at(r, 0)}));
+    return normLinalg(c, terms.empty() ? c.zero() : c.add(terms), budget);
+}
+
+} // namespace
+
+std::vector<SymMatrix> gramSchmidt(Ctx &c, const std::vector<SymMatrix> &cols,
+                                   bool normalize, Budget *budget)
+{
+    if (cols.empty())
+        return {};
+    const std::size_t m = cols[0].rows();
+    if (m == 0)
+        return {};
+    for (const auto &v : cols) {
+        if (v.rows() != m || v.cols() != 1)
+            return {};
+    }
+
+    std::vector<SymMatrix> orthoCols;
+    std::vector<Expr> normSq;
+    for (const auto &a : cols) {
+        if (!checkLinalgBudget(c, budget))
+            return {};
+        SymMatrix u = a;
+        for (std::size_t i = 0; i < orthoCols.size(); ++i) {
+            const Expr projNum = dotCols(c, orthoCols[i], a, budget);
+            if (isZeroLinalg(c, projNum, budget))
+                continue;
+            const Expr coeff =
+                normLinalg(c, c.div(projNum, normSq[i]), budget);
+            u = u.sub(c, orthoCols[i].scale(c, coeff));
+        }
+        for (std::size_t r = 0; r < m; ++r)
+            u.at(r, 0) = normLinalg(c, u.at(r, 0), budget);
+        const Expr d = dotCols(c, u, u, budget);
+        if (isZeroLinalg(c, d, budget))
+            continue; // linearly dependent column
+        orthoCols.push_back(std::move(u));
+        normSq.push_back(d);
+    }
+
+    if (!normalize)
+        return orthoCols;
+
+    const Expr negHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+    std::vector<SymMatrix> out;
+    out.reserve(orthoCols.size());
+    for (std::size_t i = 0; i < orthoCols.size(); ++i) {
+        if (c.isAssumedNegative(normSq[i]))
+            return {};
+        const Expr invNorm =
+            simplify(c, c.pow(normSq[i], negHalf), budget);
+        SymMatrix q = orthoCols[i].scale(c, invNorm);
+        for (std::size_t r = 0; r < m; ++r)
+            q.at(r, 0) = simplify(c, q.at(r, 0), budget);
+        out.push_back(std::move(q));
+    }
+    return out;
+}
+
+QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
+{
+    QRDecomposition out;
+    if (A.empty() || A.rows() < A.cols()) {
+        out.reason = "qr requires non-empty matrix with rows >= cols";
+        return out;
+    }
+    const std::size_t m = A.rows();
+    const std::size_t n = A.cols();
+
+    std::vector<SymMatrix> aCols(n, SymMatrix(m, 1, c.zero()));
+    for (std::size_t j = 0; j < n; ++j)
+        for (std::size_t r = 0; r < m; ++r)
+            aCols[j].at(r, 0) = normLinalg(c, A.at(r, j), budget);
+
+    // Unnormalized Gram-Schmidt basis u_0, ..., u_{n-1} and squared norms d_i = <u_i, u_i>.
+    std::vector<SymMatrix> uCols;
+    std::vector<Expr> dNorms;
+    SymMatrix projMat = SymMatrix::zeros(c, n, n); // projMat(i, j) = <u_i, a_j> for i < j
+
+    for (std::size_t j = 0; j < n; ++j) {
+        if (!checkLinalgBudget(c, budget)) {
+            out.reason = "budget exhausted in qr";
+            return out;
+        }
+        SymMatrix u = aCols[j];
+        for (std::size_t i = 0; i < j; ++i) {
+            const Expr ip = dotCols(c, uCols[i], aCols[j], budget);
+            projMat.at(i, j) = ip;
+            if (!isZeroLinalg(c, ip, budget)) {
+                const Expr coeff = normLinalg(c, c.div(ip, dNorms[i]), budget);
+                u = u.sub(c, uCols[i].scale(c, coeff));
+            }
+        }
+        for (std::size_t r = 0; r < m; ++r)
+            u.at(r, 0) = normLinalg(c, u.at(r, 0), budget);
+        const Expr d = dotCols(c, u, u, budget);
+        if (isZeroLinalg(c, d, budget) || c.isAssumedNegative(d)) {
+            out.reason = "columns of A are linearly dependent or have non-positive norm";
+            return out;
+        }
+        uCols.push_back(std::move(u));
+        dNorms.push_back(d);
+    }
+
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr negHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+    SymMatrix Q = SymMatrix::zeros(c, m, n);
+    SymMatrix R = SymMatrix::zeros(c, n, n);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const Expr sqrtDi = simplify(c, c.pow(dNorms[i], half), budget);
+        const Expr invSqrtDi = simplify(c, c.pow(dNorms[i], negHalf), budget);
+        R.at(i, i) = sqrtDi;
+        for (std::size_t r = 0; r < m; ++r)
+            Q.at(r, i) = simplify(c, c.mul({uCols[i].at(r, 0), invSqrtDi}), budget);
+        for (std::size_t j = i + 1; j < n; ++j) {
+            if (!c.isZero(projMat.at(i, j))) {
+                R.at(i, j) =
+                    simplify(c, c.mul({projMat.at(i, j), invSqrtDi}), budget);
+            }
+        }
+    }
+
+    // Certificate: verify Q * R == A and Q^T * Q == I_n.
+    const SymMatrix QR = Q.mul(c, R);
+    for (std::size_t r = 0; r < m; ++r) {
+        for (std::size_t j = 0; j < n; ++j) {
+            if (!checkLinalgBudget(c, budget)) {
+                out.reason = "budget exhausted during qr verification";
+                return out;
+            }
+            if (!isZeroLinalg(c, c.add({QR.at(r, j), c.neg(A.at(r, j))}),
+                              budget)) {
+                out.reason = "QR decomposition certificate Q*R == A failed";
+                return out;
+            }
+        }
+    }
+    const SymMatrix QtQ = Q.transpose().mul(c, Q);
+    for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t j = 0; j < n; ++j) {
+            const Expr want = (i == j) ? c.one() : c.zero();
+            if (!isZeroLinalg(c, c.add({QtQ.at(i, j), c.neg(want)}), budget)) {
+                out.reason = "QR decomposition certificate Q^T*Q == I failed";
+                return out;
+            }
+        }
+    }
+
+    out.Q = std::move(Q);
+    out.R = std::move(R);
+    out.status = QRDecomposition::Status::ProvedSymbolic;
+    return out;
+}
+
+namespace {
+
+bool isColIndependentOf(Ctx &c, const std::vector<SymMatrix> &existingCols,
+                        const SymMatrix &cand, Budget *budget)
+{
+    const std::size_t n = cand.rows();
+    bool allZero = true;
+    for (std::size_t r = 0; r < n; ++r) {
+        if (!isZeroLinalg(c, cand.at(r, 0), budget)) {
+            allZero = false;
+            break;
+        }
+    }
+    if (allZero)
+        return false;
+    if (existingCols.empty())
+        return true;
+
+    const std::size_t k = existingCols.size();
+    SymMatrix M(n, k + 1, c.zero());
+    for (std::size_t j = 0; j < k; ++j)
+        for (std::size_t r = 0; r < n; ++r)
+            M.at(r, j) = existingCols[j].at(r, 0);
+    for (std::size_t r = 0; r < n; ++r)
+        M.at(r, k) = cand.at(r, 0);
+
+    std::vector<std::size_t> pivs;
+    if (!computeRREF(c, M, k + 1, pivs, budget))
+        return false;
+    return !pivs.empty() && pivs.back() == k;
+}
+
+} // namespace
+
+JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
+{
+    JordanDecomposition out;
+    if (A.empty() || !A.isSquare()) {
+        out.reason = "jordanForm requires a non-empty square matrix";
+        return out;
+    }
+    const std::size_t n = A.rows();
+    if (!checkLinalgBudget(c, budget)) {
+        out.reason = "budget exhausted in jordanForm";
+        return out;
+    }
+
+    const std::vector<EigenPair> pairs = eigenvectors(c, A, budget);
+    std::size_t totalMult = 0;
+    for (const auto &ep : pairs)
+        totalMult += ep.multiplicity;
+    if (totalMult != n) {
+        out.reason = "eigenvalues of A do not split over the supported radical domain";
+        return out;
+    }
+
+    const SymMatrix I = SymMatrix::eye(c, n);
+    SymMatrix J = SymMatrix::zeros(c, n, n);
+    std::vector<SymMatrix> pCols;
+    pCols.reserve(n);
+
+    for (const auto &ep : pairs) {
+        const Expr lam = ep.lambda;
+        const std::size_t algMult = ep.multiplicity;
+        const std::size_t geomMult = ep.vectors.size();
+        if (geomMult == 0) {
+            out.reason = "empty eigenspace for eigenvalue in jordanForm";
+            return out;
+        }
+
+        // Fast path: non-defective eigenvalue (geometric == algebraic multiplicity).
+        if (geomMult == algMult) {
+            for (const SymMatrix &v : ep.vectors) {
+                const std::size_t idx = pCols.size();
+                J.at(idx, idx) = lam;
+                pCols.push_back(v);
+            }
+            continue;
+        }
+
+        // Defective eigenvalue: build powers N^1, ..., N^r of N = A - lam * I
+        // until nullity(N^r) == algMult, then extract Jordan chains from top
+        // block size k = r down to k = 1.
+        const SymMatrix N = A.sub(c, I.scale(c, lam));
+        std::vector<SymMatrix> nPows;
+        nPows.push_back(I); // N^0
+        nPows.push_back(N); // N^1
+        std::vector<std::vector<SymMatrix>> kerBases(2);
+        kerBases[1] = ep.vectors;
+
+        std::size_t maxK = 1;
+        while (kerBases[maxK].size() < algMult && maxK < algMult) {
+            if (!checkLinalgBudget(c, budget)) {
+                out.reason = "budget exhausted computing nilpotent powers";
+                return out;
+            }
+            const SymMatrix nextPow = nPows.back().mul(c, N);
+            nPows.push_back(nextPow);
+            kerBases.push_back(nullspace(c, nextPow, budget));
+            ++maxK;
+        }
+        if (kerBases[maxK].size() < algMult) {
+            out.reason = "generalized eigenspace dimension smaller than algebraic multiplicity";
+            return out;
+        }
+
+        std::vector<SymMatrix> bottomVecs; // linearly independent cycle bottoms in ker(N)
+        std::size_t collectedForLam = 0;
+
+        for (std::size_t k = maxK; k >= 1 && collectedForLam < algMult; --k) {
+            for (const SymMatrix &w : kerBases[k]) {
+                if (collectedForLam + k > algMult)
+                    break;
+                // Bottom of the length-k chain generated by w is b = N^(k-1) * w in ker(N).
+                const SymMatrix b = (k == 1) ? w : nPows[k - 1].mul(c, w);
+                if (!isColIndependentOf(c, bottomVecs, b, budget))
+                    continue;
+                bottomVecs.push_back(b);
+
+                // Emit the k-vector Jordan chain:
+                // v_1 = N^(k-1)*w, v_2 = N^(k-2)*w, ..., v_k = w
+                // satisfying (A - lam*I)*v_1 = 0 and (A - lam*I)*v_j = v_{j-1}.
+                const std::size_t blockStart = pCols.size();
+                for (std::size_t step = 0; step < k; ++step) {
+                    const std::size_t powIdx = k - 1 - step;
+                    SymMatrix vj = (powIdx == 0) ? w : nPows[powIdx].mul(c, w);
+                    for (std::size_t r = 0; r < n; ++r)
+                        vj.at(r, 0) = normLinalg(c, vj.at(r, 0), budget);
+                    const std::size_t colIdx = blockStart + step;
+                    J.at(colIdx, colIdx) = lam;
+                    if (step + 1 < k)
+                        J.at(colIdx, colIdx + 1) = c.one();
+                    pCols.push_back(std::move(vj));
+                }
+                collectedForLam += k;
+            }
+        }
+
+        if (collectedForLam != algMult) {
+            out.reason = "failed to construct complete Jordan chains for eigenvalue";
+            return out;
+        }
+    }
+
+    if (pCols.size() != n) {
+        out.reason = "incomplete Jordan basis";
+        return out;
+    }
+
+    SymMatrix P(n, n, c.zero());
+    for (std::size_t j = 0; j < n; ++j)
+        for (std::size_t r = 0; r < n; ++r)
+            P.at(r, j) = pCols[j].at(r, 0);
+
+    SymMatrix PInv = inv(c, P, budget);
+    if (PInv.empty()) {
+        out.reason = "Jordan basis matrix P is singular";
+        return out;
+    }
+
+    // Certificate: verify A * P == P * J and P * PInv == I_n.
+    const SymMatrix AP = A.mul(c, P);
+    const SymMatrix PJ = P.mul(c, J);
+    const SymMatrix PPInv = P.mul(c, PInv);
+    for (std::size_t r = 0; r < n; ++r) {
+        for (std::size_t j = 0; j < n; ++j) {
+            if (!checkLinalgBudget(c, budget)) {
+                out.reason = "budget exhausted during jordanForm verification";
+                return out;
+            }
+            if (!isZeroLinalg(c, c.add({AP.at(r, j), c.neg(PJ.at(r, j))}),
+                              budget)) {
+                out.reason = "Jordan certificate A*P == P*J failed";
+                return out;
+            }
+            const Expr wantI = (r == j) ? c.one() : c.zero();
+            if (!isZeroLinalg(c, c.add({PPInv.at(r, j), c.neg(wantI)}),
+                              budget)) {
+                out.reason = "Jordan certificate P*PInv == I failed";
+                return out;
+            }
+        }
+    }
+
+    out.J = std::move(J);
+    out.P = std::move(P);
+    out.PInv = std::move(PInv);
+    out.status = JordanDecomposition::Status::ProvedSymbolic;
+    return out;
+}
+
 } // namespace numkit::cas

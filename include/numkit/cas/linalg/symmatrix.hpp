@@ -134,4 +134,80 @@ std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A,
 SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t,
                     Budget *budget = nullptr);
 
+// Compute the exact Reduced Row Echelon Form (RREF) of an m x n matrix A
+// via Gauss-Jordan elimination. Optionally populates `pivotColsOut` with the
+// 0-based indices of the pivot columns. Returns an empty (0x0) SymMatrix if
+// the budget is exhausted.
+SymMatrix rref(Ctx &c, const SymMatrix &A,
+               std::vector<std::size_t> *pivotColsOut = nullptr,
+               Budget *budget = nullptr);
+
+// Compute the exact rank of an m x n symbolic matrix A (number of pivot
+// columns in its RREF; 0 for an empty matrix).
+std::size_t rank(Ctx &c, const SymMatrix &A, Budget *budget = nullptr);
+
+struct LUDecomposition
+{
+    enum class Status { Unevaluated, ProvedSymbolic };
+
+    Status status = Status::Unevaluated;
+    SymMatrix L;                    // m x m unit lower-triangular matrix (L(i, i) == 1)
+    SymMatrix U;                    // m x n upper-triangular (row-echelon) matrix
+    SymMatrix P;                    // m x m row-permutation matrix: P * A == L * U
+    std::vector<std::size_t> perm;  // row permutation indices (P(i, perm[i]) == 1)
+    int sign = 1;                   // determinant sign of P (+1 or -1)
+    std::string reason;
+
+    bool proved() const { return status == Status::ProvedSymbolic; }
+};
+
+// Compute the exact pivoted LU decomposition P * A = L * U of an m x n
+// symbolic matrix A, certified by verifying P * A == L * U, unit lower-
+// triangularity of L, and upper-triangularity of U.
+LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget = nullptr);
+
+// Perform exact Gram-Schmidt orthogonalization (or orthonormalization when
+// `normalize == true`) on a sequence of m x 1 column vectors, dropping any
+// vector that lies in the span of previous vectors.
+std::vector<SymMatrix> gramSchmidt(Ctx &c,
+                                   const std::vector<SymMatrix> &cols,
+                                   bool normalize = true,
+                                   Budget *budget = nullptr);
+
+struct QRDecomposition
+{
+    enum class Status { Unevaluated, ProvedSymbolic };
+
+    Status status = Status::Unevaluated;
+    SymMatrix Q; // m x n column-orthonormal matrix (Q^T * Q == I_n)
+    SymMatrix R; // n x n upper-triangular matrix: A == Q * R
+    std::string reason;
+
+    bool proved() const { return status == Status::ProvedSymbolic; }
+};
+
+// Compute the exact thin QR decomposition A = Q * R of an m x n matrix A
+// (with m >= n and linearly independent columns), certified by verifying
+// Q * R == A, Q^T * Q == I_n, and upper-triangularity of R.
+QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget = nullptr);
+
+struct JordanDecomposition
+{
+    enum class Status { Unevaluated, ProvedSymbolic };
+
+    Status status = Status::Unevaluated;
+    SymMatrix J;    // n x n block-diagonal Jordan canonical form
+    SymMatrix P;    // n x n invertible similarity matrix: A * P == P * J
+    SymMatrix PInv; // n x n exact inverse P^(-1): J == P^(-1) * A * P
+    std::string reason;
+
+    bool proved() const { return status == Status::ProvedSymbolic; }
+};
+
+// Compute the exact Jordan canonical form A = P * J * P^(-1) of a square
+// matrix A whose eigenvalues lie in the solvable symbolic/radical domain,
+// certified by verifying A * P == P * J and P * PInv == I_n.
+JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A,
+                               Budget *budget = nullptr);
+
 } // namespace numkit::cas

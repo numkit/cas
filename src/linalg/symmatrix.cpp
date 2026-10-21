@@ -192,6 +192,97 @@ bool isZeroSymbolic(Ctx &c, Expr e)
     return !s.isNull() && c.isZero(s);
 }
 
+// Extract the common monomial factor and leading rational coefficient from an
+// expanded sum `e`, writing `e = scaleMonomOut * primOut` where `primOut` has
+// no common factor across its additive terms and unit leading rational coeff.
+void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
+{
+    std::vector<Expr> terms;
+    if (c.kind(e) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            terms.push_back(c.child(e, i));
+    } else {
+        terms.push_back(e);
+    }
+
+    auto decomposeTerm = [&](Expr t,
+                             std::vector<std::pair<Expr, std::int64_t>> &facs) {
+        auto inspect = [&](Expr f) {
+            if (c.kind(f) == NodeKind::Number)
+                return;
+            if (c.kind(f) == NodeKind::Pow &&
+                c.kind(c.child(f, 1)) == NodeKind::Number) {
+                const Rational &rv = c.numberValue(c.child(f, 1));
+                std::int64_t k = 0;
+                if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 1) {
+                    facs.emplace_back(c.child(f, 0), k);
+                    return;
+                }
+            }
+            facs.emplace_back(f, 1);
+        };
+        if (c.kind(t) == NodeKind::Mul) {
+            for (std::size_t i = 0; i < c.childCount(t); ++i)
+                inspect(c.child(t, i));
+        } else {
+            inspect(t);
+        }
+    };
+
+    std::vector<std::pair<Expr, std::int64_t>> common;
+    decomposeTerm(terms[0], common);
+    for (std::size_t i = 1; i < terms.size() && !common.empty(); ++i) {
+        std::vector<std::pair<Expr, std::int64_t>> cur;
+        decomposeTerm(terms[i], cur);
+        std::vector<std::pair<Expr, std::int64_t>> nextCommon;
+        for (const auto & cf : common) {
+            for (const auto &tf : cur) {
+                if (cf.first == tf.first) {
+                    nextCommon.emplace_back(cf.first,
+                                            std::min(cf.second, tf.second));
+                    break;
+                }
+            }
+        }
+        common = std::move(nextCommon);
+    }
+
+    std::vector<Expr> monomFacs;
+    std::vector<Expr> invMonomFacs;
+    for (const auto &cf : common) {
+        monomFacs.push_back(c.pow(cf.first, c.number(cf.second)));
+        invMonomFacs.push_back(c.pow(cf.first, c.number(-cf.second)));
+    }
+    const Expr monom = monomFacs.empty() ? c.one() : c.mul(monomFacs);
+    const Expr invMonom = invMonomFacs.empty() ? c.one() : c.mul(invMonomFacs);
+
+    const Expr rawPrim =
+        invMonomFacs.empty() ? e : c.expand(c.mul({e, invMonom}));
+
+    // Normalize by the rational coefficient of the first additive term of rawPrim.
+    const Expr firstTerm =
+        (c.kind(rawPrim) == NodeKind::Add && c.childCount(rawPrim) > 0)
+            ? c.child(rawPrim, 0)
+            : rawPrim;
+    Rational leadCoef(std::int64_t{1});
+    if (c.kind(firstTerm) == NodeKind::Number) {
+        leadCoef = c.numberValue(firstTerm);
+    } else if (c.kind(firstTerm) == NodeKind::Mul &&
+               c.childCount(firstTerm) > 0 &&
+               c.kind(c.child(firstTerm, 0)) == NodeKind::Number) {
+        leadCoef = c.numberValue(c.child(firstTerm, 0));
+    }
+    if (leadCoef.isZero())
+        leadCoef = Rational(std::int64_t{1});
+
+    scaleMonomOut = c.mul({c.number(leadCoef), monom});
+    primOut = (leadCoef == Rational(std::int64_t{1}))
+                  ? rawPrim
+                  : c.expand(c.mul(
+                        {c.number(Rational(std::int64_t{1}) / leadCoef),
+                         rawPrim}));
+}
+
 } // namespace
 
 Expr simplifyRationalExpr(Ctx &c, Expr e)
@@ -202,7 +293,7 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
     if (c.evalExact(e, {}, r))
         return c.number(r);
 
-    const FormalFrac f = toFormalFrac(c, e);
+    FormalFrac f = toFormalFrac(c, e);
     if (f.num.isNull() || f.den.isNull() || c.isZero(f.den))
         return Expr();
     if (c.isZero(f.num))
@@ -217,6 +308,25 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
         return c.expand(
             c.mul({c.number(Rational(std::int64_t{1}) / c.numberValue(f.den)),
                    f.num}));
+    }
+
+    // Cancel common monomial content and proportional cofactor sums.
+    {
+        Expr smNum, primNum, smDen, primDen;
+        splitMonomialAndScale(c, f.num, smNum, primNum);
+        splitMonomialAndScale(c, f.den, smDen, primDen);
+        const Expr smRatio = c.div(smNum, smDen);
+        if (primNum == primDen) {
+            return smRatio;
+        }
+        Expr newNum, newDen;
+        FormalFrac smFrac = toFormalFrac(c, smRatio);
+        if (!smFrac.num.isNull() && !smFrac.den.isNull()) {
+            f.num = c.expand(c.mul({smFrac.num, primNum}));
+            f.den = c.expand(c.mul({smFrac.den, primDen}));
+            if (f.den == c.one())
+                return f.num;
+        }
     }
 
     // Univariate polynomial GCD cancellation in Q(var).

@@ -19,7 +19,12 @@ bool checkOde1(Ctx &c, Expr ySol, Expr rhs, Expr x, Expr y)
     const Expr dy = c.diff(ySol, x);
     const Expr rhsSub = c.subs(rhs, y, ySol);
     const Expr res = c.simplify(c.add({dy, c.neg(rhsSub)}));
-    return c.isZero(res);
+    if (c.isZero(res))
+        return true;
+    const Expr rat = simplifyRationalExpr(c, res);
+    if (!rat.isNull() && c.isZero(c.simplify(c.expand(c.expand(rat)))))
+        return true;
+    return false;
 }
 
 bool checkOde2(Ctx &c, Expr ySol, Expr a, Expr b, Expr d, Expr f, Expr x)
@@ -466,6 +471,218 @@ TEST(DsolveTest, PropertyRandom2x2LinearOdeSystems)
             EXPECT_TRUE(sameExpr(c, c.subs(res.y[i], x, c.zero()), y0[i]))
                 << "iter " << iter << " init " << i;
         }
+    }
+}
+
+// ============================================================================
+// Item 56: Homogeneous & Exact 1st-Order ODEs, 2nd-Order Euler-Cauchy ODEs,
+//          and N-th Order Constant-Coefficient Linear ODEs
+// ============================================================================
+
+TEST(DsolveTest, FirstOrderHomogeneousAndExactOde)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+
+    // 1. Homogeneous 1st-order ODE: y' = y/x + exp(y/x)
+    {
+        const Expr rhs = P(c, "y/x + exp(y/x)");
+        const OdeResult sol = dsolve1(c, rhs, x, y);
+        ASSERT_TRUE(sol.proved()) << sol.reason;
+        EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
+            << "got: " << c.toString(sol.y);
+
+        // IVP: y(1) = 0 -> -x * log(1 - log(x)) = x * log(1 / (1 - log(x)))
+        const OdeResult ivp = dsolve1IVP(c, rhs, x, y, c.one(), c.zero());
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(checkOde1(c, ivp.y, rhs, x, y))
+            << "got: " << c.toString(ivp.y);
+        EXPECT_TRUE(c.isZero(c.simplify(c.subs(ivp.y, x, c.one()))))
+            << "got at x=1: " << c.toString(c.subs(ivp.y, x, c.one()));
+    }
+
+    // 2. Homogeneous rational ODE: y' = (x^2 + y^2) / (x * y)
+    {
+        const Expr rhs = P(c, "(x^2 + y^2)/(x*y)");
+        const OdeResult sol = dsolve1(c, rhs, x, y);
+        ASSERT_TRUE(sol.proved()) << sol.reason;
+        EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
+            << "got: " << c.toString(sol.y);
+    }
+
+    // 3. Exact 1st-order ODE: (2*x*y + 3*x^2)*dx + (x^2 + 2*y)*dy = 0
+    //    <=> y' = -(2*x*y + 3*x^2) / (x^2 + 2*y)
+    {
+        const Expr rhs = P(c, "-(2*x*y + 3*x^2)/(x^2 + 2*y)");
+        const OdeResult sol = dsolve1(c, rhs, x, y);
+        ASSERT_TRUE(sol.proved()) << sol.reason;
+        EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
+            << "got: " << c.toString(sol.y);
+    }
+
+    // 4. Integrating factor mu(x) = x: (3*x*y + y^2)*dx + (x^2 + x*y)*dy = 0
+    //    <=> y' = -(3*x*y + y^2) / (x^2 + x*y)
+    {
+        const Expr rhs = P(c, "-(3*x*y + y^2)/(x^2 + x*y)");
+        const OdeResult sol = dsolve1(c, rhs, x, y);
+        ASSERT_TRUE(sol.proved()) << sol.reason;
+        EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
+            << "got: " << c.toString(sol.y);
+    }
+
+    // 5. Integrating factor mu(y) = y^(-2): dx + ((y^2 - x)/y)*dy = 0
+    //    <=> y' = -y / (y^2 - x)
+    {
+        const Expr rhs = P(c, "-y/(y^2 - x)");
+        const OdeResult sol = dsolve1(c, rhs, x, y);
+        ASSERT_TRUE(sol.proved()) << sol.reason;
+        EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
+            << "got: " << c.toString(sol.y);
+    }
+}
+
+TEST(DsolveTest, SecondOrderEulerCauchyOdeAndIVP)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    // 1. Distinct real indicial roots: x^2*y'' - 2*x*y' + 2*y = 0 (r = 1, 2)
+    //    IVP: y(1) = 3, y'(1) = 5 -> x + 2*x^2
+    {
+        const OdeResult gen = dsolve2EulerCauchy(
+            c, c.one(), c.number(-2), c.number(2), c.zero(), x);
+        ASSERT_TRUE(gen.proved()) << gen.reason;
+
+        const OdeResult ivp = dsolve2EulerCauchyIVP(
+            c, c.one(), c.number(-2), c.number(2), c.zero(), x, c.one(),
+            c.number(3), c.number(5));
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x + 2*x^2")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 2. Repeated indicial root: x^2*y'' + 3*x*y' + y = 0 (r = -1)
+    //    IVP: y(1) = 2, y'(1) = 1 -> (2 + 3*log(x)) / x
+    {
+        const OdeResult ivp = dsolve2EulerCauchyIVP(
+            c, c.one(), c.number(3), c.one(), c.zero(), x, c.one(),
+            c.number(2), c.one());
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "(2 + 3*log(x))/x")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 3. Complex-conjugate indicial roots: x^2*y'' + x*y' + 4*y = 0 (r = +-2*i)
+    //    IVP: y(1) = 1, y'(1) = 4 -> cos(2*log(x)) + 2*sin(2*log(x))
+    {
+        const OdeResult ivp = dsolve2EulerCauchyIVP(
+            c, c.one(), c.one(), c.number(4), c.zero(), x, c.one(),
+            c.one(), c.number(4));
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "cos(2*log(x)) + 2*sin(2*log(x))")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 4. Inhomogeneous Euler-Cauchy: x^2*y'' - 2*x*y' + 2*y = 2*x^3
+    //    IVP: y(1) = 1, y'(1) = 3 -> x^3
+    {
+        const Expr fx = P(c, "2*x^3");
+        const OdeResult ivp = dsolve2EulerCauchyIVP(
+            c, c.one(), c.number(-2), c.number(2), fx, x, c.one(),
+            c.one(), c.number(3));
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x^3")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 5. Resonant Euler-Cauchy with double root r = 1:
+    //    x^2*y'' - x*y' + y = x,  y(1) = 0, y'(1) = 0 -> 1/2*x*log(x)^2
+    {
+        const OdeResult ivp = dsolve2EulerCauchyIVP(
+            c, c.one(), c.number(-1), c.one(), x, x, c.one(),
+            c.zero(), c.zero());
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1/2*x*log(x)^2")))
+            << "got: " << c.toString(ivp.y);
+    }
+}
+
+TEST(DsolveTest, NthOrderConstantCoefficientLinearOdeAndIVP)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    // 1. 3rd-order distinct roots: y''' - 6*y'' + 11*y' - 6*y = 0 (r = 1, 2, 3)
+    //    IVP: y(0) = 3, y'(0) = 6, y''(0) = 14 -> exp(x) + exp(2*x) + exp(3*x)
+    {
+        const std::vector<Expr> coeffs = {
+            c.number(-6), c.number(11), c.number(-6), c.one()};
+        const OdeResult ivp = dsolveNLinearIVP(
+            c, coeffs, c.zero(), x, c.zero(),
+            {c.number(3), c.number(6), c.number(14)});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "exp(x) + exp(2*x) + exp(3*x)")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 2. 3rd-order triple root with resonant forcing:
+    //    (D - 1)^3 y = y''' - 3*y'' + 3*y' - y = 6*exp(x)
+    //    IVP: y(0) = 0, y'(0) = 0, y''(0) = 0 -> x^3 * exp(x)
+    {
+        const std::vector<Expr> coeffs = {
+            c.number(-1), c.number(3), c.number(-3), c.one()};
+        const Expr fx = P(c, "6*exp(x)");
+        const OdeResult ivp = dsolveNLinearIVP(
+            c, coeffs, fx, x, c.zero(), {c.zero(), c.zero(), c.zero()});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x^3*exp(x)")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 3. 4th-order mixed real + complex roots (Euler-Bernoulli beam):
+    //    y'''' - y = 0 (r = 1, -1, i, -i)
+    //    IVP: y(0) = 2, y'(0) = 0, y''(0) = 0, y'''(0) = 0 -> 1/2*exp(x) + 1/2*exp(-x) + cos(x)
+    {
+        const std::vector<Expr> coeffs = {
+            c.number(-1), c.zero(), c.zero(), c.zero(), c.one()};
+        const OdeResult ivp = dsolveNLinearIVP(
+            c, coeffs, c.zero(), x, c.zero(),
+            {c.number(2), c.zero(), c.zero(), c.zero()});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1/2*exp(x) + 1/2*exp(-x) + cos(x)")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 4. 4th-order repeated complex roots (biharmonic):
+    //    (D^2 + 1)^2 y = y'''' + 2*y'' + y = 0
+    //    IVP: y(0) = 0, y'(0) = 1, y''(0) = 0, y'''(0) = 1 -> 1/2*(x + 1)*sin(x) - 1/2*x*cos(x)
+    //    Wait: let's check y = x*sin(x):
+    //      y(0) = 0, y'(x) = sin(x) + x*cos(x) => y'(0) = 0
+    //      y''(x) = 2*cos(x) - x*sin(x) => y''(0) = 2
+    //      y'''(x) = -3*sin(x) - x*cos(x) => y'''(0) = 0
+    {
+        const std::vector<Expr> coeffs = {
+            c.one(), c.zero(), c.number(2), c.zero(), c.one()};
+        const OdeResult ivp = dsolveNLinearIVP(
+            c, coeffs, c.zero(), x, c.zero(),
+            {c.zero(), c.zero(), c.number(2), c.zero()});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x*sin(x)")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 5. 4th-order pure integrator with polynomial forcing:
+    //    y'''' = 24,  y(0) = 1, y'(0) = 2, y''(0) = 0, y'''(0) = 0 -> 1 + 2*x + x^4
+    {
+        const std::vector<Expr> coeffs = {
+            c.zero(), c.zero(), c.zero(), c.zero(), c.one()};
+        const OdeResult ivp = dsolveNLinearIVP(
+            c, coeffs, c.number(24), x, c.zero(),
+            {c.one(), c.number(2), c.zero(), c.zero()});
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1 + 2*x + x^4")))
+            << "got: " << c.toString(ivp.y);
     }
 }
 

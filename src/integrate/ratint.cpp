@@ -2703,6 +2703,12 @@ RationalIntegral integrate(Ctx &c, Expr f, Expr var, Budget *budget)
     if (!checkBudget(c, budget, out.reason))
         return out;
 
+    if (!f.isNull() && !var.isNull() && !mentionsVar(c, f, var)) {
+        out.F = c.mul({f, var});
+        out.status = RationalIntegral::Status::ProvedSymbolic;
+        return out;
+    }
+
     // 1. AOT Rubi rule engine fast-path (`rubiApply`).
     const Expr F_rubi =
         rubi::rubiApply(rubi::sliceTables(), c, f, var, budget);

@@ -1299,9 +1299,24 @@ Expr Ctx::expand(Expr e)
             pushSumTerms(*this, base, factors);
             std::vector<Expr> next;
             next.reserve(terms.size() * factors.size());
-            for (const Expr &t : terms)
-                for (const Expr &f : factors)
-                    next.push_back(mul({t, f}));
+            for (const Expr &t : terms) {
+                for (const Expr &f : factors) {
+                    const Expr prod = mul({t, f});
+                    bool hasAddFactor = (kind(prod) == NodeKind::Add);
+                    if (kind(prod) == NodeKind::Mul) {
+                        for (std::size_t j = 0; j < childCount(prod); ++j) {
+                            if (kind(child(prod, j)) == NodeKind::Add) {
+                                hasAddFactor = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasAddFactor)
+                        pushSumTerms(*this, expand(prod), next);
+                    else
+                        next.push_back(prod);
+                }
+            }
             terms = std::move(next);
         }
         return add(terms);
@@ -1320,9 +1335,24 @@ Expr Ctx::expand(Expr e)
             pushSumTerms(*this, expand(child(e, i)), factors);
             std::vector<Expr> next;
             next.reserve(terms.size() * factors.size());
-            for (const Expr &t : terms)
-                for (const Expr &f : factors)
-                    next.push_back(mul({t, f}));
+            for (const Expr &t : terms) {
+                for (const Expr &f : factors) {
+                    const Expr prod = mul({t, f});
+                    bool hasAddFactor = (kind(prod) == NodeKind::Add);
+                    if (kind(prod) == NodeKind::Mul) {
+                        for (std::size_t j = 0; j < childCount(prod); ++j) {
+                            if (kind(child(prod, j)) == NodeKind::Add) {
+                                hasAddFactor = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasAddFactor)
+                        pushSumTerms(*this, expand(prod), next);
+                    else
+                        next.push_back(prod);
+                }
+            }
             terms = std::move(next);
         }
         return add(terms);

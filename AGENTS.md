@@ -5,14 +5,15 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
-- **Released: v0.4.0** (Echelon 4 Symbolic Toolbox: `definiteIntegrate` +
-  `limitOneSided`/`limitAtInfinity`, `AssumeDomain` symbol assumptions,
-  `laplace`/`ilaplace` transforms, `SymMatrix` `nullspace`/`eigenvalues`/
-  `eigenvectors`/`matrixExp`, and `dsolveSystem1Linear`/`dsolveSystem1LinearIVP`,
-  plus v0.3.0 `simplify`, Rubi R1–R5 2058 rules, `solveSymbolic`/`solveSystem2`,
-  and `dsolve1`/`dsolve2Linear`; see `CHANGELOG.md`).
-- **Working goal: v0.5.0 "Echelon 5 — Residues & Contour Integration, Z-Transform & Difference Equations, Special Functions & Exact Matrix Decompositions"** —
-  autonomous pool in `notes/c1-algebraic-layer.md`.
+- **Released: v0.5.0** (Echelon 5 Symbolic Toolbox: non-elementary special
+  functions `erf`/`erfc`/`erfi`/`Ei`/`li`/`Si`/`Ci`/`FresnelS`/`FresnelC`,
+  symbolic `residue` + contour `definiteIntegrate`, `ztrans`/`iztrans` +
+  `rsolve`/`rsolveIVP`, and `SymMatrix` `rref`/`rank`/`lu`/`gramSchmidt`/`qr`/
+  `jordanForm`, plus v0.4.0 `definiteIntegrate`, `AssumeDomain`, `laplace`/
+  `ilaplace`, `nullspace`/`eigenvalues`/`eigenvectors`/`matrixExp`,
+  `dsolveSystem1Linear`, and v0.3.0 `simplify`, Rubi R1–R5 2058 rules,
+  `solveSymbolic`/`solveSystem2`, `dsolve1`/`dsolve2Linear`; see `CHANGELOG.md`).
+- **Working goal: post-v0.5.0 autonomous pool in `notes/c1-algebraic-layer.md`**.
   The Numkit vendoring spike (item 23 remainder) waits for the user's
   explicit command.
 - **Integration contract is BINDING for all code** (the core is vendored into

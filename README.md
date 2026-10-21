@@ -9,7 +9,7 @@ Designed to be vendored into the Numkit tree as the `symbolic` toolbox core;
 integration constraints (C++17, no deps, single-threaded base, PMR) are
 binding for all code in this repository.
 
-**Current release: v0.4.0** — the standalone certified symbolic
+**Current release: v0.5.0** — the standalone certified symbolic
 computation & integration toolbox core. Declared class, corpus metrics
 and changelog: `CHANGELOG.md`.
 
@@ -45,11 +45,14 @@ build/msvc/apps/Release/nkcas.exe rubi "(expr)" x        # Rubi fast path only
 build/msvc/apps/Release/nkcas.exe diff "(expr)" x
 build/msvc/apps/Release/nkcas.exe taylor "(expr)" x [x0] [order]
 build/msvc/apps/Release/nkcas.exe limit "(expr)" x [x0]  # finite or inf / -inf
+build/msvc/apps/Release/nkcas.exe residue "(expr)" x [z0] # symbolic residue at z0 or inf
 build/msvc/apps/Release/nkcas.exe simplify "(expr)"      # cost-guided simplification
 build/msvc/apps/Release/nkcas.exe symsolve "(eqn)" x     # symbolic equation solver
 build/msvc/apps/Release/nkcas.exe dsolve "(rhs)" x       # certified 1st-order ODE solver
 build/msvc/apps/Release/nkcas.exe laplace "(expr)" [t] [s]   # forward Laplace transform
 build/msvc/apps/Release/nkcas.exe ilaplace "(expr)" [s] [t]  # certified inverse Laplace transform
+build/msvc/apps/Release/nkcas.exe ztrans "(expr)" [n] [z]    # forward unilateral Z-transform
+build/msvc/apps/Release/nkcas.exe iztrans "(expr)" [z] [n]   # certified inverse Z-transform
 build/msvc/apps/Release/nkcas.exe eval "(expr)" [x val]  # IEEE-754 double evaluation
 build/msvc/apps/Release/nkcas.exe solve "x^2-2" x        # exact real roots
 build/msvc/apps/Release/nkcas.exe expand|factor|subs "(expr)" ...
@@ -79,21 +82,22 @@ rounds to nearest-even without intermediate overflow.
 neg/div/rootOf` build a canonical hash-consed DAG (structural
 equality is pointer identity); `parseExpr(Ctx&, src)` parses
 MATLAB-precedence text; `toString` prints round-trip-exact forms;
-`diff` differentiates elementary and inverse trig/hyperbolic functions;
+`diff` differentiates elementary, inverse trig/hyperbolic, and special functions
+(`erf`, `erfc`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`);
 `subs` substitutes subtrees; `expand` distributes to polynomial form;
 `evalExact` evaluates exactly in Q with honest declines outside;
 `evalDouble` evaluates DAGs (including Sturm-refined `RootOf` atoms and
-special functions `erf`/`erfc`/`gamma`) to `double`; `leafCount` and `exprCost` measure expression size and DAG complexity;
+special functions `erf`/`erfc`/`erfi`/`Ei`/`li`/`Si`/`Ci`/`FresnelS`/`FresnelC`/`gamma`) to `double`; `leafCount` and `exprCost` measure expression size and DAG complexity;
 `AssumeDomain` and `Ctx::assume` attach domain assumptions (`Real`,
 `Positive`, `Negative`, `NonNegative`, `Integer`) with DAG-level sign,
 reality, and integrality inference; `simplify`
 (`core/simplify.hpp`) performs cost-guided algebraic, trigonometric,
-hyperbolic, and logarithmic simplification (respecting symbol assumptions); `solveSymbolic` and
+hyperbolic, logarithmic, and special-function simplification (respecting symbol assumptions); `solveSymbolic` and
 `solveSystem2` (`core/symsolve.hpp`) solve parametric polynomial/radical
 and single-occurrence transcendental equations and 2-variable polynomial
-systems via Sylvester resultants; `taylor`, `laurent`, `limit`, `limitOneSided`, and `limitAtInfinity`
-(`core/series.hpp`) compute truncated power/Laurent series and finite,
-one-sided, and infinite (`inf` / `-inf`) symbolic limits.
+systems via Sylvester resultants; `taylor`, `laurent`, `limit`, `limitOneSided`, `limitAtInfinity`, and `residue`
+(`core/series.hpp`) compute truncated power/Laurent series, finite,
+one-sided, and infinite (`inf` / `-inf`) symbolic limits, and symbolic residues.
 
 **Polynomials** (`poly/`): `UPoly` — Q[x] with exact division,
 squarefree decomposition; Sturm machinery (`isolateRealRoots`,
@@ -107,13 +111,18 @@ discrimination-tree fast path with `integrateRational` (Hermite
 reduction, Rothstein–Trager residues, quadratic and cubic
 Rioboo-phase-A real atan/log forms, RootOf atoms where unavoidable,
 and Liouvillian storeys for R(e^x), R(log x)/x, R(sin,cos) via
-t=tan(x/2) and R(x^(p/q))) plus linearity over constant factors and
+t=tan(x/2) and R(x^(p/q))) plus non-elementary special-function
+integration (`erf`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`)
+and linearity over constant factors and
 mixed sums; every answer passes a Tier-1 symbolic certificate AND a
 Tier-2a certified interval audit of the form (a wrong form is
 structurally impossible — it becomes an honest `Unevaluated`).
 `definiteIntegrate(Ctx&, f, var, a, b, budget)` evaluates proper and
-improper definite integrals via Newton–Leibniz and endpoint limits
-with interior-pole detection and real $\log|u|$ branch realization.
+improper definite integrals via Newton–Leibniz, endpoint limits,
+interior-pole detection, interior antiderivative branch-jump correction,
+real $\log|u|$ branch realization, unit-circle Cayley–Weierstrass contour
+transformation, and Jordan's lemma upper-half-plane residue calculus for
+Fourier integrals.
 `factorExpr` gives the factored form.
 
 **Rubi fast path** (`rubi/`): `rubiApply(tables, Ctx&, f, var, budget)` —
@@ -131,9 +140,12 @@ rational expression normalizer `simplifyRationalExpr`, multivariable
 calculus (`jacobian`, `gradient`, `hessian`), division-free
 Faddeev–LeVerrier characteristic polynomial, determinant, adjugate,
 and inverse (`charpoly`, `det`, `adjugate`, `inv`), exact linear
-system solver (`linsolve`), RREF kernel basis (`nullspace`), symbolic
-eigenvalues and eigenvectors (`eigenvalues`, `eigenvectors`), and
-certified matrix exponential (`matrixExp`).
+system solver (`linsolve`), RREF and rank (`rref`, `rank`), kernel
+basis (`nullspace`), pivoted LU decomposition (`lu`), exact
+Gram–Schmidt orthogonalization and thin QR decomposition
+(`gramSchmidt`, `qr`), symbolic eigenvalues and eigenvectors
+(`eigenvalues`, `eigenvectors`), Jordan canonical form (`jordanForm`),
+and certified matrix exponential (`matrixExp`).
 
 **Ordinary Differential Equations** (`ode/`): `dsolve1`, `dsolve1IVP`,
 `dsolve2Linear`, `dsolve2LinearIVP`, `dsolveSystem1Linear`, and
@@ -146,13 +158,17 @@ first-order constant-coefficient linear ODE systems $\mathbf{y}' = A\mathbf{y} +
 eigenvalues $\alpha \pm i\omega$, plus Cauchy IVPs), certifying every
 solution by substitution into the ODE.
 
-**Integral Transforms** (`transform/`): `laplace` and `ilaplace`
+**Integral & Discrete Transforms** (`transform/`): `laplace` and `ilaplace`
 (`transform/laplace.hpp`) compute forward and inverse unilateral
 Laplace transforms with frequency-shift, frequency-differentiation,
 trig/hyperbolic product reduction, partial-fraction inversion over
 $\mathbb{Q}[s]$ (including repeated complex-conjugate quadratic poles
 and parametric forms), and mandatory round-trip certification
-$\mathcal{L}\{\mathcal{L}^{-1}\{F\}\}(s) = F(s)$.
+$\mathcal{L}\{\mathcal{L}^{-1}\{F\}\}(s) = F(s)$. `ztrans`, `iztrans`,
+`rsolve`, and `rsolveIVP` (`transform/ztrans.hpp`) compute forward and
+certified inverse unilateral Z-transforms and solve $K$-th order
+constant-coefficient linear recurrence equations with initial-value and
+residual certification.
 
 **Cancellation** (`core/budget.hpp`): `Budget` token tracking step and
 arena-byte limits (`StepExhausted` / `ArenaExhausted`) across

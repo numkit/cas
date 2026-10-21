@@ -44,6 +44,7 @@ HEADERS = [
     "include/numkit/cas/poly/solve.hpp",
     "include/numkit/cas/rubi/rules.hpp",
     "include/numkit/cas/transform/laplace.hpp",
+    "include/numkit/cas/transform/ztrans.hpp",
 ]
 
 SOURCES = [
@@ -69,6 +70,7 @@ SOURCES = [
     "src/rubi/rules.cpp",
     "src/rubi/rubi_tables_1111.inc",
     "src/transform/laplace.cpp",
+    "src/transform/ztrans.cpp",
 ]
 
 CMAKE_TEMPLATE = """\

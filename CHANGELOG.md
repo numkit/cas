@@ -1,5 +1,80 @@
 # Changelog
 
+## v0.5.0 — 2026-10-21
+
+Echelon 5 release: non-elementary special functions (`erf`, `erfc`, `erfi`,
+`Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`) across derivatives, exact and
+IEEE-754 evaluation, simplification, Taylor/Laurent series, asymptotic limits,
+and certified symbolic/definite integration (`core/`, `integrate/ratint`);
+symbolic residues `residue(c, f, var, z0)` and contour-integration methods in
+`definiteIntegrate` (Cayley–Weierstrass unit-circle transformation, interior
+antiderivative branch-jump correction, and Jordan's lemma Fourier integrals);
+unilateral Z-transform `ztrans` / `iztrans` and certified linear recurrence
+equation solver `rsolve` / `rsolveIVP` (`transform/ztrans`); and canonical
+exact matrix decompositions `rref`, `rank`, `lu` ($PA = LU$), `gramSchmidt` /
+`qr` ($A = QR$), and Jordan canonical form `jordanForm` ($AP = PJ$)
+(`linalg/symmatrix`).
+
+### Highlights & New Capabilities
+
+- **Non-Elementary Special Functions (`core/`, `integrate/ratint`, Item 49)**:
+  - Full support for `erf`, `erfc`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`,
+    and `FresnelC` across `Ctx::diff`, `Ctx::evalExact`, dependency-free
+    `Ctx::evalDouble` (power series, continued fractions, composite 8-point
+    Gauss–Legendre quadrature, and large-argument asymptotics), `Ctx::assume`
+    sign/reality inference, and `simplify` (parity identities and
+    `erf`/`erfc` complement folding).
+  - Taylor/Laurent series expansion and asymptotic limits at $\pm\infty$ in
+    `core/series` ($\operatorname{erf}(\pm\infty) = \pm 1$,
+    $\operatorname{erfc}(+\infty) = 0$, $\operatorname{erfc}(-\infty) = 2$,
+    $\operatorname{Si}(\pm\infty) = \pm\pi/2$, $\operatorname{Ci}(+\infty) = 0$,
+    $\operatorname{Ei}(-\infty) = 0$,
+    $\operatorname{FresnelS}(\pm\infty) = \operatorname{FresnelC}(\pm\infty) = \pm 1/2$).
+  - `integrateSpecialFunctions` storey in `integrate/ratint` with polynomial-by-parts
+    reduction and symbolic derivative certification $D(F) \equiv f$, unlocking
+    Gaussian ($\int_{-\infty}^\infty e^{-ax^2}\,dx = \sqrt{\pi/a}$), Dirichlet
+    ($\int_0^\infty \frac{\sin(ax)}{x}\,dx = \frac{\pi}{2}\operatorname{sgn}(a)$),
+    and Fresnel ($\int_0^\infty \sin(x^2)\,dx = \int_0^\infty \cos(x^2)\,dx = \frac{1}{2}\sqrt{\pi/2}$)
+    improper integrals in `definiteIntegrate`.
+- **Symbolic Residues & Contour Integration (`core/series`, `integrate/ratint`, Item 50)**:
+  - `residue(Ctx&, f, var, z0, Budget*)` computing residues at finite poles
+    (via Laurent coefficient $(z - z_0)^{-1}$ with high-order pole derivative
+    fallback for symbolic poles) and at $\infty$ via $-\operatorname{Res}_{t=0}(t^{-2}f(1/t))$.
+    Exposed in CLI as `nkcas residue`.
+  - Unit-circle / Cayley–Weierstrass contour transformation for rational
+    trigonometric integrals $R(\cos x, \sin x)$ over $[a, a + 2k\pi]$ and
+    $[0, \pi]$; automatic interior branch-jump correction
+    $\sum_{r \in (a,b)} (\lim_{x \to r^-} F(x) - \lim_{x \to r^+} F(x))$ for
+    antiderivatives with interior $\arctan$ discontinuities; and Jordan's lemma
+    upper-half-plane residue calculus for Fourier integrals
+    $\int_{-\infty}^\infty R(x)\cos(\omega x)\,dx$ and
+    $\int_{-\infty}^\infty R(x)\sin(\omega x)\,dx$.
+- **Unilateral Z-Transform & Certified Recurrence Solver (`transform/ztrans`, Item 51)**:
+  - `ztrans(Ctx&, f, n, z, Budget*)` and `iztrans(Ctx&, F, z, n, Budget*)`:
+    forward unilateral Z-transform (geometric/exponential sequences, shift-derivative
+    operator $(-z\frac{d}{dz})^k$, discrete impulse `kroneckerDelta(n - k)`,
+    damped trig/hyperbolic sequences) and partial-fraction inverse over
+    $\mathbb{Q}[z]$ (repeated rational poles via binomial basis
+    $\binom{n}{k-1}r^{n-(k-1)}$, real-radical quadratic poles such as Binet's
+    Fibonacci formula, and complex-conjugate oscillatory poles), certified by
+    round-trip $\mathcal{Z}\{\mathcal{Z}^{-1}\{F\}\}(z) = F(z)$. Exposed in CLI
+    as `nkcas ztrans` and `nkcas iztrans`.
+  - `rsolve` and `rsolveIVP` solving $K$-th order constant-coefficient linear
+    recurrence equations $\sum_{k=0}^K a_k y(n+k) = \text{rhs}(n)$ with symbolic
+    recurrence and initial-value certification.
+- **Canonical Exact Matrix Decompositions (`linalg/symmatrix`, Item 52)**:
+  - `rref(Ctx&, A, pivotColsOut, Budget*)` and `rank(Ctx&, A, Budget*)`.
+  - `lu(Ctx&, A, Budget*)` (`LUDecomposition` with $P A = L U$, permutation
+    vector `perm`, sign `sign`, and symbolic certificate $PA - LU = 0$).
+  - `gramSchmidt(Ctx&, cols, normalize, Budget*)` and `qr(Ctx&, A, Budget*)`
+    (`QRDecomposition` with rational unnormalized projections and symbolic
+    certificates $QR = A$ and $Q^T Q = I_n$).
+  - `jordanForm(Ctx&, A, Budget*)` (`JordanDecomposition` with nilpotent-power
+    cycle extraction supporting arbitrary Jordan block partitions per eigenvalue,
+    certified by $AP = PJ$ and $P P^{-1} = I_n$).
+
+---
+
 ## v0.4.0 — 2026-10-21
 
 Echelon 4 release: proper and improper definite integration

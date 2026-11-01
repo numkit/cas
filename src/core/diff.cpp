@@ -117,6 +117,53 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         break;
     case NodeKind::Func: {
         const std::string &name = funcName(e);
+        if (childCount(e) == 4 && name == "hypergeom2F1") {
+            const Expr a = child(e, 0);
+            const Expr b = child(e, 1);
+            const Expr cParam = child(e, 2);
+            const Expr u = child(e, 3);
+            const Expr da = diffRec(a, var, memo);
+            const Expr db = diffRec(b, var, memo);
+            const Expr dc = diffRec(cParam, var, memo);
+            const Expr du = diffRec(u, var, memo);
+            if (da.isNull() || db.isNull() || dc.isNull() || du.isNull())
+                break;
+            if (isZero(da) && isZero(db) && isZero(dc)) {
+                if (isZero(du) || isZero(a) || isZero(b)) {
+                    result = zero();
+                } else {
+                    const Expr a1 = add({a, one()});
+                    const Expr b1 = add({b, one()});
+                    const Expr c1 = add({cParam, one()});
+                    result = mul({
+                        a, b, pow(cParam, number(std::int64_t{-1})),
+                        func("hypergeom2F1", {a1, b1, c1, u}), du});
+                }
+            }
+            break;
+        }
+        if (childCount(e) == 3 && name == "hypergeom1F1") {
+            const Expr a = child(e, 0);
+            const Expr b = child(e, 1);
+            const Expr u = child(e, 2);
+            const Expr da = diffRec(a, var, memo);
+            const Expr db = diffRec(b, var, memo);
+            const Expr du = diffRec(u, var, memo);
+            if (da.isNull() || db.isNull() || du.isNull())
+                break;
+            if (isZero(da) && isZero(db)) {
+                if (isZero(du) || isZero(a)) {
+                    result = zero();
+                } else {
+                    const Expr a1 = add({a, one()});
+                    const Expr b1 = add({b, one()});
+                    result = mul({
+                        a, pow(b, number(std::int64_t{-1})),
+                        func("hypergeom1F1", {a1, b1, u}), du});
+                }
+            }
+            break;
+        }
         if (childCount(e) == 2) {
             const Expr n = child(e, 0);
             const Expr u = child(e, 1);
@@ -202,8 +249,54 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                 result = totalTerms.size() == 1 ? totalTerms[0] : add(totalTerms);
                 break;
             }
+            if (name == "beta") {
+                const Expr nPlusU = add({n, u});
+                const Expr psiSum = func("digamma", nPlusU);
+                std::vector<Expr> totalTerms;
+                if (!isZero(dn)) {
+                    totalTerms.push_back(mul({
+                        e, add({func("digamma", n), neg(psiSum)}), dn}));
+                }
+                if (!isZero(du)) {
+                    totalTerms.push_back(mul({
+                        e, add({func("digamma", u), neg(psiSum)}), du}));
+                }
+                result = totalTerms.size() == 1 ? totalTerms[0] : add(totalTerms);
+                break;
+            }
+            if (name == "pochhammer") {
+                const Expr nPlusU = add({n, u});
+                const Expr psiSum = func("digamma", nPlusU);
+                std::vector<Expr> totalTerms;
+                if (!isZero(dn)) {
+                    totalTerms.push_back(mul({
+                        e, add({psiSum, neg(func("digamma", n))}), dn}));
+                }
+                if (!isZero(du)) {
+                    totalTerms.push_back(mul({e, psiSum, du}));
+                }
+                result = totalTerms.size() == 1 ? totalTerms[0] : add(totalTerms);
+                break;
+            }
             if (!isZero(dn))
                 break;
+            if (name == "igamma") {
+                const Expr nm1 = add({n, number(std::int64_t{-1})});
+                result = neg(mul({pow(u, nm1), func("exp", neg(u)), du}));
+                break;
+            }
+            if (name == "gammainc") {
+                const Expr nm1 = add({n, number(std::int64_t{-1})});
+                result = mul({pow(u, nm1), func("exp", neg(u)), du});
+                break;
+            }
+            if (name == "hypergeom0F1") {
+                const Expr np1 = add({n, one()});
+                result = mul({
+                    pow(n, number(std::int64_t{-1})),
+                    func("hypergeom0F1", np1, u), du});
+                break;
+            }
             if (name == "legendreP") {
                 if (isZero(n)) {
                     result = zero();

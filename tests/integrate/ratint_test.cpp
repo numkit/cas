@@ -2407,7 +2407,42 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
         EXPECT_EQ(gaussCube.lhs, numkit::cas::parseExpr(c, "3/2"));
         EXPECT_EQ(gaussCube.rhs, numkit::cas::parseExpr(c, "3/2"));
     }
+
+    // 4. Incomplete gamma and hypergeometric integrals
+    {
+        const auto igInt = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "x^(3/2)*exp(-2*x)"), x);
+        ASSERT_TRUE(igInt.proved()) << igInt.reason;
+        EXPECT_EQ(c.simplify(igInt.F),
+                  c.simplify(numkit::cas::parseExpr(
+                      c, "-2^(-5/2)*igamma(5/2, 2*x)")));
+
+        const auto hg1Int = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "hypergeom1F1(3, 4, 2*x)"), x);
+        ASSERT_TRUE(hg1Int.proved()) << hg1Int.reason;
+        EXPECT_EQ(c.simplify(hg1Int.F),
+                  c.simplify(numkit::cas::parseExpr(
+                      c, "3/4*hypergeom1F1(2, 3, 2*x)")));
+
+        const auto hg2Int = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "hypergeom2F1(2, 3, 5, x)"), x);
+        ASSERT_TRUE(hg2Int.proved()) << hg2Int.reason;
+        EXPECT_EQ(c.simplify(hg2Int.F),
+                  c.simplify(numkit::cas::parseExpr(
+                      c, "2*hypergeom2F1(1, 2, 4, x)")));
+
+        // Euler's integral representation of 2F1 on [0, 1]
+        const auto eul2F1 = numkit::cas::definiteIntegrate(
+            c,
+            numkit::cas::parseExpr(
+                c, "x^(-1/2)*(1 - x)^(-1/2)*(1 - 1/3*x)^(-1/2)"),
+            x, c.zero(), c.one());
+        ASSERT_TRUE(eul2F1.proved()) << eul2F1.reason;
+        EXPECT_EQ(eul2F1.value,
+                  c.simplify(numkit::cas::parseExpr(c, "2*ellipticK(1/3)")));
+    }
 }
+
 
 
 

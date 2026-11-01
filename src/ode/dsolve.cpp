@@ -2825,6 +2825,126 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         }
     }
 
+    // 5b. Kummer's confluent hypergeometric ODE:
+    //     x*y'' + (bK - lambda*x)*y' - lambda*aK*y = 0
+    {
+        const Expr xP = c.expand(c.simplify(c.mul({x, P})));
+        const Expr xQ = c.simplify(c.mul({x, Q}));
+        if (!xP.isNull() && !xQ.isNull() && !mentionsSym(c, xQ, x)) {
+            const Expr dpDx = c.simplify(c.diff(xP, x));
+            if (!dpDx.isNull() && !isZeroSimp(c, dpDx) &&
+                !mentionsSym(c, dpDx, x)) {
+                const Expr lambda = c.simplify(c.neg(dpDx));
+                const Expr bK =
+                    c.simplify(c.add({xP, c.mul({lambda, x})}));
+                if (!bK.isNull() && !mentionsSym(c, bK, x)) {
+                    const Expr aK =
+                        c.simplify(c.neg(c.div(xQ, lambda)));
+                    const Expr z = c.simplify(c.mul({lambda, x}));
+                    const bool bIsInt =
+                        c.kind(bK) == NodeKind::Number &&
+                        c.numberValue(bK).den() == BigInt(1);
+                    const bool bIsNonPosInt =
+                        bIsInt && c.numberValue(bK).signum() <= 0;
+                    Expr y1, y2;
+                    if (!bIsNonPosInt) {
+                        y1 = c.simplify(c.func("hypergeom1F1", {aK, bK, z}));
+                    }
+                    if (!bIsInt) {
+                        const Expr a2 = c.simplify(
+                            c.add({aK, c.neg(bK), c.one()}));
+                        const Expr b2 = c.simplify(
+                            c.add({c.number(std::int64_t{2}), c.neg(bK)}));
+                        const Expr xPow = c.pow(
+                            x, c.simplify(c.add({c.one(), c.neg(bK)})));
+                        y2 = c.simplify(c.mul(
+                            {xPow, c.func("hypergeom1F1", {a2, b2, z})}));
+                    } else if (!y1.isNull()) {
+                        tryLiouvilleSecondSolution(c, a, b, d, y1, x, budget,
+                                                   y2);
+                    }
+                    if (y1.isNull() && !y2.isNull()) {
+                        y1 = y2;
+                        y2 = Expr();
+                    }
+                    if (!y1.isNull() &&
+                        attachParticularAndCertify(c, a, b, d, f, x, y1, y2,
+                                                   budget, out))
+                        return out;
+                }
+            }
+        }
+    }
+
+    // 5c. Gauss's hypergeometric ODE:
+    //     x*(1 - x)*y'' + (cG - (aG + bG + 1)*x)*y' - aG*bG*y = 0
+    {
+        const Expr x1mx = c.mul({x, c.add({c.one(), c.neg(x)})});
+        const Expr BG = c.expand(c.simplify(c.mul({x1mx, P})));
+        const Expr DG = c.simplify(c.mul({x1mx, Q}));
+        if (!BG.isNull() && !DG.isNull() && !mentionsSym(c, DG, x)) {
+            const Expr dBdx = c.simplify(c.diff(BG, x));
+            if (!dBdx.isNull() && !mentionsSym(c, dBdx, x)) {
+                const Expr cG = c.simplify(c.subs(BG, x, c.zero()));
+                if (!cG.isNull() && !mentionsSym(c, cG, x)) {
+                    const Expr apb = c.simplify(
+                        c.add({c.neg(dBdx), c.number(std::int64_t{-1})}));
+                    const Expr abProd = c.simplify(c.neg(DG));
+                    const Expr tSym = c.symbol("_ode_hg_t");
+                    const Expr eq = c.add({
+                        c.pow(tSym, two),
+                        c.neg(c.mul({apb, tSym})),
+                        abProd});
+                    const std::vector<Expr> roots =
+                        solveSymbolic(c, eq, tSym, budget);
+                    if (!roots.empty()) {
+                        Expr aG = roots[0];
+                        Expr bG = roots.size() >= 2 ? roots[1] : roots[0];
+                        if (c.kind(aG) == NodeKind::Number &&
+                            c.kind(bG) == NodeKind::Number &&
+                            c.numberValue(bG) < c.numberValue(aG)) {
+                            std::swap(aG, bG);
+                        }
+                        const bool cIsInt =
+                            c.kind(cG) == NodeKind::Number &&
+                            c.numberValue(cG).den() == BigInt(1);
+                        const bool cIsNonPosInt =
+                            cIsInt && c.numberValue(cG).signum() <= 0;
+                        Expr y1, y2;
+                        if (!cIsNonPosInt) {
+                            y1 = c.simplify(
+                                c.func("hypergeom2F1", {aG, bG, cG, x}));
+                        }
+                        if (!cIsInt) {
+                            const Expr a2 = c.simplify(
+                                c.add({aG, c.neg(cG), c.one()}));
+                            const Expr b2 = c.simplify(
+                                c.add({bG, c.neg(cG), c.one()}));
+                            const Expr c2 = c.simplify(
+                                c.add({c.number(std::int64_t{2}), c.neg(cG)}));
+                            const Expr xPow = c.pow(
+                                x, c.simplify(c.add({c.one(), c.neg(cG)})));
+                            y2 = c.simplify(c.mul({
+                                xPow,
+                                c.func("hypergeom2F1", {a2, b2, c2, x})}));
+                        } else if (!y1.isNull()) {
+                            tryLiouvilleSecondSolution(c, a, b, d, y1, x,
+                                                       budget, y2);
+                        }
+                        if (y1.isNull() && !y2.isNull()) {
+                            y1 = y2;
+                            y2 = Expr();
+                        }
+                        if (!y1.isNull() &&
+                            attachParticularAndCertify(c, a, b, d, f, x, y1, y2,
+                                                       budget, out))
+                            return out;
+                    }
+                }
+            }
+        }
+    }
+
     // 6. General variable-coefficient 2nd-order linear ODE admitting a low-degree
     //    polynomial homogeneous solution y1(x) + Liouville reduction of order:
     {

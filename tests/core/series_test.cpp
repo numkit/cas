@@ -959,6 +959,22 @@ TEST(SeriesTest, ZetaPolylogSeriesAndInfiniteSums)
                      c.symbol("inf"))
                   .value,
               c.simplify(parseExpr(c, "1/12*pi^2 - 1/2*log(2)^2")));
+
+    // 4. Maclaurin series of hypergeom0F1, hypergeom1F1, hypergeom2F1
+    const Expr t0F1 =
+        taylor(c, parseExpr(c, "hypergeom0F1(2, x)"), x, c.zero(), 3);
+    ASSERT_FALSE(t0F1.isNull());
+    EXPECT_TRUE(exprEq(c, t0F1, parseExpr(c, "1 + 1/2*x + 1/12*x^2 + 1/144*x^3")));
+
+    const Expr t1F1 =
+        taylor(c, parseExpr(c, "hypergeom1F1(2, 3, x)"), x, c.zero(), 3);
+    ASSERT_FALSE(t1F1.isNull());
+    EXPECT_TRUE(exprEq(c, t1F1, parseExpr(c, "1 + 2/3*x + 1/4*x^2 + 1/15*x^3")));
+
+    const Expr t2F1 =
+        taylor(c, parseExpr(c, "hypergeom2F1(1, 2, 3, x)"), x, c.zero(), 3);
+    ASSERT_FALSE(t2F1.isNull());
+    EXPECT_TRUE(exprEq(c, t2F1, parseExpr(c, "1 + 2/3*x + 1/2*x^2 + 2/5*x^3")));
 }
 
 } // namespace

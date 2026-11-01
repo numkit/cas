@@ -777,6 +777,79 @@ bool Ctx::evalExact(
     case NodeKind::Func: {
         const std::string &name = funcName(e);
         const Rational zero(0), one(1);
+        if (childCount(e) == 4 && name == "hypergeom2F1") {
+            Rational aVal, bVal, cVal, zVal;
+            const bool hasA = evalExact(child(e, 0), vals, aVal);
+            const bool hasB = evalExact(child(e, 1), vals, bVal);
+            const bool hasC = evalExact(child(e, 2), vals, cVal);
+            const bool hasZ = evalExact(child(e, 3), vals, zVal);
+            if (hasZ && zVal == zero) {
+                out = one;
+                return true;
+            }
+            if ((hasA && aVal == zero) || (hasB && bVal == zero)) {
+                out = one;
+                return true;
+            }
+            if (!hasA || !hasB || !hasC || !hasZ)
+                return false;
+            std::int64_t mTerm = -1;
+            if (aVal.den() == BigInt(1) && aVal.signum() <= 0) {
+                std::int64_t ma = 0;
+                if (aVal.num().fitsInt64(ma) && -ma <= 40)
+                    mTerm = -ma;
+            }
+            if (bVal.den() == BigInt(1) && bVal.signum() <= 0) {
+                std::int64_t mb = 0;
+                if (bVal.num().fitsInt64(mb) && -mb <= 40 &&
+                    (mTerm < 0 || -mb < mTerm)) {
+                    mTerm = -mb;
+                }
+            }
+            if (mTerm >= 0) {
+                Rational sum = one, term = one;
+                for (std::int64_t k = 0; k < mTerm; ++k) {
+                    const Rational ck = cVal + Rational(k);
+                    if (ck.isZero())
+                        return false;
+                    term = term * (aVal + Rational(k)) * (bVal + Rational(k)) *
+                           zVal / (ck * Rational(k + 1));
+                    sum = sum + term;
+                }
+                out = sum;
+                return true;
+            }
+            return false;
+        }
+        if (childCount(e) == 3 && name == "hypergeom1F1") {
+            Rational aVal, bVal, zVal;
+            const bool hasA = evalExact(child(e, 0), vals, aVal);
+            const bool hasB = evalExact(child(e, 1), vals, bVal);
+            const bool hasZ = evalExact(child(e, 2), vals, zVal);
+            if ((hasZ && zVal == zero) || (hasA && aVal == zero)) {
+                out = one;
+                return true;
+            }
+            if (!hasA || !hasB || !hasZ)
+                return false;
+            std::int64_t ma = 0;
+            if (aVal.den() == BigInt(1) && aVal.signum() <= 0 &&
+                aVal.num().fitsInt64(ma) && -ma <= 40) {
+                const std::int64_t mTerm = -ma;
+                Rational sum = one, term = one;
+                for (std::int64_t k = 0; k < mTerm; ++k) {
+                    const Rational bk = bVal + Rational(k);
+                    if (bk.isZero())
+                        return false;
+                    term = term * (aVal + Rational(k)) * zVal /
+                           (bk * Rational(k + 1));
+                    sum = sum + term;
+                }
+                out = sum;
+                return true;
+            }
+            return false;
+        }
         if (childCount(e) == 2) {
             Rational nVal, xVal;
             const bool hasN = evalExact(child(e, 0), vals, nVal);
@@ -785,8 +858,61 @@ bool Ctx::evalExact(
                 out = zero;
                 return true;
             }
+            if (name == "hypergeom0F1" && hasX && xVal == zero) {
+                out = one;
+                return true;
+            }
+            if (name == "gammainc" && hasX && xVal == zero &&
+                (!hasN || nVal > zero)) {
+                out = zero;
+                return true;
+            }
+            if (name == "igamma" && hasN && hasX && xVal == zero &&
+                nVal.den() == BigInt(1) && nVal > zero) {
+                std::int64_t nInt = 0;
+                if (nVal.num().fitsInt64(nInt) && nInt >= 1 && nInt <= 30) {
+                    BigInt fact(1);
+                    for (std::int64_t k = 2; k < nInt; ++k)
+                        fact = fact * BigInt(k);
+                    out = Rational(fact, BigInt(1));
+                    return true;
+                }
+            }
+            if (name == "pochhammer" && hasX && xVal == zero) {
+                out = one;
+                return true;
+            }
             if (!hasN)
                 return false;
+            if (name == "pochhammer" && hasX && xVal.den() == BigInt(1)) {
+                std::int64_t kCount = 0;
+                if (xVal.num().fitsInt64(kCount) && kCount >= 0 &&
+                    kCount <= 40) {
+                    Rational prod = one;
+                    for (std::int64_t j = 0; j < kCount; ++j)
+                        prod = prod * (nVal + Rational(j));
+                    out = prod;
+                    return true;
+                }
+                return false;
+            }
+            if (name == "beta" && hasX && nVal.den() == BigInt(1) &&
+                xVal.den() == BigInt(1)) {
+                std::int64_t mInt = 0, kInt = 0;
+                if (nVal.num().fitsInt64(mInt) && xVal.num().fitsInt64(kInt) &&
+                    mInt >= 1 && kInt >= 1 && mInt + kInt <= 50) {
+                    BigInt fM(1), fK(1), fMK(1);
+                    for (std::int64_t j = 2; j < mInt; ++j)
+                        fM = fM * BigInt(j);
+                    for (std::int64_t j = 2; j < kInt; ++j)
+                        fK = fK * BigInt(j);
+                    for (std::int64_t j = 2; j < mInt + kInt; ++j)
+                        fMK = fMK * BigInt(j);
+                    out = Rational(fM * fK, fMK);
+                    return true;
+                }
+                return false;
+            }
             if (name == "ellipticF" || name == "ellipticEInc" ||
                 name == "ellipticE") {
                 if (nVal == zero) {
@@ -2360,6 +2486,226 @@ bool evalBernoulliEuler2ArgDouble(const std::string &fn, double nVal, double x,
     return false;
 }
 
+bool evalBetaDouble(double x, double y, double &out)
+{
+    if (!std::isfinite(x) || !std::isfinite(y))
+        return false;
+    const double xy = x + y;
+    if ((x <= 0.0 && std::floor(x) == x) || (y <= 0.0 && std::floor(y) == y))
+        return false;
+    if (xy <= 0.0 && std::floor(xy) == xy) {
+        out = 0.0;
+        return true;
+    }
+    if (x > 0.0 && y > 0.0) {
+        out = std::exp(std::lgamma(x) + std::lgamma(y) - std::lgamma(xy));
+        return std::isfinite(out);
+    }
+    const double gx = std::tgamma(x);
+    const double gy = std::tgamma(y);
+    const double gxy = std::tgamma(xy);
+    if (!std::isfinite(gx) || !std::isfinite(gy) || !std::isfinite(gxy) ||
+        gxy == 0.0)
+        return false;
+    out = (gx * gy) / gxy;
+    return std::isfinite(out);
+}
+
+bool evalPochhammerDouble(double a, double n, double &out)
+{
+    if (!std::isfinite(a) || !std::isfinite(n))
+        return false;
+    if (std::floor(n) == n && n >= 0.0 && n <= 60.0) {
+        const int k = static_cast<int>(n);
+        double prod = 1.0;
+        for (int j = 0; j < k; ++j)
+            prod *= (a + static_cast<double>(j));
+        out = prod;
+        return std::isfinite(out);
+    }
+    const double an = a + n;
+    if ((a <= 0.0 && std::floor(a) == a) || (an <= 0.0 && std::floor(an) == an))
+        return false;
+    if (a > 0.0 && an > 0.0) {
+        out = std::exp(std::lgamma(an) - std::lgamma(a));
+        return std::isfinite(out);
+    }
+    out = std::tgamma(an) / std::tgamma(a);
+    return std::isfinite(out);
+}
+
+bool evalIncompleteGammaDouble(const std::string &fn, double s, double x,
+                               double &out)
+{
+    if (!std::isfinite(s) || !std::isfinite(x) || x < 0.0 || s <= 0.0)
+        return false;
+    if (x == 0.0) {
+        out = (fn == "gammainc") ? 0.0 : std::tgamma(s);
+        return std::isfinite(out);
+    }
+    const double gs = std::tgamma(s);
+    if (!std::isfinite(gs))
+        return false;
+    double lower = 0.0, upper = 0.0;
+    if (x < s + 1.0) {
+        double sum = 1.0 / s;
+        double term = sum;
+        for (int k = 1; k <= 300; ++k) {
+            term *= x / (s + static_cast<double>(k));
+            sum += term;
+            if (std::abs(term) <= 1e-16 * std::abs(sum))
+                break;
+        }
+        lower = std::pow(x, s) * std::exp(-x) * sum;
+        upper = gs - lower;
+    } else {
+        // Legendre continued fraction for upper incomplete gamma via Lentz's method.
+        constexpr double tiny = 1e-30;
+        double b = x + 1.0 - s;
+        double c = 1.0 / tiny;
+        double d = 1.0 / b;
+        double h = d;
+        for (int i = 1; i <= 300; ++i) {
+            const double an = -static_cast<double>(i) * (static_cast<double>(i) - s);
+            b += 2.0;
+            d = an * d + b;
+            if (std::abs(d) < tiny)
+                d = tiny;
+            c = b + an / c;
+            if (std::abs(c) < tiny)
+                c = tiny;
+            d = 1.0 / d;
+            const double del = d * c;
+            h *= del;
+            if (std::abs(del - 1.0) <= 1e-16)
+                break;
+        }
+        upper = std::pow(x, s) * std::exp(-x) * h;
+        lower = gs - upper;
+    }
+    out = (fn == "gammainc") ? lower : upper;
+    return std::isfinite(out);
+}
+
+bool evalHypergeom0F1Double(double b, double z, double &out)
+{
+    if (!std::isfinite(b) || !std::isfinite(z))
+        return false;
+    if (b <= 0.0 && std::floor(b) == b)
+        return false;
+    double sum = 1.0, term = 1.0;
+    for (int k = 1; k <= 300; ++k) {
+        const double den = (b + static_cast<double>(k - 1)) * static_cast<double>(k);
+        if (den == 0.0)
+            return false;
+        term *= z / den;
+        sum += term;
+        if (std::abs(term) <= 1e-16 * std::abs(sum) && k > std::abs(z))
+            break;
+    }
+    out = sum;
+    return std::isfinite(out);
+}
+
+bool evalHypergeom1F1Double(double a, double b, double z, double &out)
+{
+    if (!std::isfinite(a) || !std::isfinite(b) || !std::isfinite(z))
+        return false;
+    if (z == 0.0 || a == 0.0) {
+        out = 1.0;
+        return true;
+    }
+    const bool aNegInt = (a <= 0.0 && std::floor(a) == a);
+    if (b <= 0.0 && std::floor(b) == b) {
+        if (!aNegInt || b < a)
+            return false;
+    }
+    if (!aNegInt && z < -15.0) {
+        // Kummer's 1st transformation: 1F1(a, b, z) = exp(z) * 1F1(b - a, b, -z)
+        double kVal = 0.0;
+        if (!evalHypergeom1F1Double(b - a, b, -z, kVal))
+            return false;
+        out = std::exp(z) * kVal;
+        return std::isfinite(out);
+    }
+    const int maxSteps = aNegInt ? static_cast<int>(-a) : 400;
+    double sum = 1.0, term = 1.0;
+    for (int k = 1; k <= maxSteps; ++k) {
+        const double num = a + static_cast<double>(k - 1);
+        const double den = (b + static_cast<double>(k - 1)) * static_cast<double>(k);
+        if (den == 0.0)
+            return false;
+        term *= (num * z) / den;
+        sum += term;
+        if (!aNegInt && std::abs(term) <= 1e-16 * std::abs(sum) &&
+            k > std::abs(z))
+            break;
+    }
+    out = sum;
+    return std::isfinite(out);
+}
+
+bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
+{
+    if (!std::isfinite(a) || !std::isfinite(b) || !std::isfinite(c) ||
+        !std::isfinite(z))
+        return false;
+    if (z == 0.0 || a == 0.0 || b == 0.0) {
+        out = 1.0;
+        return true;
+    }
+    const bool aNegInt = (a <= 0.0 && std::floor(a) == a && a >= -200.0);
+    const bool bNegInt = (b <= 0.0 && std::floor(b) == b && b >= -200.0);
+    const bool terminates = aNegInt || bNegInt;
+    int termCount = 500;
+    if (aNegInt && bNegInt)
+        termCount = static_cast<int>(std::min(-a, -b));
+    else if (aNegInt)
+        termCount = static_cast<int>(-a);
+    else if (bNegInt)
+        termCount = static_cast<int>(-b);
+
+    if (!terminates) {
+        if (c <= 0.0 && std::floor(c) == c)
+            return false;
+        if (z > 1.0)
+            return false;
+        if (z == 1.0) {
+            const double cab = c - a - b;
+            if (cab <= 0.0)
+                return false;
+            out = (std::tgamma(c) * std::tgamma(cab)) /
+                  (std::tgamma(c - a) * std::tgamma(c - b));
+            return std::isfinite(out);
+        }
+        if (z < -0.5) {
+            // Pfaff transformation: 2F1(a, b; c; z) = (1 - z)^(-a) * 2F1(a, c - b; c; z / (z - 1))
+            const double w = z / (z - 1.0);
+            double pfVal = 0.0;
+            if (!evalHypergeom2F1Double(a, c - b, c, w, pfVal))
+                return false;
+            out = std::pow(1.0 - z, -a) * pfVal;
+            return std::isfinite(out);
+        }
+    }
+
+    double sum = 1.0, term = 1.0;
+    for (int k = 1; k <= termCount; ++k) {
+        const double num =
+            (a + static_cast<double>(k - 1)) * (b + static_cast<double>(k - 1));
+        const double den =
+            (c + static_cast<double>(k - 1)) * static_cast<double>(k);
+        if (den == 0.0)
+            return false;
+        term *= (num * z) / den;
+        sum += term;
+        if (!terminates && std::abs(term) <= 1e-16 * std::abs(sum))
+            break;
+    }
+    out = sum;
+    return std::isfinite(out);
+}
+
 bool evalDoubleRec(
     const Ctx &c, Expr e,
     const std::vector<std::pair<std::string, double>> &vals,
@@ -2469,6 +2815,27 @@ bool evalDoubleRec(
     }
     case NodeKind::Func: {
         const std::string &fn = c.funcName(e);
+        if (c.childCount(e) == 4 && fn == "hypergeom2F1") {
+            double a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
+            if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a0) ||
+                !evalDoubleRec(c, c.child(e, 1), vals, memo, a1) ||
+                !evalDoubleRec(c, c.child(e, 2), vals, memo, a2) ||
+                !evalDoubleRec(c, c.child(e, 3), vals, memo, a3) ||
+                !evalHypergeom2F1Double(a0, a1, a2, a3, res)) {
+                return false;
+            }
+            break;
+        }
+        if (c.childCount(e) == 3 && fn == "hypergeom1F1") {
+            double a0 = 0.0, a1 = 0.0, a2 = 0.0;
+            if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a0) ||
+                !evalDoubleRec(c, c.child(e, 1), vals, memo, a1) ||
+                !evalDoubleRec(c, c.child(e, 2), vals, memo, a2) ||
+                !evalHypergeom1F1Double(a0, a1, a2, res)) {
+                return false;
+            }
+            break;
+        }
         if (c.childCount(e) == 2) {
             double a0 = 0.0, a1 = 0.0;
             if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a0) ||
@@ -2493,6 +2860,14 @@ bool evalDoubleRec(
                 if (!evalPolylogDouble(a0, a1, res)) return false;
             } else if (fn == "bernoulliB" || fn == "eulerE") {
                 if (!evalBernoulliEuler2ArgDouble(fn, a0, a1, res)) return false;
+            } else if (fn == "beta") {
+                if (!evalBetaDouble(a0, a1, res)) return false;
+            } else if (fn == "pochhammer") {
+                if (!evalPochhammerDouble(a0, a1, res)) return false;
+            } else if (fn == "igamma" || fn == "gammainc") {
+                if (!evalIncompleteGammaDouble(fn, a0, a1, res)) return false;
+            } else if (fn == "hypergeom0F1") {
+                if (!evalHypergeom0F1Double(a0, a1, res)) return false;
             } else {
                 return false;
             }
@@ -2818,7 +3193,156 @@ Expr Ctx::expand(Expr e)
                         }
                     }
                     return terms.empty() ? zero() : expand(add(terms));
+                } else if ((fn == "igamma" || fn == "gammainc") && n >= 1 &&
+                           n <= 20) {
+                    BigInt nFact(1);
+                    for (std::int64_t k = 2; k <= n - 1; ++k)
+                        nFact = nFact * BigInt(k);
+                    std::vector<Expr> sumTerms;
+                    BigInt kFact(1);
+                    for (std::int64_t k = 0; k < n; ++k) {
+                        if (k >= 2)
+                            kFact = kFact * BigInt(k);
+                        sumTerms.push_back(
+                            mul({number(Rational(BigInt(1), kFact)),
+                                 pow(xArg, number(k))}));
+                    }
+                    const Expr igVal = mul({
+                        number(Rational(nFact, BigInt(1))),
+                        func("exp", neg(xArg)),
+                        add(sumTerms)});
+                    if (fn == "igamma")
+                        return expand(igVal);
+                    return expand(add({
+                        number(Rational(nFact, BigInt(1))),
+                        neg(igVal)}));
                 }
+            }
+        }
+        if (args.size() == 2 && fn == "pochhammer" &&
+            kind(args[1]) == NodeKind::Number &&
+            numberValue(args[1]).den() == BigInt(1)) {
+            std::int64_t kCount = 0;
+            if (numberValue(args[1]).num().fitsInt64(kCount) &&
+                std::abs(kCount) <= 20) {
+                if (kCount == 0)
+                    return one();
+                if (kCount > 0) {
+                    std::vector<Expr> factors;
+                    factors.reserve(static_cast<std::size_t>(kCount));
+                    for (std::int64_t j = 0; j < kCount; ++j)
+                        factors.push_back(add({args[0], number(j)}));
+                    return expand(mul(factors));
+                }
+                std::vector<Expr> denFactors;
+                bool okDen = true;
+                for (std::int64_t j = 1; j <= -kCount; ++j) {
+                    const Expr step = add({args[0], number(-j)});
+                    if (isZero(step)) {
+                        okDen = false;
+                        break;
+                    }
+                    denFactors.push_back(step);
+                }
+                if (okDen)
+                    return pow(expand(mul(denFactors)), number(-1));
+            }
+        }
+        if (args.size() == 2 && fn == "beta") {
+            for (int side = 0; side < 2; ++side) {
+                const Expr nSide = args[static_cast<std::size_t>(side)];
+                const Expr xSide = args[static_cast<std::size_t>(1 - side)];
+                if (kind(nSide) == NodeKind::Number &&
+                    numberValue(nSide).den() == BigInt(1)) {
+                    std::int64_t nInt = 0;
+                    if (numberValue(nSide).num().fitsInt64(nInt) &&
+                        nInt >= 1 && nInt <= 20) {
+                        BigInt fact(1);
+                        std::vector<Expr> denFactors;
+                        bool okDen = true;
+                        for (std::int64_t k = 0; k < nInt; ++k) {
+                            if (k >= 2)
+                                fact = fact * BigInt(k);
+                            const Expr step = add({xSide, number(k)});
+                            if (isZero(step)) {
+                                okDen = false;
+                                break;
+                            }
+                            denFactors.push_back(step);
+                        }
+                        if (okDen) {
+                            return mul({
+                                number(Rational(fact, BigInt(1))),
+                                pow(expand(mul(denFactors)), number(-1))});
+                        }
+                    }
+                }
+            }
+        }
+        if (args.size() == 3 && fn == "hypergeom1F1" &&
+                   kind(args[0]) == NodeKind::Number &&
+                   numberValue(args[0]).den() == BigInt(1) &&
+                   numberValue(args[0]).signum() <= 0) {
+            std::int64_t ma = 0;
+            if (numberValue(args[0]).num().fitsInt64(ma) && -ma <= 12) {
+                const std::int64_t mTerm = -ma;
+                std::vector<Expr> terms{one()};
+                Expr numPoch = one();
+                Expr denPoch = one();
+                BigInt fact(1);
+                bool okDen = true;
+                for (std::int64_t k = 1; k <= mTerm; ++k) {
+                    const Expr bShift = add({args[1], number(k - 1)});
+                    if (isZero(bShift)) {
+                        okDen = false;
+                        break;
+                    }
+                    numPoch = mul({numPoch, add({args[0], number(k - 1)})});
+                    denPoch = mul({denPoch, bShift});
+                    fact = fact * BigInt(k);
+                    terms.push_back(mul({
+                        numPoch, pow(denPoch, number(-1)),
+                        number(Rational(BigInt(1), fact)),
+                        pow(args[2], number(k))}));
+                }
+                if (okDen)
+                    return expand(add(terms));
+            }
+        } else if (args.size() == 4 && fn == "hypergeom2F1") {
+            std::int64_t mTerm = -1;
+            for (std::size_t idx = 0; idx < 2; ++idx) {
+                if (kind(args[idx]) == NodeKind::Number &&
+                    numberValue(args[idx]).den() == BigInt(1) &&
+                    numberValue(args[idx]).signum() <= 0) {
+                    std::int64_t mv = 0;
+                    if (numberValue(args[idx]).num().fitsInt64(mv) &&
+                        -mv <= 12 && (mTerm < 0 || -mv < mTerm)) {
+                        mTerm = -mv;
+                    }
+                }
+            }
+            if (mTerm >= 0) {
+                std::vector<Expr> terms{one()};
+                Expr aPoch = one(), bPoch = one(), cPoch = one();
+                BigInt fact(1);
+                bool okDen = true;
+                for (std::int64_t k = 1; k <= mTerm; ++k) {
+                    const Expr cShift = add({args[2], number(k - 1)});
+                    if (isZero(cShift)) {
+                        okDen = false;
+                        break;
+                    }
+                    aPoch = mul({aPoch, add({args[0], number(k - 1)})});
+                    bPoch = mul({bPoch, add({args[1], number(k - 1)})});
+                    cPoch = mul({cPoch, cShift});
+                    fact = fact * BigInt(k);
+                    terms.push_back(mul({
+                        aPoch, bPoch, pow(cPoch, number(-1)),
+                        number(Rational(BigInt(1), fact)),
+                        pow(args[3], number(k))}));
+                }
+                if (okDen)
+                    return expand(add(terms));
             }
         }
         return func(fn, args);

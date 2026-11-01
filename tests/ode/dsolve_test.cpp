@@ -993,6 +993,31 @@ TEST(DsolveTest, PowerSeriesAndFrobeniusOdeSolver)
                  "C2*x^(-1/3)*(1 - 3/8*x^2 + 9/320*x^4)")))
             << "got: " << c.toString(frob.y);
     }
+
+    // 4. Kummer's confluent hypergeometric ODE:
+    //    x*y'' + (1/2 - x)*y' - 2*y = 0
+    {
+        const OdeResult kum = dsolve2Special(
+            c, x, P(c, "1/2 - x"), P(c, "-2"), c.zero(), x);
+        ASSERT_TRUE(kum.proved()) << kum.reason;
+        EXPECT_TRUE(sameExpr(
+            c, kum.y,
+            P(c, "C1*hypergeom1F1(2, 1/2, x) + C2*x^(1/2)*hypergeom1F1(5/2, 3/2, x)")))
+            << "got: " << c.toString(kum.y);
+    }
+
+    // 5. Gauss's hypergeometric ODE:
+    //    x*(1 - x)*y'' + (1/2 - 4*x)*y' - 2*y = 0  (a = 1, b = 2, c = 1/2)
+    {
+        const OdeResult gauss = dsolve2Special(
+            c, P(c, "x*(1 - x)"), P(c, "1/2 - 4*x"), P(c, "-2"), c.zero(), x);
+        ASSERT_TRUE(gauss.proved()) << gauss.reason;
+        EXPECT_TRUE(sameExpr(
+            c, gauss.y,
+            P(c, "C1*hypergeom2F1(1, 2, 1/2, x) + "
+                 "C2*x^(1/2)*hypergeom2F1(3/2, 5/2, 3/2, x)")))
+            << "got: " << c.toString(gauss.y);
+    }
 }
 
 } // namespace

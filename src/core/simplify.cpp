@@ -139,6 +139,8 @@ std::vector<SqTrigTerm> analyzeSqTrigTerm(Ctx &c, Expr term)
     return out;
 }
 
+Expr simplifyFuncNode(Ctx &c, Expr e);
+
 // Simplify an Add node using Pythagorean, hyperbolic, and logarithmic rules.
 Expr simplifyAddNode(Ctx &c, Expr e)
 {
@@ -886,6 +888,91 @@ Expr simplifyAddNode(Ctx &c, Expr e)
         }
     }
 
+    // 9. Incomplete gamma identities:
+    //    igamma(s, x) + gammainc(s, x)           -> gamma(s)
+    //    igamma(s + 1, x) - s * igamma(s, x)     -> x^s * exp(-x)
+    //    gammainc(s + 1, x) - s * gammainc(s, x) -> -x^s * exp(-x)
+    {
+        auto matchIncGamma = [&](Expr t, Expr &coefOut, std::string &fnOut,
+                                 Expr &sOut, Expr &xOut) -> bool {
+            std::vector<Expr> facs;
+            if (c.kind(t) == NodeKind::Mul) {
+                for (std::size_t i = 0; i < c.childCount(t); ++i)
+                    facs.push_back(c.child(t, i));
+            } else {
+                facs.push_back(t);
+            }
+            Expr fnNode;
+            std::vector<Expr> rest;
+            for (const Expr &f : facs) {
+                if (fnNode.isNull() && c.kind(f) == NodeKind::Func &&
+                    c.childCount(f) == 2 &&
+                    (c.funcName(f) == "igamma" ||
+                     c.funcName(f) == "gammainc")) {
+                    fnNode = f;
+                } else {
+                    rest.push_back(f);
+                }
+            }
+            if (fnNode.isNull())
+                return false;
+            coefOut = rest.empty() ? c.one() : c.mul(rest);
+            fnOut = c.funcName(fnNode);
+            sOut = c.child(fnNode, 0);
+            xOut = c.child(fnNode, 1);
+            return true;
+        };
+
+        bool changed = true;
+        while (changed && terms.size() >= 2) {
+            changed = false;
+            for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+                Expr cI, sI, xI;
+                std::string fnI;
+                if (!matchIncGamma(terms[i], cI, fnI, sI, xI))
+                    continue;
+                for (std::size_t j = 0; j < terms.size(); ++j) {
+                    if (j == i)
+                        continue;
+                    Expr cJ, sJ, xJ;
+                    std::string fnJ;
+                    if (!matchIncGamma(terms[j], cJ, fnJ, sJ, xJ) ||
+                        !(xJ == xI))
+                        continue;
+                    // Complementarity: igamma(s, x) + gammainc(s, x) -> gamma(s)
+                    if (fnI != fnJ && sI == sJ &&
+                        c.isZero(
+                            simplifyRationalExpr(c, c.add({cI, c.neg(cJ)})))) {
+                        terms[i] = c.mul(
+                            {cI, simplifyFuncNode(c, c.func("gamma", sI))});
+                        terms.erase(terms.begin() +
+                                    static_cast<std::ptrdiff_t>(j));
+                        changed = true;
+                        break;
+                    }
+                    // Recurrence: f(s + 1, x) - s * f(s, x) -> +/- x^s * exp(-x)
+                    if (fnI == fnJ) {
+                        const Expr sDiff =
+                            simplifyRationalExpr(c, c.add({sI, c.neg(sJ)}));
+                        if (sDiff == c.one() &&
+                            c.isZero(simplifyRationalExpr(
+                                c, c.add({cJ, c.mul({sJ, cI})})))) {
+                            const Expr tail = c.mul(
+                                {cI, c.pow(xI, sJ),
+                                 c.func("exp", c.neg(xI))});
+                            terms[i] =
+                                (fnI == "igamma") ? tail : c.neg(tail);
+                            terms.erase(terms.begin() +
+                                        static_cast<std::ptrdiff_t>(j));
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     return terms.empty() ? c.zero() : c.add(terms);
 }
 
@@ -1188,6 +1275,113 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     if (c.evalExact(e, {}, r))
         return c.number(r);
 
+    if (c.childCount(e) == 4) {
+        if (fn == "hypergeom2F1") {
+            const Expr a = c.child(e, 0);
+            const Expr b = c.child(e, 1);
+            const Expr cc = c.child(e, 2);
+            const Expr z = c.child(e, 3);
+            if (c.isZero(a) || c.isZero(b) || c.isZero(z))
+                return c.one();
+            if (c.kind(a) == NodeKind::Number ||
+                c.kind(b) == NodeKind::Number) {
+                const Expr expd = c.expand(e);
+                if (!expd.isNull() && !(expd == e))
+                    return expd;
+            }
+            if (a == cc)
+                return c.pow(c.add({c.one(), c.neg(z)}), c.neg(b));
+            if (b == cc)
+                return c.pow(c.add({c.one(), c.neg(z)}), c.neg(a));
+
+            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr mHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+            const Expr threeHalf =
+                c.number(Rational(std::int64_t{3}, BigInt(2)));
+            const Expr two = c.number(std::int64_t{2});
+            // hypergeom2F1(1, 1, 2, z) -> -log(1 - z) / z
+            if (a == c.one() && b == c.one() && cc == two && !c.isZero(z)) {
+                return c.neg(c.mul({
+                    simplifyFuncNode(c,
+                                     c.func("log", c.add({c.one(), c.neg(z)}))),
+                    c.pow(z, c.number(std::int64_t{-1}))}));
+            }
+            // hypergeom2F1(1/2, 1/2, 1, z) -> 2/pi * ellipticK(z)
+            if (a == half && b == half && cc == c.one()) {
+                return c.mul({
+                    two,
+                    c.pow(c.symbol("pi"), c.number(std::int64_t{-1})),
+                    simplifyFuncNode(c, c.func("ellipticK", z))});
+            }
+            // hypergeom2F1(-1/2, 1/2, 1, z) or (1/2, -1/2, 1, z) -> 2/pi * ellipticE(z)
+            if (((a == mHalf && b == half) || (a == half && b == mHalf)) &&
+                cc == c.one()) {
+                return c.mul({
+                    two,
+                    c.pow(c.symbol("pi"), c.number(std::int64_t{-1})),
+                    simplifyFuncNode(c, c.func("ellipticE", z))});
+            }
+            // hypergeom2F1(1/2, 1/2, 3/2, z) -> asin(sqrt(z)) / sqrt(z)
+            if (a == half && b == half && cc == threeHalf && !c.isZero(z)) {
+                const Expr sqZ = c.pow(z, half);
+                return c.mul({
+                    simplifyFuncNode(c, c.func("asin", sqZ)),
+                    c.pow(z, mHalf)});
+            }
+            // Gauss's summation theorem at z = 1 when Re(c - a - b) > 0:
+            //   2F1(a, b; c; 1) = gamma(c)*gamma(c - a - b) / (gamma(c - a)*gamma(c - b))
+            if (z == c.one()) {
+                const Expr cab = simplifyRationalExpr(
+                    c, c.add({cc, c.neg(a), c.neg(b)}));
+                if (!cab.isNull() &&
+                    ((c.kind(cab) == NodeKind::Number &&
+                      c.numberValue(cab) > Rational(0)) ||
+                     c.isAssumedPositive(cab))) {
+                    const Expr ca =
+                        simplifyRationalExpr(c, c.add({cc, c.neg(a)}));
+                    const Expr cb =
+                        simplifyRationalExpr(c, c.add({cc, c.neg(b)}));
+                    const Expr gProd = c.mul({
+                        simplifyFuncNode(c, c.func("gamma", cc)),
+                        simplifyFuncNode(c, c.func("gamma", cab)),
+                        c.pow(simplifyFuncNode(c, c.func("gamma", ca)),
+                              c.number(std::int64_t{-1})),
+                        c.pow(simplifyFuncNode(c, c.func("gamma", cb)),
+                              c.number(std::int64_t{-1}))});
+                    return (c.kind(gProd) == NodeKind::Mul)
+                               ? simplifyMulNode(c, gProd)
+                               : gProd;
+                }
+            }
+        }
+        return e;
+    }
+
+    if (c.childCount(e) == 3) {
+        if (fn == "hypergeom1F1") {
+            const Expr a = c.child(e, 0);
+            const Expr b = c.child(e, 1);
+            const Expr z = c.child(e, 2);
+            if (c.isZero(a) || c.isZero(z))
+                return c.one();
+            if (a == b)
+                return simplifyFuncNode(c, c.func("exp", z));
+            if (c.kind(a) == NodeKind::Number) {
+                const Expr expd = c.expand(e);
+                if (!expd.isNull() && !(expd == e))
+                    return expd;
+            }
+            if (a == c.one() && b == c.number(std::int64_t{2}) &&
+                !c.isZero(z)) {
+                return c.mul({
+                    c.add({simplifyFuncNode(c, c.func("exp", z)),
+                           c.number(std::int64_t{-1})}),
+                    c.pow(z, c.number(std::int64_t{-1}))});
+            }
+        }
+        return e;
+    }
+
     if (c.childCount(e) == 2) {
         const Expr nArg = c.child(e, 0);
         const Expr xArg = c.child(e, 1);
@@ -1469,6 +1663,146 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                     c.isAssumedPositive(nArg)) {
                     return c.neg(
                         simplifyFuncNode(c, c.func("dirichletEta", nArg)));
+                }
+            }
+            return e;
+        }
+
+        if (fn == "pochhammer") {
+            if (c.isZero(xArg))
+                return c.one();
+            if (xArg == c.one())
+                return nArg;
+            if (c.kind(xArg) == NodeKind::Number) {
+                const Expr expd = c.expand(e);
+                if (!expd.isNull() && !(expd == e))
+                    return expd;
+            }
+            return e;
+        }
+
+        if (fn == "beta") {
+            if (c.kind(nArg) == NodeKind::Number &&
+                c.kind(xArg) == NodeKind::Number) {
+                const Rational &rx = c.numberValue(nArg);
+                const Rational &ry = c.numberValue(xArg);
+                if (rx > Rational(0) && ry > Rational(0) &&
+                    (rx.den() == BigInt(1) || rx.den() == BigInt(2)) &&
+                    (ry.den() == BigInt(1) || ry.den() == BigInt(2))) {
+                    const Expr gProd = c.mul({
+                        simplifyFuncNode(c, c.func("gamma", nArg)),
+                        simplifyFuncNode(c, c.func("gamma", xArg)),
+                        c.pow(simplifyFuncNode(
+                                  c, c.func("gamma", c.add({nArg, xArg}))),
+                              c.number(std::int64_t{-1}))});
+                    return (c.kind(gProd) == NodeKind::Mul)
+                               ? simplifyMulNode(c, gProd)
+                               : gProd;
+                }
+            }
+            if (c.kind(nArg) == NodeKind::Number ||
+                c.kind(xArg) == NodeKind::Number) {
+                const Expr expd = c.expand(e);
+                if (!expd.isNull() && !(expd == e))
+                    return expd;
+            }
+            const Expr sumM1 = simplifyRationalExpr(
+                c, c.add({nArg, xArg, c.number(std::int64_t{-1})}));
+            if (!sumM1.isNull() && c.isZero(sumM1)) {
+                const Expr sinVal = simplifyFuncNode(
+                    c, c.func("sin", c.mul({c.symbol("pi"), nArg})));
+                if (!c.isZero(sinVal)) {
+                    return c.mul({
+                        c.symbol("pi"),
+                        c.pow(sinVal, c.number(std::int64_t{-1}))});
+                }
+            }
+            return e;
+        }
+
+        if (fn == "igamma" || fn == "gammainc") {
+            const bool posS =
+                (c.kind(nArg) == NodeKind::Number &&
+                 c.numberValue(nArg) > Rational(0)) ||
+                c.isAssumedPositive(nArg);
+            if (c.isZero(xArg) && posS) {
+                return (fn == "gammainc")
+                           ? c.zero()
+                           : simplifyFuncNode(c, c.func("gamma", nArg));
+            }
+            if (c.kind(nArg) == NodeKind::Number) {
+                const Rational &rn = c.numberValue(nArg);
+                std::int64_t nInt = 0;
+                if (rn.den() == BigInt(1) && rn.num().fitsInt64(nInt) &&
+                    nInt >= 1 && nInt <= 20) {
+                    BigInt nFact(1);
+                    for (std::int64_t k = 2; k <= nInt - 1; ++k)
+                        nFact = nFact * BigInt(k);
+                    std::vector<Expr> sumTerms;
+                    BigInt kFact(1);
+                    for (std::int64_t k = 0; k < nInt; ++k) {
+                        if (k >= 2)
+                            kFact = kFact * BigInt(k);
+                        sumTerms.push_back(c.mul({
+                            c.number(Rational(nFact, kFact)),
+                            c.pow(xArg, c.number(k))}));
+                    }
+                    const Expr expNegX =
+                        simplifyFuncNode(c, c.func("exp", c.neg(xArg)));
+                    const Expr igVal = c.mul({c.add(sumTerms), expNegX});
+                    if (fn == "igamma")
+                        return igVal;
+                    return c.add({
+                        c.number(Rational(nFact, BigInt(1))),
+                        c.neg(igVal)});
+                }
+                const Expr half =
+                    c.number(Rational(std::int64_t{1}, BigInt(2)));
+                if (nArg == half &&
+                    ((c.kind(xArg) == NodeKind::Number &&
+                      c.numberValue(xArg) >= Rational(0)) ||
+                     c.isAssumedNonNegative(xArg))) {
+                    const Expr sqPi = c.pow(c.symbol("pi"), half);
+                    const Expr sqX = c.pow(xArg, half);
+                    return c.mul({
+                        sqPi,
+                        simplifyFuncNode(
+                            c, c.func(fn == "gammainc" ? "erf" : "erfc", sqX))});
+                }
+            }
+            return e;
+        }
+
+        if (fn == "hypergeom0F1") {
+            if (c.isZero(xArg))
+                return c.one();
+            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr mHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+            const Expr threeHalf =
+                c.number(Rational(std::int64_t{3}, BigInt(2)));
+            const Expr two = c.number(std::int64_t{2});
+            Expr posX;
+            if (extractNegativeArg(c, xArg, posX)) {
+                const Expr twoSq = c.mul({two, c.pow(posX, half)});
+                if (nArg == half)
+                    return simplifyFuncNode(c, c.func("cos", twoSq));
+                if (nArg == threeHalf && !c.isZero(posX)) {
+                    return c.mul({
+                        simplifyFuncNode(c, c.func("sin", twoSq)),
+                        c.pow(two, c.number(std::int64_t{-1})),
+                        c.pow(posX, mHalf)});
+                }
+            } else if ((c.kind(xArg) == NodeKind::Number &&
+                        c.numberValue(xArg) > Rational(0)) ||
+                       c.isAssumedPositive(xArg)) {
+                const Expr twoSq = c.mul({two, c.pow(xArg, half)});
+                if (nArg == half)
+                    return simplifyFuncNode(c, c.func("cosh", twoSq));
+                if (nArg == threeHalf) {
+                    return c.mul({
+                        simplifyFuncNode(c, c.func("sinh", twoSq)),
+                        c.pow(two, c.number(std::int64_t{-1})),
+                        c.pow(xArg, mHalf)});
                 }
             }
             return e;
@@ -2160,6 +2494,11 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
                             c.number(Rational(re.num(), BigInt(1)))));
                         continue;
                     }
+                    if (re.num().abs() > BigInt(1)) {
+                        extracted.push_back(
+                            rewriteBottomUp(c, c.pow(ch, outerEx)));
+                        continue;
+                    }
                 }
                 if (c.kind(ch) == NodeKind::Pow &&
                     c.kind(c.child(ch, 1)) == NodeKind::Number) {
@@ -2374,19 +2713,27 @@ void collectSymbols(const Ctx &c, Expr e, std::vector<Expr> &syms)
         collectSymbols(c, c.child(e, i), syms);
 }
 
-bool isThreeTermRecurrenceFunc(const std::string &fn)
+bool isThreeTermRecurrenceFunc(const std::string &fn, std::size_t arity)
 {
-    return fn == "besselj" || fn == "bessely" || fn == "besseli" ||
-           fn == "besselk" || fn == "legendreP" || fn == "chebyshevT" ||
-           fn == "chebyshevU" || fn == "hermiteH" || fn == "laguerreL";
+    if (arity == 2) {
+        return fn == "besselj" || fn == "bessely" || fn == "besseli" ||
+               fn == "besselk" || fn == "legendreP" || fn == "chebyshevT" ||
+               fn == "chebyshevU" || fn == "hermiteH" || fn == "laguerreL" ||
+               fn == "hypergeom0F1";
+    }
+    if (arity == 3)
+        return fn == "hypergeom1F1";
+    if (arity == 4)
+        return fn == "hypergeom2F1";
+    return false;
 }
 
 void collectRecurrenceFuncNodes(const Ctx &c, Expr e, std::vector<Expr> &nodes)
 {
     if (e.isNull())
         return;
-    if (c.kind(e) == NodeKind::Func && c.childCount(e) == 2 &&
-        isThreeTermRecurrenceFunc(c.funcName(e))) {
+    if (c.kind(e) == NodeKind::Func &&
+        isThreeTermRecurrenceFunc(c.funcName(e), c.childCount(e))) {
         if (std::find(nodes.begin(), nodes.end(), e) == nodes.end())
             nodes.push_back(e);
     }
@@ -2395,8 +2742,9 @@ void collectRecurrenceFuncNodes(const Ctx &c, Expr e, std::vector<Expr> &nodes)
 }
 
 // Reduce Z-coset shifted orders nu_min + k (k >= 2) of 3-term recurrence
-// families (Bessel J/Y/I/K and orthogonal polynomials P_n, T_n, U_n, H_n, L_n)
-// to the 2-term basis {F(nu_min, u), F(nu_min + 1, u)}.
+// families (Bessel J/Y/I/K, orthogonal polynomials P_n, T_n, U_n, H_n, L_n,
+// and hypergeometric 0F1, 1F1, 2F1 derivative-shift chains) to the 2-term
+// basis {F(nu_min, u), F(nu_min + 1, u)}.
 Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
 {
     std::vector<Expr> nodes;
@@ -2413,39 +2761,49 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
             continue;
         used[i] = true;
         const std::string fn = c.funcName(nodes[i]);
-        const Expr ordI = c.child(nodes[i], 0);
-        const Expr uArg = c.child(nodes[i], 1);
+        const std::size_t arity = c.childCount(nodes[i]);
+        const std::size_t nParams = arity - 1;
+        const Expr uArg = c.child(nodes[i], nParams);
         if (c.isZero(uArg))
             continue;
 
         struct ShiftNode {
             Expr node;
-            Expr ord;
             std::int64_t off;
         };
         std::vector<ShiftNode> group;
-        group.push_back({nodes[i], ordI, 0});
+        group.push_back({nodes[i], 0});
         std::int64_t minOff = 0, maxOff = 0;
-        Expr minOrd = ordI;
+        Expr minNode = nodes[i];
 
         for (std::size_t j = i + 1; j < nodes.size(); ++j) {
             if (used[j])
                 continue;
-            if (c.funcName(nodes[j]) != fn || !(c.child(nodes[j], 1) == uArg))
+            if (c.funcName(nodes[j]) != fn || c.childCount(nodes[j]) != arity ||
+                !(c.child(nodes[j], nParams) == uArg))
                 continue;
-            const Expr ordJ = c.child(nodes[j], 0);
-            const Expr diffJI =
-                simplifyRationalExpr(c, c.add({ordJ, c.neg(ordI)}));
             std::int64_t m = 0;
-            if (!diffJI.isNull() && c.kind(diffJI) == NodeKind::Number &&
-                c.numberValue(diffJI).den() == BigInt(1) &&
-                c.numberValue(diffJI).num().fitsInt64(m) &&
-                std::abs(m) <= 8) {
+            bool sameShift = true;
+            for (std::size_t p = 0; p < nParams; ++p) {
+                const Expr diffJI = simplifyRationalExpr(
+                    c, c.add({c.child(nodes[j], p),
+                              c.neg(c.child(nodes[i], p))}));
+                std::int64_t mp = 0;
+                if (diffJI.isNull() || c.kind(diffJI) != NodeKind::Number ||
+                    c.numberValue(diffJI).den() != BigInt(1) ||
+                    !c.numberValue(diffJI).num().fitsInt64(mp) ||
+                    std::abs(mp) > 8 || (p > 0 && mp != m)) {
+                    sameShift = false;
+                    break;
+                }
+                m = mp;
+            }
+            if (sameShift) {
                 used[j] = true;
-                group.push_back({nodes[j], ordJ, m});
+                group.push_back({nodes[j], m});
                 if (m < minOff) {
                     minOff = m;
-                    minOrd = ordJ;
+                    minNode = nodes[j];
                 }
                 if (m > maxOff)
                     maxOff = m;
@@ -2456,12 +2814,29 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
         if (group.size() < 2 || span < 2 || span > 8)
             continue;
 
-        std::vector<Expr> seq(static_cast<std::size_t>(span + 1));
-        seq[0] = c.func(fn, minOrd, uArg);
-        const Expr ord1 =
-            simplifyRationalExpr(c, c.add({minOrd, c.one()}));
-        seq[1] = c.func(fn, ord1.isNull() ? c.add({minOrd, c.one()}) : ord1, uArg);
+        auto buildShiftedNode = [&](std::int64_t shift) -> Expr {
+            std::vector<Expr> args;
+            args.reserve(arity);
+            for (std::size_t p = 0; p < nParams; ++p) {
+                const Expr baseP = c.child(minNode, p);
+                if (shift == 0) {
+                    args.push_back(baseP);
+                } else {
+                    const Expr sp = simplifyRationalExpr(
+                        c, c.add({baseP, c.number(shift)}));
+                    args.push_back(sp.isNull() ? c.add({baseP, c.number(shift)})
+                                               : sp);
+                }
+            }
+            args.push_back(uArg);
+            return c.func(fn, args);
+        };
 
+        std::vector<Expr> seq(static_cast<std::size_t>(span + 1));
+        seq[0] = buildShiftedNode(0);
+        seq[1] = buildShiftedNode(1);
+
+        const Expr minOrd = c.child(minNode, 0);
         bool ok = true;
         for (std::int64_t r = 1; r < span; ++r) {
             const Expr mu = simplifyRationalExpr(
@@ -2506,6 +2881,39 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
                     c.pow(den, c.number(-1)),
                     c.add({c.mul({twoMuP1MinusU, fCur}),
                            c.neg(c.mul({muExpr, fPrev}))})});
+            } else if (fn == "hypergeom0F1") {
+                const Expr beta = c.add({minOrd, c.number(r - 1)});
+                fNext = c.mul({
+                    beta, muExpr, c.pow(uArg, c.number(-1)),
+                    c.add({fPrev, c.neg(fCur)})});
+            } else if (fn == "hypergeom1F1") {
+                const Expr alpha1 = muExpr;
+                if (c.isZero(alpha1)) { ok = false; break; }
+                const Expr beta = c.add({c.child(minNode, 1), c.number(r - 1)});
+                const Expr beta1 = c.add({c.child(minNode, 1), c.number(r)});
+                fNext = c.mul({
+                    beta1,
+                    c.pow(c.mul({alpha1, uArg}), c.number(-1)),
+                    c.add({c.mul({beta, fPrev}),
+                           c.neg(c.mul({c.add({beta, c.neg(uArg)}), fCur}))})});
+            } else if (fn == "hypergeom2F1") {
+                const Expr alpha = c.add({c.child(minNode, 0), c.number(r - 1)});
+                const Expr beta = c.add({c.child(minNode, 1), c.number(r - 1)});
+                const Expr gamma = c.add({c.child(minNode, 2), c.number(r - 1)});
+                const Expr alpha1 = muExpr;
+                const Expr beta1 = c.add({c.child(minNode, 1), c.number(r)});
+                const Expr gamma1 = c.add({c.child(minNode, 2), c.number(r)});
+                const Expr oneMinusU = c.add({c.one(), c.neg(uArg)});
+                const Expr den = c.mul({alpha1, beta1, uArg, oneMinusU});
+                if (c.isZero(den)) { ok = false; break; }
+                const Expr curCoef = c.add({
+                    gamma,
+                    c.neg(c.mul({c.add({alpha, beta, c.one()}), uArg}))});
+                fNext = c.mul({
+                    gamma1,
+                    c.pow(den, c.number(-1)),
+                    c.add({c.mul({gamma, fPrev}),
+                           c.neg(c.mul({curCoef, fCur}))})});
             } else {
                 ok = false;
                 break;

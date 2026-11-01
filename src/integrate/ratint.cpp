@@ -1837,8 +1837,13 @@ Expr expandFuncArgs(Ctx &c, Expr e)
     case NodeKind::Symbol:
     case NodeKind::RootOf:
         return e;
-    case NodeKind::Func:
-        return c.func(c.funcName(e), c.expand(expandFuncArgs(c, c.child(e, 0))));
+    case NodeKind::Func: {
+        std::vector<Expr> args;
+        args.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            args.push_back(c.expand(expandFuncArgs(c, c.child(e, i))));
+        return c.func(c.funcName(e), args);
+    }
     case NodeKind::Pow:
         return c.pow(expandFuncArgs(c, c.child(e, 0)),
                      expandFuncArgs(c, c.child(e, 1)));
@@ -2119,6 +2124,57 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                                     RationalIntegral::Status::ProvedSymbolic;
                                 return out;
                             }
+                        }
+                    }
+                }
+
+                // 1c. Incomplete gamma integral:
+                //     int C * x^(s - 1) * exp(a*x + b) dx = -C * exp(b) * (-a)^(-s) * igamma(s, -a*x)
+                {
+                    Expr xExp = c.zero();
+                    std::vector<Expr> cFacs;
+                    bool okMonom = true;
+                    for (const Expr &rf : nonExpFactors) {
+                        if (!mentionsVar(c, rf, var)) {
+                            cFacs.push_back(rf);
+                        } else if (rf == var) {
+                            xExp = c.add({xExp, c.one()});
+                        } else if (c.kind(rf) == NodeKind::Pow &&
+                                   c.child(rf, 0) == var &&
+                                   !mentionsVar(c, c.child(rf, 1), var)) {
+                            xExp = c.add({xExp, c.child(rf, 1)});
+                        } else {
+                            okMonom = false;
+                            break;
+                        }
+                    }
+                    const Expr sParam = c.simplify(c.add({xExp, c.one()}));
+                    if (okMonom && !c.isZero(xExp) && !c.isZero(sParam)) {
+                        const Expr negA = c.simplify(c.neg(a));
+                        const Expr cPart =
+                            cFacs.empty() ? c.one() : c.mul(cFacs);
+                        const Expr expB =
+                            c.isZero(b) ? c.one() : c.func("exp", b);
+                        const Expr uGam = c.mul({negA, var});
+                        // Use (-a)^(-s) when -a > 0; otherwise x^s * (-a*x)^(-s)
+                        Expr scalePow;
+                        if ((c.kind(negA) == NodeKind::Number &&
+                             c.numberValue(negA) > Rational(0)) ||
+                            c.isAssumedPositive(negA)) {
+                            scalePow = c.pow(negA, c.neg(sParam));
+                        } else {
+                            scalePow = c.mul({
+                                c.pow(var, sParam),
+                                c.pow(uGam, c.neg(sParam))});
+                        }
+                        const Expr F = c.neg(c.mul({
+                            cPart, expB, scalePow,
+                            c.func("igamma", sParam, uGam)}));
+                        if (certifySpecialIntegral(c, F, f, var)) {
+                            out.F = F;
+                            out.status =
+                                RationalIntegral::Status::ProvedSymbolic;
+                            return out;
                         }
                     }
                 }
@@ -2987,6 +3043,58 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
         }
     }
 
+    // 7. Generalized hypergeometric functions:
+    //    int hypergeom0F1(b, k*x + d) dx       = (b - 1)/k * hypergeom0F1(b - 1, k*x + d)
+    //    int hypergeom1F1(a, b, k*x + d) dx    = (b - 1)/(k*(a - 1)) * hypergeom1F1(a - 1, b - 1, k*x + d)
+    //    int hypergeom2F1(a, b, c, k*x + d) dx = (c - 1)/(k*(a - 1)*(b - 1)) * hypergeom2F1(a - 1, b - 1, c - 1, k*x + d)
+    if (c.kind(f) == NodeKind::Func &&
+        ((c.funcName(f) == "hypergeom0F1" && c.childCount(f) == 2) ||
+         (c.funcName(f) == "hypergeom1F1" && c.childCount(f) == 3) ||
+         (c.funcName(f) == "hypergeom2F1" && c.childCount(f) == 4))) {
+        const std::size_t nArgs = c.childCount(f);
+        bool paramsFree = true;
+        for (std::size_t i = 0; i + 1 < nArgs; ++i) {
+            if (mentionsVar(c, c.child(f, i), var)) {
+                paramsFree = false;
+                break;
+            }
+        }
+        const Expr uArg = c.child(f, nArgs - 1);
+        std::vector<Expr> uCoeffs;
+        if (paramsFree && extractPolyInVar(c, uArg, var, 1, uCoeffs) &&
+            uCoeffs.size() == 2 && !c.isZero(uCoeffs[1])) {
+            const Expr kSlope = uCoeffs[1];
+            const Expr m1 = c.number(std::int64_t{-1});
+            std::vector<Expr> shiftedArgs;
+            bool validShift = true;
+            for (std::size_t i = 0; i + 1 < nArgs; ++i) {
+                const Expr pm1 = c.simplify(c.add({c.child(f, i), m1}));
+                if (c.isZero(pm1)) {
+                    validShift = false;
+                    break;
+                }
+                shiftedArgs.push_back(pm1);
+            }
+            if (validShift) {
+                shiftedArgs.push_back(uArg);
+                const Expr bM1 = shiftedArgs[nArgs - 2];
+                Expr denom = kSlope;
+                if (nArgs == 3)
+                    denom = c.mul({kSlope, shiftedArgs[0]});
+                else if (nArgs == 4)
+                    denom = c.mul({kSlope, shiftedArgs[0], shiftedArgs[1]});
+                const Expr F =
+                    c.div(c.mul({bM1, c.func(c.funcName(f), shiftedArgs)}),
+                          denom);
+                if (certifySpecialIntegral(c, F, f, var)) {
+                    out.F = F;
+                    out.status = RationalIntegral::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+        }
+    }
+
     return out;
 }
 
@@ -3745,6 +3853,7 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     bool hasTrig = false;
     int binomCount = 0;
     Expr binC0, binC1, binM, binExp = c.zero();
+    Expr bin2C0, bin2C1, bin2M, bin2Exp = c.zero();
     int expDenomCount = 0;
     Expr expDenC0, expDenC1, expDenA;
 
@@ -3905,6 +4014,20 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
                     binExp = c.add({binExp, bPow});
                     continue;
                 }
+                if (intervalKind == 1) {
+                    if (binomCount == 1) {
+                        bin2C0 = c0;
+                        bin2C1 = c1;
+                        bin2M = m;
+                        bin2Exp = bPow;
+                        binomCount = 2;
+                        continue;
+                    }
+                    if (c0 == bin2C0 && c1 == bin2C1 && m == bin2M) {
+                        bin2Exp = c.add({bin2Exp, bPow});
+                        continue;
+                    }
+                }
             }
         }
         return false;
@@ -3998,6 +4121,61 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
             valOut =
                 c.simplify(c.mul({constCoef, c.div(betaPart, binM), psiDiff}));
             return true;
+        }
+        // Euler's integral representation for Gauss's hypergeometric 2F1 on [0, 1]:
+        //   int_0^1 x^(b-1) * (1 - x)^(c - b - 1) * (c0 + c1*x)^(-a) dx
+        //     = c0^(-a) * gamma(b)*gamma(c - b)/gamma(c) * hypergeom2F1(a, b, c, -c1/c0)
+        if ((binomCount == 1 || binomCount == 2) && logPow == 0 &&
+            binM == c.one()) {
+            Expr qMinus1 = c.zero();
+            Expr zC0, zC1, negAExp;
+            bool matchedEuler2F1 = false;
+            if (binomCount == 1 &&
+                !(binC0 == c.one() && binC1 == c.number(std::int64_t{-1}))) {
+                zC0 = binC0;
+                zC1 = binC1;
+                negAExp = binExp;
+                matchedEuler2F1 = true;
+            } else if (binomCount == 2 && bin2M == c.one()) {
+                if (binC0 == c.one() && binC1 == c.number(std::int64_t{-1})) {
+                    qMinus1 = binExp;
+                    zC0 = bin2C0;
+                    zC1 = bin2C1;
+                    negAExp = bin2Exp;
+                    matchedEuler2F1 = true;
+                } else if (bin2C0 == c.one() &&
+                           bin2C1 == c.number(std::int64_t{-1})) {
+                    qMinus1 = bin2Exp;
+                    zC0 = binC0;
+                    zC1 = binC1;
+                    negAExp = binExp;
+                    matchedEuler2F1 = true;
+                }
+            }
+            if (matchedEuler2F1 && c.isAssumedPositive(zC0) &&
+                !c.isZero(zC1)) {
+                const Expr bParam = c.simplify(c.add({xExp, c.one()}));
+                const Expr qParam = c.simplify(c.add({qMinus1, c.one()}));
+                const Expr zArg = c.simplify(c.neg(c.div(zC1, zC0)));
+                const Expr oneMinusZ =
+                    c.simplify(c.add({c.one(), c.neg(zArg)}));
+                if (c.isAssumedPositive(bParam) &&
+                    c.isAssumedPositive(qParam) &&
+                    c.isAssumedPositive(oneMinusZ)) {
+                    const Expr aParam = c.simplify(c.neg(negAExp));
+                    const Expr cParam = c.simplify(c.add({bParam, qParam}));
+                    const Expr c0Scale = c.pow(zC0, negAExp);
+                    const Expr betaFac = c.div(
+                        c.mul({c.func("gamma", bParam),
+                               c.func("gamma", qParam)}),
+                        c.func("gamma", cParam));
+                    const Expr hg = c.func("hypergeom2F1",
+                                           {aParam, bParam, cParam, zArg});
+                    valOut = c.simplify(
+                        c.mul({constCoef, c0Scale, betaFac, hg}));
+                    return true;
+                }
+            }
         }
         return false;
     }

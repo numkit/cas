@@ -86,7 +86,7 @@ struct FormalFrac
     Expr den;
 };
 
-FormalFrac toFormalFrac(Ctx &c, Expr e)
+FormalFrac toFormalFrac(Ctx &c, Expr e, bool splitFracPow = false)
 {
     if (e.isNull())
         return {Expr(), Expr()};
@@ -118,7 +118,7 @@ FormalFrac toFormalFrac(Ctx &c, Expr e)
             std::int64_t k = 0;
             if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) &&
                 std::abs(k) <= 64) {
-                const FormalFrac bf = toFormalFrac(c, b);
+                const FormalFrac bf = toFormalFrac(c, b, splitFracPow);
                 if (bf.num.isNull() || bf.den.isNull())
                     return {Expr(), Expr()};
                 if (k == 0)
@@ -133,6 +133,30 @@ FormalFrac toFormalFrac(Ctx &c, Expr e)
                 const Expr ek = c.number(-k);
                 return {c.expand(c.pow(bf.den, ek)),
                         c.expand(c.pow(bf.num, ek))};
+            }
+            if (splitFracPow && rv.den() > BigInt(1)) {
+                BigInt kBig = rv.num() / rv.den();
+                BigInt rBig = rv.num() % rv.den();
+                if (rBig.signum() < 0) {
+                    kBig = kBig - BigInt(1);
+                    rBig = rBig + rv.den();
+                }
+                std::int64_t kFloor = 0;
+                if (kBig.fitsInt64(kFloor) && std::abs(kFloor) <= 16) {
+                    const Expr sb = simplifyRationalExpr(c, b);
+                    if (sb.isNull() || c.isZero(sb))
+                        return {Expr(), Expr()};
+                    const Expr rad =
+                        c.pow(sb, c.number(Rational(rBig, rv.den())));
+                    if (kFloor == 0)
+                        return {rad, c.one()};
+                    if (kFloor > 0) {
+                        return {c.expand(c.mul(
+                                    {rad, c.expand(c.pow(sb, c.number(kFloor)))})),
+                                c.one()};
+                    }
+                    return {rad, c.expand(c.pow(sb, c.number(-kFloor)))};
+                }
             }
             if (rv.signum() < 0) {
                 const Expr sb = simplifyRationalExpr(c, b);
@@ -151,7 +175,7 @@ FormalFrac toFormalFrac(Ctx &c, Expr e)
         Expr numAcc = c.one();
         Expr denAcc = c.one();
         for (std::size_t i = 0; i < c.childCount(e); ++i) {
-            const FormalFrac cf = toFormalFrac(c, c.child(e, i));
+            const FormalFrac cf = toFormalFrac(c, c.child(e, i), splitFracPow);
             if (cf.num.isNull() || cf.den.isNull())
                 return {Expr(), Expr()};
             numAcc = c.expand(c.mul({numAcc, cf.num}));
@@ -163,7 +187,7 @@ FormalFrac toFormalFrac(Ctx &c, Expr e)
         Expr numAcc = c.zero();
         Expr denAcc = c.one();
         for (std::size_t i = 0; i < c.childCount(e); ++i) {
-            const FormalFrac cf = toFormalFrac(c, c.child(e, i));
+            const FormalFrac cf = toFormalFrac(c, c.child(e, i), splitFracPow);
             if (cf.num.isNull() || cf.den.isNull())
                 return {Expr(), Expr()};
             if (c.isZero(cf.num))
@@ -515,6 +539,12 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
         if (polyDivExactMulti(c, f.den, f.num, syms, 0, quot) &&
             !c.isZero(quot))
             return c.pow(quot, c.number(std::int64_t{-1}));
+    } else if (!pureRat && c.kind(e) == NodeKind::Add) {
+        const FormalFrac fRad = toFormalFrac(c, e, true);
+        if (!fRad.num.isNull() && !fRad.den.isNull() &&
+            !c.isZero(fRad.den) && c.isZero(fRad.num)) {
+            return c.zero();
+        }
     }
 
     return c.div(f.num, f.den);

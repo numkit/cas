@@ -651,5 +651,76 @@ TEST(SimplifyTest, ZetaDirichletEtaPolylogAndBernoulliEuler)
     EXPECT_NEAR(li3Half, 0.5372131936080402, 1e-14);
 }
 
+TEST(SimplifyTest, HypergeometricBetaPochhammerAndIncompleteGamma)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr a = c.symbol("a");
+    const Expr b = c.symbol("b");
+    const Expr s = c.symbol("s");
+    c.assume(x, AssumeDomain::Positive);
+    c.assume(s, AssumeDomain::Positive);
+
+    // 1. Pochhammer and Euler Beta
+    EXPECT_EQ(c.simplify(parseExpr(c, "pochhammer(1/2, 3)")),
+              parseExpr(c, "15/8"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "pochhammer(x, 3)")),
+              c.simplify(parseExpr(c, "x*(x + 1)*(x + 2)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "beta(3, 4)")),
+              parseExpr(c, "1/60"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "beta(1/2, 1/2)")),
+              parseExpr(c, "pi"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "beta(x, 3)")),
+              c.simplify(parseExpr(c, "2/(x*(x + 1)*(x + 2))")));
+
+    // 2. Incomplete gamma functions (igamma, gammainc)
+    EXPECT_EQ(c.simplify(parseExpr(c, "igamma(3, x)")),
+              c.simplify(parseExpr(c, "(2 + 2*x + x^2)*exp(-x)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "gammainc(2, x)")),
+              c.simplify(parseExpr(c, "1 - (1 + x)*exp(-x)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "igamma(1/2, x)")),
+              c.simplify(parseExpr(c, "pi^(1/2)*erfc(x^(1/2))")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "gammainc(1/2, x)")),
+              c.simplify(parseExpr(c, "pi^(1/2)*erf(x^(1/2))")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "igamma(s, x) + gammainc(s, x)")),
+              parseExpr(c, "gamma(s)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "igamma(s + 1, x) - s*igamma(s, x)")),
+              c.simplify(parseExpr(c, "x^s*exp(-x)")));
+    EXPECT_EQ(c.simplify(c.diff(parseExpr(c, "igamma(s, x)"), x)),
+              c.simplify(parseExpr(c, "-x^(s - 1)*exp(-x)")));
+    EXPECT_EQ(c.simplify(c.diff(parseExpr(c, "gammainc(s, x)"), x)),
+              c.simplify(parseExpr(c, "x^(s - 1)*exp(-x)")));
+
+    // 3. Hypergeometric 0F1, 1F1, 2F1 reductions and Gauss summation
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom0F1(1/2, -x)")),
+              c.simplify(parseExpr(c, "cos(2*x^(1/2))")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom0F1(1/2, x)")),
+              c.simplify(parseExpr(c, "cosh(2*x^(1/2))")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom1F1(a, a, x)")),
+              parseExpr(c, "exp(x)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom1F1(-2, 3, x)")),
+              c.simplify(parseExpr(c, "1 - 2/3*x + 1/12*x^2")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom2F1(a, b, b, x)")),
+              parseExpr(c, "(1 - x)^(-a)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom2F1(-2, 3, 4, x)")),
+              parseExpr(c, "1 - 3/2*x + 3/5*x^2"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom2F1(1, 1, 2, x)")),
+              c.simplify(parseExpr(c, "-log(1 - x)*x^(-1)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom2F1(1/2, 1/2, 1, x)")),
+              c.simplify(parseExpr(c, "2*pi^(-1)*ellipticK(x)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom2F1(-1/2, 1/2, 1, x)")),
+              c.simplify(parseExpr(c, "2*pi^(-1)*ellipticE(x)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hypergeom2F1(1/2, 1/2, 2, 1)")),
+              c.simplify(parseExpr(c, "4*pi^(-1)")));
+
+    // 4. IEEE-754 double evaluation
+    double f21 = 0.0, igVal = 0.0;
+    ASSERT_TRUE(
+        c.evalDouble(parseExpr(c, "hypergeom2F1(1, 1, 2, 1/2)"), {}, f21));
+    EXPECT_NEAR(f21, 2.0 * std::log(2.0), 1e-13);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "igamma(2, 1)"), {}, igVal));
+    EXPECT_NEAR(igVal, 2.0 * std::exp(-1.0), 1e-13);
+}
+
 } // namespace
 } // namespace numkit::cas

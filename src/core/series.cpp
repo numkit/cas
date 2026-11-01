@@ -1180,6 +1180,103 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                               positiveT);
     }
     case NodeKind::Func: {
+        if (c.childCount(e) == 3 || c.childCount(e) == 4) {
+            const std::string &fn = c.funcName(e);
+            const Expr expd = c.simplify(e);
+            if (!expd.isNull() && !(expd == e)) {
+                return computeLaurent(c, expd, var, x0, maxDeg, budget, out,
+                                      positiveT);
+            }
+            if ((c.childCount(e) == 3 && fn == "hypergeom1F1") ||
+                (c.childCount(e) == 4 && fn == "hypergeom2F1")) {
+                const std::size_t nArgs = c.childCount(e);
+                for (std::size_t i = 0; i + 1 < nArgs; ++i) {
+                    if (mentionsSymbol(c, c.child(e, i), var))
+                        return false;
+                }
+                const Expr zExpr = c.child(e, nArgs - 1);
+                Laurent argSeries;
+                if (!computeLaurent(c, zExpr, var, x0, maxDeg, budget,
+                                    argSeries, positiveT) ||
+                    argSeries.val < 0)
+                    return false;
+                const Expr c0 =
+                    (argSeries.val == 0 && !argSeries.coeffs.empty())
+                        ? argSeries.coeffs[0]
+                        : c.zero();
+                const int L = static_cast<int>(argSeries.coeffs.size()) - 1;
+                Laurent u = argSeries;
+                if (u.val == 0 && !u.coeffs.empty())
+                    u.coeffs[0] = c.zero();
+                if (isZeroCoeff(c, c0)) {
+                    Laurent sum = makeConstSeries(c, c.one(), L);
+                    Laurent upow = u;
+                    Expr ck = c.one();
+                    for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                        const Expr km1 = c.number(k - 1);
+                        const Expr bStep = foldConst(
+                            c, c.add({c.child(e, nArgs - 2), km1}));
+                        if (isZeroCoeff(c, bStep))
+                            return false;
+                        Expr numStep = foldConst(c, c.add({c.child(e, 0), km1}));
+                        if (nArgs == 4) {
+                            numStep = foldConst(
+                                c, c.mul({numStep,
+                                          c.add({c.child(e, 1), km1})}));
+                        }
+                        ck = foldConst(
+                            c, c.mul({ck, numStep,
+                                      c.pow(c.mul({bStep, c.number(k)}),
+                                            c.number(std::int64_t{-1}))}));
+                        if (!c.isZero(ck)) {
+                            sum = addSeries(c, sum, scaleSeries(c, upow, ck));
+                        }
+                        if (k + 1 <= L)
+                            upow = mulSeries(c, upow, u);
+                    }
+                    out = sum;
+                    return true;
+                }
+                std::vector<Expr> mac(static_cast<std::size_t>(L + 1),
+                                      c.zero());
+                const Expr tSym = c.symbol("$t_series");
+                std::vector<Expr> fnArgs;
+                for (std::size_t i = 0; i + 1 < nArgs; ++i)
+                    fnArgs.push_back(c.child(e, i));
+                fnArgs.push_back(tSym);
+                Expr cur = c.func(fn, fnArgs);
+                BigInt fact(1);
+                for (int k = 0; k <= L; ++k) {
+                    if (k > 0) {
+                        cur = c.diff(cur, tSym);
+                        if (cur.isNull())
+                            return false;
+                        fact = fact * BigInt(static_cast<std::int64_t>(k));
+                    }
+                    const Expr valAtC0 = foldConst(c, c.subs(cur, tSym, c0));
+                    if (valAtC0.isNull())
+                        return false;
+                    mac[static_cast<std::size_t>(k)] = foldConst(
+                        c, c.mul({valAtC0,
+                                  c.number(Rational(BigInt(1), fact))}));
+                }
+                Laurent sum = makeConstSeries(c, mac[0], L);
+                Laurent upow = u;
+                for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                    if (!c.isZero(mac[static_cast<std::size_t>(k)])) {
+                        sum = addSeries(
+                            c, sum,
+                            scaleSeries(c, upow,
+                                        mac[static_cast<std::size_t>(k)]));
+                    }
+                    if (k + 1 <= L)
+                        upow = mulSeries(c, upow, u);
+                }
+                out = sum;
+                return true;
+            }
+            return false;
+        }
         if (c.childCount(e) == 2) {
             const std::string &fn = c.funcName(e);
             const Expr ord = c.child(e, 0);
@@ -1187,7 +1284,8 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
             if (fn == "legendreP" || fn == "chebyshevT" ||
                 fn == "chebyshevU" || fn == "hermiteH" || fn == "laguerreL" ||
                 fn == "ellipticPi" || fn == "bernoulliB" || fn == "eulerE" ||
-                fn == "polylog") {
+                fn == "polylog" || fn == "pochhammer" || fn == "beta" ||
+                fn == "igamma" || fn == "gammainc" || fn == "hypergeom0F1") {
                 const Expr expd = c.simplify(e);
                 if (!expd.isNull() && !(expd == e)) {
                     return computeLaurent(c, expd, var, x0, maxDeg, budget,
@@ -1367,6 +1465,32 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     const Expr coef =
                         foldConst(c, c.pow(c.number(k), c.neg(ord)));
                     sum = addSeries(c, sum, scaleSeries(c, upow, coef));
+                    if (k + 1 <= L)
+                        upow = mulSeries(c, upow, u);
+                }
+                out = sum;
+                return true;
+            }
+            if (fn == "hypergeom0F1" && isZeroCoeff(c, c0) &&
+                !mentionsSymbol(c, ord, var)) {
+                const int L = static_cast<int>(argSeries.coeffs.size()) - 1;
+                Laurent u = argSeries;
+                if (u.val == 0 && !u.coeffs.empty())
+                    u.coeffs[0] = c.zero();
+                Laurent sum = makeConstSeries(c, c.one(), L);
+                Laurent upow = u;
+                Expr ck = c.one();
+                for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                    const Expr bStep =
+                        foldConst(c, c.add({ord, c.number(k - 1)}));
+                    if (isZeroCoeff(c, bStep))
+                        return false;
+                    ck = foldConst(
+                        c, c.mul({ck, c.pow(c.mul({bStep, c.number(k)}),
+                                            c.number(std::int64_t{-1}))}));
+                    if (!c.isZero(ck)) {
+                        sum = addSeries(c, sum, scaleSeries(c, upow, ck));
+                    }
                     if (k + 1 <= L)
                         upow = mulSeries(c, upow, u);
                 }

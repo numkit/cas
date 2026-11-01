@@ -9,7 +9,7 @@ Designed to be vendored into the Numkit tree as the `symbolic` toolbox core;
 integration constraints (C++17, no deps, single-threaded base, PMR) are
 binding for all code in this repository.
 
-**Current release: v0.7.0** — the standalone certified symbolic
+**Current release: v0.8.0** — the standalone certified symbolic
 computation & integration toolbox core. Declared class, corpus metrics
 and changelog: `CHANGELOG.md`.
 
@@ -86,17 +86,17 @@ rounds to nearest-even without intermediate overflow.
 neg/div/rootOf` build a canonical hash-consed DAG (structural
 equality is pointer identity); `parseExpr(Ctx&, src)` parses
 MATLAB-precedence text; `toString` prints round-trip-exact forms;
-`diff` differentiates elementary, inverse trig/hyperbolic, and special functions
-(`erf`, `erfc`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`, `dilog`, `gamma`, `lgamma`, `digamma`/`psi`, `trigamma`);
-`subs` substitutes subtrees; `expand` distributes to polynomial form;
+`diff` differentiates elementary, inverse trig/hyperbolic, orthogonal polynomials (`legendreP`, `chebyshevT`, `chebyshevU`, `hermiteH`, `laguerreL`), and special functions
+(`erf`, `erfc`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`, `dilog`, `gamma`, `lgamma`, `digamma`/`psi`, `trigamma`, `besselj`, `bessely`, `besseli`, `besselk`, `airyAi`, `airyBi`, `airyAiPrime`, `airyBiPrime`);
+`subs` substitutes subtrees; `expand` distributes to polynomial form (including orthogonal polynomials of integer degree);
 `evalExact` evaluates exactly in Q with honest declines outside;
 `evalDouble` evaluates DAGs (including Sturm-refined `RootOf` atoms,
-`euler_gamma`, and special functions `erf`/`erfc`/`erfi`/`Ei`/`li`/`Si`/`Ci`/`FresnelS`/`FresnelC`/`dilog`/`gamma`/`factorial`/`lgamma`/`digamma`/`trigamma`) to `double`; `leafCount` and `exprCost` measure expression size and DAG complexity;
+`euler_gamma`, orthogonal polynomials, and special functions `erf`/`erfc`/`erfi`/`Ei`/`li`/`Si`/`Ci`/`FresnelS`/`FresnelC`/`dilog`/`gamma`/`factorial`/`lgamma`/`digamma`/`trigamma`/`besselj`/`bessely`/`besseli`/`besselk`/`airyAi`/`airyBi`/`airyAiPrime`/`airyBiPrime`) to `double`; `leafCount` and `exprCost` measure expression size and DAG complexity;
 `AssumeDomain` and `Ctx::assume` attach domain assumptions (`Real`,
 `Positive`, `Negative`, `NonNegative`, `Integer`) with DAG-level sign,
 reality, and integrality inference; `simplify`
 (`core/simplify.hpp`) performs cost-guided algebraic, trigonometric,
-hyperbolic, logarithmic, and special-function simplification (including Euler's dilogarithm reflection, Gamma/digamma/trigamma identities, and symbol assumptions); `solveSymbolic`,
+hyperbolic, logarithmic, and special-function simplification (including Euler's dilogarithm reflection, Gamma/digamma/trigamma identities, 3-term recurrence reduction for orthogonal polynomials and Bessel functions, and symbol assumptions); `solveSymbolic`,
 `solveSystem2`, and `solveSystem` (`core/symsolve.hpp`) solve parametric polynomial/radical
 and single-occurrence transcendental equations, 2-variable polynomial
 systems via Sylvester resultants, and $N$-variable nonlinear polynomial systems via Lex Gröbner bases; `taylor`, `laurent`, `mtaylor`, `pade`, `limit`, `limitOneSided`, `limitAtInfinity`, `residue`, and `symsum`
@@ -107,9 +107,9 @@ one-sided, and infinite (`inf` / `-inf`) symbolic limits, symbolic residues, and
 squarefree decomposition; Sturm machinery (`isolateRealRoots`,
 `refineRoot`); `solveRealRoots` — exact real roots (rationals as
 values, irrationals as isolating brackets); `factorOverQ` — full
-Zassenhaus factorization; `groebnerBasis` and `polyReduceMulti`
-(`poly/groebner.hpp`) — canonical monic reduced Gröbner bases in
-$\mathbb{Q}[x_1, \dots, x_k]$ under `Lex` and `GrevLex` monomial orders.
+Zassenhaus factorization; `groebnerBasis`, `polyReduceMulti`, `divExactMulti`, `gcdMulti`, and `factorMulti`
+(`poly/groebner.hpp`) — canonical monic reduced Gröbner bases under `Lex` and `GrevLex` monomial orders, exact multivariate division, monic multivariate GCD, and full multivariate factorization in
+$\mathbb{Q}[x_1, \dots, x_k]$.
 
 **Integration** (`integrate/`): `integrate(Ctx&, f, var, budget)` —
 the unified proof-carrying integrator cascade combining the Rubi
@@ -118,7 +118,7 @@ reduction, Rothstein–Trager residues, quadratic and cubic
 Rioboo-phase-A real atan/log forms, RootOf atoms where unavoidable,
 and Liouvillian storeys for R(e^x), R(log x)/x, R(sin,cos) via
 t=tan(x/2) and R(x^(p/q))) plus non-elementary special-function
-integration (`erf`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`, `dilog`)
+integration (`erf`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`, `dilog`, `besselj`, `bessely`, `besseli`, `besselk`)
 and linearity over constant factors and
 mixed sums; every answer passes a Tier-1 symbolic certificate AND a
 Tier-2a certified interval audit of the form (a wrong form is
@@ -127,9 +127,10 @@ structurally impossible — it becomes an honest `Unevaluated`).
 improper definite integrals via Newton–Leibniz, endpoint limits,
 interior-pole detection, interior antiderivative branch-jump correction,
 real $\log|u|$ branch realization, Euler–Basel and Bose–Fermi dilogarithmic
-integrals, Euler 1st/2nd kind Beta, Gamma, and Wallis integrals, unit-circle Cayley–Weierstrass contour
+integrals, Euler 1st/2nd kind Beta, Gamma, Wallis, and classical orthogonal-polynomial orthogonality integrals, unit-circle Cayley–Weierstrass contour
 transformation, and Jordan's lemma upper-half-plane residue calculus for
 Fourier integrals.
+`integrateMulti`, `definiteIntegrateMulti`, `lineIntegralScalar`, `lineIntegralVector`, and `lineIntegral` compute certified iterated indefinite/definite multiple integrals (with dependent inner limits) and 1st/2nd-kind curve line integrals.
 `factorExpr` gives the factored form.
 
 **Rubi fast path** (`rubi/`): `rubiApply(tables, Ctx&, f, var, budget)` —
@@ -143,8 +144,8 @@ identities; every replacement passes the symbolic certificate.
 tables from `third_party/rubi-snapshot/`.
 
 **Symbolic Linear Algebra & Vector Calculus** (`linalg/`): `SymMatrix` over `Expr`,
-rational expression normalizer `simplifyRationalExpr`, multivariable and vector
-calculus (`jacobian`, `gradient`, `hessian`, `divergence`, `curl`, `laplacian`, `wronskianMatrix`, `wronskian`, `scalarPotential`), division-free
+rational expression normalizer `simplifyRationalExpr`, multivariable, vector
+calculus, and constrained optimization (`jacobian`, `gradient`, `hessian`, `divergence`, `curl`, `laplacian`, `wronskianMatrix`, `wronskian`, `scalarPotential`, `lagrangeExtrema`), division-free
 Faddeev–LeVerrier characteristic polynomial, determinant, adjugate,
 and inverse (`charpoly`, `det`, `adjugate`, `inv`), exact linear
 system solver (`linsolve`), RREF and rank (`rref`, `rank`), kernel
@@ -156,13 +157,14 @@ and certified matrix exponential (`matrixExp`).
 
 **Ordinary Differential Equations** (`ode/`): `dsolve1`, `dsolve1IVP`,
 `dsolve1Riccati`, `dsolve1Clairaut`, `dsolve2Linear`, `dsolve2LinearIVP`,
-`dsolve2EulerCauchy`, `dsolve2EulerCauchyIVP`, `dsolve2Nonlinear`,
+`dsolve2EulerCauchy`, `dsolve2EulerCauchyIVP`, `dsolve2Special`, `dsolve2SpecialIVP`,
+`dsolveSeries`, `dsolveSeriesIVP`, `dsolve2Nonlinear`,
 `dsolve2NonlinearIVP`, `dsolveNLinear`, `dsolveNLinearIVP`,
 `dsolveSystem1Linear`, and `dsolveSystem1LinearIVP` (`ode/dsolve.hpp`)
 solve 1st-order quadrature, linear, separable, Bernoulli, homogeneous
 $y' = F(y/x)$, exact $M(x,y)\,dx + N(x,y)\,dy = 0$ (with $\mu(x)$
 and $\mu(y)$ integrating factors), Riccati, and Clairaut ODEs, 2nd-order constant-coefficient,
-equidimensional Euler–Cauchy, and order-reducible nonlinear ODEs ($y'' = F(x, y')$ and $y'' = F(y, y')$), $N$-th order constant-coefficient
+equidimensional Euler–Cauchy, special-function (Airy, Bessel, Modified/spherical Bessel, Legendre, Chebyshev, Hermite, Laguerre), Taylor/Frobenius power-series, and order-reducible nonlinear ODEs ($y'' = F(x, y')$ and $y'' = F(y, y')$), $N$-th order constant-coefficient
 linear ODEs $\sum_{k=0}^N a_k y^{(k)}(x) = f(x)$, and $n \times n$
 first-order constant-coefficient linear ODE systems $\mathbf{y}' = A\mathbf{y} + \mathbf{f}(x)$
 (distinct real, repeated/defective Jordan blocks, and complex-conjugate

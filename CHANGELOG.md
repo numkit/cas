@@ -1,5 +1,95 @@
 # Changelog
 
+## v0.8.0 — 2026-11-01
+
+Echelon 8 release: classical orthogonal polynomials (`legendreP`, `chebyshevT`,
+`chebyshevU`, `hermiteH`, `laguerreL`), Bessel functions (`besselj`, `bessely`,
+`besseli`, `besselk`), and Airy functions (`airyAi`, `airyBi`, `airyAiPrime`,
+`airyBiPrime`) across multi-argument DAG/parser nodes, differentiation,
+exact/IEEE-754 evaluation, 3-term recurrence simplification, Taylor/Laurent
+series, and symbolic/definite integration (`core/`, `integrate/ratint`);
+special-function 2nd-order ODE solver `dsolve2Special` / `dsolve2SpecialIVP`
+and certified Taylor/Frobenius power-series ODE solver `dsolveSeries` /
+`dsolveSeriesIVP` (`ode/dsolve`); multivariate polynomial exact division
+`divExactMulti`, GCD `gcdMulti`, and factorization `factorMulti` in
+$\mathbb{Q}[x_1, \dots, x_k]$ (`poly/groebner`); and iterated multiple
+integrals `integrateMulti` / `definiteIntegrateMulti`, 1st- and 2nd-kind line
+integrals `lineIntegralScalar` / `lineIntegralVector` / `lineIntegral`, and
+symbolic Lagrange-multiplier constrained extrema solver `lagrangeExtrema`
+(`integrate/ratint`, `linalg/symmatrix`).
+
+### Highlights & New Capabilities
+
+- **Orthogonal Polynomials, Bessel Functions & Airy Functions (`core/`, `integrate/ratint`, Item 64)**:
+  - Multi-argument function support (`Ctx::func(name, arg0, arg1)`,
+    `Ctx::func(name, args)`, and comma-separated calls in `parseExpr`).
+  - Full support for `legendreP(n, x)`, `chebyshevT(n, x)`, `chebyshevU(n, x)`,
+    `hermiteH(n, x)`, `laguerreL(n, x)`, `besselj(nu, x)`, `bessely(nu, x)`,
+    `besseli(nu, x)`, `besselk(nu, x)`, and `airyAi(x)`, `airyBi(x)`,
+    `airyAiPrime(x)`, `airyBiPrime(x)` across:
+    - `Ctx::diff` (exact symbolic derivatives with respect to argument $u(x)$
+      for arbitrary symbolic order $\nu$ or $n$);
+    - `Ctx::evalExact` (exact 3-term recurrence evaluation at any $x \in \mathbb{Q}$
+      for orthogonal polynomials and exact zero values for `besselj`/`besseli`)
+      and `Ctx::evalDouble` (power series + Hankel/Airy asymptotic expansions);
+    - `Ctx::expand` and `simplify` (explicit polynomial expansion for integer
+      $0 \le n \le 12$, $T_n(\cos u) \to \cos(nu)$, $T_n(\cosh u) \to \cosh(nu)$,
+      spherical half-integer Bessel closed forms $\nu = (2m+1)/2$, integer-order
+      reflection $J_{-n}(u) \to (-1)^n J_n(u)$, $I_{-n}(u) \to I_n(u)$, Airy
+      zero values via $\Gamma(2/3), \Gamma(1/3)$, and universal 3-term
+      recurrence coset reduction `reduceThreeTermRecurrences` reducing any
+      $\mathbb{Z}$-shifted orders $\nu_{\min} + k$ ($k \ge 2$) to the
+      2-element basis $\{F(\nu_{\min}, u), F(\nu_{\min}+1, u)\}$);
+    - `taylor` / `laurent` Maclaurin expansions for `besselj(n, u)`,
+      `besseli(n, u)`, and Airy functions;
+    - Certified Bessel antiderivatives $\int x^{\nu+1} Z_\nu(ax)\,dx$,
+      $\int x^{1-\nu} Z_\nu(ax)\,dx$ and orthogonal polynomial definite
+      orthogonality/norm integrals on $[-1, 1]$, $[0, \infty)$, and
+      $(-\infty, \infty)$ in `integrate` / `definiteIntegrate`.
+- **Special-Function 2nd-Order ODEs & Taylor/Frobenius Series ODE Solver (`ode/dsolve`, Item 65)**:
+  - `dsolve2Special` and `dsolve2SpecialIVP` (with automatic delegation from
+    `dsolve2Linear` and `dsolve1Riccati`) solving Airy ($y'' - k(x-x_0)y = 0$),
+    Bessel, Modified Bessel, and spherical/Lommel Bessel
+    ($x^2 y'' + p_0 x y' + (Ax^2 + C)y = 0$), Legendre
+    ($(1-x^2)y'' - 2xy' + n(n+1)y = 0$), Chebyshev 1st & 2nd kind, Hermite
+    ($y'' - 2xy' + 2ny = 0$), and Laguerre ($xy'' + (1-x)y' + ny = 0$) ODEs,
+    certifying every solution by substitution into the ODE.
+  - `dsolveSeries` and `dsolveSeriesIVP` computing certified truncated Taylor
+    power-series solutions at ordinary points ($a(x_0) \ne 0$) and Frobenius
+    generalized power-series branches $(x-x_0)^r \sum_{k=0}^N c_k(x-x_0)^k$ at
+    regular singular points ($a(x_0) = 0$), certified by verifying that the
+    Taylor jet of the ODE residual vanishes to order $N$.
+- **Multivariate Polynomial Exact Division, GCD & Factorization (`poly/groebner`, Item 66)**:
+  - `divExactMulti(Ctx&, f, g, vars, Budget*)` exact division in
+    $\mathbb{Q}[x_1, \dots, x_k]$.
+  - `gcdMulti(Ctx&, f, g, vars, Budget*)` computing the monic multivariate GCD
+    via monomial extraction, single-operand variable content reduction, and
+    recursive Primitive Polynomial Remainder Sequence (Primitive PRS) with
+    leading-coefficient GCD cancellation, certified by exact divisibility.
+  - `factorMulti(Ctx&, f, vars, Budget*)` factoring multivariate polynomials in
+    $\mathbb{Q}[x_1, \dots, x_k]$ into rational content and irreducible
+    factors with multiplicities via recursive variable-content extraction,
+    squarefree decomposition, Gauss monic transformation
+    $\tilde{S}(X, \mathbf{y}) = L(\mathbf{y})^{d-1}S(X/L(\mathbf{y}), \mathbf{y})$,
+    univariate Zassenhaus specialization, and multivariate total-degree ideal
+    Hensel lifting, certified by `expand(expr - f) == 0`.
+- **Multiple Integrals, Line Integrals & Lagrange Multipliers (`integrate/ratint`, `linalg/symmatrix`, Item 67)**:
+  - `integrateMulti(Ctx&, f, vars, Budget*)` certified by verifying the mixed
+    partial derivative $\frac{\partial^k F}{\partial x_{k-1}\cdots\partial x_0} \equiv f$,
+    and `definiteIntegrateMulti(Ctx&, f, bounds, Budget*)` supporting dependent
+    inner limits $a_i(x_{i+1}, \dots, x_{k-1}), b_i(x_{i+1}, \dots, x_{k-1})$.
+  - `lineIntegralScalar`, `lineIntegralVector`, and overloaded `lineIntegral`
+    for 1st-kind arc-length line integrals $\int_C f(\mathbf{x})\,ds$ and
+    2nd-kind vector work/circulation integrals $\int_C \mathbf{F}\cdot d\mathbf{r}$
+    (with conservative-field `scalarPotential` fallback).
+  - `lagrangeExtrema(Ctx&, f, vars, constraints, Budget*)` in `linalg/symmatrix`
+    for unconstrained and equality-constrained optimization via KKT Lex Gröbner
+    solving, direct KKT residual certification, and second-order classification
+    (`LocalMinimum`, `LocalMaximum`, `SaddlePoint`) via Hessian and bordered
+    Hessian principal minors.
+
+---
+
 ## v0.7.0 — 2026-11-01
 
 Echelon 7 release: Gamma, log-gamma, digamma (`psi`), trigamma (`trigamma`),

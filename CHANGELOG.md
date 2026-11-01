@@ -1,5 +1,99 @@
 # Changelog
 
+## v0.7.0 — 2026-11-01
+
+Echelon 7 release: Gamma, log-gamma, digamma (`psi`), trigamma (`trigamma`),
+and Euler–Mascheroni constant (`euler_gamma`) across differentiation,
+exact/IEEE-754 evaluation, simplification, Taylor/Laurent series, residues,
+closed-form finite rational summation in `symsum`, and Euler 1st/2nd kind
+definite integrals in `definiteIntegrate` (`core/`, `integrate/ratint`);
+bilateral Fourier transform `fourier` / `ifourier` with round-trip
+certification (`transform/fourier`); vector calculus (`divergence`, `curl`,
+`laplacian`, `wronskian`, `scalarPotential` certified by
+$\operatorname{gradient}(\varphi) \equiv \mathbf{F}$ in `linalg/symmatrix`)
+and Riccati, Clairaut, and 2nd-order nonlinear ODE solvers (`dsolve1Riccati`,
+`dsolve1Clairaut`, `dsolve2Nonlinear` / `dsolve2NonlinearIVP` in `ode/dsolve`);
+and canonical reduced Gröbner bases (`groebnerBasis`, `polyReduceMulti` in
+`poly/groebner`) with $N$-variable nonlinear polynomial system solving
+`solveSystem` (`core/symsolve`).
+
+### Highlights & New Capabilities
+
+- **Gamma, Log-Gamma, Digamma/Trigamma & Euler Integrals (`core/`, `integrate/ratint`, Item 59)**:
+  - Full support for `gamma`, `lgamma` (`loggamma`), `digamma` (`psi`),
+    `trigamma` (`psi1`), and symbolic constant `euler_gamma` across
+    `Ctx::diff`, `Ctx::evalExact`, `Ctx::evalDouble` (recurrence shift to
+    $x \ge 10$, Euler reflection for $x < 0$, and asymptotic Bernoulli series),
+    and `simplify`:
+    - half-integer values $\Gamma(n + 1/2) = \frac{(2n-1)!!}{2^n}\sqrt{\pi}$
+      and $\Gamma(1/2 - n) = \frac{(-2)^n}{(2n-1)!!}\sqrt{\pi}$;
+    - Gauss digamma theorem at rational arguments with denominator
+      $q \in \{1, 2, 3, 4\}$ and trigamma values $\psi_1(n)$, $\psi_1(n+1/2)$;
+    - integer-shift ratio cancellation $\Gamma(u+m)/\Gamma(u)$, Euler's
+      reflection product $\Gamma(u)\Gamma(1-u) = \pi/\sin(\pi u)$, and
+      $\mathbb{Z}$-coset recurrence normalization of $\psi(u+m)$ and
+      $\psi_1(u+m)$.
+  - Laurent expansions and residues at non-positive integer poles $z = -n$
+    ($\operatorname{Res}_{z=-n}\Gamma(z) = \frac{(-1)^n}{n!}$,
+    $\operatorname{Res}_{z=-n}\psi(z) = -1$) in `core/series`.
+  - Closed-form finite rational sums $\sum_{k=a}^b R(k)$ via $\psi$ (simple
+    poles) and $\psi_1$ (double poles) in `symsum` when $\mathbb{Z}$-coset
+    residues do not telescope to zero, certified by
+    $G(k+1) - G(k) \equiv R(k)$.
+  - Euler 1st-kind Beta integrals $\int_0^1 x^\alpha(1-x^m)^\beta(\log x)^k\,dx$,
+    2nd-kind Beta integrals $\int_0^\infty \frac{x^\alpha}{(c_0 + c_1 x^m)^\gamma}\,dx$,
+    generalized Gamma/log-Gamma integrals
+    $\int_0^\infty x^\alpha e^{-a x^q}(\log x)^k\,dx$ ($k \in \{0, 1, 2\}$),
+    and Wallis trigonometric integrals
+    $\int_0^{\pi/2}\sin^\alpha(x)\cos^\beta(x)\,dx$ in `definiteIntegrate`.
+- **Bilateral Fourier Transform (`transform/fourier`, Item 60)**:
+  - `fourier(Ctx&, f, t, w, Budget*)` and `ifourier(Ctx&, F, w, t, Budget*)`
+    (`FourierResult`, exposed in CLI as `nkcas fourier` / `nkcas ifourier`)
+    under the unitary angular-frequency convention
+    $\mathcal{F}\{f(t)\}(\omega) = \int_{-\infty}^{\infty} f(t)e^{-i\omega t}\,dt$,
+    $\mathcal{F}^{-1}\{F(\omega)\}(t) = \frac{1}{2\pi}\int_{-\infty}^{\infty} F(\omega)e^{i\omega t}\,d\omega$:
+    - Dirac delta $\delta(at+b)$, constants, pure harmonics $\cos(\omega_0 t)$
+      and $\sin(\omega_0 t)$, modulation $g(t)\cos(\omega_0 t)$ /
+      $g(t)\sin(\omega_0 t)$, frequency differentiation $t^n g(t)$, and linear
+      scaling/shifts;
+    - rectangular pulse $\operatorname{heaviside}(a - |t|) \leftrightarrow \frac{2\sin(a\omega)}{\omega}$,
+      Dirichlet sinc $\frac{\sin(at)}{t} \leftrightarrow \pi\operatorname{heaviside}(a - |\omega|)$,
+      and Fejér $\frac{1-\cos(at)}{t^2}$ kernels;
+    - Gaussian $e^{-at^2}$, two-sided exponentials $|t|^m\operatorname{sign}(t)^s e^{-a|t|}$,
+      causal/anti-causal exponentials $t^n e^{\mp at}\operatorname{heaviside}(\pm t)$,
+      hyperbolic kernels ($\operatorname{sech}(at)$, $\operatorname{sech}^2(at)$,
+      $t\operatorname{csch}(at)$), and rational functions $R(t)$ via improper
+      polynomial division + contour integration.
+    - Mandatory round-trip certification `fourier(c, fCand, t, w) == F` on
+      every `ifourier` result.
+- **Vector Calculus & Nonlinear ODEs (`linalg/symmatrix`, `ode/dsolve`, Item 61)**:
+  - `divergence`, `curl`, `laplacian`, `wronskianMatrix`, `wronskian`, and
+    `scalarPotential` (with curl-free integrability check and mandatory
+    $\operatorname{gradient}(\varphi) \equiv \mathbf{F}$ certification) in
+    `linalg/symmatrix`.
+  - Riccati 1st-order ODE solver `dsolve1Riccati` (and step 7 in `dsolve1` /
+    `dsolve1IVP`) via rational/exponential particular-solution guess
+    ($y = y_p + 1/u$) and 2nd-order linear transformation $y = -v'/(q_2 v)$.
+  - Clairaut ODE solver `dsolve1Clairaut` returning both the general linear
+    family $y = C_1 x + g(C_1)$ and the certified singular envelope from
+    $x + g'(p) = 0$.
+  - 2nd-order nonlinear ODE solvers `dsolve2Nonlinear` and
+    `dsolve2NonlinearIVP` via missing-$y$ ($y'' = F(x, y')$) and autonomous
+    missing-$x$ ($y'' = F(y, y'), y'' = p\,dp/dy$) order reduction.
+- **Gröbner Bases & $N$-Variable Polynomial System Solver (`poly/groebner`, `core/symsolve`, Item 62)**:
+  - `groebnerBasis(Ctx&, generators, vars, order, Budget*)` computing the
+    unique monic reduced Gröbner basis in $\mathbb{Q}[x_1, \dots, x_k]$ under
+    `MonomialOrder::Lex` and `MonomialOrder::GrevLex` via Buchberger's
+    algorithm with coprime-LM criterion, interreduction, and dual certification
+    (all $S$-polynomials and original generators reduce to $0$ modulo $G$),
+    plus `polyReduceMulti` normal-form reduction.
+  - `solveSystem(Ctx&, eqs, vars, Budget*)` in `core/symsolve` solving
+    $N$-variable nonlinear polynomial systems via Lex Gröbner triangular
+    back-substitution and parametric linear variable peel, certifying every
+    solution tuple by direct substitution into `eqs`.
+
+---
+
 ## v0.6.0 — 2026-11-01
 
 Echelon 6 release: Spence's dilogarithm $\operatorname{Li}_2$ (`dilog`) across

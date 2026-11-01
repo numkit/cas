@@ -9,7 +9,7 @@ Designed to be vendored into the Numkit tree as the `symbolic` toolbox core;
 integration constraints (C++17, no deps, single-threaded base, PMR) are
 binding for all code in this repository.
 
-**Current release: v0.6.0** — the standalone certified symbolic
+**Current release: v0.7.0** — the standalone certified symbolic
 computation & integration toolbox core. Declared class, corpus metrics
 and changelog: `CHANGELOG.md`.
 
@@ -55,6 +55,8 @@ build/msvc/apps/Release/nkcas.exe laplace "(expr)" [t] [s]   # forward Laplace t
 build/msvc/apps/Release/nkcas.exe ilaplace "(expr)" [s] [t]  # certified inverse Laplace transform
 build/msvc/apps/Release/nkcas.exe ztrans "(expr)" [n] [z]    # forward unilateral Z-transform
 build/msvc/apps/Release/nkcas.exe iztrans "(expr)" [z] [n]   # certified inverse Z-transform
+build/msvc/apps/Release/nkcas.exe fourier "(expr)" [t] [w]   # forward bilateral Fourier transform
+build/msvc/apps/Release/nkcas.exe ifourier "(expr)" [w] [t]  # certified inverse Fourier transform
 build/msvc/apps/Release/nkcas.exe eval "(expr)" [x val]  # IEEE-754 double evaluation
 build/msvc/apps/Release/nkcas.exe solve "x^2-2" x        # exact real roots
 build/msvc/apps/Release/nkcas.exe expand|factor|subs "(expr)" ...
@@ -85,27 +87,29 @@ neg/div/rootOf` build a canonical hash-consed DAG (structural
 equality is pointer identity); `parseExpr(Ctx&, src)` parses
 MATLAB-precedence text; `toString` prints round-trip-exact forms;
 `diff` differentiates elementary, inverse trig/hyperbolic, and special functions
-(`erf`, `erfc`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`, `dilog`);
+(`erf`, `erfc`, `erfi`, `Ei`, `li`, `Si`, `Ci`, `FresnelS`, `FresnelC`, `dilog`, `gamma`, `lgamma`, `digamma`/`psi`, `trigamma`);
 `subs` substitutes subtrees; `expand` distributes to polynomial form;
 `evalExact` evaluates exactly in Q with honest declines outside;
-`evalDouble` evaluates DAGs (including Sturm-refined `RootOf` atoms and
-special functions `erf`/`erfc`/`erfi`/`Ei`/`li`/`Si`/`Ci`/`FresnelS`/`FresnelC`/`dilog`/`gamma`/`factorial`) to `double`; `leafCount` and `exprCost` measure expression size and DAG complexity;
+`evalDouble` evaluates DAGs (including Sturm-refined `RootOf` atoms,
+`euler_gamma`, and special functions `erf`/`erfc`/`erfi`/`Ei`/`li`/`Si`/`Ci`/`FresnelS`/`FresnelC`/`dilog`/`gamma`/`factorial`/`lgamma`/`digamma`/`trigamma`) to `double`; `leafCount` and `exprCost` measure expression size and DAG complexity;
 `AssumeDomain` and `Ctx::assume` attach domain assumptions (`Real`,
 `Positive`, `Negative`, `NonNegative`, `Integer`) with DAG-level sign,
 reality, and integrality inference; `simplify`
 (`core/simplify.hpp`) performs cost-guided algebraic, trigonometric,
-hyperbolic, logarithmic, and special-function simplification (including Euler's dilogarithm reflection and symbol assumptions); `solveSymbolic` and
-`solveSystem2` (`core/symsolve.hpp`) solve parametric polynomial/radical
-and single-occurrence transcendental equations and 2-variable polynomial
-systems via Sylvester resultants; `taylor`, `laurent`, `mtaylor`, `pade`, `limit`, `limitOneSided`, `limitAtInfinity`, `residue`, and `symsum`
+hyperbolic, logarithmic, and special-function simplification (including Euler's dilogarithm reflection, Gamma/digamma/trigamma identities, and symbol assumptions); `solveSymbolic`,
+`solveSystem2`, and `solveSystem` (`core/symsolve.hpp`) solve parametric polynomial/radical
+and single-occurrence transcendental equations, 2-variable polynomial
+systems via Sylvester resultants, and $N$-variable nonlinear polynomial systems via Lex Gröbner bases; `taylor`, `laurent`, `mtaylor`, `pade`, `limit`, `limitOneSided`, `limitAtInfinity`, `residue`, and `symsum`
 (`core/series.hpp`) compute univariate and multivariate truncated power/Laurent series, certified $[m/n]$ Padé rational approximants, finite,
-one-sided, and infinite (`inf` / `-inf`) symbolic limits, symbolic residues, and finite/infinite symbolic summations.
+one-sided, and infinite (`inf` / `-inf`) symbolic limits, symbolic residues, and finite/infinite symbolic summations (including $\psi$/$\psi_1$ closed forms).
 
 **Polynomials** (`poly/`): `UPoly` — Q[x] with exact division,
 squarefree decomposition; Sturm machinery (`isolateRealRoots`,
 `refineRoot`); `solveRealRoots` — exact real roots (rationals as
 values, irrationals as isolating brackets); `factorOverQ` — full
-Zassenhaus factorization.
+Zassenhaus factorization; `groebnerBasis` and `polyReduceMulti`
+(`poly/groebner.hpp`) — canonical monic reduced Gröbner bases in
+$\mathbb{Q}[x_1, \dots, x_k]$ under `Lex` and `GrevLex` monomial orders.
 
 **Integration** (`integrate/`): `integrate(Ctx&, f, var, budget)` —
 the unified proof-carrying integrator cascade combining the Rubi
@@ -123,7 +127,7 @@ structurally impossible — it becomes an honest `Unevaluated`).
 improper definite integrals via Newton–Leibniz, endpoint limits,
 interior-pole detection, interior antiderivative branch-jump correction,
 real $\log|u|$ branch realization, Euler–Basel and Bose–Fermi dilogarithmic
-integrals, unit-circle Cayley–Weierstrass contour
+integrals, Euler 1st/2nd kind Beta, Gamma, and Wallis integrals, unit-circle Cayley–Weierstrass contour
 transformation, and Jordan's lemma upper-half-plane residue calculus for
 Fourier integrals.
 `factorExpr` gives the factored form.
@@ -138,9 +142,9 @@ identities; every replacement passes the symbolic certificate.
 `tools/rubi_parse.py` + `tools/rubi_codegen.py` regenerate the committed
 tables from `third_party/rubi-snapshot/`.
 
-**Symbolic Linear Algebra** (`linalg/`): `SymMatrix` over `Expr`,
-rational expression normalizer `simplifyRationalExpr`, multivariable
-calculus (`jacobian`, `gradient`, `hessian`), division-free
+**Symbolic Linear Algebra & Vector Calculus** (`linalg/`): `SymMatrix` over `Expr`,
+rational expression normalizer `simplifyRationalExpr`, multivariable and vector
+calculus (`jacobian`, `gradient`, `hessian`, `divergence`, `curl`, `laplacian`, `wronskianMatrix`, `wronskian`, `scalarPotential`), division-free
 Faddeev–LeVerrier characteristic polynomial, determinant, adjugate,
 and inverse (`charpoly`, `det`, `adjugate`, `inv`), exact linear
 system solver (`linsolve`), RREF and rank (`rref`, `rank`), kernel
@@ -151,13 +155,14 @@ Gram–Schmidt orthogonalization and thin QR decomposition
 and certified matrix exponential (`matrixExp`).
 
 **Ordinary Differential Equations** (`ode/`): `dsolve1`, `dsolve1IVP`,
-`dsolve2Linear`, `dsolve2LinearIVP`, `dsolve2EulerCauchy`,
-`dsolve2EulerCauchyIVP`, `dsolveNLinear`, `dsolveNLinearIVP`,
+`dsolve1Riccati`, `dsolve1Clairaut`, `dsolve2Linear`, `dsolve2LinearIVP`,
+`dsolve2EulerCauchy`, `dsolve2EulerCauchyIVP`, `dsolve2Nonlinear`,
+`dsolve2NonlinearIVP`, `dsolveNLinear`, `dsolveNLinearIVP`,
 `dsolveSystem1Linear`, and `dsolveSystem1LinearIVP` (`ode/dsolve.hpp`)
 solve 1st-order quadrature, linear, separable, Bernoulli, homogeneous
-$y' = F(y/x)$, and exact $M(x,y)\,dx + N(x,y)\,dy = 0$ ODEs (with $\mu(x)$
-and $\mu(y)$ integrating factors), 2nd-order constant-coefficient and
-equidimensional Euler–Cauchy linear ODEs, $N$-th order constant-coefficient
+$y' = F(y/x)$, exact $M(x,y)\,dx + N(x,y)\,dy = 0$ (with $\mu(x)$
+and $\mu(y)$ integrating factors), Riccati, and Clairaut ODEs, 2nd-order constant-coefficient,
+equidimensional Euler–Cauchy, and order-reducible nonlinear ODEs ($y'' = F(x, y')$ and $y'' = F(y, y')$), $N$-th order constant-coefficient
 linear ODEs $\sum_{k=0}^N a_k y^{(k)}(x) = f(x)$, and $n \times n$
 first-order constant-coefficient linear ODE systems $\mathbf{y}' = A\mathbf{y} + \mathbf{f}(x)$
 (distinct real, repeated/defective Jordan blocks, and complex-conjugate
@@ -174,7 +179,11 @@ $\mathcal{L}\{\mathcal{L}^{-1}\{F\}\}(s) = F(s)$. `ztrans`, `iztrans`,
 `rsolve`, and `rsolveIVP` (`transform/ztrans.hpp`) compute forward and
 certified inverse unilateral Z-transforms and solve $K$-th order
 constant-coefficient linear recurrence equations with initial-value and
-residual certification.
+residual certification. `fourier` and `ifourier` (`transform/fourier.hpp`)
+compute forward and certified inverse bilateral Fourier transforms across
+distributions ($\delta$, $\operatorname{heaviside}$, $\operatorname{sign}$),
+harmonics, Gaussians, two-sided/causal exponentials, rational functions, and
+sinc/Fejér/hyperbolic kernels.
 
 **Cancellation** (`core/budget.hpp`): `Budget` token tracking step and
 arena-byte limits (`StepExhausted` / `ArenaExhausted`) across

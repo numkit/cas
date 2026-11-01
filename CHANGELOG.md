@@ -1,5 +1,83 @@
 # Changelog
 
+## v0.10.0 — 2026-11-01
+
+Echelon 10 release (complete Symbolic Toolbox core for Numkit): generalized
+hypergeometric functions ${}_pF_q$ (`hypergeom2F1`, `hypergeom1F1`,
+`hypergeom0F1`), rising factorial `pochhammer(a, n)`, Euler Beta function
+`beta(x, y)`, and upper/lower incomplete gamma functions `igamma(s, x)`,
+`gammainc(s, x)` across the core, Gauss/Kummer 2nd-order ODE solver, and
+symbolic/definite integration (`core/`, `ode/dsolve`, `integrate/ratint`);
+1st- and 2nd-order Partial Differential Equations (`pdsolve1Quasilinear`,
+`pdsolve1Cauchy`, `pdsolveWaveDalembert`, `pdsolveHeat1D`, `pdsolveWave1D`,
+`pdsolveLaplace2DRect` in `pde/pdsolve`, `ode/dsolve`); differential geometry
+of curves/surfaces and Riemannian geometry (`frenetSerret`, `surfaceCurvature`,
+`christoffelSymbols`, `riemannTensor`, `ricciTensor`, `scalarCurvature`,
+`geodesicEquations` in `linalg/symmatrix`); and finite-difference calculus
+`finiteDiff`, Stirling numbers of the 1st and 2nd kind (`stirlingS1`,
+`stirlingS2`), symbolic Euler–Maclaurin summation `eulerMaclaurin`, and MATLAB
+Symbolic Math Toolbox scripting-surface utilities (`numden`, `coeffs`,
+`collect`, `partfrac`, `toLatex`/`latex`, `toCCode`/`ccode` in `core/series`,
+`core/simplify`).
+
+### Highlights & New Capabilities
+
+- **Generalized Hypergeometric Functions, Pochhammer, Euler Beta & Incomplete Gamma (`core/`, `ode/dsolve`, `integrate/ratint`, Item 74)**:
+  - Multi-argument support (`Ctx::func` 3-arg and 4-arg overloads), partial
+    derivatives $\frac{\partial}{\partial z}{}_2F_1(a,b;c;z) =
+    \frac{ab}{c}{}_2F_1(a+1,b+1;c+1;z)$, $\frac{\partial}{\partial z}{}_1F_1(a;b;z) =
+    \frac{a}{b}{}_1F_1(a+1;b+1;z)$, $\frac{\partial}{\partial z}{}_0F_1(;b;z) =
+    \frac{1}{b}{}_0F_1(;b+1;z)$, $\frac{\partial}{\partial x}B(x,y) =
+    B(x,y)(\psi(x)-\psi(x+y))$, $\frac{\partial}{\partial a}(a)_n =
+    (a)_n(\psi(a+n)-\psi(a))$, $\frac{\partial}{\partial x}\Gamma(s,x) =
+    -x^{s-1}e^{-x}$, $\frac{\partial}{\partial x}\gamma(s,x) = x^{s-1}e^{-x}$.
+  - Exact rational evaluation `evalExact` and polynomial expansion `Ctx::expand`
+    for terminating hypergeometric series ($a \in \mathbb{Z}_{\le 0}$ or
+    $b \in \mathbb{Z}_{\le 0}$), `beta(x, y)`, and `pochhammer(a, n)`; IEEE-754
+    `evalDouble` with Pfaff linear transformations and analytic continuation for
+    ${}_2F_1$ and Legendre continued fractions for $\Gamma(s, x), \gamma(s, x)$.
+  - Closed-form reductions, Gauss's hypergeometric theorem at $z = 1$, and
+    contiguous 3-term recurrence reduction in `simplify`; Maclaurin series in
+    `taylor`; Gauss and Kummer hypergeometric ODE solver in `dsolve2Special`;
+    and incomplete-gamma / Euler-type hypergeometric integrals in `integrate`
+    and `definiteIntegrate`.
+- **1st- & 2nd-Order Partial Differential Equations (`pde/pdsolve`, `ode/dsolve`, Item 75)**:
+  - `pdsolve1Quasilinear` and `pdsolve1Cauchy`: method of characteristics for
+    linear, semilinear, and quasilinear 1st-order PDEs
+    $a(x,y,u)u_x + b(x,y,u)u_y = c(x,y,u)$ (including inviscid Burgers' equation
+    $u u_x + u_t = 0$) with symbolic PDE and Cauchy curve certification.
+  - `pdsolveWaveDalembert`: general d'Alembert solution and Cauchy problem with
+    Duhamel's principle for inhomogeneous 1D wave equations
+    $u_{tt} - c^2 u_{xx} = f(x, t)$.
+  - `pdsolveHeat1D`, `pdsolveWave1D`, and `pdsolveLaplace2DRect`: Fourier
+    separation of variables under homogeneous Dirichlet and Neumann boundary
+    conditions with automatic eigenfunction projection.
+- **Differential Geometry of Curves/Surfaces & Riemannian Geometry (`linalg/symmatrix`, Item 76)**:
+  - `frenetSerret`: speed, orthonormal Frenet–Serret frame $(\mathbf{T},
+    \mathbf{N}, \mathbf{B})$, curvature $\kappa(t)$, and torsion $\tau(t)$ of
+    3D parametric curves.
+  - `surfaceCurvature`: first fundamental form $(E, F, G)$, area element, unit
+    normal, second fundamental form $(L, M, N)$, Weingarten shape operator
+    $S = I^{-1}\mathit{II}$, Gaussian curvature $K$, and mean curvature $H$.
+  - `christoffelSymbols`, `riemannTensor`, `ricciTensor`, `scalarCurvature`, and
+    `geodesicEquations`: inverse metric $g^{ij}$, Christoffel symbols of the
+    1st and 2nd kind $\Gamma_{k,ij}, \Gamma^k_{ij}$ (certified by metric
+    compatibility $\nabla_k g_{ij} \equiv 0$), Riemann tensor
+    $R^\rho_{\sigma\mu\nu}$ (certified by the first Bianchi identity), Ricci
+    tensor $R_{\mu\nu}$, Ricci scalar $R$, Einstein tensor $G_{\mu\nu}$, and
+    geodesic equations certified against the Euler–Lagrange equations of
+    $L = \frac{1}{2}g_{ij}\dot{x}^i\dot{x}^j$.
+- **Finite Differences, Stirling Numbers, Euler–Maclaurin Summation & MATLAB SMT Scripting Utilities (`core/series`, `core/simplify`, Item 77)**:
+  - Signed Stirling numbers of the 1st kind `stirlingS1(n, k)` and Stirling
+    numbers of the 2nd kind `stirlingS2(n, k)`, forward finite difference
+    operator `finiteDiff`, and symbolic Euler–Maclaurin summation formula
+    `eulerMaclaurin`.
+  - MATLAB Symbolic Math Toolbox scripting-surface utilities: rational
+    numerator/denominator extraction `numden`, polynomial coefficient extraction
+    `coeffs` and collection `collect`, partial fraction decomposition `partfrac`,
+    LaTeX rendering `toLatex`/`latex`, and C/C++ code generation
+    `toCCode`/`ccode`.
+
 ## v0.9.0 — 2026-11-01
 
 Echelon 9 release: complete and incomplete elliptic integrals of the 1st, 2nd,

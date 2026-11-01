@@ -5,18 +5,22 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
-- **Released: v0.9.0** (Echelon 9 Symbolic Toolbox: complete & incomplete
-  elliptic integrals `ellipticK`/`ellipticE`/`ellipticPi`/`ellipticF`/
-  `ellipticEInc` with Carlson symmetric forms and Legendre's identity; Riemann
-  zeta `zeta`, Dirichlet eta `dirichletEta`, polylogarithms `polylog`, and
-  Bernoulli/Euler numbers & polynomials `bernoulliB`/`eulerE` with Bose-Einstein
-  and Fermi-Dirac integrals; 1st & 2nd kind surface integrals `surfaceIntegral`
-  and symbolic verifiers `verifyGreenTheorem`/`verifyStokesTheorem`/
-  `verifyGaussDivergenceTheorem`; and variational/Hamiltonian mechanics
-  `eulerLagrange`/`poissonBracket`/`legendreTransform`/`hamiltonEquations`;
-  plus v0.8.0 orthogonal polynomials `legendreP`..`laguerreL`, Bessel `besselj`..
-  `besselk`, Airy `airyAi`..`airyBiPrime`, `dsolve2Special`/`dsolveSeries`,
-  `divExactMulti`/`gcdMulti`/`factorMulti`, `integrateMulti`/
+- **Released: v0.10.0** (Echelon 10 Complete Symbolic Toolbox for Numkit:
+  hypergeometric `hypergeom2F1`/`hypergeom1F1`/`hypergeom0F1`, `pochhammer`,
+  Euler `beta`, incomplete gamma `igamma`/`gammainc`; 1st & 2nd order PDEs
+  `pdsolve1Quasilinear`/`pdsolve1Cauchy`/`pdsolveWaveDalembert`/
+  `pdsolveHeat1D`/`pdsolveWave1D`/`pdsolveLaplace2DRect`; differential &
+  Riemannian geometry `frenetSerret`/`surfaceCurvature`/`christoffelSymbols`/
+  `riemannTensor`/`ricciTensor`/`scalarCurvature`/`geodesicEquations`; finite
+  differences `finiteDiff`, Stirling numbers `stirlingS1`/`stirlingS2`,
+  `eulerMaclaurin`, and MATLAB SMT utilities `numden`/`coeffs`/`collect`/
+  `partfrac`/`toLatex`/`toCCode`; plus v0.9.0 complete & incomplete
+  elliptic integrals `ellipticK`..`ellipticEInc`, `zeta`/`dirichletEta`/
+  `polylog`/`bernoulliB`/`eulerE`, `surfaceIntegral` and Green/Stokes/Gauss
+  theorem verifiers, `eulerLagrange`/`poissonBracket`/`legendreTransform`/
+  `hamiltonEquations`, v0.8.0 orthogonal polynomials `legendreP`..`laguerreL`,
+  Bessel `besselj`..`besselk`, Airy `airyAi`..`airyBiPrime`, `dsolve2Special`/
+  `dsolveSeries`, `divExactMulti`/`gcdMulti`/`factorMulti`, `integrateMulti`/
   `definiteIntegrateMulti`/`lineIntegral`, `lagrangeExtrema`, v0.7.0 Gamma/
   digamma/trigamma/`euler_gamma`, `fourier`/`ifourier`, `divergence`/`curl`/
   `laplacian`/`wronskian`/`scalarPotential`, `dsolve1Riccati`/`dsolve1Clairaut`/
@@ -27,7 +31,7 @@
   `ilaplace`, `nullspace`/`eigenvalues`/`eigenvectors`/`matrixExp`,
   `dsolveSystem1Linear`, and v0.3.0 `simplify`, Rubi R1–R5 2058 rules,
   `solveSymbolic`/`solveSystem2`, `dsolve1`/`dsolve2Linear`; see `CHANGELOG.md`).
-- **Working goal: post-v0.9.0 autonomous pool in `notes/c1-algebraic-layer.md`**.
+- **Working goal: post-v0.10.0 autonomous pool in `notes/c1-algebraic-layer.md`**.
   The Numkit vendoring spike (item 23 remainder) waits for the user's
   explicit command.
 - **Integration contract is BINDING for all code** (the core is vendored into

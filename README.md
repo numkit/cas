@@ -9,7 +9,7 @@ Designed to be vendored into the Numkit tree as the `symbolic` toolbox core;
 integration constraints (C++17, no deps, single-threaded base, PMR) are
 binding for all code in this repository.
 
-**Current release: v0.9.0** — the standalone certified symbolic
+**Current release: v0.10.0** — the standalone certified symbolic
 computation & integration toolbox core. Declared class, corpus metrics
 and changelog: `CHANGELOG.md`.
 
@@ -143,9 +143,9 @@ identities; every replacement passes the symbolic certificate.
 `tools/rubi_parse.py` + `tools/rubi_codegen.py` regenerate the committed
 tables from `third_party/rubi-snapshot/`.
 
-**Symbolic Linear Algebra, Vector Calculus & Analytical Mechanics** (`linalg/`): `SymMatrix` over `Expr`,
+**Symbolic Linear Algebra, Vector Calculus, Differential Geometry & Analytical Mechanics** (`linalg/`): `SymMatrix` over `Expr`,
 rational expression normalizer `simplifyRationalExpr`, multivariable, vector
-calculus, constrained optimization, and analytical mechanics (`jacobian`, `gradient`, `hessian`, `divergence`, `curl`, `laplacian`, `wronskianMatrix`, `wronskian`, `scalarPotential`, `lagrangeExtrema`, `eulerLagrange`, `poissonBracket`, `legendreTransform`, `hamiltonEquations`), division-free
+calculus, differential/Riemannian geometry, constrained optimization, and analytical mechanics (`jacobian`, `gradient`, `hessian`, `divergence`, `curl`, `laplacian`, `wronskianMatrix`, `wronskian`, `scalarPotential`, `frenetSerret`, `surfaceCurvature`, `christoffelSymbols`, `riemannTensor`, `ricciTensor`, `scalarCurvature`, `geodesicEquations`, `lagrangeExtrema`, `eulerLagrange`, `poissonBracket`, `legendreTransform`, `hamiltonEquations`), division-free
 Faddeev–LeVerrier characteristic polynomial, determinant, adjugate,
 and inverse (`charpoly`, `det`, `adjugate`, `inv`), exact linear
 system solver (`linsolve`), RREF and rank (`rref`, `rank`), kernel
@@ -155,7 +155,7 @@ Gram–Schmidt orthogonalization and thin QR decomposition
 (`eigenvalues`, `eigenvectors`), Jordan canonical form (`jordanForm`),
 and certified matrix exponential (`matrixExp`).
 
-**Ordinary Differential Equations** (`ode/`): `dsolve1`, `dsolve1IVP`,
+**Ordinary & Partial Differential Equations** (`ode/`, `pde/`): `dsolve1`, `dsolve1IVP`,
 `dsolve1Riccati`, `dsolve1Clairaut`, `dsolve2Linear`, `dsolve2LinearIVP`,
 `dsolve2EulerCauchy`, `dsolve2EulerCauchyIVP`, `dsolve2Special`, `dsolve2SpecialIVP`,
 `dsolveSeries`, `dsolveSeriesIVP`, `dsolve2Nonlinear`,
@@ -164,12 +164,12 @@ and certified matrix exponential (`matrixExp`).
 solve 1st-order quadrature, linear, separable, Bernoulli, homogeneous
 $y' = F(y/x)$, exact $M(x,y)\,dx + N(x,y)\,dy = 0$ (with $\mu(x)$
 and $\mu(y)$ integrating factors), Riccati, and Clairaut ODEs, 2nd-order constant-coefficient,
-equidimensional Euler–Cauchy, special-function (Airy, Bessel, Modified/spherical Bessel, Legendre, Chebyshev, Hermite, Laguerre), Taylor/Frobenius power-series, and order-reducible nonlinear ODEs ($y'' = F(x, y')$ and $y'' = F(y, y')$), $N$-th order constant-coefficient
+equidimensional Euler–Cauchy, special-function (Airy, Bessel, Modified/spherical Bessel, Legendre, Chebyshev, Hermite, Laguerre, Gauss hypergeometric ${}_2F_1$, Kummer confluent hypergeometric ${}_1F_1$), Taylor/Frobenius power-series, and order-reducible nonlinear ODEs ($y'' = F(x, y')$ and $y'' = F(y, y')$), $N$-th order constant-coefficient
 linear ODEs $\sum_{k=0}^N a_k y^{(k)}(x) = f(x)$, and $n \times n$
 first-order constant-coefficient linear ODE systems $\mathbf{y}' = A\mathbf{y} + \mathbf{f}(x)$
 (distinct real, repeated/defective Jordan blocks, and complex-conjugate
 eigenvalues $\alpha \pm i\omega$, plus Cauchy IVPs), certifying every
-solution by substitution into the ODE.
+solution by substitution into the ODE; `pdsolve1Quasilinear`, `pdsolve1Cauchy`, `pdsolveWaveDalembert`, `pdsolveHeat1D`, `pdsolveWave1D`, and `pdsolveLaplace2DRect` (`pde/pdsolve.hpp`) solve 1st-order quasilinear PDEs via characteristics and 2nd-order wave, heat, and Laplace PDEs via d'Alembert/Duhamel and Fourier separation of variables.
 
 **Integral & Discrete Transforms** (`transform/`): `laplace` and `ilaplace`
 (`transform/laplace.hpp`) compute forward and inverse unilateral

@@ -104,6 +104,58 @@ struct DefiniteIntegral
 DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                                    Budget *budget = nullptr);
 
+struct DefiniteBound
+{
+    Expr var;
+    Expr a;
+    Expr b;
+};
+
+// Iterated indefinite integration int ... int f(vars) d(vars[0]) ... d(vars[k-1]),
+// certified by verifying the mixed partial derivative
+// d^k F / (d(vars[k-1]) ... d(vars[0])) == f.
+RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
+                                Budget *budget = nullptr);
+
+// Iterated definite integration from innermost bound `bounds[0]` to
+// outermost bound `bounds.back()`:
+//   int_{a_{k-1}}^{b_{k-1}} ... int_{a_0}^{b_0} f d(var_0) ... d(var_{k-1})
+// where inner limits `a_i, b_i` may depend on outer integration variables
+// `var_{i+1}, ..., var_{k-1}` (triangles, disks, tetrahedra, spheres, etc.).
+DefiniteIntegral definiteIntegrateMulti(
+    Ctx &c, Expr f, const std::vector<DefiniteBound> &bounds,
+    Budget *budget = nullptr);
+
+// Line integral of the 1st kind (with respect to arc length ds):
+//   int_C f(vars) ds = int_a^b f(r(t)) * ||r'(t)|| dt
+DefiniteIntegral lineIntegralScalar(Ctx &c, Expr f,
+                                    const std::vector<Expr> &vars,
+                                    const std::vector<Expr> &curve, Expr t,
+                                    Expr a, Expr b, Budget *budget = nullptr);
+
+// Line integral of the 2nd kind (work/circulation of vector field F along C):
+//   int_C F(r) . dr = int_a^b sum_{i=0}^{n-1} F_i(r(t)) * r_i'(t) dt
+DefiniteIntegral lineIntegralVector(Ctx &c, const std::vector<Expr> &field,
+                                    const std::vector<Expr> &vars,
+                                    const std::vector<Expr> &curve, Expr t,
+                                    Expr a, Expr b, Budget *budget = nullptr);
+
+inline DefiniteIntegral lineIntegral(Ctx &c, Expr f,
+                                     const std::vector<Expr> &vars,
+                                     const std::vector<Expr> &curve, Expr t,
+                                     Expr a, Expr b, Budget *budget = nullptr)
+{
+    return lineIntegralScalar(c, f, vars, curve, t, a, b, budget);
+}
+
+inline DefiniteIntegral lineIntegral(Ctx &c, const std::vector<Expr> &field,
+                                     const std::vector<Expr> &vars,
+                                     const std::vector<Expr> &curve, Expr t,
+                                     Expr a, Expr b, Budget *budget = nullptr)
+{
+    return lineIntegralVector(c, field, vars, curve, t, a, b, budget);
+}
+
 // Factor the rational function e(var) over Q: returns the factored
 // canonical product (content coefficients in front, irreducible
 // factors with multiplicities as integer powers). Returns false when

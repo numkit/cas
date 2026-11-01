@@ -1929,3 +1929,132 @@ TEST_F(RatIntTest, EulerGammaBetaAndWallisDefiniteIntegrals)
               c.zero());
 }
 
+TEST_F(RatIntTest, MultipleAndLineIntegrals)
+{
+    using numkit::cas::Ctx;
+    using numkit::cas::DefiniteBound;
+    using numkit::cas::Expr;
+
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr z = c.symbol("z");
+    const Expr t = c.symbol("t");
+
+    // 1. Iterated indefinite integral integrateMulti: int int (6*x*y^2 + cos(x)*sin(y)) dx dy
+    {
+        const Expr f = numkit::cas::parseExpr(c, "6*x*y^2 + cos(x)*sin(y)");
+        const auto res = numkit::cas::integrateMulti(c, f, {x, y});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        const Expr dxy = c.diff(c.diff(res.F, y), x);
+        EXPECT_EQ(c.simplify(c.add({dxy, c.neg(f)})), c.zero());
+    }
+
+    // 2. Iterated definite integrals definiteIntegrateMulti
+    // 2a. Rectangular box: int_0^2 int_0^1 (x^2 + y^2) dy dx = 10/3
+    {
+        const Expr f = numkit::cas::parseExpr(c, "x^2 + y^2");
+        const auto res = numkit::cas::definiteIntegrateMulti(
+            c, f, {{y, c.zero(), c.one()}, {x, c.zero(), c.number(2)}});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.value, numkit::cas::parseExpr(c, "10/3"));
+    }
+
+    // 2b. Dependent triangular domain: int_0^1 int_0^(1 - x) (x + y) dy dx = 1/3
+    {
+        const Expr f = numkit::cas::parseExpr(c, "x + y");
+        const auto res = numkit::cas::definiteIntegrateMulti(
+            c, f,
+            {{y, c.zero(), numkit::cas::parseExpr(c, "1 - x")},
+             {x, c.zero(), c.one()}});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.value, numkit::cas::parseExpr(c, "1/3"));
+    }
+
+    // 2c. Area of unit disk via dependent radical limits:
+    //     int_{-1}^1 int_{-(1 - x^2)^(1/2)}^{(1 - x^2)^(1/2)} 1 dy dx = pi
+    {
+        const Expr hiY = numkit::cas::parseExpr(c, "(1 - x^2)^(1/2)");
+        const Expr loY = c.neg(hiY);
+        const auto res = numkit::cas::definiteIntegrateMulti(
+            c, c.one(),
+            {{y, loY, hiY}, {x, c.number(-1), c.one()}});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.value, c.symbol("pi"));
+    }
+
+    // 2d. 3D tetrahedron volume: int_0^1 int_0^(1-x) int_0^(1-x-y) 1 dz dy dx = 1/6
+    {
+        const auto res = numkit::cas::definiteIntegrateMulti(
+            c, c.one(),
+            {{z, c.zero(), numkit::cas::parseExpr(c, "1 - x - y")},
+             {y, c.zero(), numkit::cas::parseExpr(c, "1 - x")},
+             {x, c.zero(), c.one()}});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.value, numkit::cas::parseExpr(c, "1/6"));
+    }
+
+    // 3. Line integrals of the 1st kind (arc-length ds)
+    // 3a. Circular helix r(t) = (cos(t), sin(t), t) on [0, 2*pi], f = x^2 + y^2 + z:
+    //     ||r'(t)|| = sqrt(2), f(r(t)) = 1 + t => int_0^{2*pi} (1 + t)*sqrt(2) dt
+    //     = 2^(1/2)*(2*pi + 2*pi^2)
+    {
+        const std::vector<Expr> curve = {
+            numkit::cas::parseExpr(c, "cos(t)"),
+            numkit::cas::parseExpr(c, "sin(t)"),
+            t};
+        const Expr f = numkit::cas::parseExpr(c, "x^2 + y^2 + z");
+        const auto res = numkit::cas::lineIntegral(
+            c, f, {x, y, z}, curve, t, c.zero(),
+            numkit::cas::parseExpr(c, "2*pi"));
+        ASSERT_TRUE(res.proved()) << res.reason;
+        const Expr expected =
+            numkit::cas::parseExpr(c, "2^(1/2)*(2*pi + 2*pi^2)");
+        EXPECT_EQ(c.simplify(c.add({res.value, c.neg(expected)})), c.zero());
+    }
+
+    // 3b. Involute of a circle r(t) = (cos(t) + t*sin(t), sin(t) - t*cos(t)) on [0, pi]:
+    //     ||r'(t)|| = t => arc length int_C 1 ds = int_0^pi t dt = pi^2 / 2
+    {
+        const std::vector<Expr> curve = {
+            numkit::cas::parseExpr(c, "cos(t) + t*sin(t)"),
+            numkit::cas::parseExpr(c, "sin(t) - t*cos(t)")};
+        const auto res = numkit::cas::lineIntegralScalar(
+            c, c.one(), {x, y}, curve, t, c.zero(), c.symbol("pi"));
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.value, numkit::cas::parseExpr(c, "1/2*pi^2"));
+    }
+
+    // 4. Line integrals of the 2nd kind (vector field circulation / work)
+    // 4a. Non-conservative circulation: F = (-y, x) around unit circle (cos(t), sin(t)), [0, 2*pi] -> 2*pi
+    {
+        const std::vector<Expr> field = {c.neg(y), x};
+        const std::vector<Expr> curve = {
+            numkit::cas::parseExpr(c, "cos(t)"),
+            numkit::cas::parseExpr(c, "sin(t)")};
+        const auto res = numkit::cas::lineIntegral(
+            c, field, {x, y}, curve, t, c.zero(),
+            numkit::cas::parseExpr(c, "2*pi"));
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.value, numkit::cas::parseExpr(c, "2*pi"));
+    }
+
+    // 4b. Conservative 3D field F = nabla(x*y*z + x^2) = (y*z + 2*x, x*z, x*y)
+    //     along twisted cubic (t, t^2, t^3) from t = 0 to t = 2:
+    //     phi(2, 4, 8) - phi(0, 0, 0) = 64 + 4 = 68
+    {
+        const std::vector<Expr> field = {
+            numkit::cas::parseExpr(c, "y*z + 2*x"),
+            numkit::cas::parseExpr(c, "x*z"),
+            numkit::cas::parseExpr(c, "x*y")};
+        const std::vector<Expr> curve = {
+            t, numkit::cas::parseExpr(c, "t^2"),
+            numkit::cas::parseExpr(c, "t^3")};
+        const auto res = numkit::cas::lineIntegralVector(
+            c, field, {x, y, z}, curve, t, c.zero(), c.number(2));
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.value, c.number(68));
+    }
+}
+
+

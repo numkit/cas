@@ -3,6 +3,7 @@
 
 #include <numkit/cas/core/series.hpp>
 #include <numkit/cas/core/simplify.hpp>
+#include <numkit/cas/linalg/symmatrix.hpp>
 #include <numkit/cas/poly/modcpoly.hpp>
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/poly/sturm.hpp>
@@ -4224,6 +4225,320 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     out.value = c.simplify(c.add(jumpTerms));
     out.status = DefiniteIntegral::Status::ProvedSymbolic;
     return out;
+}
+
+RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
+                                Budget *budget)
+{
+    RationalIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (f.isNull()) {
+        out.reason = "null integrand";
+        return out;
+    }
+    if (vars.empty()) {
+        out.reason = "empty variable list";
+        return out;
+    }
+    for (Expr v : vars) {
+        if (v.isNull() || c.kind(v) != NodeKind::Symbol) {
+            out.reason = "integration variable must be a symbol";
+            return out;
+        }
+    }
+
+    Expr cur = f;
+    for (Expr v : vars) {
+        const RationalIntegral step = integrate(c, cur, v, budget);
+        if (!step.proved()) {
+            out.reason = step.reason;
+            return out;
+        }
+        cur = c.simplify(step.F);
+    }
+
+    // Certify mixed partial derivative d^k F / (d(vars[k-1]) ... d(vars[0])) == f.
+    Expr dF = cur;
+    for (std::size_t idx = vars.size(); idx > 0; --idx) {
+        dF = c.diff(dF, vars[idx - 1]);
+        if (dF.isNull()) {
+            out.reason = "mixed derivative certification failed";
+            return out;
+        }
+    }
+    const Expr diffExpr = c.add({dF, c.neg(f)});
+    const bool certOk =
+        c.isZero(diffExpr) || c.isZero(c.expand(diffExpr)) ||
+        c.isZero(c.simplify(diffExpr)) ||
+        c.isZero(simplifyRationalExpr(c, diffExpr));
+    if (!certOk) {
+        out.reason = "mixed partial derivative certificate mismatch";
+        return out;
+    }
+
+    out.F = cur;
+    out.status = RationalIntegral::Status::ProvedSymbolic;
+    return out;
+}
+
+DefiniteIntegral definiteIntegrateMulti(
+    Ctx &c, Expr f, const std::vector<DefiniteBound> &bounds, Budget *budget)
+{
+    DefiniteIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (f.isNull()) {
+        out.reason = "null integrand";
+        return out;
+    }
+    if (bounds.empty()) {
+        out.reason = "empty bounds list";
+        return out;
+    }
+    for (const DefiniteBound &bnd : bounds) {
+        if (bnd.var.isNull() || c.kind(bnd.var) != NodeKind::Symbol ||
+            bnd.a.isNull() || bnd.b.isNull()) {
+            out.reason = "invalid definite integration bound";
+            return out;
+        }
+    }
+
+    Expr cur = f;
+    Expr lastF;
+    for (const DefiniteBound &bnd : bounds) {
+        const DefiniteIntegral step =
+            definiteIntegrate(c, cur, bnd.var, bnd.a, bnd.b, budget);
+        if (!step.proved())
+            return step;
+        cur = c.simplify(step.value);
+        lastF = step.F;
+    }
+
+    out.value = cur;
+    out.F = lastF;
+    out.status = DefiniteIntegral::Status::ProvedSymbolic;
+    return out;
+}
+
+namespace {
+
+Expr subsVectorSimultaneous(Ctx &c, Expr e, const std::vector<Expr> &vars,
+                            const std::vector<Expr> &repls)
+{
+    if (e.isNull())
+        return Expr();
+    std::vector<Expr> tmps;
+    tmps.reserve(vars.size());
+    Expr cur = e;
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        const Expr tmp = c.symbol("$li_tmp_" + std::to_string(i));
+        tmps.push_back(tmp);
+        cur = c.subs(cur, vars[i], tmp);
+    }
+    for (std::size_t i = 0; i < vars.size(); ++i)
+        cur = c.subs(cur, tmps[i], repls[i]);
+    return cur;
+}
+
+Expr simplifySqrtOnInterval(Ctx &c, Expr speedSq, Expr t, Expr a, Expr b)
+{
+    const Expr simpSq = c.simplify(speedSq);
+    if (simpSq.isNull())
+        return Expr();
+    if (c.isZero(simpSq))
+        return c.zero();
+
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    Expr baseExpr = simpSq;
+    Expr factored;
+    if (factorExpr(c, simpSq, t, factored) && !factored.isNull())
+        baseExpr = factored;
+
+    double aVal = 0.0;
+    double bVal = 0.0;
+    const bool hasMid =
+        c.evalDouble(a, {}, aVal) && c.evalDouble(b, {}, bVal);
+    const Expr midExpr =
+        c.mul({half, c.add({a, b})});
+
+    std::vector<Expr> factors;
+    if (c.kind(baseExpr) == NodeKind::Mul) {
+        for (std::size_t i = 0; i < c.childCount(baseExpr); ++i)
+            factors.push_back(c.child(baseExpr, i));
+    } else {
+        factors.push_back(baseExpr);
+    }
+
+    std::vector<Expr> outFactors;
+    std::vector<Expr> remUnderSqrt;
+    for (Expr fk : factors) {
+        if (c.kind(fk) == NodeKind::Number) {
+            const Rational &rv = c.numberValue(fk);
+            if (rv.signum() > 0) {
+                outFactors.push_back(sqrtExpr(c, rv));
+                continue;
+            }
+        }
+        if (c.kind(fk) == NodeKind::Pow &&
+            c.kind(c.child(fk, 1)) == NodeKind::Number) {
+            const Rational &re = c.numberValue(c.child(fk, 1));
+            std::int64_t expInt = 0;
+            if (re.den() == BigInt(1) && re.num().fitsInt64(expInt) &&
+                (expInt % 2 == 0)) {
+                const std::int64_t halfExp = expInt / 2;
+                const Expr u = c.child(fk, 0);
+                if (halfExp % 2 == 0 || c.isAssumedNonNegative(u)) {
+                    outFactors.push_back(c.pow(u, c.number(halfExp)));
+                    continue;
+                }
+                if (c.isAssumedNegative(u)) {
+                    outFactors.push_back(c.pow(c.neg(u), c.number(halfExp)));
+                    continue;
+                }
+                if (hasMid) {
+                    const Expr uMid = c.subs(u, t, midExpr);
+                    double uVal = 0.0;
+                    if (c.evalDouble(uMid, {}, uVal)) {
+                        if (uVal > 1e-12) {
+                            outFactors.push_back(c.pow(u, c.number(halfExp)));
+                            continue;
+                        }
+                        if (uVal < -1e-12) {
+                            outFactors.push_back(
+                                c.pow(c.neg(u), c.number(halfExp)));
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        remUnderSqrt.push_back(fk);
+    }
+
+    if (!remUnderSqrt.empty()) {
+        const Expr rem =
+            remUnderSqrt.size() == 1 ? remUnderSqrt[0] : c.mul(remUnderSqrt);
+        outFactors.push_back(c.simplify(c.pow(rem, half)));
+    }
+    return outFactors.empty() ? c.one() : c.simplify(c.mul(outFactors));
+}
+
+} // namespace
+
+DefiniteIntegral lineIntegralScalar(Ctx &c, Expr f,
+                                    const std::vector<Expr> &vars,
+                                    const std::vector<Expr> &curve, Expr t,
+                                    Expr a, Expr b, Budget *budget)
+{
+    DefiniteIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (f.isNull() || t.isNull() || c.kind(t) != NodeKind::Symbol ||
+        a.isNull() || b.isNull()) {
+        out.reason = "null argument in lineIntegralScalar";
+        return out;
+    }
+    if (vars.empty() || vars.size() != curve.size()) {
+        out.reason = "vars and curve dimensions must match and be non-empty";
+        return out;
+    }
+
+    std::vector<Expr> sqTerms;
+    sqTerms.reserve(curve.size());
+    for (std::size_t i = 0; i < curve.size(); ++i) {
+        if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol ||
+            curve[i].isNull()) {
+            out.reason = "invalid variable or curve component";
+            return out;
+        }
+        const Expr dr = c.diff(curve[i], t);
+        if (dr.isNull()) {
+            out.reason = "failed to differentiate curve component";
+            return out;
+        }
+        sqTerms.push_back(c.pow(dr, c.number(std::int64_t{2})));
+    }
+
+    const Expr speedSq = c.add(sqTerms);
+    const Expr ds = simplifySqrtOnInterval(c, speedSq, t, a, b);
+    if (ds.isNull()) {
+        out.reason = "failed to form arc-length element";
+        return out;
+    }
+
+    const Expr fOnCurve = subsVectorSimultaneous(c, f, vars, curve);
+    const Expr integrand = c.simplify(c.mul({fOnCurve, ds}));
+    double aVal = 0.0;
+    double bVal = 0.0;
+    const bool reversedOrient =
+        c.evalDouble(a, {}, aVal) && c.evalDouble(b, {}, bVal) && bVal < aVal;
+    const Expr lo = reversedOrient ? b : a;
+    const Expr hi = reversedOrient ? a : b;
+    return definiteIntegrate(c, integrand, t, lo, hi, budget);
+}
+
+DefiniteIntegral lineIntegralVector(Ctx &c, const std::vector<Expr> &field,
+                                    const std::vector<Expr> &vars,
+                                    const std::vector<Expr> &curve, Expr t,
+                                    Expr a, Expr b, Budget *budget)
+{
+    DefiniteIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (t.isNull() || c.kind(t) != NodeKind::Symbol || a.isNull() ||
+        b.isNull()) {
+        out.reason = "null argument in lineIntegralVector";
+        return out;
+    }
+    if (vars.empty() || field.size() != vars.size() ||
+        curve.size() != vars.size()) {
+        out.reason =
+            "field, vars, and curve dimensions must match and be non-empty";
+        return out;
+    }
+
+    std::vector<Expr> dotTerms;
+    dotTerms.reserve(vars.size());
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        if (field[i].isNull() || vars[i].isNull() ||
+            c.kind(vars[i]) != NodeKind::Symbol || curve[i].isNull()) {
+            out.reason = "invalid field, variable, or curve component";
+            return out;
+        }
+        const Expr dr = c.diff(curve[i], t);
+        if (dr.isNull()) {
+            out.reason = "failed to differentiate curve component";
+            return out;
+        }
+        const Expr fiOnCurve = subsVectorSimultaneous(c, field[i], vars, curve);
+        dotTerms.push_back(c.mul({fiOnCurve, dr}));
+    }
+
+    const Expr integrand = c.simplify(c.add(dotTerms));
+    const DefiniteIntegral direct =
+        definiteIntegrate(c, integrand, t, a, b, budget);
+    if (direct.proved() ||
+        direct.status == DefiniteIntegral::Status::Divergent) {
+        return direct;
+    }
+
+    // Fallback: Fundamental Theorem of Line Integrals when F = nabla(phi)
+    const PotentialResult pot = scalarPotential(c, field, vars, budget);
+    if (pot.proved() && !pot.phi.isNull()) {
+        const Expr phiT =
+            c.simplify(subsVectorSimultaneous(c, pot.phi, vars, curve));
+        const LimitResult limB = limit(c, phiT, t, b, budget);
+        const LimitResult limA = limit(c, phiT, t, a, budget);
+        if (limB.proved() && limA.proved()) {
+            out.F = phiT;
+            out.value = c.simplify(c.add({limB.value, c.neg(limA.value)}));
+            out.status = DefiniteIntegral::Status::ProvedSymbolic;
+            return out;
+        }
+    }
+
+    return direct;
 }
 
 } // namespace numkit::cas

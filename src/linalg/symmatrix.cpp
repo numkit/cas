@@ -2263,4 +2263,377 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
     return out;
 }
 
+namespace {
+
+Expr extractRationalNumerator(Ctx &c, Expr e)
+{
+    const Expr norm = simplifyRationalExpr(c, e);
+    if (norm.isNull())
+        return e;
+    if (c.kind(norm) == NodeKind::Pow &&
+        c.kind(c.child(norm, 1)) == NodeKind::Number &&
+        c.numberValue(c.child(norm, 1)).signum() < 0) {
+        return c.one();
+    }
+    if (c.kind(norm) == NodeKind::Mul) {
+        std::vector<Expr> numFactors;
+        for (std::size_t i = 0; i < c.childCount(norm); ++i) {
+            const Expr ch = c.child(norm, i);
+            if (c.kind(ch) == NodeKind::Pow &&
+                c.kind(c.child(ch, 1)) == NodeKind::Number &&
+                c.numberValue(c.child(ch, 1)).signum() < 0) {
+                continue;
+            }
+            numFactors.push_back(ch);
+        }
+        return numFactors.empty() ? c.one() : c.expand(c.mul(numFactors));
+    }
+    return c.expand(norm);
+}
+
+Expr subsSimultaneousLinalg(Ctx &c, Expr e, const std::vector<Expr> &vars,
+                            const std::vector<Expr> &vals)
+{
+    if (e.isNull())
+        return Expr();
+    std::vector<Expr> tmps;
+    tmps.reserve(vars.size());
+    Expr cur = e;
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        const Expr tmp = c.symbol("$kkt_tmp_" + std::to_string(i));
+        tmps.push_back(tmp);
+        cur = c.subs(cur, vars[i], tmp);
+    }
+    for (std::size_t i = 0; i < vars.size(); ++i)
+        cur = c.subs(cur, tmps[i], vals[i]);
+    return cur;
+}
+
+bool evalExprSign(Ctx &c, Expr e, int &signOut)
+{
+    if (e.isNull())
+        return false;
+    const Expr s = c.simplify(e);
+    Rational r;
+    if (c.evalExact(s, {}, r)) {
+        signOut = r.signum();
+        return true;
+    }
+    double d = 0.0;
+    if (c.evalDouble(s, {}, d)) {
+        if (d > 1e-10)
+            signOut = +1;
+        else if (d < -1e-10)
+            signOut = -1;
+        else
+            signOut = 0;
+        return true;
+    }
+    return false;
+}
+
+int leadingMinorSign(Ctx &c, const SymMatrix &M, std::size_t k, Budget *budget,
+                     bool &okOut)
+{
+    SymMatrix subM(k, k, c.zero());
+    for (std::size_t r = 0; r < k; ++r)
+        for (std::size_t col = 0; col < k; ++col)
+            subM.at(r, col) = M.at(r, col);
+    const Expr d = det(c, subM, budget);
+    int s = 0;
+    okOut = evalExprSign(c, d, s);
+    return s;
+}
+
+} // namespace
+
+LagrangeExtremaResult lagrangeExtrema(
+    Ctx &c, Expr f, const std::vector<Expr> &vars,
+    const std::vector<Expr> &constraints, Budget *budget)
+{
+    LagrangeExtremaResult out;
+    if (!checkLinalgBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+    if (f.isNull()) {
+        out.reason = "null objective function";
+        return out;
+    }
+    if (vars.empty()) {
+        out.reason = "empty variable list";
+        return out;
+    }
+    const std::size_t n = vars.size();
+    const std::size_t m = constraints.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol) {
+            out.reason = "decision variables must be symbols";
+            return out;
+        }
+        for (std::size_t j = i + 1; j < n; ++j) {
+            if (vars[i] == vars[j]) {
+                out.reason = "duplicate decision variable";
+                return out;
+            }
+        }
+    }
+    for (Expr g : constraints) {
+        if (g.isNull()) {
+            out.reason = "null constraint expression";
+            return out;
+        }
+    }
+
+    std::vector<Expr> lamVars;
+    lamVars.reserve(m);
+    for (std::size_t j = 0; j < m; ++j)
+        lamVars.push_back(c.symbol("$lam_" + std::to_string(j)));
+
+    // Build KKT stationarity equations dL/dx_i = df/dx_i - sum_j lam_j * dg_j/dx_i = 0
+    // and constraint equations g_j(x) = 0.
+    std::vector<Expr> kktResiduals;
+    std::vector<Expr> polyEqs;
+    kktResiduals.reserve(n + m);
+    polyEqs.reserve(n + m);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        std::vector<Expr> terms{c.diff(f, vars[i])};
+        if (terms[0].isNull()) {
+            out.reason = "failed to differentiate objective function";
+            return out;
+        }
+        for (std::size_t j = 0; j < m; ++j) {
+            const Expr dgj = c.diff(constraints[j], vars[i]);
+            if (dgj.isNull()) {
+                out.reason = "failed to differentiate constraint";
+                return out;
+            }
+            terms.push_back(c.neg(c.mul({lamVars[j], dgj})));
+        }
+        const Expr kktEq = c.add(terms);
+        kktResiduals.push_back(kktEq);
+        polyEqs.push_back(extractRationalNumerator(c, kktEq));
+    }
+    for (std::size_t j = 0; j < m; ++j) {
+        kktResiduals.push_back(constraints[j]);
+        polyEqs.push_back(extractRationalNumerator(c, constraints[j]));
+    }
+
+    // Solve KKT system via solveSystem. Put multipliers first in Lex order so
+    // linear multipliers are eliminated first and coordinates are triangularized.
+    std::vector<Expr> solveVars;
+    solveVars.reserve(m + n);
+    for (Expr lv : lamVars)
+        solveVars.push_back(lv);
+    for (Expr xv : vars)
+        solveVars.push_back(xv);
+
+    std::vector<std::vector<Expr>> rawSols =
+        solveSystem(c, polyEqs, solveVars, budget);
+    bool lamFirst = true;
+    if (rawSols.empty() && m > 0) {
+        std::vector<Expr> altVars;
+        altVars.reserve(n + m);
+        for (Expr xv : vars)
+            altVars.push_back(xv);
+        for (Expr lv : lamVars)
+            altVars.push_back(lv);
+        rawSols = solveSystem(c, polyEqs, altVars, budget);
+        lamFirst = false;
+    }
+
+    if (rawSols.empty()) {
+        out.reason = "no stationary points found";
+        return out;
+    }
+
+    // Precompute symbolic Hessian of Lagrangian L(x, lam) = f(x) - sum_j lam_j * g_j(x)
+    // and constraint gradients for second-order classification.
+    std::vector<Expr> lagTerms{f};
+    for (std::size_t j = 0; j < m; ++j)
+        lagTerms.push_back(c.neg(c.mul({lamVars[j], constraints[j]})));
+    const Expr lagrangian = c.add(lagTerms);
+    const SymMatrix hessL = hessian(c, lagrangian, vars);
+    const SymMatrix gradG0 =
+        (m == 1) ? gradient(c, constraints[0], vars) : SymMatrix{};
+
+    std::vector<Expr> allSyms;
+    allSyms.reserve(n + m);
+    for (Expr xv : vars)
+        allSyms.push_back(xv);
+    for (Expr lv : lamVars)
+        allSyms.push_back(lv);
+
+    for (const std::vector<Expr> &sol : rawSols) {
+        if (sol.size() != n + m)
+            continue;
+        std::vector<Expr> xStar(n);
+        std::vector<Expr> lamStar(m);
+        if (lamFirst) {
+            for (std::size_t j = 0; j < m; ++j)
+                lamStar[j] = c.simplify(sol[j]);
+            for (std::size_t i = 0; i < n; ++i)
+                xStar[i] = c.simplify(sol[m + i]);
+        } else {
+            for (std::size_t i = 0; i < n; ++i)
+                xStar[i] = c.simplify(sol[i]);
+            for (std::size_t j = 0; j < m; ++j)
+                lamStar[j] = c.simplify(sol[n + j]);
+        }
+
+        std::vector<Expr> allVals;
+        allVals.reserve(n + m);
+        for (Expr xv : xStar)
+            allVals.push_back(xv);
+        for (Expr lv : lamStar)
+            allVals.push_back(lv);
+
+        // Certify KKT stationarity and constraint equations on the original residuals.
+        bool kktOk = true;
+        for (const Expr &resExpr : kktResiduals) {
+            const Expr subbed =
+                subsSimultaneousLinalg(c, resExpr, allSyms, allVals);
+            if (subbed.isNull() || !isZeroLinalg(c, subbed, budget)) {
+                kktOk = false;
+                break;
+            }
+        }
+        if (!kktOk)
+            continue;
+
+        const Expr fVal =
+            c.simplify(subsSimultaneousLinalg(c, f, vars, xStar));
+        if (fVal.isNull())
+            continue;
+
+        ExtremumPoint pt;
+        pt.point = xStar;
+        pt.multipliers = lamStar;
+        pt.value = fVal;
+        pt.kind = ExtremumPoint::Classification::Unknown;
+
+        // Second-order classification when Hessian entries evaluate numerically
+        SymMatrix HStar(n, n, c.zero());
+        for (std::size_t r = 0; r < n; ++r) {
+            for (std::size_t col = 0; col < n; ++col) {
+                HStar.at(r, col) = c.simplify(subsSimultaneousLinalg(
+                    c, hessL.at(r, col), allSyms, allVals));
+            }
+        }
+
+        if (m == 0) {
+            bool allMinorsOk = true;
+            bool allPos = true;
+            bool altNegPos = true;
+            int lastSign = 0;
+            for (std::size_t k = 1; k <= n; ++k) {
+                bool okM = false;
+                const int s = leadingMinorSign(c, HStar, k, budget, okM);
+                if (!okM || s == 0) {
+                    allMinorsOk = false;
+                    break;
+                }
+                if (s <= 0)
+                    allPos = false;
+                const int wantMaxSign = (k % 2 == 1) ? -1 : +1;
+                if (s != wantMaxSign)
+                    altNegPos = false;
+                if (k == n)
+                    lastSign = s;
+            }
+            if (allMinorsOk) {
+                if (allPos)
+                    pt.kind = ExtremumPoint::Classification::LocalMinimum;
+                else if (altNegPos)
+                    pt.kind = ExtremumPoint::Classification::LocalMaximum;
+                else if (lastSign != 0)
+                    pt.kind = ExtremumPoint::Classification::SaddlePoint;
+            }
+        } else if (m == 1 && n >= 2) {
+            std::vector<Expr> gGrad(n);
+            for (std::size_t i = 0; i < n; ++i) {
+                gGrad[i] = c.simplify(
+                    subsSimultaneousLinalg(c, gradG0.at(i, 0), vars, xStar));
+            }
+            std::vector<std::size_t> perm(n);
+            for (std::size_t i = 0; i < n; ++i)
+                perm[i] = i;
+            for (std::size_t i = 0; i < n; ++i) {
+                int sG = 0;
+                if (evalExprSign(c, gGrad[i], sG) && sG != 0) {
+                    std::swap(perm[0], perm[i]);
+                    break;
+                }
+            }
+
+            SymMatrix B(n + 1, n + 1, c.zero());
+            for (std::size_t i = 0; i < n; ++i) {
+                B.at(0, i + 1) = gGrad[perm[i]];
+                B.at(i + 1, 0) = gGrad[perm[i]];
+                for (std::size_t j = 0; j < n; ++j)
+                    B.at(i + 1, j + 1) = HStar.at(perm[i], perm[j]);
+            }
+
+            bool allMinorsOk = true;
+            bool allNeg = true;
+            bool altSigns = true;
+            int lastSign = 0;
+            for (std::size_t k = 2; k <= n; ++k) {
+                bool okB = false;
+                const int s = leadingMinorSign(c, B, k + 1, budget, okB);
+                if (!okB || s == 0) {
+                    allMinorsOk = false;
+                    break;
+                }
+                if (s >= 0)
+                    allNeg = false;
+                const int wantMaxSign = (k % 2 == 0) ? +1 : -1;
+                if (s != wantMaxSign)
+                    altSigns = false;
+                if (k == n)
+                    lastSign = s;
+            }
+            if (allMinorsOk) {
+                if (allNeg)
+                    pt.kind = ExtremumPoint::Classification::LocalMinimum;
+                else if (altSigns)
+                    pt.kind = ExtremumPoint::Classification::LocalMaximum;
+                else if (n >= 3 && lastSign != 0)
+                    pt.kind = ExtremumPoint::Classification::SaddlePoint;
+            }
+        }
+
+        // Deduplicate by coordinate vector
+        bool dup = false;
+        for (const ExtremumPoint &prev : out.points) {
+            if (prev.point == pt.point) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup)
+            out.points.push_back(std::move(pt));
+    }
+
+    if (out.points.empty()) {
+        out.reason = "no certified KKT stationary points found";
+        return out;
+    }
+
+    std::sort(out.points.begin(), out.points.end(),
+              [&c](const ExtremumPoint &a, const ExtremumPoint &b) {
+                  for (std::size_t i = 0; i < a.point.size(); ++i) {
+                      const int cmp = c.compare(a.point[i], b.point[i]);
+                      if (cmp != 0)
+                          return cmp < 0;
+                  }
+                  return false;
+              });
+
+    out.certified = true;
+    out.status = LagrangeExtremaResult::Status::ProvedSymbolic;
+    return out;
+}
+
 } // namespace numkit::cas

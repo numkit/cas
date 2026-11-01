@@ -242,4 +242,46 @@ struct JordanDecomposition
 JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A,
                                Budget *budget = nullptr);
 
+struct ExtremumPoint
+{
+    enum class Classification
+    {
+        Unknown,
+        LocalMinimum,
+        LocalMaximum,
+        SaddlePoint,
+    };
+
+    std::vector<Expr> point;       // stationary point (x_0*, ..., x_{n-1}*)
+    std::vector<Expr> multipliers; // Lagrange multipliers (lambda_0*, ..., lambda_{m-1}*)
+    Expr value;                    // objective value f(x*)
+    Classification kind = Classification::Unknown;
+};
+
+struct LagrangeExtremaResult
+{
+    enum class Status { Unevaluated, ProvedSymbolic };
+
+    Status status = Status::Unevaluated;
+    std::vector<ExtremumPoint> points;
+    bool certified = false;
+    std::string reason;
+
+    bool proved() const { return status == Status::ProvedSymbolic; }
+};
+
+// Symbolic unconstrained and Lagrange-multiplier constrained stationary/extremum
+// solver for objective `f(vars)` subject to equality constraints `g_j(vars) = 0`:
+//   1. Forms the Lagrangian L(vars, lambda) = f(vars) - sum_j lambda_j * g_j(vars).
+//   2. Solves the KKT stationarity and feasibility system
+//        dL/dx_i = 0 (0 <= i < n),  g_j(x) = 0 (0 <= j < m)
+//      via `solveSystem` (Lex Groebner basis + back-substitution).
+//   3. Certifies every candidate solution (x*, lambda*) by substituting into
+//      all KKT equations and verifying zero residuals, evaluates f(x*), and
+//      classifies critical points via Hessian / bordered Hessian principal minors.
+LagrangeExtremaResult lagrangeExtrema(
+    Ctx &c, Expr f, const std::vector<Expr> &vars,
+    const std::vector<Expr> &constraints = {},
+    Budget *budget = nullptr);
+
 } // namespace numkit::cas

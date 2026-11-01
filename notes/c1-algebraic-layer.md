@@ -436,7 +436,7 @@
 64. ✅ (v0.8-пул, Эшелон 8) Классические ортогональные полиномы и специальные функции физики (полиномы Лежандра $P_n(x)$, Чебышёва $T_n(x), U_n(x)$, Эрмита $H_n(x)$, Лагерра $L_n(x)$, функции Бесселя $J_\nu(x), Y_\nu(x), I_\nu(x), K_\nu(x)$ и функции Эйри $\operatorname{Ai}(x), \operatorname{Bi}(x), \operatorname{Ai}'(x), \operatorname{Bi}'(x)$ сквозь двух- и многоаргументные вызовы `Ctx::func` и парсер, `diff`, `evalExact`/`evalDouble`, `simplify` с трёхчленной редукцией по $\mathbb{Z}$-смежным порядкам и сферическими полуцелыми замкнутыми формами, `taylor`/`laurent` и первообразные Бесселя + ортогональные определённые интегралы в `integrate/ratint`).
 65. ✅ (v0.8-пул, Эшелон 8) Решатель ОДУ Бесселя, модифицированного Бесселя, сферического Бесселя, Лежандра, Чебышёва 1-го и 2-го рода, Эрмита, Лагерра и Эйри (`dsolve2Special`, `dsolve2SpecialIVP`, делегирование из `dsolve2Linear` и `dsolve1Riccati`) и сертифицированный метод степенных рядов Тейлора–Фробениуса `dsolveSeries` / `dsolveSeriesIVP` (`ode/dsolve`).
 66. ✅ (v0.8-пул, Эшелон 8) Точное деление `divExactMulti`, многомерный НОД `gcdMulti` и факторизация многочленов от многих переменных `factorMulti` в $\mathbb{Q}[x_1, \dots, x_k]$ (`poly/groebner`).
-67. ⬜ (v0.8-пул, Эшелон 8) Кратные определённые интегралы `integrateMulti` / `definiteIntegrateMulti`, криволинейные интегралы 1-го и 2-го рода `lineIntegral` и символический поиск условных экстремумов методом множителей Лагранжа (`integrate/`, `linalg/`).
+67. ✅ (v0.8-пул, Эшелон 8) Кратные неопределённые и определённые интегралы `integrateMulti` / `definiteIntegrateMulti`, криволинейные интегралы 1-го и 2-го рода `lineIntegralScalar` / `lineIntegralVector` / `lineIntegral` и символический поиск безусловных и условных экстремумов методом множителей Лагранжа `lagrangeExtrema` (`integrate/ratint`, `linalg/symmatrix`).
 68. ⬜ Релизная отсечка `v0.8.0` (Эшелон 8 завершён).
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
@@ -2854,6 +2854,22 @@ MATLAB Symbolic Math Toolbox (три эшелона):
    - Для примитивных бесквадратных факторов: быстрый путь для линейной переменной ($\deg_{x_i}(S) = 1 \implies S$ неприводим), моническое преобразование Гаусса $\tilde{S}(X, \mathbf{y}) = L(\mathbf{y})^{d-1} S(X / L(\mathbf{y}), \mathbf{y})$ (снимающее проблему распределения старшего коэффициента $L(\mathbf{y})$ между множителями), выбор регулярной бесквадратной специализации $\mathbf{y} = \mathbf{b}$, одномерная факторизация Цассенхауса `factorOverQ` и многомерный подъём Гензеля по полной степени идеала $\langle \mathbf{y} - \mathbf{b} \rangle^m$ с обратной подстановкой $X \mapsto L(\mathbf{y})x$ и взятием примитивной части.
    - Финальное разложение $c \cdot \prod_i p_i^{e_i}$ проходит строгий сертификат тождества `expand(expr - f) == 0`.
    - Пойман и устранён до коммита тонкий дефект алиасинга в `mpolyDivExact(P, contP, order, P)`: очистка выходного буфера `qOut.terms.clear()` выполнялась до чтения `a`, что зануляло `P` при совпадении ссылок `&qOut == &a`.
+
+
+## 2026-11-01: Реализация пункта 67 — Кратные и криволинейные интегралы (`integrateMulti`, `definiteIntegrateMulti`, `lineIntegral`) и условные экстремумы Лагранжа `lagrangeExtrema`
+
+Реализован четвёртый пакет Эшелона 8 (пул `v0.8.0`):
+
+1. **Кратные неопределённые и определённые интегралы и криволинейные интегралы 1-го и 2-го рода (`include/numkit/cas/integrate/ratint.hpp`, `src/integrate/ratint.cpp`)**:
+   - `integrateMulti(c, f, vars, budget)` выполняет последовательное неопределённое интегрирование по переменным `vars` с проверкой сертификата смешанной частной производной $\frac{\partial^k F}{\partial x_{k-1} \cdots \partial x_0} \equiv f$.
+   - `definiteIntegrateMulti(c, f, bounds, budget)` выполняет повторное определённое интегрирование от внутреннего предела `bounds[0]` к внешнему `bounds.back()`, поддерживая зависимые пределы $a_i(x_{i+1}, \dots, x_{k-1}), b_i(x_{i+1}, \dots, x_{k-1})$ (прямоугольные параллелепипеды, симплексы/треугольники/тетраэдры, круги с радикальными пределами $\pm\sqrt{1 - x^2}$ и т.д.).
+   - `lineIntegralScalar` / `lineIntegral(c, f, vars, curve, t, a, b)` вычисляет криволинейный интеграл 1-го рода по длине дуги $\int_C f(\mathbf{x})\,ds = \int_a^b f(\mathbf{r}(t)) \|\mathbf{r}'(t)\|\,dt$, включая извлечение квадратного корня из квадратов полиномиальных множителей $\|\mathbf{r}'(t)\|^2$ с учётом знака на интервале $(a, b)$.
+   - `lineIntegralVector` / `lineIntegral(c, field, vars, curve, t, a, b)` вычисляет криволинейный интеграл 2-го рода $\int_C \mathbf{F}(\mathbf{r}) \cdot d\mathbf{r} = \int_a^b \sum_i F_i(\mathbf{r}(t)) r_i'(t)\,dt$ с фолбэком на формулу Ньютона–Лейбница $\varphi(\mathbf{r}(b)) - \varphi(\mathbf{r}(a))$ для потенциальных векторных полей ($\nabla\varphi = \mathbf{F}$ через `scalarPotential`).
+2. **Символьный поиск безусловных и условных экстремумов методом множителей Лагранжа `lagrangeExtrema` (`include/numkit/cas/linalg/symmatrix.hpp`, `src/linalg/symmatrix.cpp`)**:
+   - Формирует функцию Лагранжа $\mathcal{L}(\mathbf{x}, \boldsymbol{\lambda}) = f(\mathbf{x}) - \sum_{j=0}^{m-1} \lambda_j g_j(\mathbf{x})$ и решает систему стационарности и допустимости ККТ $\nabla_{\mathbf{x}}\mathcal{L} = \mathbf{0}, g_j(\mathbf{x}) = 0$ через `solveSystem` (с приоритетным исключением линейных множителей $\lambda_j$ в лексикографическом базисе Грёбнера).
+   - Каждая найденная точка $(\mathbf{x}^*, \boldsymbol{\lambda}^*)$ проходит прямую сертификацию обнуления всех уравнений ККТ и ограничений (`certified = true`).
+   - Выполняет классификацию критических точек (`LocalMinimum`, `LocalMaximum`, `SaddlePoint`) по главным минорам Сильвестра матрицы Гессе $H(\mathbf{x}^*)$ (в безусловном случае) и окаймлённой матрицы Гессе $B(\mathbf{x}^*, \lambda^*)$ (при ограничении-равенстве).
+
 
 
 

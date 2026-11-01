@@ -783,5 +783,100 @@ TEST(SymMatrixTest, VectorCalculusDivergenceCurlLaplacianWronskianAndPotential)
     }
 }
 
+TEST(SymMatrixTest, LagrangeExtremaUnconstrainedAndConstrained)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr z = c.symbol("z");
+
+    // 1. Unconstrained critical points with Hessian classification:
+    //    f(x, y) = x^3 - 3*x + y^2 - 4*y
+    //    df/dx = 3*(x^2 - 1) = 0 => x = +-1
+    //    df/dy = 2*(y - 2) = 0   => y = 2
+    //    H = diag(6*x, 2):
+    //      (-1, 2): H = diag(-6, 2) -> SaddlePoint, f = -2
+    //      ( 1, 2): H = diag( 6, 2) -> LocalMinimum, f = -6
+    {
+        const Expr f = parseExpr(c, "x^3 - 3*x + y^2 - 4*y");
+        const LagrangeExtremaResult res = lagrangeExtrema(c, f, {x, y});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_TRUE(res.certified);
+        ASSERT_EQ(res.points.size(), 2u);
+
+        EXPECT_EQ(res.points[0].point[0], c.number(-1));
+        EXPECT_EQ(res.points[0].point[1], c.number(2));
+        EXPECT_EQ(res.points[0].value, c.number(-2));
+        EXPECT_EQ(res.points[0].kind,
+                  ExtremumPoint::Classification::SaddlePoint);
+
+        EXPECT_EQ(res.points[1].point[0], c.number(1));
+        EXPECT_EQ(res.points[1].point[1], c.number(2));
+        EXPECT_EQ(res.points[1].value, c.number(-6));
+        EXPECT_EQ(res.points[1].kind,
+                  ExtremumPoint::Classification::LocalMinimum);
+    }
+
+    // 2. Constrained extremum on a line:
+    //    minimize f(x, y) = x^2 + y^2 subject to x + y - 2 = 0
+    //    -> unique minimum at (1, 1) with lambda = 2, f(1, 1) = 2
+    {
+        const Expr f = parseExpr(c, "x^2 + y^2");
+        const Expr g = parseExpr(c, "x + y - 2");
+        const LagrangeExtremaResult res = lagrangeExtrema(c, f, {x, y}, {g});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_TRUE(res.certified);
+        ASSERT_EQ(res.points.size(), 1u);
+        EXPECT_EQ(res.points[0].point[0], c.one());
+        EXPECT_EQ(res.points[0].point[1], c.one());
+        EXPECT_EQ(res.points[0].multipliers[0], c.number(2));
+        EXPECT_EQ(res.points[0].value, c.number(2));
+        EXPECT_EQ(res.points[0].kind,
+                  ExtremumPoint::Classification::LocalMinimum);
+    }
+
+    // 3. Constrained extrema on unit circle:
+    //    f(x, y) = x + y subject to x^2 + y^2 - 1 = 0
+    //    -> (-2^(-1/2), -2^(-1/2)) [LocalMinimum, f = -2^(1/2)]
+    //    -> ( 2^(-1/2),  2^(-1/2)) [LocalMaximum, f =  2^(1/2)]
+    {
+        const Expr f = parseExpr(c, "x + y");
+        const Expr g = parseExpr(c, "x^2 + y^2 - 1");
+        const LagrangeExtremaResult res = lagrangeExtrema(c, f, {x, y}, {g});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_TRUE(res.certified);
+        ASSERT_EQ(res.points.size(), 2u);
+        const Expr sqrt2 = parseExpr(c, "2^(1/2)");
+        EXPECT_EQ(c.simplify(c.add({res.points[0].value, sqrt2})), c.zero());
+        EXPECT_EQ(res.points[0].kind,
+                  ExtremumPoint::Classification::LocalMinimum);
+        EXPECT_EQ(c.simplify(c.add({res.points[1].value, c.neg(sqrt2)})),
+                  c.zero());
+        EXPECT_EQ(res.points[1].kind,
+                  ExtremumPoint::Classification::LocalMaximum);
+    }
+
+    // 4. 3D constrained optimization with 2 equality constraints:
+    //    minimize f(x, y, z) = x^2 + y^2 + z^2 subject to
+    //      x + y + z - 3 = 0 and x - y = 0
+    //    -> unique stationary point (1, 1, 1) with f = 3, multipliers (2, 0)
+    {
+        const Expr f = parseExpr(c, "x^2 + y^2 + z^2");
+        const Expr g1 = parseExpr(c, "x + y + z - 3");
+        const Expr g2 = parseExpr(c, "x - y");
+        const LagrangeExtremaResult res =
+            lagrangeExtrema(c, f, {x, y, z}, {g1, g2});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_TRUE(res.certified);
+        ASSERT_EQ(res.points.size(), 1u);
+        EXPECT_EQ(res.points[0].point[0], c.one());
+        EXPECT_EQ(res.points[0].point[1], c.one());
+        EXPECT_EQ(res.points[0].point[2], c.one());
+        EXPECT_EQ(res.points[0].value, c.number(3));
+        EXPECT_EQ(res.points[0].multipliers[0], c.number(2));
+        EXPECT_EQ(res.points[0].multipliers[1], c.zero());
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

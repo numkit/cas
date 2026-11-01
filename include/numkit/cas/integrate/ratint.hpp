@@ -156,6 +156,148 @@ inline DefiniteIntegral lineIntegral(Ctx &c, const std::vector<Expr> &field,
     return lineIntegralVector(c, field, vars, curve, t, a, b, budget);
 }
 
+// Surface integral of the 1st kind (with respect to surface area element dS):
+//   iint_S f(vars) dS = int_{vBound.a}^{vBound.b} int_{uBound.a}^{uBound.b}
+//                         f(r(u, v)) * ||dr/du x dr/dv|| du dv
+// where `vars` = {x, y, z}, `surface` = {r_x(u, v), r_y(u, v), r_z(u, v)},
+// `uBound` is the inner parameter bound (whose limits may depend on `vBound.var`),
+// and `vBound` is the outer parameter bound.
+DefiniteIntegral surfaceIntegralScalar(Ctx &c, Expr f,
+                                       const std::vector<Expr> &vars,
+                                       const std::vector<Expr> &surface,
+                                       const DefiniteBound &uBound,
+                                       const DefiniteBound &vBound,
+                                       Budget *budget = nullptr);
+
+// Surface integral of the 2nd kind (flux of vector field F across S oriented
+// by N = dr/du x dr/dv):
+//   iint_S F(r) . dS = int_{vBound.a}^{vBound.b} int_{uBound.a}^{uBound.b}
+//                        F(r(u, v)) . (dr/du x dr/dv) du dv
+DefiniteIntegral surfaceIntegralVector(Ctx &c, const std::vector<Expr> &field,
+                                       const std::vector<Expr> &vars,
+                                       const std::vector<Expr> &surface,
+                                       const DefiniteBound &uBound,
+                                       const DefiniteBound &vBound,
+                                       Budget *budget = nullptr);
+
+inline DefiniteIntegral surfaceIntegral(Ctx &c, Expr f,
+                                        const std::vector<Expr> &vars,
+                                        const std::vector<Expr> &surface,
+                                        const DefiniteBound &uBound,
+                                        const DefiniteBound &vBound,
+                                        Budget *budget = nullptr)
+{
+    return surfaceIntegralScalar(c, f, vars, surface, uBound, vBound, budget);
+}
+
+inline DefiniteIntegral surfaceIntegral(Ctx &c, const std::vector<Expr> &field,
+                                        const std::vector<Expr> &vars,
+                                        const std::vector<Expr> &surface,
+                                        const DefiniteBound &uBound,
+                                        const DefiniteBound &vBound,
+                                        Budget *budget = nullptr)
+{
+    return surfaceIntegralVector(c, field, vars, surface, uBound, vBound,
+                                 budget);
+}
+
+struct ParametricCurveSegment
+{
+    std::vector<Expr> curve;
+    Expr t;
+    Expr a;
+    Expr b;
+};
+
+struct ParametricSurfacePatch
+{
+    std::vector<Expr> surface;
+    DefiniteBound uBound;
+    DefiniteBound vBound;
+};
+
+struct IntegralTheoremResult
+{
+    bool proved = false;
+    Expr lhs; // boundary integral (circulation or flux)
+    Expr rhs; // interior integral (curl or divergence integral)
+    std::string reason;
+};
+
+// Symbolic verification of Green's theorem in the plane:
+//   oint_{dD} (P dx + Q dy) == iint_D (dQ/dx - dP/dy) dA
+IntegralTheoremResult verifyGreenTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<ParametricCurveSegment> &boundaryCurves,
+    const std::vector<DefiniteBound> &domainBounds, Budget *budget = nullptr);
+
+inline IntegralTheoremResult verifyGreenTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<Expr> &boundaryCurve, Expr t, Expr a, Expr b,
+    const std::vector<DefiniteBound> &domainBounds, Budget *budget = nullptr)
+{
+    return verifyGreenTheorem(
+        c, field, vars, {ParametricCurveSegment{boundaryCurve, t, a, b}},
+        domainBounds, budget);
+}
+
+// Symbolic verification of Kelvin-Stokes' theorem in R^3:
+//   oint_{dS} F . dr == iint_S (curl F) . dS
+IntegralTheoremResult verifyStokesTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<ParametricCurveSegment> &boundaryCurves,
+    const std::vector<Expr> &surface, const DefiniteBound &uBound,
+    const DefiniteBound &vBound, Budget *budget = nullptr);
+
+inline IntegralTheoremResult verifyStokesTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<Expr> &boundaryCurve, Expr t, Expr a, Expr b,
+    const std::vector<Expr> &surface, const DefiniteBound &uBound,
+    const DefiniteBound &vBound, Budget *budget = nullptr)
+{
+    return verifyStokesTheorem(
+        c, field, vars, {ParametricCurveSegment{boundaryCurve, t, a, b}},
+        surface, uBound, vBound, budget);
+}
+
+// Symbolic verification of the Gauss-Ostrogradsky divergence theorem in R^3:
+//   oiint_{dV} F . dS == iiint_V (div F) dV
+IntegralTheoremResult verifyGaussDivergenceTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<ParametricSurfacePatch> &boundaryPatches,
+    const std::vector<DefiniteBound> &volumeBounds, Budget *budget = nullptr);
+
+// Overload with a curvilinear volume coordinate transformation `volumeMap`
+// (e.g. spherical or cylindrical coordinates) whose Jacobian determinant
+// |det(d(vars)/d(paramVars))| is computed symbolically.
+IntegralTheoremResult verifyGaussDivergenceTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<ParametricSurfacePatch> &boundaryPatches,
+    const std::vector<Expr> &volumeMap,
+    const std::vector<DefiniteBound> &volumeBounds, Budget *budget = nullptr);
+
+inline IntegralTheoremResult verifyGaussDivergenceTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<Expr> &closedSurface, const DefiniteBound &uBound,
+    const DefiniteBound &vBound,
+    const std::vector<DefiniteBound> &volumeBounds, Budget *budget = nullptr)
+{
+    return verifyGaussDivergenceTheorem(
+        c, field, vars, {ParametricSurfacePatch{closedSurface, uBound, vBound}},
+        volumeBounds, budget);
+}
+
+inline IntegralTheoremResult verifyGaussDivergenceTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<Expr> &closedSurface, const DefiniteBound &uBound,
+    const DefiniteBound &vBound, const std::vector<Expr> &volumeMap,
+    const std::vector<DefiniteBound> &volumeBounds, Budget *budget = nullptr)
+{
+    return verifyGaussDivergenceTheorem(
+        c, field, vars, {ParametricSurfacePatch{closedSurface, uBound, vBound}},
+        volumeMap, volumeBounds, budget);
+}
+
 // Factor the rational function e(var) over Q: returns the factored
 // canonical product (content coefficients in front, irreducible
 // factors with multiplicities as integer powers). Returns false when

@@ -2223,6 +2223,193 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
     }
 }
 
+TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
+{
+    using numkit::cas::AssumeDomain;
+    using numkit::cas::DefiniteBound;
+    using numkit::cas::Expr;
+    using numkit::cas::ParametricCurveSegment;
+    using numkit::cas::ParametricSurfacePatch;
+
+    const Expr y = c.symbol("y");
+    const Expr z = c.symbol("z");
+    const Expr u = c.symbol("u");
+    const Expr v = c.symbol("v");
+    const Expr w = c.symbol("w");
+    const Expr t = c.symbol("t");
+    const Expr R = c.symbol("R");
+    c.assume(R, AssumeDomain::Positive);
+    const Expr pi = c.symbol("pi");
+    const Expr twoPi = numkit::cas::parseExpr(c, "2*pi");
+
+    // 1. Surface integral of the 1st kind:
+    //    Surface area of a sphere of radius R: iint_S 1 dS = 4*pi*R^2,
+    //    and moment of inertia iint_S z^2 dS = 4/3*pi*R^4.
+    {
+        const std::vector<Expr> sphere = {
+            numkit::cas::parseExpr(c, "R*sin(u)*cos(v)"),
+            numkit::cas::parseExpr(c, "R*sin(u)*sin(v)"),
+            numkit::cas::parseExpr(c, "R*cos(u)")};
+        const DefiniteBound uB{u, c.zero(), pi};
+        const DefiniteBound vB{v, c.zero(), twoPi};
+
+        const auto area = numkit::cas::surfaceIntegral(
+            c, c.one(), {x, y, z}, sphere, uB, vB);
+        ASSERT_TRUE(area.proved()) << area.reason;
+        EXPECT_EQ(area.value,
+                  c.simplify(numkit::cas::parseExpr(c, "4*pi*R^2")));
+
+        const auto momZ2 = numkit::cas::surfaceIntegral(
+            c, numkit::cas::parseExpr(c, "z^2"), {x, y, z}, sphere, uB, vB);
+        ASSERT_TRUE(momZ2.proved()) << momZ2.reason;
+        EXPECT_EQ(momZ2.value,
+                  c.simplify(numkit::cas::parseExpr(c, "4/3*pi*R^4")));
+    }
+
+    // 2. Surface integral of the 1st kind on paraboloid z = x^2 + y^2 (r in [0, 1]):
+    //    iint_S (1 + 4*z)^(1/2) dS = iint (1 + 4*r^2)*r dr dtheta = 3*pi
+    {
+        const std::vector<Expr> parab = {
+            numkit::cas::parseExpr(c, "u*cos(v)"),
+            numkit::cas::parseExpr(c, "u*sin(v)"),
+            numkit::cas::parseExpr(c, "u^2")};
+        const auto sInt = numkit::cas::surfaceIntegral(
+            c, numkit::cas::parseExpr(c, "(1 + 4*z)^(1/2)"), {x, y, z}, parab,
+            DefiniteBound{u, c.zero(), c.one()},
+            DefiniteBound{v, c.zero(), twoPi});
+        ASSERT_TRUE(sInt.proved()) << sInt.reason;
+        EXPECT_EQ(sInt.value,
+                  c.simplify(numkit::cas::parseExpr(c, "3*pi")));
+    }
+
+    // 3. Green's theorem in the plane:
+    //    (a) Unit disk with F = (-y^3, x^3): oint (P dx + Q dy) = iint 3*(x^2 + y^2) dA = 3/2*pi
+    //    (b) Rectangle [0, 2] x [0, 3] with 4 boundary segments and F = (x^2*y, x*y^2)
+    {
+        const std::vector<Expr> fieldDisk = {
+            numkit::cas::parseExpr(c, "-y^3"),
+            numkit::cas::parseExpr(c, "x^3")};
+        const std::vector<Expr> circle = {
+            numkit::cas::parseExpr(c, "cos(t)"),
+            numkit::cas::parseExpr(c, "sin(t)")};
+        const std::vector<DefiniteBound> diskBounds = {
+            DefiniteBound{y,
+                          numkit::cas::parseExpr(c, "-(1 - x^2)^(1/2)"),
+                          numkit::cas::parseExpr(c, "(1 - x^2)^(1/2)")},
+            DefiniteBound{x, c.number(-1), c.one()}};
+        const auto greenDisk = numkit::cas::verifyGreenTheorem(
+            c, fieldDisk, {x, y}, circle, t, c.zero(), twoPi, diskBounds);
+        ASSERT_TRUE(greenDisk.proved) << greenDisk.reason;
+        EXPECT_EQ(greenDisk.lhs,
+                  c.simplify(numkit::cas::parseExpr(c, "3/2*pi")));
+        EXPECT_EQ(greenDisk.rhs, greenDisk.lhs);
+
+        const std::vector<Expr> fieldRect = {
+            numkit::cas::parseExpr(c, "x^2*y"),
+            numkit::cas::parseExpr(c, "x*y^2")};
+        const std::vector<ParametricCurveSegment> rectBnd = {
+            {{t, c.zero()}, t, c.zero(), c.number(2)},
+            {{c.number(2), t}, t, c.zero(), c.number(3)},
+            {{t, c.number(3)}, t, c.number(2), c.zero()},
+            {{c.zero(), t}, t, c.number(3), c.zero()}};
+        const std::vector<DefiniteBound> rectBounds = {
+            DefiniteBound{y, c.zero(), c.number(3)},
+            DefiniteBound{x, c.zero(), c.number(2)}};
+        const auto greenRect = numkit::cas::verifyGreenTheorem(
+            c, fieldRect, {x, y}, rectBnd, rectBounds);
+        ASSERT_TRUE(greenRect.proved) << greenRect.reason;
+        EXPECT_EQ(greenRect.lhs, c.number(10));
+        EXPECT_EQ(greenRect.rhs, c.number(10));
+    }
+
+    // 4. Kelvin-Stokes' theorem in R^3 on paraboloid cap z = 1 - x^2 - y^2 (z >= 0)
+    //    with F = (-y, x, z^2) and upward normal r_u x r_v:
+    //    oint_{dS} F . dr = iint_S (curl F) . dS = 2*pi
+    {
+        const std::vector<Expr> field = {
+            numkit::cas::parseExpr(c, "-y + x^2"),
+            numkit::cas::parseExpr(c, "x + z"),
+            numkit::cas::parseExpr(c, "y*z")};
+        const std::vector<Expr> bndCircle = {
+            numkit::cas::parseExpr(c, "cos(t)"),
+            numkit::cas::parseExpr(c, "sin(t)"), c.zero()};
+        const std::vector<Expr> cap = {
+            numkit::cas::parseExpr(c, "u*cos(v)"),
+            numkit::cas::parseExpr(c, "u*sin(v)"),
+            numkit::cas::parseExpr(c, "1 - u^2")};
+        const auto stokesRes = numkit::cas::verifyStokesTheorem(
+            c, field, {x, y, z}, bndCircle, t, c.zero(), twoPi, cap,
+            DefiniteBound{u, c.zero(), c.one()},
+            DefiniteBound{v, c.zero(), twoPi});
+        ASSERT_TRUE(stokesRes.proved) << stokesRes.reason;
+        EXPECT_EQ(stokesRes.lhs, twoPi);
+        EXPECT_EQ(stokesRes.rhs, twoPi);
+    }
+
+    // 5. Gauss-Ostrogradsky divergence theorem:
+    //    (a) Sphere of radius R with F = (x^3, y^3, z^3):
+    //        oiint_S F . dS = iiint_V 3*(x^2 + y^2 + z^2) dV = 12/5*pi*R^5
+    //    (b) Unit cube [0, 1]^3 with 6 outward-oriented faces and F = (x^2, y^2, z^2):
+    //        oiint_{dV} F . dS = iiint_V 2*(x + y + z) dV = 3
+    {
+        const std::vector<Expr> fieldSphere = {
+            numkit::cas::parseExpr(c, "x^3"),
+            numkit::cas::parseExpr(c, "y^3"),
+            numkit::cas::parseExpr(c, "z^3")};
+        const std::vector<Expr> sphereSurf = {
+            numkit::cas::parseExpr(c, "R*sin(u)*cos(v)"),
+            numkit::cas::parseExpr(c, "R*sin(u)*sin(v)"),
+            numkit::cas::parseExpr(c, "R*cos(u)")};
+        const std::vector<Expr> sphericalVolMap = {
+            numkit::cas::parseExpr(c, "w*sin(u)*cos(v)"),
+            numkit::cas::parseExpr(c, "w*sin(u)*sin(v)"),
+            numkit::cas::parseExpr(c, "w*cos(u)")};
+        const std::vector<DefiniteBound> sphericalVolBounds = {
+            DefiniteBound{w, c.zero(), R},
+            DefiniteBound{u, c.zero(), pi},
+            DefiniteBound{v, c.zero(), twoPi}};
+        const auto gaussSphere = numkit::cas::verifyGaussDivergenceTheorem(
+            c, fieldSphere, {x, y, z}, sphereSurf,
+            DefiniteBound{u, c.zero(), pi}, DefiniteBound{v, c.zero(), twoPi},
+            sphericalVolMap, sphericalVolBounds);
+        ASSERT_TRUE(gaussSphere.proved) << gaussSphere.reason;
+        EXPECT_EQ(gaussSphere.lhs,
+                  c.simplify(numkit::cas::parseExpr(c, "12/5*pi*R^5")));
+        EXPECT_EQ(gaussSphere.rhs, gaussSphere.lhs);
+
+        const std::vector<Expr> fieldCube = {
+            numkit::cas::parseExpr(c, "x^2*y"),
+            numkit::cas::parseExpr(c, "y^2*z"),
+            numkit::cas::parseExpr(c, "z^2*x")};
+        const DefiniteBound u01{u, c.zero(), c.one()};
+        const DefiniteBound v01{v, c.zero(), c.one()};
+        // 6 outward faces of [0, 1]^3:
+        const std::vector<ParametricSurfacePatch> cubeFaces = {
+            // z = 1 (normal +e_z = r_u x r_v for r = (u, v, 1))
+            {{u, v, c.one()}, u01, v01},
+            // z = 0 (normal -e_z = r_u x r_v for r = (v, u, 0))
+            {{v, u, c.zero()}, u01, v01},
+            // x = 1 (normal +e_x = r_u x r_v for r = (1, u, v))
+            {{c.one(), u, v}, u01, v01},
+            // x = 0 (normal -e_x = r_u x r_v for r = (0, v, u))
+            {{c.zero(), v, u}, u01, v01},
+            // y = 1 (normal +e_y = r_u x r_v for r = (v, 1, u))
+            {{v, c.one(), u}, u01, v01},
+            // y = 0 (normal -e_y = r_u x r_v for r = (u, 0, v))
+            {{u, c.zero(), v}, u01, v01}};
+        const std::vector<DefiniteBound> cubeBounds = {
+            DefiniteBound{z, c.zero(), c.one()},
+            DefiniteBound{y, c.zero(), c.one()},
+            DefiniteBound{x, c.zero(), c.one()}};
+        const auto gaussCube = numkit::cas::verifyGaussDivergenceTheorem(
+            c, fieldCube, {x, y, z}, cubeFaces, cubeBounds);
+        ASSERT_TRUE(gaussCube.proved) << gaussCube.reason;
+        EXPECT_EQ(gaussCube.lhs, numkit::cas::parseExpr(c, "3/2"));
+        EXPECT_EQ(gaussCube.rhs, numkit::cas::parseExpr(c, "3/2"));
+    }
+}
+
+
 
 
 

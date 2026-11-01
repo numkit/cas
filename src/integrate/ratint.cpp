@@ -5133,4 +5133,436 @@ DefiniteIntegral lineIntegralVector(Ctx &c, const std::vector<Expr> &field,
     return direct;
 }
 
+namespace {
+
+bool computeSurfaceNormal(Ctx &c, const std::vector<Expr> &surface, Expr u,
+                          Expr v, std::vector<Expr> &normalOut)
+{
+    if (surface.size() != 3 || u.isNull() || v.isNull() ||
+        c.kind(u) != NodeKind::Symbol || c.kind(v) != NodeKind::Symbol) {
+        return false;
+    }
+    std::vector<Expr> ru(3), rv(3);
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (surface[i].isNull())
+            return false;
+        ru[i] = c.diff(surface[i], u);
+        rv[i] = c.diff(surface[i], v);
+        if (ru[i].isNull() || rv[i].isNull())
+            return false;
+    }
+    normalOut.resize(3);
+    normalOut[0] = c.simplify(
+        c.add({c.mul({ru[1], rv[2]}), c.neg(c.mul({ru[2], rv[1]}))}));
+    normalOut[1] = c.simplify(
+        c.add({c.mul({ru[2], rv[0]}), c.neg(c.mul({ru[0], rv[2]}))}));
+    normalOut[2] = c.simplify(
+        c.add({c.mul({ru[0], rv[1]}), c.neg(c.mul({ru[1], rv[0]}))}));
+    return true;
+}
+
+Expr simplifySqrtMultiOnBounds(Ctx &c, Expr sqExpr,
+                               const std::vector<DefiniteBound> &bounds)
+{
+    const Expr simpSq = c.simplify(sqExpr);
+    if (simpSq.isNull())
+        return Expr();
+    if (c.isZero(simpSq))
+        return c.zero();
+
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    Expr baseExpr = simpSq;
+    for (const DefiniteBound &bnd : bounds) {
+        Expr factored;
+        if (!bnd.var.isNull() && factorExpr(c, baseExpr, bnd.var, factored) &&
+            !factored.isNull()) {
+            baseExpr = factored;
+        }
+    }
+
+    // Build interior midpoint substitutions from outermost bound to innermost.
+    std::vector<Expr> bVars;
+    std::vector<Expr> bMids;
+    bVars.reserve(bounds.size());
+    bMids.reserve(bounds.size());
+    for (std::size_t idx = bounds.size(); idx > 0; --idx) {
+        const DefiniteBound &bnd = bounds[idx - 1];
+        Expr aSub = bnd.a;
+        Expr bSub = bnd.b;
+        if (!bVars.empty()) {
+            aSub = subsVectorSimultaneous(c, aSub, bVars, bMids);
+            bSub = subsVectorSimultaneous(c, bSub, bVars, bMids);
+        }
+        bVars.push_back(bnd.var);
+        bMids.push_back(c.simplify(c.mul({half, c.add({aSub, bSub})})));
+    }
+
+    std::vector<Expr> factors;
+    if (c.kind(baseExpr) == NodeKind::Mul) {
+        for (std::size_t i = 0; i < c.childCount(baseExpr); ++i)
+            factors.push_back(c.child(baseExpr, i));
+    } else {
+        factors.push_back(baseExpr);
+    }
+
+    std::vector<Expr> outFactors;
+    std::vector<Expr> remUnderSqrt;
+    Rational posNumFactor(std::int64_t{1});
+    for (Expr fk : factors) {
+        if (c.kind(fk) == NodeKind::Number) {
+            const Rational &rv = c.numberValue(fk);
+            if (rv.signum() > 0) {
+                posNumFactor = posNumFactor * rv;
+                continue;
+            }
+        }
+        if (c.kind(fk) == NodeKind::Pow &&
+            c.kind(c.child(fk, 1)) == NodeKind::Number) {
+            const Rational &re = c.numberValue(c.child(fk, 1));
+            std::int64_t expInt = 0;
+            if (re.den() == BigInt(1) && re.num().fitsInt64(expInt) &&
+                (expInt % 2 == 0)) {
+                const std::int64_t halfExp = expInt / 2;
+                const Expr u = c.child(fk, 0);
+                if (halfExp % 2 == 0 || c.isAssumedNonNegative(u)) {
+                    outFactors.push_back(c.pow(u, c.number(halfExp)));
+                    continue;
+                }
+                if (c.isAssumedNegative(u)) {
+                    outFactors.push_back(c.pow(c.neg(u), c.number(halfExp)));
+                    continue;
+                }
+                const Expr uMid =
+                    c.simplify(subsVectorSimultaneous(c, u, bVars, bMids));
+                if (c.isAssumedNonNegative(uMid)) {
+                    outFactors.push_back(c.pow(u, c.number(halfExp)));
+                    continue;
+                }
+                if (c.isAssumedNegative(uMid)) {
+                    outFactors.push_back(c.pow(c.neg(u), c.number(halfExp)));
+                    continue;
+                }
+                double uVal = 0.0;
+                if (c.evalDouble(uMid, {}, uVal)) {
+                    if (uVal > 1e-12) {
+                        outFactors.push_back(c.pow(u, c.number(halfExp)));
+                        continue;
+                    }
+                    if (uVal < -1e-12) {
+                        outFactors.push_back(
+                            c.pow(c.neg(u), c.number(halfExp)));
+                        continue;
+                    }
+                }
+            }
+        }
+        remUnderSqrt.push_back(fk);
+    }
+
+    if (!remUnderSqrt.empty()) {
+        if (!(posNumFactor == Rational(std::int64_t{1})))
+            remUnderSqrt.push_back(c.number(posNumFactor));
+        const Expr rem = c.expand(
+            remUnderSqrt.size() == 1 ? remUnderSqrt[0] : c.mul(remUnderSqrt));
+        outFactors.push_back(c.simplify(c.pow(rem, half)));
+    } else if (!(posNumFactor == Rational(std::int64_t{1}))) {
+        outFactors.push_back(sqrtExpr(c, posNumFactor));
+    }
+    return outFactors.empty() ? c.one() : c.simplify(c.mul(outFactors));
+}
+
+DefiniteBound orientPositiveBound(Ctx &c, const DefiniteBound &bnd)
+{
+    double aVal = 0.0, bVal = 0.0;
+    if (c.evalDouble(bnd.a, {}, aVal) && c.evalDouble(bnd.b, {}, bVal) &&
+        bVal < aVal) {
+        return DefiniteBound{bnd.var, bnd.b, bnd.a};
+    }
+    return bnd;
+}
+
+bool exprEqualSymbolic(Ctx &c, Expr a, Expr b)
+{
+    if (a.isNull() || b.isNull())
+        return false;
+    const Expr diff = c.add({a, c.neg(b)});
+    return c.isZero(diff) || c.isZero(c.expand(diff)) ||
+           c.isZero(c.simplify(diff)) ||
+           c.isZero(c.simplify(c.expand(diff))) ||
+           c.isZero(simplifyRationalExpr(c, diff));
+}
+
+} // namespace
+
+DefiniteIntegral surfaceIntegralScalar(Ctx &c, Expr f,
+                                       const std::vector<Expr> &vars,
+                                       const std::vector<Expr> &surface,
+                                       const DefiniteBound &uBound,
+                                       const DefiniteBound &vBound,
+                                       Budget *budget)
+{
+    DefiniteIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (f.isNull() || vars.size() != 3 || surface.size() != 3) {
+        out.reason =
+            "surfaceIntegralScalar requires 3 spatial variables and 3 surface components";
+        return out;
+    }
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol ||
+            surface[i].isNull()) {
+            out.reason = "invalid spatial variable or surface component";
+            return out;
+        }
+    }
+
+    std::vector<Expr> normal;
+    if (!computeSurfaceNormal(c, surface, uBound.var, vBound.var, normal)) {
+        out.reason = "failed to compute surface normal vector dr/du x dr/dv";
+        return out;
+    }
+
+    const DefiniteBound uPos = orientPositiveBound(c, uBound);
+    const DefiniteBound vPos = orientPositiveBound(c, vBound);
+    const Expr normSq = c.add({c.pow(normal[0], c.number(std::int64_t{2})),
+                               c.pow(normal[1], c.number(std::int64_t{2})),
+                               c.pow(normal[2], c.number(std::int64_t{2}))});
+    const Expr dS = simplifySqrtMultiOnBounds(c, normSq, {uPos, vPos});
+    if (dS.isNull()) {
+        out.reason = "failed to form surface area element dS";
+        return out;
+    }
+
+    const Expr fOnSurface = subsVectorSimultaneous(c, f, vars, surface);
+    const Expr integrand = c.simplify(c.mul({fOnSurface, dS}));
+    return definiteIntegrateMulti(c, integrand, {uPos, vPos}, budget);
+}
+
+DefiniteIntegral surfaceIntegralVector(Ctx &c, const std::vector<Expr> &field,
+                                       const std::vector<Expr> &vars,
+                                       const std::vector<Expr> &surface,
+                                       const DefiniteBound &uBound,
+                                       const DefiniteBound &vBound,
+                                       Budget *budget)
+{
+    DefiniteIntegral out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (field.size() != 3 || vars.size() != 3 || surface.size() != 3) {
+        out.reason =
+            "surfaceIntegralVector requires 3D field, 3 spatial variables, and 3 surface components";
+        return out;
+    }
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (field[i].isNull() || vars[i].isNull() ||
+            c.kind(vars[i]) != NodeKind::Symbol || surface[i].isNull()) {
+            out.reason = "invalid field, spatial variable, or surface component";
+            return out;
+        }
+    }
+
+    std::vector<Expr> normal;
+    if (!computeSurfaceNormal(c, surface, uBound.var, vBound.var, normal)) {
+        out.reason = "failed to compute surface normal vector dr/du x dr/dv";
+        return out;
+    }
+
+    std::vector<Expr> dotTerms;
+    dotTerms.reserve(3);
+    for (std::size_t i = 0; i < 3; ++i) {
+        const Expr fiOnSurf =
+            subsVectorSimultaneous(c, field[i], vars, surface);
+        dotTerms.push_back(c.mul({fiOnSurf, normal[i]}));
+    }
+    const Expr integrand = c.simplify(c.add(dotTerms));
+    return definiteIntegrateMulti(c, integrand, {uBound, vBound}, budget);
+}
+
+IntegralTheoremResult verifyGreenTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<ParametricCurveSegment> &boundaryCurves,
+    const std::vector<DefiniteBound> &domainBounds, Budget *budget)
+{
+    IntegralTheoremResult out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (field.size() != 2 || vars.size() != 2 || domainBounds.size() != 2 ||
+        boundaryCurves.empty()) {
+        out.reason =
+            "verifyGreenTheorem requires 2D field, 2 variables, non-empty boundary, and 2 domain bounds";
+        return out;
+    }
+    if (field[0].isNull() || field[1].isNull() || vars[0].isNull() ||
+        vars[1].isNull() || c.kind(vars[0]) != NodeKind::Symbol ||
+        c.kind(vars[1]) != NodeKind::Symbol) {
+        out.reason = "invalid field or variable in verifyGreenTheorem";
+        return out;
+    }
+
+    std::vector<Expr> lhsParts;
+    lhsParts.reserve(boundaryCurves.size());
+    for (const ParametricCurveSegment &seg : boundaryCurves) {
+        const DefiniteIntegral segInt = lineIntegralVector(
+            c, field, vars, seg.curve, seg.t, seg.a, seg.b, budget);
+        if (!segInt.proved()) {
+            out.reason = segInt.reason.empty()
+                             ? "failed to evaluate boundary line integral"
+                             : segInt.reason;
+            return out;
+        }
+        lhsParts.push_back(segInt.value);
+    }
+    out.lhs = c.simplify(c.add(lhsParts));
+
+    const Expr dQdx = c.diff(field[1], vars[0]);
+    const Expr dPdy = c.diff(field[0], vars[1]);
+    const Expr rot2D = c.simplify(c.add({dQdx, c.neg(dPdy)}));
+    const DefiniteIntegral rhsInt =
+        definiteIntegrateMulti(c, rot2D, domainBounds, budget);
+    if (!rhsInt.proved()) {
+        out.reason = rhsInt.reason.empty()
+                         ? "failed to evaluate 2D area integral of dQ/dx - dP/dy"
+                         : rhsInt.reason;
+        return out;
+    }
+    out.rhs = c.simplify(rhsInt.value);
+    out.proved = exprEqualSymbolic(c, out.lhs, out.rhs);
+    if (!out.proved)
+        out.reason = "Green's theorem boundary and area integrals do not match";
+    return out;
+}
+
+IntegralTheoremResult verifyStokesTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<ParametricCurveSegment> &boundaryCurves,
+    const std::vector<Expr> &surface, const DefiniteBound &uBound,
+    const DefiniteBound &vBound, Budget *budget)
+{
+    IntegralTheoremResult out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (field.size() != 3 || vars.size() != 3 || surface.size() != 3 ||
+        boundaryCurves.empty()) {
+        out.reason =
+            "verifyStokesTheorem requires 3D field, 3 variables, non-empty boundary, and 3D surface";
+        return out;
+    }
+
+    std::vector<Expr> lhsParts;
+    lhsParts.reserve(boundaryCurves.size());
+    for (const ParametricCurveSegment &seg : boundaryCurves) {
+        const DefiniteIntegral segInt = lineIntegralVector(
+            c, field, vars, seg.curve, seg.t, seg.a, seg.b, budget);
+        if (!segInt.proved()) {
+            out.reason = segInt.reason.empty()
+                             ? "failed to evaluate boundary circulation integral"
+                             : segInt.reason;
+            return out;
+        }
+        lhsParts.push_back(segInt.value);
+    }
+    out.lhs = c.simplify(c.add(lhsParts));
+
+    const SymMatrix curlMat = curl(c, field, vars);
+    if (curlMat.rows() != 3 || curlMat.cols() != 1) {
+        out.reason = "failed to compute curl(F)";
+        return out;
+    }
+    const DefiniteIntegral rhsInt = surfaceIntegralVector(
+        c, curlMat.data(), vars, surface, uBound, vBound, budget);
+    if (!rhsInt.proved()) {
+        out.reason = rhsInt.reason.empty()
+                         ? "failed to evaluate surface flux of curl(F)"
+                         : rhsInt.reason;
+        return out;
+    }
+    out.rhs = c.simplify(rhsInt.value);
+    out.proved = exprEqualSymbolic(c, out.lhs, out.rhs);
+    if (!out.proved)
+        out.reason = "Stokes' theorem circulation and curl-flux integrals do not match";
+    return out;
+}
+
+IntegralTheoremResult verifyGaussDivergenceTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<ParametricSurfacePatch> &boundaryPatches,
+    const std::vector<DefiniteBound> &volumeBounds, Budget *budget)
+{
+    return verifyGaussDivergenceTheorem(c, field, vars, boundaryPatches, vars,
+                                        volumeBounds, budget);
+}
+
+IntegralTheoremResult verifyGaussDivergenceTheorem(
+    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
+    const std::vector<ParametricSurfacePatch> &boundaryPatches,
+    const std::vector<Expr> &volumeMap,
+    const std::vector<DefiniteBound> &volumeBounds, Budget *budget)
+{
+    IntegralTheoremResult out;
+    if (!checkBudget(c, budget, out.reason))
+        return out;
+    if (field.size() != 3 || vars.size() != 3 || boundaryPatches.empty() ||
+        volumeMap.size() != 3 || volumeBounds.size() != 3) {
+        out.reason =
+            "verifyGaussDivergenceTheorem requires 3D field, 3 variables, non-empty boundary patches, and 3 volume bounds";
+        return out;
+    }
+
+    std::vector<Expr> lhsParts;
+    lhsParts.reserve(boundaryPatches.size());
+    for (const ParametricSurfacePatch &patch : boundaryPatches) {
+        const DefiniteIntegral patchInt = surfaceIntegralVector(
+            c, field, vars, patch.surface, patch.uBound, patch.vBound, budget);
+        if (!patchInt.proved()) {
+            out.reason = patchInt.reason.empty()
+                             ? "failed to evaluate boundary flux integral"
+                             : patchInt.reason;
+            return out;
+        }
+        lhsParts.push_back(patchInt.value);
+    }
+    out.lhs = c.simplify(c.add(lhsParts));
+
+    const Expr divF = divergence(c, field, vars);
+    if (divF.isNull()) {
+        out.reason = "failed to compute divergence(F)";
+        return out;
+    }
+
+    bool identityMap = true;
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (!(volumeMap[i] == vars[i])) {
+            identityMap = false;
+            break;
+        }
+    }
+
+    Expr volIntegrand = divF;
+    if (!identityMap) {
+        std::vector<Expr> paramVars{volumeBounds[0].var, volumeBounds[1].var,
+                                    volumeBounds[2].var};
+        const SymMatrix J = jacobian(c, volumeMap, paramVars);
+        const Expr detJ = c.simplify(det(c, J, budget));
+        const Expr detJAbs = simplifySqrtMultiOnBounds(
+            c, c.pow(detJ, c.number(std::int64_t{2})), volumeBounds);
+        const Expr divSub = subsVectorSimultaneous(c, divF, vars, volumeMap);
+        volIntegrand = c.simplify(c.mul({divSub, detJAbs}));
+    }
+
+    const DefiniteIntegral rhsInt =
+        definiteIntegrateMulti(c, volIntegrand, volumeBounds, budget);
+    if (!rhsInt.proved()) {
+        out.reason = rhsInt.reason.empty()
+                         ? "failed to evaluate 3D volume integral of divergence(F)"
+                         : rhsInt.reason;
+        return out;
+    }
+    out.rhs = c.simplify(rhsInt.value);
+    out.proved = exprEqualSymbolic(c, out.lhs, out.rhs);
+    if (!out.proved)
+        out.reason = "Gauss's theorem boundary flux and volume divergence integrals do not match";
+    return out;
+}
+
 } // namespace numkit::cas

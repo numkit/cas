@@ -440,7 +440,7 @@
 68. ✅ Релизная отсечка `v0.8.0` (Эшелон 8 завершён: `CHANGELOG.md`, `CMakeLists.txt` `VERSION 0.8.0`, `README.md`, `AGENTS.md`, `tools/vendor_sync.py`, 292/292 тестов Release за 32.8 с, тег `v0.8.0`).
 69. ✅ (v0.9-пул, Эшелон 9) Полные и неполные эллиптические интегралы 1-го, 2-го и 3-го рода (`ellipticK`, `ellipticE`, `ellipticPi`, `ellipticF`, `ellipticEInc`) сквозь всё ядро (`diff`, `evalExact`/`evalDouble` через симметрические формы Карлсона $R_F, R_D, R_J$, `simplify` со специальными значениями и тождеством Лежандра, `taylor` и эллиптические неопределённые/определённые интегралы в `integrate`/`definiteIntegrate`).
 70. ✅ (v0.9-пул, Эшелон 9) Дзета-функция Римана $\zeta(s)$ (`zeta`), эта-функция Дирихле $\eta(s)$ (`dirichletEta`), полилогарифмы произвольного порядка $\operatorname{Li}_s(z)$ (`polylog(s, z)`) и числа/полиномы Бернулли и Эйлера (`bernoulliB`, `eulerE`) сквозь ядро (`diff`, `evalExact`/`evalDouble`, `expand`, `simplify`, `taylor`/`laurent`/`residue`), `symsum` и `integrate`/`definiteIntegrate`.
-71. ⬜ (v0.9-пул, Эшелон 9) Поверхностные интегралы 1-го и 2-го рода (`surfaceIntegralScalar`, `surfaceIntegralVector`, `surfaceIntegral`) и символьная верификация классических интегральных теорем векторного анализа (формула Грина, теорема Стокса и теорема Остроградского–Гаусса).
+71. ✅ (v0.9-пул, Эшелон 9) Поверхностные интегралы 1-го и 2-го рода (`surfaceIntegralScalar`, `surfaceIntegralVector`, `surfaceIntegral`) и символьная верификация классических интегральных теорем векторного анализа (`verifyGreenTheorem`, `verifyStokesTheorem`, `verifyGaussDivergenceTheorem` в `integrate/ratint`).
 72. ⬜ (v0.9-пул, Эшелон 9) Вариационное исчисление и аналитическая механика: уравнения Эйлера–Лагранжа `eulerLagrange` (включая функционалы с высшими производными и несколькими полевыми функциями), скобки Пуассона `poissonBracket`, преобразование Лежанжа к гамильтониану и канонические уравнения Гамильтона `hamiltonEquations` (`linalg/`, `ode/`).
 73. ⬜ Релизная отсечка `v0.9.0` (Эшелон 9 завершён).
 
@@ -2925,6 +2925,20 @@ MATLAB Symbolic Math Toolbox (три эшелона):
 3. **Первообразные полилогарифмов и определённые интегралы Бозе–Эйнштейна / Ферми–Дирака (`src/integrate/ratint.cpp`)**:
    - Неопределённое интегрирование $\int \operatorname{rest}(x)\operatorname{Li}_s(u(x))\,dx = q\operatorname{Li}_{s+1}(u(x))$ (и $\int \frac{\operatorname{dilog}(x)}{x}\,dx = \operatorname{Li}_3(x)$) с сертификатом $D(F) \equiv f$, а также интегрирование полиномов Бернулли и Эйлера.
    - Определённые логарифмически-степенные интегралы на $[0, 1]$: $\int_0^1 \frac{x^{k-1}\log^m(x)}{c_0 + c_1 x^k}\,dx = \frac{(-1)^{m+1}m!}{c_1 k^{m+1}}\operatorname{Li}_{m+1}(-c_1/c_0)$ и интегралы Бозе–Эйнштейна и Ферми–Дирака на $[0, +\infty)$: $\int_0^\infty \frac{x^{s-1}}{e^{ax} \mp 1}\,dx = \frac{\Gamma(s)}{a^s}\zeta(s)$ (или $\eta(s)$).
+
+
+## 2026-11-01: Реализация пункта 71 — Поверхностные интегралы 1-го и 2-го рода и символьная верификация теорем Грина, Стокса и Остроградского–Гаусса
+
+Реализован третий пакет Эшелона 9 (пул `v0.9.0`):
+
+1. **Поверхностные интегралы 1-го и 2-го рода (`include/numkit/cas/integrate/ratint.hpp`, `src/integrate/ratint.cpp`)**:
+   - `surfaceIntegralScalar` / `surfaceIntegral(c, f, vars, surface, uBound, vBound)` вычисляет поверхностный интеграл 1-го рода $\iint_S f(\mathbf{x})\,dS = \int_{v_a}^{v_b}\int_{u_a(v)}^{u_b(v)} f(\mathbf{r}(u,v))\|\mathbf{r}_u \times \mathbf{r}_v\|\,du\,dv$ с извлечением квадратного корня из квадратных множителей $\|\mathbf{r}_u \times \mathbf{r}_v\|^2$ на двумерной области параметров (сферы, параболоиды, цилиндры, плоскости).
+   - `surfaceIntegralVector` / `surfaceIntegral(c, field, vars, surface, uBound, vBound)` вычисляет поток векторного поля через ориентированную поверхность $\iint_S \mathbf{F} \cdot d\mathbf{S} = \int_{v_a}^{v_b}\int_{u_a(v)}^{u_b(v)} \mathbf{F}(\mathbf{r}(u,v))\cdot (\mathbf{r}_u \times \mathbf{r}_v)\,du\,dv$.
+2. **Символьная верификация классических интегральных теорем векторного анализа (`verifyGreenTheorem`, `verifyStokesTheorem`, `verifyGaussDivergenceTheorem`)**:
+   - `verifyGreenTheorem`: проверяет тождество $\oint_{\partial D} (P\,dx + Q\,dy) \equiv \iint_D \left(\frac{\partial Q}{\partial x} - \frac{\partial P}{\partial y}\right)dA$ как для гладких замкнутых контуров (окружность, эллипс), так и для кусочно-гладких границ из нескольких сегментов `ParametricCurveSegment` (прямоугольники, многоугольники).
+   - `verifyStokesTheorem`: проверяет теорему Кельвина–Стокса $\oint_{\partial S} \mathbf{F}\cdot d\mathbf{r} \equiv \iint_S (\nabla \times \mathbf{F})\cdot d\mathbf{S}$ в $\mathbb{R}^3$.
+   - `verifyGaussDivergenceTheorem`: проверяет формулу Остроградского–Гаусса $\oiint_{\partial V} \mathbf{F}\cdot d\mathbf{S} \equiv \iiint_V (\nabla \cdot \mathbf{F})\,dV$ для замкнутых поверхностей и кусочно-гладких границ `ParametricSurfacePatch` (например, 6 граней куба), поддерживая как декартовы тройные интегралы, так и криволинейные замены объёмных координат `volumeMap` с автоматическим вычислением якобиана $|\det \frac{\partial(x,y,z)}{\partial(u,v,w)}|$.
+
 
 
 

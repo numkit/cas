@@ -2978,4 +2978,538 @@ HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// Differential Geometry of Curves/Surfaces & Riemannian Geometry (Item 76)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+Expr dot3Linalg(Ctx &c, const std::vector<Expr> &a, const std::vector<Expr> &b)
+{
+    return c.simplify(c.add({c.mul({a[0], b[0]}),
+                             c.mul({a[1], b[1]}),
+                             c.mul({a[2], b[2]})}));
+}
+
+std::vector<Expr> cross3Linalg(Ctx &c, const std::vector<Expr> &a,
+                               const std::vector<Expr> &b)
+{
+    return {
+        c.simplify(c.add({c.mul({a[1], b[2]}), c.neg(c.mul({a[2], b[1]}))})),
+        c.simplify(c.add({c.mul({a[2], b[0]}), c.neg(c.mul({a[0], b[2]}))})),
+        c.simplify(c.add({c.mul({a[0], b[1]}), c.neg(c.mul({a[1], b[0]}))}))
+    };
+}
+
+Expr positiveSqrtLinalg(Ctx &c, Expr sqExpr, const std::vector<Expr> &vars)
+{
+    Expr s = c.simplify(sqExpr);
+    if (c.isZero(s) || s == c.one())
+        return s;
+
+    for (const Expr &v : vars) {
+        if (!v.isNull() && c.kind(v) == NodeKind::Symbol) {
+            Expr f;
+            if (factorExpr(c, s, v, f) && !f.isNull() &&
+                (c.kind(f) == NodeKind::Pow || c.kind(f) == NodeKind::Mul)) {
+                s = f;
+                break;
+            }
+        }
+    }
+
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    auto sqrtFactor = [&](Expr f) -> Expr {
+        if (c.kind(f) == NodeKind::Pow &&
+            c.kind(c.child(f, 1)) == NodeKind::Number) {
+            const Rational &re = c.numberValue(c.child(f, 1));
+            std::int64_t expInt = 0;
+            if (re.den() == BigInt(1) && re.num().fitsInt64(expInt) &&
+                expInt % 2 == 0) {
+                Expr base = c.child(f, 0);
+                // Ensure canonical positive orientation for polynomial sum bases
+                double dProbe = 0.0;
+                std::vector<std::pair<std::string, double>> env;
+                for (const Expr &v : vars) {
+                    if (!v.isNull() && c.kind(v) == NodeKind::Symbol)
+                        env.emplace_back(std::string(c.symbolName(v)), 0.7);
+                }
+                if (((expInt / 2) % 2 != 0) && c.evalDouble(base, env, dProbe) &&
+                    dProbe < 0.0) {
+                    base = c.neg(base);
+                }
+                return c.pow(base, c.number(expInt / 2));
+            }
+        }
+        return c.pow(f, half);
+    };
+
+    if (c.kind(s) == NodeKind::Mul) {
+        std::vector<Expr> parts;
+        for (std::size_t i = 0; i < c.childCount(s); ++i)
+            parts.push_back(sqrtFactor(c.child(s, i)));
+        return c.simplify(c.mul(parts));
+    }
+    return c.simplify(sqrtFactor(s));
+}
+
+} // namespace
+
+FrenetSerretResult frenetSerret(Ctx &c, const std::vector<Expr> &curve,
+                                Expr t, Budget *budget)
+{
+    FrenetSerretResult out;
+    if ((curve.size() != 2 && curve.size() != 3) || t.isNull() ||
+        c.kind(t) != NodeKind::Symbol) {
+        out.reason = "frenetSerret requires a 2D or 3D curve and parameter symbol t";
+        return out;
+    }
+    if (!checkLinalgBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    std::vector<Expr> r(3, c.zero());
+    for (std::size_t i = 0; i < curve.size(); ++i) {
+        if (curve[i].isNull()) {
+            out.reason = "null curve component";
+            return out;
+        }
+        r[i] = curve[i];
+    }
+
+    std::vector<Expr> r1(3), r2(3), r3(3);
+    for (int i = 0; i < 3; ++i) {
+        r1[i] = c.simplify(c.diff(r[i], t));
+        r2[i] = c.simplify(c.diff(r1[i], t));
+        r3[i] = c.simplify(c.diff(r2[i], t));
+    }
+
+    const Expr speedSq = dot3Linalg(c, r1, r1);
+    if (isZeroLinalg(c, speedSq, budget)) {
+        out.reason = "singular curve (r'(t) == 0)";
+        return out;
+    }
+    out.speed = positiveSqrtLinalg(c, speedSq, {t});
+
+    out.T.resize(3);
+    for (int i = 0; i < 3; ++i)
+        out.T[i] = normLinalg(c, c.div(r1[i], out.speed), budget);
+
+    const std::vector<Expr> cross12 = cross3Linalg(c, r1, r2);
+    const Expr crossNormSq = dot3Linalg(c, cross12, cross12);
+    if (isZeroLinalg(c, crossNormSq, budget)) {
+        // Straight line (zero curvature): T is well-defined, kappa = 0, tau = 0
+        out.curvature = c.zero();
+        out.torsion = c.zero();
+        out.N = {c.zero(), c.zero(), c.zero()};
+        out.B = {c.zero(), c.zero(), c.zero()};
+        out.certified = isZeroLinalg(
+            c, c.add({dot3Linalg(c, out.T, out.T), c.neg(c.one())}), budget);
+        return out;
+    }
+
+    const Expr crossNorm = positiveSqrtLinalg(c, crossNormSq, {t});
+    out.B.resize(3);
+    for (int i = 0; i < 3; ++i)
+        out.B[i] = normLinalg(c, c.div(cross12[i], crossNorm), budget);
+
+    const std::vector<Expr> nVec = cross3Linalg(c, out.B, out.T);
+    out.N.resize(3);
+    for (int i = 0; i < 3; ++i)
+        out.N[i] = normLinalg(c, nVec[i], budget);
+
+    const Expr speedCubed = c.mul({speedSq, out.speed});
+    out.curvature = normLinalg(c, c.div(crossNorm, speedCubed), budget);
+
+    const Expr tripleProd = dot3Linalg(c, cross12, r3);
+    out.torsion = normLinalg(c, c.div(tripleProd, crossNormSq), budget);
+
+    // Certify orthonormality: T.T == 1, N.N == 1, B.B == 1, T.N == 0, T.B == 0, N.B == 0
+    const bool orthoOk =
+        isZeroLinalg(c, c.add({dot3Linalg(c, out.T, out.T), c.neg(c.one())}), budget) &&
+        isZeroLinalg(c, c.add({dot3Linalg(c, out.N, out.N), c.neg(c.one())}), budget) &&
+        isZeroLinalg(c, c.add({dot3Linalg(c, out.B, out.B), c.neg(c.one())}), budget) &&
+        isZeroLinalg(c, dot3Linalg(c, out.T, out.N), budget) &&
+        isZeroLinalg(c, dot3Linalg(c, out.T, out.B), budget) &&
+        isZeroLinalg(c, dot3Linalg(c, out.N, out.B), budget);
+
+    out.certified = orthoOk;
+    if (!orthoOk)
+        out.reason = "Frenet-Serret frame failed orthonormality certificate";
+    return out;
+}
+
+SurfaceCurvatureResult surfaceCurvature(Ctx &c,
+                                        const std::vector<Expr> &surface,
+                                        Expr u, Expr v,
+                                        Budget *budget)
+{
+    SurfaceCurvatureResult out;
+    if (surface.size() != 3 || u.isNull() || v.isNull() ||
+        c.kind(u) != NodeKind::Symbol || c.kind(v) != NodeKind::Symbol) {
+        out.reason = "surfaceCurvature requires a 3D surface r(u, v) and parameter symbols u, v";
+        return out;
+    }
+    if (!checkLinalgBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    std::vector<Expr> ru(3), rv(3), ruu(3), ruv(3), rvv(3);
+    for (int i = 0; i < 3; ++i) {
+        if (surface[i].isNull()) {
+            out.reason = "null surface component";
+            return out;
+        }
+        ru[i] = c.simplify(c.diff(surface[i], u));
+        rv[i] = c.simplify(c.diff(surface[i], v));
+        ruu[i] = c.simplify(c.diff(ru[i], u));
+        ruv[i] = c.simplify(c.diff(ru[i], v));
+        rvv[i] = c.simplify(c.diff(rv[i], v));
+    }
+
+    out.E = normLinalg(c, dot3Linalg(c, ru, ru), budget);
+    out.F = normLinalg(c, dot3Linalg(c, ru, rv), budget);
+    out.G = normLinalg(c, dot3Linalg(c, rv, rv), budget);
+    out.firstForm = SymMatrix(2, 2, {out.E, out.F, out.F, out.G});
+
+    const std::vector<Expr> crossUV = cross3Linalg(c, ru, rv);
+    const Expr detI = normLinalg(
+        c, c.add({c.mul({out.E, out.G}), c.neg(c.mul({out.F, out.F}))}), budget);
+    if (isZeroLinalg(c, detI, budget)) {
+        out.reason = "degenerate surface patch (E*G - F^2 == 0)";
+        return out;
+    }
+    out.areaElement = positiveSqrtLinalg(c, detI, {u, v});
+
+    out.normal.resize(3);
+    for (int i = 0; i < 3; ++i)
+        out.normal[i] = normLinalg(c, c.div(crossUV[i], out.areaElement), budget);
+
+    out.L = normLinalg(c, dot3Linalg(c, ruu, out.normal), budget);
+    out.M = normLinalg(c, dot3Linalg(c, ruv, out.normal), budget);
+    out.N = normLinalg(c, dot3Linalg(c, rvv, out.normal), budget);
+    out.secondForm = SymMatrix(2, 2, {out.L, out.M, out.M, out.N});
+
+    const SymMatrix invI = inv(c, out.firstForm, budget);
+    if (invI.empty()) {
+        out.reason = "first fundamental form is singular";
+        return out;
+    }
+    out.shapeOperator = invI.mul(c, out.secondForm);
+    for (std::size_t r = 0; r < 2; ++r)
+        for (std::size_t col = 0; col < 2; ++col)
+            out.shapeOperator.at(r, col) =
+                normLinalg(c, out.shapeOperator.at(r, col), budget);
+
+    const Expr detII = c.add({c.mul({out.L, out.N}), c.neg(c.mul({out.M, out.M}))});
+    out.gaussianCurvature = normLinalg(c, c.div(detII, detI), budget);
+
+    const Expr two = c.number(std::int64_t{2});
+    const Expr numH = c.add({c.mul({out.E, out.N}),
+                             c.neg(c.mul({two, out.F, out.M})),
+                             c.mul({out.G, out.L})});
+    out.meanCurvature =
+        normLinalg(c, c.div(numH, c.mul({two, detI})), budget);
+
+    // Certify: normal is orthogonal to ru and rv, and K == det(S), 2*H == tr(S)
+    const Expr detS = det(c, out.shapeOperator, budget);
+    const Expr trS = out.shapeOperator.trace(c);
+    const bool certOk =
+        isZeroLinalg(c, dot3Linalg(c, out.normal, ru), budget) &&
+        isZeroLinalg(c, dot3Linalg(c, out.normal, rv), budget) &&
+        isZeroLinalg(c, c.add({out.gaussianCurvature, c.neg(detS)}), budget) &&
+        isZeroLinalg(c, c.add({c.mul({two, out.meanCurvature}), c.neg(trS)}),
+                     budget);
+
+    out.certified = certOk;
+    if (!certOk)
+        out.reason = "surfaceCurvature failed normal orthogonality or Weingarten certificate";
+    return out;
+}
+
+ChristoffelResult christoffelSymbols(Ctx &c, const SymMatrix &metric,
+                                     const std::vector<Expr> &coords,
+                                     Budget *budget)
+{
+    ChristoffelResult out;
+    const std::size_t n = coords.size();
+    if (!metric.isSquare() || metric.rows() != n || n == 0) {
+        out.reason = "christoffelSymbols requires an n x n metric and n coordinate symbols";
+        return out;
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        if (coords[i].isNull() || c.kind(coords[i]) != NodeKind::Symbol) {
+            out.reason = "coordinate entries must be symbols";
+            return out;
+        }
+    }
+    if (!checkLinalgBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    out.metric = metric;
+    out.inverseMetric = inv(c, metric, budget);
+    if (out.inverseMetric.empty()) {
+        out.reason = "metric tensor is singular";
+        return out;
+    }
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t j = 0; j < n; ++j)
+            out.inverseMetric.at(i, j) =
+                normLinalg(c, out.inverseMetric.at(i, j), budget);
+
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    out.firstKind.assign(n, SymMatrix::zeros(c, n, n));
+    out.secondKind.assign(n, SymMatrix::zeros(c, n, n));
+
+    for (std::size_t k = 0; k < n; ++k) {
+        for (std::size_t i = 0; i < n; ++i) {
+            for (std::size_t j = i; j < n; ++j) {
+                const Expr di_gkj = c.diff(metric.at(k, j), coords[i]);
+                const Expr dj_gki = c.diff(metric.at(k, i), coords[j]);
+                const Expr dk_gij = c.diff(metric.at(i, j), coords[k]);
+                const Expr gamma1 = normLinalg(
+                    c, c.mul({half, c.add({di_gkj, dj_gki, c.neg(dk_gij)})}),
+                    budget);
+                out.firstKind[k].at(i, j) = gamma1;
+                out.firstKind[k].at(j, i) = gamma1;
+            }
+        }
+    }
+
+    for (std::size_t k = 0; k < n; ++k) {
+        for (std::size_t i = 0; i < n; ++i) {
+            for (std::size_t j = i; j < n; ++j) {
+                std::vector<Expr> sumTerms;
+                for (std::size_t m = 0; m < n; ++m) {
+                    const Expr gkm = out.inverseMetric.at(k, m);
+                    const Expr gmij = out.firstKind[m].at(i, j);
+                    if (!c.isZero(gkm) && !c.isZero(gmij))
+                        sumTerms.push_back(c.mul({gkm, gmij}));
+                }
+                const Expr gamma2 =
+                    sumTerms.empty() ? c.zero()
+                                     : normLinalg(c, c.add(sumTerms), budget);
+                out.secondKind[k].at(i, j) = gamma2;
+                out.secondKind[k].at(j, i) = gamma2;
+            }
+        }
+    }
+
+    // Certify metric compatibility: nabla_k g_{ij} = d_k g_{ij} - g_{mj} Gamma^m_{ki} - g_{im} Gamma^m_{kj} == 0
+    bool compatOk = true;
+    for (std::size_t k = 0; k < n && compatOk; ++k) {
+        for (std::size_t i = 0; i < n && compatOk; ++i) {
+            for (std::size_t j = i; j < n && compatOk; ++j) {
+                std::vector<Expr> terms{c.diff(metric.at(i, j), coords[k])};
+                for (std::size_t m = 0; m < n; ++m) {
+                    terms.push_back(c.neg(
+                        c.mul({metric.at(m, j), out.secondKind[m].at(k, i)})));
+                    terms.push_back(c.neg(
+                        c.mul({metric.at(i, m), out.secondKind[m].at(k, j)})));
+                }
+                if (!isZeroLinalg(c, c.add(terms), budget))
+                    compatOk = false;
+            }
+        }
+    }
+
+    out.certified = compatOk;
+    if (!compatOk)
+        out.reason = "Christoffel symbols failed metric-compatibility certificate nabla_k g_{ij} == 0";
+    return out;
+}
+
+RiemannCurvatureResult riemannTensor(Ctx &c, const SymMatrix &metric,
+                                     const std::vector<Expr> &coords,
+                                     Budget *budget)
+{
+    RiemannCurvatureResult out;
+    out.christoffel = christoffelSymbols(c, metric, coords, budget);
+    if (!out.christoffel.certified) {
+        out.reason = out.christoffel.reason;
+        return out;
+    }
+
+    const std::size_t n = coords.size();
+    const auto &G = out.christoffel.secondKind;
+    out.riemann.assign(n, std::vector<SymMatrix>(n, SymMatrix::zeros(c, n, n)));
+
+    for (std::size_t rho = 0; rho < n; ++rho) {
+        for (std::size_t sigma = 0; sigma < n; ++sigma) {
+            for (std::size_t mu = 0; mu < n; ++mu) {
+                for (std::size_t nu = mu + 1; nu < n; ++nu) {
+                    std::vector<Expr> terms{
+                        c.diff(G[rho].at(nu, sigma), coords[mu]),
+                        c.neg(c.diff(G[rho].at(mu, sigma), coords[nu]))};
+                    for (std::size_t lam = 0; lam < n; ++lam) {
+                        terms.push_back(
+                            c.mul({G[rho].at(mu, lam), G[lam].at(nu, sigma)}));
+                        terms.push_back(c.neg(
+                            c.mul({G[rho].at(nu, lam), G[lam].at(mu, sigma)})));
+                    }
+                    const Expr val = normLinalg(c, c.add(terms), budget);
+                    out.riemann[rho][sigma].at(mu, nu) = val;
+                    out.riemann[rho][sigma].at(nu, mu) =
+                        normLinalg(c, c.neg(val), budget);
+                }
+            }
+        }
+    }
+
+    // Ricci tensor: R_{sigma, nu} = sum_rho R^rho_{sigma, rho, nu}
+    out.ricci = SymMatrix::zeros(c, n, n);
+    for (std::size_t sigma = 0; sigma < n; ++sigma) {
+        for (std::size_t nu = 0; nu < n; ++nu) {
+            std::vector<Expr> terms;
+            for (std::size_t rho = 0; rho < n; ++rho) {
+                const Expr rVal = out.riemann[rho][sigma].at(rho, nu);
+                if (!c.isZero(rVal))
+                    terms.push_back(rVal);
+            }
+            out.ricci.at(sigma, nu) =
+                terms.empty() ? c.zero() : normLinalg(c, c.add(terms), budget);
+        }
+    }
+
+    // Scalar curvature: R = sum_{sigma, nu} g^{sigma, nu} R_{sigma, nu}
+    std::vector<Expr> scalarTerms;
+    for (std::size_t sigma = 0; sigma < n; ++sigma) {
+        for (std::size_t nu = 0; nu < n; ++nu) {
+            const Expr gInv = out.christoffel.inverseMetric.at(sigma, nu);
+            const Expr ric = out.ricci.at(sigma, nu);
+            if (!c.isZero(gInv) && !c.isZero(ric))
+                scalarTerms.push_back(c.mul({gInv, ric}));
+        }
+    }
+    out.scalarCurvature = scalarTerms.empty()
+                              ? c.zero()
+                              : normLinalg(c, c.add(scalarTerms), budget);
+
+    // Einstein tensor: G_{mu, nu} = R_{mu, nu} - 1/2 * R * g_{mu, nu}
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    out.einstein = SymMatrix::zeros(c, n, n);
+    for (std::size_t mu = 0; mu < n; ++mu) {
+        for (std::size_t nu = 0; nu < n; ++nu) {
+            out.einstein.at(mu, nu) = normLinalg(
+                c, c.add({out.ricci.at(mu, nu),
+                          c.neg(c.mul({half, out.scalarCurvature,
+                                       metric.at(mu, nu)}))}),
+                budget);
+        }
+    }
+
+    // Certify first algebraic Bianchi identity:
+    //   R^rho_{sigma, mu, nu} + R^rho_{mu, nu, sigma} + R^rho_{nu, sigma, mu} == 0
+    bool bianchiOk = true;
+    for (std::size_t rho = 0; rho < n && bianchiOk; ++rho) {
+        for (std::size_t s = 0; s < n && bianchiOk; ++s) {
+            for (std::size_t mu = 0; mu < n && bianchiOk; ++mu) {
+                for (std::size_t nu = 0; nu < n && bianchiOk; ++nu) {
+                    const Expr cyc = c.add({out.riemann[rho][s].at(mu, nu),
+                                            out.riemann[rho][mu].at(nu, s),
+                                            out.riemann[rho][nu].at(s, mu)});
+                    if (!isZeroLinalg(c, cyc, budget))
+                        bianchiOk = false;
+                }
+            }
+        }
+    }
+
+    out.certified = bianchiOk;
+    if (!bianchiOk)
+        out.reason = "Riemann tensor failed first algebraic Bianchi identity certificate";
+    return out;
+}
+
+SymMatrix ricciTensor(Ctx &c, const SymMatrix &metric,
+                      const std::vector<Expr> &coords,
+                      Budget *budget)
+{
+    return riemannTensor(c, metric, coords, budget).ricci;
+}
+
+Expr scalarCurvature(Ctx &c, const SymMatrix &metric,
+                     const std::vector<Expr> &coords,
+                     Budget *budget)
+{
+    return riemannTensor(c, metric, coords, budget).scalarCurvature;
+}
+
+GeodesicResult geodesicEquations(Ctx &c, const SymMatrix &metric,
+                                 const std::vector<Expr> &coords,
+                                 const std::vector<Expr> &velocities,
+                                 const std::vector<Expr> &accelerations,
+                                 Budget *budget)
+{
+    GeodesicResult out;
+    const ChristoffelResult ch = christoffelSymbols(c, metric, coords, budget);
+    if (!ch.certified) {
+        out.reason = ch.reason;
+        return out;
+    }
+
+    const std::size_t n = coords.size();
+    std::vector<Expr> vel(n), acc(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        vel[i] = (i < velocities.size() && !velocities[i].isNull())
+                     ? velocities[i]
+                     : c.symbol("d" + std::string(c.symbolName(coords[i])));
+        acc[i] = (i < accelerations.size() && !accelerations[i].isNull())
+                     ? accelerations[i]
+                     : c.symbol("dd" + std::string(c.symbolName(coords[i])));
+    }
+
+    out.equations.resize(n);
+    out.rhs.resize(n);
+    for (std::size_t k = 0; k < n; ++k) {
+        std::vector<Expr> quadTerms;
+        for (std::size_t i = 0; i < n; ++i) {
+            for (std::size_t j = 0; j < n; ++j) {
+                const Expr gkij = ch.secondKind[k].at(i, j);
+                if (!c.isZero(gkij))
+                    quadTerms.push_back(c.mul({gkij, vel[i], vel[j]}));
+            }
+        }
+        const Expr gammaQuad =
+            quadTerms.empty() ? c.zero() : normLinalg(c, c.add(quadTerms), budget);
+        out.rhs[k] = normLinalg(c, c.neg(gammaQuad), budget);
+        out.equations[k] = normLinalg(c, c.add({acc[k], gammaQuad}), budget);
+    }
+
+    // Certify equivalence with Euler-Lagrange equations of L = 1/2 * g_{ij} * vel^i * vel^j
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    std::vector<Expr> lTerms;
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t j = 0; j < n; ++j)
+            if (!c.isZero(metric.at(i, j)))
+                lTerms.push_back(c.mul({half, metric.at(i, j), vel[i], vel[j]}));
+    const Expr L = lTerms.empty() ? c.zero() : c.add(lTerms);
+    const EulerLagrangeResult el =
+        eulerLagrange(c, L, Expr{}, coords, vel, acc);
+
+    bool elOk = (el.equations.size() == n);
+    for (std::size_t k = 0; k < n && elOk; ++k) {
+        // Raised Euler-Lagrange equation: -g^{km} E_m(L) == d2x^k + Gamma^k_{ij} dx^i dx^j
+        std::vector<Expr> raisedTerms;
+        for (std::size_t m = 0; m < n; ++m) {
+            const Expr gkm = ch.inverseMetric.at(k, m);
+            if (!c.isZero(gkm) && !c.isZero(el.equations[m]))
+                raisedTerms.push_back(c.neg(c.mul({gkm, el.equations[m]})));
+        }
+        const Expr raised =
+            raisedTerms.empty() ? c.zero() : c.add(raisedTerms);
+        if (!isZeroLinalg(c, c.add({out.equations[k], c.neg(raised)}), budget))
+            elOk = false;
+    }
+
+    out.certified = elOk;
+    if (!elOk)
+        out.reason = "Geodesic equations failed Euler-Lagrange equivalence certificate";
+    return out;
+}
+
 } // namespace numkit::cas

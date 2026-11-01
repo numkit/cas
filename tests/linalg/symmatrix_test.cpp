@@ -1004,5 +1004,92 @@ TEST(SymMatrixTest, EulerLagrangePoissonBracketAndHamiltonEquations)
     }
 }
 
+TEST(SymMatrixTest, DifferentialAndRiemannianGeometry)
+{
+    Ctx c;
+    const Expr t = c.symbol("t");
+    const Expr u = c.symbol("u");
+    const Expr v = c.symbol("v");
+
+    // 1. Frenet-Serret frame of circular helix r(t) = (3*cos(t), 3*sin(t), 4*t):
+    //    speed = 5, kappa = 3/25, tau = 4/25, N = (-cos(t), -sin(t), 0)
+    {
+        const FrenetSerretResult fs = frenetSerret(
+            c, {parseExpr(c, "3*cos(t)"), parseExpr(c, "3*sin(t)"),
+                parseExpr(c, "4*t")},
+            t);
+        ASSERT_TRUE(fs.certified) << fs.reason;
+        EXPECT_EQ(fs.speed, c.number(5));
+        EXPECT_EQ(fs.curvature, c.number(Rational(3, BigInt(25))));
+        EXPECT_EQ(fs.torsion, c.number(Rational(4, BigInt(25))));
+        EXPECT_EQ(fs.N[0], parseExpr(c, "-cos(t)"));
+        EXPECT_EQ(fs.N[1], parseExpr(c, "-sin(t)"));
+        EXPECT_EQ(fs.N[2], c.zero());
+    }
+
+    // 2. Surface curvature of sphere of radius R:
+    //    r(u, v) = (R*sin(u)*cos(v), R*sin(u)*sin(v), R*cos(u))
+    //    K = 1/R^2, and Gauss's Theorema Egregium: R_scalar(firstForm) == 2*K
+    {
+        const SurfaceCurvatureResult sc = surfaceCurvature(
+            c,
+            {parseExpr(c, "R*sin(u)*cos(v)"), parseExpr(c, "R*sin(u)*sin(v)"),
+             parseExpr(c, "R*cos(u)")},
+            u, v);
+        ASSERT_TRUE(sc.certified) << sc.reason;
+        EXPECT_EQ(sc.gaussianCurvature, parseExpr(c, "R^(-2)"));
+
+        // Gauss's Theorema Egregium: intrinsic scalar curvature of firstForm == 2*K
+        const Expr Rscalar = scalarCurvature(c, sc.firstForm, {u, v});
+        EXPECT_EQ(c.simplify(c.add({Rscalar,
+                                    c.neg(c.mul({c.number(2), sc.gaussianCurvature}))})),
+                  c.zero());
+    }
+
+    // 3. Helicoid minimal surface r(u, v) = (u*cos(v), u*sin(v), b*v):
+    //    Mean curvature H == 0, Gaussian curvature K = -b^2 / (u^2 + b^2)^2
+    {
+        const SurfaceCurvatureResult hel = surfaceCurvature(
+            c,
+            {parseExpr(c, "u*cos(v)"), parseExpr(c, "u*sin(v)"),
+             parseExpr(c, "b*v")},
+            u, v);
+        ASSERT_TRUE(hel.certified) << hel.reason;
+        EXPECT_EQ(hel.meanCurvature, c.zero());
+        EXPECT_EQ(c.simplify(c.add({hel.gaussianCurvature,
+                                    parseExpr(c, "b^2*(u^2 + b^2)^(-2)")})),
+                  c.zero());
+    }
+
+    // 4. Riemannian geometry of 2D Poincare upper half-plane H^2:
+    //    ds^2 = (dx^2 + dy^2) / y^2 -> constant negative curvature K = -1, R = -2,
+    //    Einstein tensor G_{mu, nu} == 0 (identically in 2D)
+    {
+        const Expr x = c.symbol("x");
+        const Expr y = c.symbol("y");
+        const Expr yInv2 = parseExpr(c, "y^(-2)");
+        const SymMatrix poincare(2, 2, {yInv2, c.zero(), c.zero(), yInv2});
+        const RiemannCurvatureResult riem =
+            riemannTensor(c, poincare, {x, y});
+        ASSERT_TRUE(riem.certified) << riem.reason;
+        EXPECT_EQ(riem.scalarCurvature, c.number(-2));
+        EXPECT_EQ(riem.einstein.at(0, 0), c.zero());
+        EXPECT_EQ(riem.einstein.at(1, 1), c.zero());
+
+        // Geodesic equations on Poincare half-plane:
+        //   ddx - 2/y * dx * dy = 0,   ddy + 1/y * (dx^2 - dy^2) = 0
+        const GeodesicResult geo = geodesicEquations(c, poincare, {x, y});
+        ASSERT_TRUE(geo.certified) << geo.reason;
+        EXPECT_EQ(c.simplify(c.add({
+                      geo.equations[0],
+                      c.neg(parseExpr(c, "ddx - 2*y^(-1)*dx*dy"))})),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({
+                      geo.equations[1],
+                      c.neg(parseExpr(c, "ddy + y^(-1)*(dx^2 - dy^2)"))})),
+                  c.zero());
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

@@ -370,4 +370,116 @@ inline HamiltonEquationsResult legendreTransform(Ctx &c, Expr L, Expr q,
                              std::vector<Expr>{p}, budget);
 }
 
+// ---------------------------------------------------------------------------
+// Differential Geometry of Curves/Surfaces & Riemannian Geometry (Item 76)
+// ---------------------------------------------------------------------------
+
+struct FrenetSerretResult
+{
+    std::vector<Expr> T; // unit tangent vector T(t) = r'(t) / ||r'(t)||
+    std::vector<Expr> N; // principal unit normal vector N(t) = B(t) x T(t)
+    std::vector<Expr> B; // unit binormal vector B(t) = (r'(t) x r''(t)) / ||r'(t) x r''(t)||
+    Expr speed;          // ds/dt = ||r'(t)||
+    Expr curvature;      // kappa(t) = ||r'(t) x r''(t)|| / ||r'(t)||^3
+    Expr torsion;        // tau(t) = ((r'(t) x r''(t)) . r'''(t)) / ||r'(t) x r''(t)||^2
+    bool certified = false;
+    std::string reason;
+};
+
+// Compute the Frenet-Serret apparatus (T, N, B, speed, curvature kappa,
+// torsion tau) of a parametric 3D (or 2D) curve r(t), certifying frame
+// orthonormality and the Frenet-Serret derivative identities.
+FrenetSerretResult frenetSerret(Ctx &c, const std::vector<Expr> &curve,
+                                Expr t, Budget *budget = nullptr);
+
+struct SurfaceCurvatureResult
+{
+    Expr E;                   // r_u . r_u
+    Expr F;                   // r_u . r_v
+    Expr G;                   // r_v . r_v
+    SymMatrix firstForm;      // 2x2 matrix I = [[E, F], [F, G]]
+    Expr areaElement;         // sqrt(E*G - F^2) = ||r_u x r_v||
+    std::vector<Expr> normal; // unit surface normal n = (r_u x r_v) / ||r_u x r_v||
+    Expr L;                   // r_uu . n
+    Expr M;                   // r_uv . n
+    Expr N;                   // r_vv . n
+    SymMatrix secondForm;     // 2x2 matrix II = [[L, M], [M, N]]
+    SymMatrix shapeOperator;  // 2x2 Weingarten matrix S = I^(-1) * II
+    Expr gaussianCurvature;   // K = det(S) = (L*N - M^2) / (E*G - F^2)
+    Expr meanCurvature;       // H = 1/2 * tr(S) = (E*N - 2*F*M + G*L) / (2*(E*G - F^2))
+    bool certified = false;
+    std::string reason;
+};
+
+// Compute the 1st and 2nd fundamental forms, unit normal, Weingarten shape
+// operator, Gaussian curvature K, and mean curvature H of a parametric surface
+// r(u, v) in R^3.
+SurfaceCurvatureResult surfaceCurvature(Ctx &c,
+                                        const std::vector<Expr> &surface,
+                                        Expr u, Expr v,
+                                        Budget *budget = nullptr);
+
+struct ChristoffelResult
+{
+    SymMatrix metric;                 // g_{ij}
+    SymMatrix inverseMetric;          // g^{ij}
+    std::vector<SymMatrix> firstKind; // firstKind[k].at(i, j) = Gamma_{k, ij}
+    std::vector<SymMatrix> secondKind;// secondKind[k].at(i, j) = Gamma^k_{ij}
+    bool certified = false;
+    std::string reason;
+};
+
+// Compute the inverse metric g^{ij} and Christoffel symbols of the 1st and 2nd
+// kind for a Riemannian or pseudo-Riemannian metric tensor g_{ij}(coords),
+// certifying torsion-freeness (Gamma^k_{ij} == Gamma^k_{ji}) and metric
+// compatibility (covariant derivative nabla_k g_{ij} == 0).
+ChristoffelResult christoffelSymbols(Ctx &c, const SymMatrix &metric,
+                                     const std::vector<Expr> &coords,
+                                     Budget *budget = nullptr);
+
+struct RiemannCurvatureResult
+{
+    ChristoffelResult christoffel;
+    // riemann[rho][sigma].at(mu, nu) = R^rho_{sigma, mu, nu}
+    std::vector<std::vector<SymMatrix>> riemann;
+    SymMatrix ricci;      // R_{sigma, nu} = sum_rho R^rho_{sigma, rho, nu}
+    Expr scalarCurvature; // R = sum_{sigma, nu} g^{sigma, nu} R_{sigma, nu}
+    SymMatrix einstein;   // G_{mu, nu} = R_{mu, nu} - 1/2 * R * g_{mu, nu}
+    bool certified = false;
+    std::string reason;
+};
+
+// Compute the full Riemann curvature tensor R^rho_{sigma, mu, nu}, Ricci tensor
+// R_{mu, nu}, scalar curvature R, and Einstein tensor G_{mu, nu}, certifying
+// skew-symmetry and the first algebraic Bianchi identity.
+RiemannCurvatureResult riemannTensor(Ctx &c, const SymMatrix &metric,
+                                     const std::vector<Expr> &coords,
+                                     Budget *budget = nullptr);
+
+SymMatrix ricciTensor(Ctx &c, const SymMatrix &metric,
+                      const std::vector<Expr> &coords,
+                      Budget *budget = nullptr);
+
+Expr scalarCurvature(Ctx &c, const SymMatrix &metric,
+                     const std::vector<Expr> &coords,
+                     Budget *budget = nullptr);
+
+struct GeodesicResult
+{
+    std::vector<Expr> equations; // d2x^k/ds^2 + Gamma^k_{ij} * dx^i/ds * dx^j/ds
+    std::vector<Expr> rhs;       // explicit acceleration rhs: -Gamma^k_{ij} * dx^i/ds * dx^j/ds
+    bool certified = false;
+    std::string reason;
+};
+
+// Construct the geodesic differential equations
+//   d2x^k/ds^2 + sum_{i,j} Gamma^k_{ij} * (dx^i/ds) * (dx^j/ds) = 0
+// for metric g_{ij}(coords), certifying equivalence with the Euler-Lagrange
+// equations of the kinetic arc-length Lagrangian L = 1/2 * g_{ij} * dx^i * dx^j.
+GeodesicResult geodesicEquations(Ctx &c, const SymMatrix &metric,
+                                 const std::vector<Expr> &coords,
+                                 const std::vector<Expr> &velocities = {},
+                                 const std::vector<Expr> &accelerations = {},
+                                 Budget *budget = nullptr);
+
 } // namespace numkit::cas

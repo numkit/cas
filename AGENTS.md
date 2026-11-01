@@ -5,26 +5,29 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
-- **Released: v0.8.0** (Echelon 8 Symbolic Toolbox: orthogonal polynomials
-  `legendreP`/`chebyshevT`/`chebyshevU`/`hermiteH`/`laguerreL`, Bessel functions
-  `besselj`/`bessely`/`besseli`/`besselk`, and Airy functions `airyAi`/`airyBi`/
-  `airyAiPrime`/`airyBiPrime` with 3-term recurrence simplification; special-
-  function ODE solver `dsolve2Special` and Taylor/Frobenius power-series ODE
-  solver `dsolveSeries`; multivariate exact division `divExactMulti`, GCD
-  `gcdMulti`, and factorization `factorMulti` in $\mathbb{Q}[x_1, \dots, x_k]$;
-  iterated multiple integrals `integrateMulti`/`definiteIntegrateMulti`, 1st &
-  2nd kind line integrals `lineIntegral`, and Lagrange multiplier extrema solver
-  `lagrangeExtrema`; plus v0.7.0 Gamma/digamma/trigamma/`euler_gamma`,
-  `fourier`/`ifourier`, `divergence`/`curl`/`laplacian`/`wronskian`/
-  `scalarPotential`, `dsolve1Riccati`/`dsolve1Clairaut`/`dsolve2Nonlinear`,
-  `groebnerBasis`/`polyReduceMulti`/`solveSystem`, v0.6.0 `dilog`, `symsum`,
-  `dsolve2EulerCauchy`/`dsolveNLinear`, `pade`/`mtaylor`, v0.5.0 `erf`..
-  `FresnelC`, `residue`, `ztrans`/`iztrans`/`rsolve`, `rref`/`rank`/`lu`/
-  `gramSchmidt`/`qr`/`jordanForm`, v0.4.0 `AssumeDomain`, `laplace`/`ilaplace`,
-  `nullspace`/`eigenvalues`/`eigenvectors`/`matrixExp`, `dsolveSystem1Linear`,
-  and v0.3.0 `simplify`, Rubi R1–R5 2058 rules, `solveSymbolic`/`solveSystem2`,
-  `dsolve1`/`dsolve2Linear`; see `CHANGELOG.md`).
-- **Working goal: post-v0.8.0 autonomous pool in `notes/c1-algebraic-layer.md`**.
+- **Released: v0.9.0** (Echelon 9 Symbolic Toolbox: complete & incomplete
+  elliptic integrals `ellipticK`/`ellipticE`/`ellipticPi`/`ellipticF`/
+  `ellipticEInc` with Carlson symmetric forms and Legendre's identity; Riemann
+  zeta `zeta`, Dirichlet eta `dirichletEta`, polylogarithms `polylog`, and
+  Bernoulli/Euler numbers & polynomials `bernoulliB`/`eulerE` with Bose-Einstein
+  and Fermi-Dirac integrals; 1st & 2nd kind surface integrals `surfaceIntegral`
+  and symbolic verifiers `verifyGreenTheorem`/`verifyStokesTheorem`/
+  `verifyGaussDivergenceTheorem`; and variational/Hamiltonian mechanics
+  `eulerLagrange`/`poissonBracket`/`legendreTransform`/`hamiltonEquations`;
+  plus v0.8.0 orthogonal polynomials `legendreP`..`laguerreL`, Bessel `besselj`..
+  `besselk`, Airy `airyAi`..`airyBiPrime`, `dsolve2Special`/`dsolveSeries`,
+  `divExactMulti`/`gcdMulti`/`factorMulti`, `integrateMulti`/
+  `definiteIntegrateMulti`/`lineIntegral`, `lagrangeExtrema`, v0.7.0 Gamma/
+  digamma/trigamma/`euler_gamma`, `fourier`/`ifourier`, `divergence`/`curl`/
+  `laplacian`/`wronskian`/`scalarPotential`, `dsolve1Riccati`/`dsolve1Clairaut`/
+  `dsolve2Nonlinear`, `groebnerBasis`/`polyReduceMulti`/`solveSystem`, v0.6.0
+  `dilog`, `symsum`, `dsolve2EulerCauchy`/`dsolveNLinear`, `pade`/`mtaylor`,
+  v0.5.0 `erf`..`FresnelC`, `residue`, `ztrans`/`iztrans`/`rsolve`, `rref`/
+  `rank`/`lu`/`gramSchmidt`/`qr`/`jordanForm`, v0.4.0 `AssumeDomain`, `laplace`/
+  `ilaplace`, `nullspace`/`eigenvalues`/`eigenvectors`/`matrixExp`,
+  `dsolveSystem1Linear`, and v0.3.0 `simplify`, Rubi R1–R5 2058 rules,
+  `solveSymbolic`/`solveSystem2`, `dsolve1`/`dsolve2Linear`; see `CHANGELOG.md`).
+- **Working goal: post-v0.9.0 autonomous pool in `notes/c1-algebraic-layer.md`**.
   The Numkit vendoring spike (item 23 remainder) waits for the user's
   explicit command.
 - **Integration contract is BINDING for all code** (the core is vendored into

@@ -1,5 +1,81 @@
 # Changelog
 
+## v0.9.0 — 2026-11-01
+
+Echelon 9 release: complete and incomplete elliptic integrals of the 1st, 2nd,
+and 3rd kind (`ellipticK`, `ellipticE`, `ellipticPi`, `ellipticF`,
+`ellipticEInc`) with Carlson symmetric-form ($R_F, R_D, R_J$) evaluation,
+Legendre's complete elliptic integral identity, Taylor series, and elliptic
+symbolic/definite integration (`core/`, `integrate/ratint`); Riemann zeta
+function $\zeta(s)$ (`zeta`), Dirichlet eta function $\eta(s)$ (`dirichletEta`),
+general polylogarithms $\operatorname{Li}_s(z)$ (`polylog`), and Bernoulli/Euler
+numbers & polynomials (`bernoulliB`, `eulerE`) across the core, `symsum`, and
+Bose–Einstein/Fermi–Dirac definite integration; 1st- and 2nd-kind surface
+integrals (`surfaceIntegralScalar`, `surfaceIntegralVector`, `surfaceIntegral`)
+and symbolic verifiers for Green's theorem, Kelvin–Stokes' theorem, and the
+Gauss–Ostrogradsky divergence theorem (`verifyGreenTheorem`,
+`verifyStokesTheorem`, `verifyGaussDivergenceTheorem` in `integrate/ratint`);
+and calculus of variations & analytical mechanics: Euler–Lagrange / Euler–Poisson
+equations `eulerLagrange`, canonical Poisson brackets `poissonBracket`, Legendre
+transformation `legendreTransform`, and canonical Hamilton equations
+`hamiltonEquations` (`linalg/symmatrix`).
+
+### Highlights & New Capabilities
+
+- **Complete & Incomplete Elliptic Integrals (`core/`, `integrate/ratint`, Item 69)**:
+  - Parameter convention $m = k^2$: complete elliptic integrals `ellipticK(m)`,
+    `ellipticE(m)`, `ellipticPi(n, m)` and incomplete elliptic integrals
+    `ellipticF(phi, m)` and `ellipticEInc(phi, m)` (plus 2-arg `ellipticE(phi, m)`).
+  - Exact analytical partial derivatives in `Ctx::diff`, satisfying Legendre's
+    complete elliptic ODEs $m(1-m)K''(m) + (1-2m)K'(m) - \frac{1}{4}K(m) = 0$ and
+    $m(1-m)E''(m) + (1-m)E'(m) + \frac{1}{4}E(m) = 0$.
+  - Carlson duplication algorithm ($R_F, R_D, R_J$) in `Ctx::evalDouble` with
+    period reduction $\phi = k\pi + \phi_0$.
+  - Special values ($K(0)=E(0)=\pi/2$, $E(1)=1$, $\Pi(0,m)=K(m)$,
+    $\Pi(n,0)=\frac{\pi}{2}(1-n)^{-1/2}$, $\Pi(m,m)=\frac{E(m)}{1-m}$),
+    quarter-period reductions $F(\frac{k}{2}\pi, m) \to k K(m)$,
+    $E(\frac{k}{2}\pi, m) \to k E(m)$, and Legendre's identity
+    $E(m)K(1-m) + E(1-m)K(m) - K(m)K(1-m) \to \frac{\pi}{2}$ in `simplify`.
+  - Maclaurin series in `taylor`, certified incomplete elliptic antiderivatives
+    $\int (c_0 + c_1\sin^2 u + c_2\cos^2 u)^{\pm 1/2}\,dx$ in `integrate`, and
+    complete Legendre trigonometric ($[0, \pi/2]$) and Jacobi algebraic
+    ($[0, 1]$) definite integrals in `definiteIntegrate`.
+- **Riemann Zeta, Dirichlet Eta, Polylogarithms & Bernoulli/Euler Polynomials (`core/`, `integrate/ratint`, Item 70)**:
+  - Exact rational evaluation of Bernoulli numbers $B_n$ (`bernoulliB(n)`),
+    Euler numbers $E_n$ (`eulerE(n)`), and polynomials $B_n(x)$, $E_n(x)$ in
+    `evalExact`, explicit polynomial expansion in `Ctx::expand`, derivatives
+    $\frac{\partial}{\partial x}B_n(x) = n B_{n-1}(x)$,
+    $\frac{\partial}{\partial x}E_n(x) = n E_{n-1}(x)$, and difference
+    identities $B_n(x+1) - B_n(x) \to n x^{n-1}$, $E_n(x+1) + E_n(x) \to 2 x^n$.
+  - Exact values $\zeta(0) = -1/2$, $\zeta(-m) = -\frac{B_{m+1}}{m+1}$, Euler's
+    even-zeta formula $\zeta(2k) = \frac{(-1)^{k-1}(2\pi)^{2k}B_{2k}}{2(2k)!}$,
+    $\eta(1) = \log(2)$, and $\eta(s) = (1 - 2^{1-s})\zeta(s)$.
+  - Polylogarithms `polylog(s, z)`: reductions $\operatorname{Li}_2(z) \to
+    \operatorname{dilog}(z)$, $\operatorname{Li}_1(z) \to -\log(1-z)$,
+    non-positive integer orders $\operatorname{Li}_{-m}(z)$ via Eulerian numbers,
+    $\operatorname{Li}_s(1) \to \zeta(s)$, $\operatorname{Li}_s(-1) \to -\eta(s)$,
+    derivative $\frac{\partial}{\partial z}\operatorname{Li}_s(z) =
+    \frac{\operatorname{Li}_{s-1}(z)}{z}$, Laurent series of $\zeta(s)$ at
+    $s = 1$, odd $p$-series and polylogarithm series in `symsum`, polylogarithm
+    antiderivatives in `integrate`, and Bose–Einstein / Fermi–Dirac /
+    log-power integrals in `definiteIntegrate`.
+- **Surface Integrals & Classical Vector Calculus Theorems (`integrate/ratint`, Item 71)**:
+  - `surfaceIntegralScalar` / `surfaceIntegral` ($\iint_S f\,dS$) and
+    `surfaceIntegralVector` / `surfaceIntegral` ($\iint_S \mathbf{F}\cdot d\mathbf{S}$).
+  - Symbolic theorem verifiers `verifyGreenTheorem`, `verifyStokesTheorem`, and
+    `verifyGaussDivergenceTheorem` (supporting piecewise-smooth boundary curves
+    and surface patches as well as curvilinear volume coordinate maps with
+    automatic symbolic Jacobian determinants).
+- **Calculus of Variations & Analytical Mechanics (`linalg/symmatrix`, Item 72)**:
+  - `eulerLagrange`: multi-field and higher-order Euler–Lagrange / Euler–Poisson
+    equations $E_i(L) = 0$, canonical momenta, Beltrami energy integral, and
+    Noether cyclic coordinates.
+  - `poissonBracket`: canonical Poisson brackets $\{f, g\}_{\mathbf{q},\mathbf{p}}$.
+  - `legendreTransform` and `hamiltonEquations`: symbolic Legendre transformation
+    from $L(t, \mathbf{q}, \dot{\mathbf{q}})$ to $H(t, \mathbf{q}, \mathbf{p})$
+    with involution certification $\frac{\partial H}{\partial p_i} \equiv
+    \dot{q}_i(\mathbf{q}, \mathbf{p})$ and canonical Hamilton equations.
+
 ## v0.8.0 — 2026-11-01
 
 Echelon 8 release: classical orthogonal polynomials (`legendreP`, `chebyshevT`,

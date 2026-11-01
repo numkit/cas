@@ -9,7 +9,7 @@ Designed to be vendored into the Numkit tree as the `symbolic` toolbox core;
 integration constraints (C++17, no deps, single-threaded base, PMR) are
 binding for all code in this repository.
 
-**Current release: v0.8.0** — the standalone certified symbolic
+**Current release: v0.9.0** — the standalone certified symbolic
 computation & integration toolbox core. Declared class, corpus metrics
 and changelog: `CHANGELOG.md`.
 
@@ -126,11 +126,11 @@ structurally impossible — it becomes an honest `Unevaluated`).
 `definiteIntegrate(Ctx&, f, var, a, b, budget)` evaluates proper and
 improper definite integrals via Newton–Leibniz, endpoint limits,
 interior-pole detection, interior antiderivative branch-jump correction,
-real $\log|u|$ branch realization, Euler–Basel and Bose–Fermi dilogarithmic
-integrals, Euler 1st/2nd kind Beta, Gamma, Wallis, and classical orthogonal-polynomial orthogonality integrals, unit-circle Cayley–Weierstrass contour
+real $\log|u|$ branch realization, Euler–Basel, polylogarithm, Bose–Einstein, and Fermi–Dirac
+integrals, Euler 1st/2nd kind Beta, Gamma, Wallis, complete Legendre/Jacobi elliptic, and classical orthogonal-polynomial orthogonality integrals, unit-circle Cayley–Weierstrass contour
 transformation, and Jordan's lemma upper-half-plane residue calculus for
 Fourier integrals.
-`integrateMulti`, `definiteIntegrateMulti`, `lineIntegralScalar`, `lineIntegralVector`, and `lineIntegral` compute certified iterated indefinite/definite multiple integrals (with dependent inner limits) and 1st/2nd-kind curve line integrals.
+`integrateMulti`, `definiteIntegrateMulti`, `lineIntegralScalar`, `lineIntegralVector`, `lineIntegral`, `surfaceIntegralScalar`, `surfaceIntegralVector`, `surfaceIntegral`, `verifyGreenTheorem`, `verifyStokesTheorem`, and `verifyGaussDivergenceTheorem` compute certified iterated multiple integrals, 1st/2nd-kind curve and surface integrals, and verify Green's, Stokes', and Gauss's integral theorems.
 `factorExpr` gives the factored form.
 
 **Rubi fast path** (`rubi/`): `rubiApply(tables, Ctx&, f, var, budget)` —
@@ -143,9 +143,9 @@ identities; every replacement passes the symbolic certificate.
 `tools/rubi_parse.py` + `tools/rubi_codegen.py` regenerate the committed
 tables from `third_party/rubi-snapshot/`.
 
-**Symbolic Linear Algebra & Vector Calculus** (`linalg/`): `SymMatrix` over `Expr`,
+**Symbolic Linear Algebra, Vector Calculus & Analytical Mechanics** (`linalg/`): `SymMatrix` over `Expr`,
 rational expression normalizer `simplifyRationalExpr`, multivariable, vector
-calculus, and constrained optimization (`jacobian`, `gradient`, `hessian`, `divergence`, `curl`, `laplacian`, `wronskianMatrix`, `wronskian`, `scalarPotential`, `lagrangeExtrema`), division-free
+calculus, constrained optimization, and analytical mechanics (`jacobian`, `gradient`, `hessian`, `divergence`, `curl`, `laplacian`, `wronskianMatrix`, `wronskian`, `scalarPotential`, `lagrangeExtrema`, `eulerLagrange`, `poissonBracket`, `legendreTransform`, `hamiltonEquations`), division-free
 Faddeev–LeVerrier characteristic polynomial, determinant, adjugate,
 and inverse (`charpoly`, `det`, `adjugate`, `inv`), exact linear
 system solver (`linsolve`), RREF and rank (`rref`, `rank`), kernel

@@ -879,6 +879,30 @@ Expr simplifyMulNode(Ctx &c, Expr e)
         }
     }
 
+    // Fold abs(u) * sign(u) -> u and abs(u) * sign(-u) -> -u.
+    bool mergedAbsSign = true;
+    while (mergedAbsSign) {
+        mergedAbsSign = false;
+        for (std::size_t i = 0; i < factors.size() && !mergedAbsSign; ++i) {
+            if (c.kind(factors[i]) != NodeKind::Func ||
+                c.funcName(factors[i]) != "abs")
+                continue;
+            const Expr u = c.child(factors[i], 0);
+            for (std::size_t j = 0; j < factors.size() && !mergedAbsSign; ++j) {
+                if (i == j || c.kind(factors[j]) != NodeKind::Func ||
+                    c.funcName(factors[j]) != "sign")
+                    continue;
+                const Expr v = c.child(factors[j], 0);
+                if (u == v || c.neg(u) == v) {
+                    factors[i] = (u == v) ? u : c.neg(u);
+                    factors.erase(factors.begin() +
+                                  static_cast<std::ptrdiff_t>(j));
+                    mergedAbsSign = true;
+                }
+            }
+        }
+    }
+
     return factors.empty() ? c.one() : c.mul(factors);
 }
 
@@ -1035,12 +1059,26 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         }
     }
 
-    // Assumption-driven abs(u) simplification: abs(u) -> u for u >= 0, -u for u < 0.
+    // Assumption-driven abs(u), sign(u), heaviside(u) simplification.
     if (fn == "abs") {
         if (c.isAssumedNonNegative(arg))
             return arg;
         if (c.isAssumedNegative(arg))
             return c.neg(arg);
+    }
+    if (fn == "sign") {
+        if (c.isZero(arg))
+            return c.zero();
+        if (c.isAssumedPositive(arg))
+            return c.one();
+        if (c.isAssumedNegative(arg))
+            return c.number(std::int64_t{-1});
+    }
+    if (fn == "heaviside") {
+        if (c.isAssumedPositive(arg))
+            return c.one();
+        if (c.isAssumedNegative(arg))
+            return c.zero();
     }
 
     // Reflection symmetries for negative arguments: sin(-u) -> -sin(u), cos(-u) -> cos(u), etc.
@@ -1050,11 +1088,11 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             fn == "asin" || fn == "atan" || fn == "sinh" || fn == "tanh" ||
             fn == "coth" || fn == "csch" || fn == "asinh" || fn == "atanh" ||
             fn == "erf" || fn == "erfi" || fn == "Si" || fn == "FresnelS" ||
-            fn == "FresnelC") {
+            fn == "FresnelC" || fn == "sign") {
             return c.neg(c.func(fn, posArg));
         }
         if (fn == "cos" || fn == "sec" || fn == "cosh" || fn == "sech" ||
-            fn == "abs") {
+            fn == "abs" || fn == "dirac") {
             return c.func(fn, posArg);
         }
     }
@@ -1412,6 +1450,13 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
                 }
             }
         }
+        // abs(u)^(2*k) -> u^(2*k) for even integer exponents
+        if (c.kind(b) == NodeKind::Func && c.funcName(b) == "abs" &&
+            c.kind(ex) == NodeKind::Number &&
+            c.numberValue(ex).den() == BigInt(1) &&
+            (c.numberValue(ex).num() % BigInt(2)).isZero()) {
+            return rewriteBottomUp(c, c.pow(c.child(b, 0), ex));
+        }
         // (-1)^(2*k*n) -> 1 when ex is an even integer multiple of an Integer expression
         if (b == c.number(std::int64_t{-1}) && c.isAssumedInteger(ex) &&
             c.kind(ex) == NodeKind::Mul &&
@@ -1495,6 +1540,11 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
                             c.pow(c.neg(u), c.number(newExp)));
                         continue;
                     }
+                }
+                if (c.kind(ch) != NodeKind::Number && c.isAssumedPositive(ch)) {
+                    extracted.push_back(
+                        rewriteBottomUp(c, c.pow(ch, outerEx)));
+                    continue;
                 }
                 remaining.push_back(ch);
             }

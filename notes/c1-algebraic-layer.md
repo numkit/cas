@@ -429,7 +429,7 @@
 57. ✅ (v0.6-пул, Эшелон 6) Аппроксимации Паде `pade(c, f, var, x0, m, n)` с сертификатом совпадения ряда Тейлора до порядка $m+n$ и многомерный ряд Тейлора `mtaylor` (`core/series` + CLI `nkcas pade`).
 58. ✅ Релизная отсечка `v0.6.0` (Эшелон 6 завершён: `CHANGELOG.md`, `CMakeLists.txt` `VERSION 0.6.0`, `README.md`, `AGENTS.md`, `tools/vendor_sync.py`, 272/272 тестов Release за 31.3 с, тег `v0.6.0`).
 59. ✅ (v0.7-пул, Эшелон 7) Гамма-, лог-гамма-, дигамма- и тригамма-функции (`gamma`, `lgamma`, `digamma` / `psi`, `trigamma`), постоянная Эйлера–Маскерони `euler_gamma` сквозь всё ядро (`diff`, `evalExact`/`evalDouble`, `simplify`, `taylor`/`laurent`/`residue`), замкнутые суммы рациональных дробей через $\psi$ и $\psi_1$ в `symsum` и интегралы Эйлера 1-го и 2-го рода (Бета, Валлиса, обобщённые Гамма и логарифмически-степенные) в `definiteIntegrate`.
-60. ⬜ (v0.7-пул, Эшелон 7) Двустороннее преобразование Фурье `fourier` / `ifourier` с круговым сертификатом (`transform/fourier` + CLI `nkcas fourier` / `nkcas ifourier`).
+60. ✅ (v0.7-пул, Эшелон 7) Двустороннее преобразование Фурье `fourier` / `ifourier` с круговым сертификатом (`transform/fourier` + CLI `nkcas fourier` / `nkcas ifourier`).
 61. ⬜ (v0.7-пул, Эшелон 7) Векторный анализ (`divergence`, `curl`, `laplacian`, `wronskian`, `scalarPotential` с сертификатом $\operatorname{gradient}(\varphi) \equiv \mathbf{F}$ в `linalg/symmatrix`) и уравнения Риккати, Клеро и нелинейные ОДУ 2-го порядка с понижением порядка (`dsolve2Nonlinear` в `ode/dsolve`).
 62. ⬜ (v0.7-пул, Эшелон 7) Базисы Грёбнера (алгоритм Бухбергера в $\mathbb{Q}[x_1, \dots, x_k]$ с порядками `Lex` и `GrevLex`, редукция `polyReduceMulti`) и решатель нелинейных полиномиальных систем от $N$ переменных (`poly/groebner`, `solveSystem` в `core/symsolve`).
 63. ⬜ Релизная отсечка `v0.7.0` (Эшелон 7 завершён).
@@ -2744,5 +2744,24 @@ MATLAB Symbolic Math Toolbox (три эшелона):
 
 3. **Определённые интегралы Эйлера 1-го и 2-го рода и Валлиса (`src/integrate/ratint.cpp`)**:
    - В `definiteIntegrate` добавлен решатель `tryEulerGammaBetaDefiniteIntegral` для бета-интегралов 1-го рода $\int_0^1 x^\alpha(1 - x^m)^\beta(\log x)^k\,dx$, бета-интегралов 2-го рода $\int_0^\infty \frac{x^\alpha}{(c_0 + c_1 x^m)^\gamma}\,dx$, обобщённых гамма- и лог-гамма-интегралов $\int_0^\infty x^\alpha e^{-a x^q}(\log x)^k\,dx$ ($k \in \{0, 1, 2\}$) и тригонометрических интегралов Валлиса $\int_0^{\pi/2}\sin^\alpha(x)\cos^\beta(x)\,dx$.
+
+
+## 2026-11-01: Реализация пункта 60 — Двустороннее преобразование Фурье `fourier` / `ifourier` с круговым сертификатом
+
+Реализован второй пакет Эшелона 7 (пул `v0.7.0`):
+
+1. **Двустороннее преобразование Фурье `fourier` и обратное `ifourier` (`include/numkit/cas/transform/fourier.hpp`, `src/transform/fourier.cpp`, CLI `nkcas fourier` / `nkcas ifourier`)**:
+   - Принята конвенция MATLAB Symbolic Math Toolbox: $\mathcal{F}\{f(t)\}(\omega) = \int_{-\infty}^{\infty} f(t) e^{-i\omega t}\,dt$, $\mathcal{F}^{-1}\{F(\omega)\}(t) = \frac{1}{2\pi}\int_{-\infty}^{\infty} F(\omega) e^{i\omega t}\,d\omega$ с представлением мнимой единицы символом `I` ($I^2 = -1$).
+   - Единое параметризованное по знаку фазы $\sigma \in \{-1, +1\}$ ядро `fourierRealTerm` + комплексное расщепление `splitComplexI`:
+     - обобщённые функции и гармоники: $\delta(at + b)$, константы $C \mapsto 2\pi C \delta(\omega)$, $\cos(\omega_0 t)$, $\sin(\omega_0 t)$, сдвиг спектра при тригонометрической модуляции $g(t)\cos(\omega_0 t)$ и $g(t)\sin(\omega_0 t)$;
+     - прямоугольный импульс $\operatorname{heaviside}(a - |t|) \leftrightarrow \frac{2\sin(a\omega)}{\omega}$, ядро Дирихле $\frac{\sin(at)}{t} \leftrightarrow \pi\operatorname{heaviside}(a - |\omega|)$ и ядро Фейера $\frac{1-\cos(at)}{t^2} \leftrightarrow \frac{\pi}{2}(a - |\omega|)\operatorname{heaviside}(a - |\omega|)$;
+     - гиперболические ядра $\operatorname{sech}(at)$, $\operatorname{sech}^2(at)$ и $t\operatorname{csch}(at)$;
+     - дифференцирование в частотной области $t^n g(t) \mapsto (i\sigma)^n \frac{d^n}{d\omega^n}\hat{g}(\omega)$;
+     - гауссианы $e^{-at^2}$, двусторонние экспоненты $|t|^m \operatorname{sign}(t)^s e^{-a|t|}$ и каузальные/антикаузальные экспоненты $t^n e^{\mp at}\operatorname{heaviside}(\pm t)$ (плюс прямой путь для кратных каузальных полюсов $(a + i\omega)^{-n}$ в `ifourier` и попарная канонизация $K(t) \pm K(t)\operatorname{sign}(t) \to 2 K|_{|t|\to\pm t}\operatorname{heaviside}(\pm t)$);
+     - рациональные функции $R(t)$ через выделение целой части `UPoly::divMod` и контурное интегрирование Жордана в `definiteIntegrate`.
+   - Каждое обратное преобразование `ifourier` проходит строгий круговой сертификат `fourier(c, fCand, t, w) == F`.
+2. **Упрощения для `abs`, `sign`, `heaviside`, `dirac` в `src/core/simplify.cpp`**:
+   - Добавлены чётность $\operatorname{abs}(-u) \to \operatorname{abs}(u)$, $\operatorname{dirac}(-u) \to \operatorname{dirac}(u)$, нечётность $\operatorname{sign}(-u) \to -\operatorname{sign}(u)$, раскрытие по предположениям знака, $\operatorname{abs}(u)^{2k} \to u^{2k}$, $\operatorname{abs}(u)\operatorname{sign}(u) \to u$ и вынесение положительных символьных множителей из дробных степеней произведений.
+
 
 

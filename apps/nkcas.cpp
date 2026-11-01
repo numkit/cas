@@ -18,6 +18,7 @@
 #include <numkit/cas/ode/dsolve.hpp>
 #include <numkit/cas/poly/solve.hpp>
 #include <numkit/cas/rubi/rules.hpp>
+#include <numkit/cas/transform/fourier.hpp>
 #include <numkit/cas/transform/laplace.hpp>
 #include <numkit/cas/transform/ztrans.hpp>
 
@@ -395,6 +396,32 @@ int runZTrans(const std::string &exprSrc, const std::string &inVarName,
     return 2;
 }
 
+int runFourier(const std::string &exprSrc, const std::string &inVarName,
+               const std::string &outVarName, bool inverse)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr vIn = ctx.symbol(inVarName);
+    const numkit::cas::Expr vOut = ctx.symbol(outVarName);
+    const numkit::cas::FourierResult r =
+        inverse ? numkit::cas::ifourier(ctx, f, vIn, vOut)
+                : numkit::cas::fourier(ctx, f, vIn, vOut);
+    if (r.proved()) {
+        std::cout << ctx.toString(r.F) << "\n";
+        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        return 0;
+    }
+    std::cout << "Unevaluated: " << r.reason << "\n";
+    return 2;
+}
+
 int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
@@ -476,6 +503,10 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         return runZTrans(exprSrc, varName.empty() ? "n" : varName, "z", false);
     if (cmd == "iztrans")
         return runZTrans(exprSrc, varName.empty() ? "z" : varName, "n", true);
+    if (cmd == "fourier")
+        return runFourier(exprSrc, varName.empty() ? "t" : varName, "w", false);
+    if (cmd == "ifourier")
+        return runFourier(exprSrc, varName.empty() ? "w" : varName, "t", true);
     if (cmd == "integrate") {
         const numkit::cas::RationalIntegral r =
             numkit::cas::integrate(ctx, f, var);
@@ -662,6 +693,10 @@ int main(int argc, char **argv)
         return runZTrans(argv[2], argv[3], argv[4], false);
     if (argc == 5 && std::string(argv[1]) == "iztrans")
         return runZTrans(argv[2], argv[3], argv[4], true);
+    if (argc == 5 && std::string(argv[1]) == "fourier")
+        return runFourier(argv[2], argv[3], argv[4], false);
+    if (argc == 5 && std::string(argv[1]) == "ifourier")
+        return runFourier(argv[2], argv[3], argv[4], true);
     if (argc == 4)
         return runCommand(argv[1], argv[2], argv[3]);
     if (argc == 3 && std::string(argv[1]) == "print")
@@ -678,6 +713,10 @@ int main(int argc, char **argv)
         return runZTrans(argv[2], "n", "z", false);
     if (argc == 3 && std::string(argv[1]) == "iztrans")
         return runZTrans(argv[2], "z", "n", true);
+    if (argc == 3 && std::string(argv[1]) == "fourier")
+        return runFourier(argv[2], "t", "w", false);
+    if (argc == 3 && std::string(argv[1]) == "ifourier")
+        return runFourier(argv[2], "w", "t", true);
     if (argc == 3 && std::string(argv[1]) == "eval")
         return runEval(argv[2], "", "");
     if (argc == 3 && std::string(argv[1]) == "corpus")

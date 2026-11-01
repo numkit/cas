@@ -3347,6 +3347,424 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
     return false;
 }
 
+bool matchMonomialInVar(Ctx &c, Expr e, Expr var, Expr &coefOut, Expr &expOut)
+{
+    if (e == var) {
+        coefOut = c.one();
+        expOut = c.one();
+        return true;
+    }
+    if (c.kind(e) == NodeKind::Pow && c.child(e, 0) == var &&
+        !mentionsVar(c, c.child(e, 1), var)) {
+        coefOut = c.one();
+        expOut = c.child(e, 1);
+        return true;
+    }
+    if (c.kind(e) == NodeKind::Mul) {
+        std::vector<Expr> cFacs;
+        Expr vExp;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const Expr ch = c.child(e, i);
+            if (!mentionsVar(c, ch, var)) {
+                cFacs.push_back(ch);
+            } else if (vExp.isNull() && ch == var) {
+                vExp = c.one();
+            } else if (vExp.isNull() && c.kind(ch) == NodeKind::Pow &&
+                       c.child(ch, 0) == var &&
+                       !mentionsVar(c, c.child(ch, 1), var)) {
+                vExp = c.child(ch, 1);
+            } else {
+                return false;
+            }
+        }
+        if (!vExp.isNull()) {
+            coefOut = cFacs.empty() ? c.one() : c.mul(cFacs);
+            expOut = vExp;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool matchBinomialInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out,
+                        Expr &mOut)
+{
+    if (c.kind(e) != NodeKind::Add || c.childCount(e) != 2)
+        return false;
+    Expr constPart, varPart;
+    if (!mentionsVar(c, c.child(e, 0), var) &&
+        mentionsVar(c, c.child(e, 1), var)) {
+        constPart = c.child(e, 0);
+        varPart = c.child(e, 1);
+    } else if (!mentionsVar(c, c.child(e, 1), var) &&
+               mentionsVar(c, c.child(e, 0), var)) {
+        constPart = c.child(e, 1);
+        varPart = c.child(e, 0);
+    } else {
+        return false;
+    }
+    if (!matchMonomialInVar(c, varPart, var, c1Out, mOut))
+        return false;
+    c0Out = constPart;
+    return true;
+}
+
+// Evaluate a single multiplicative term via Euler Gamma / Beta / Wallis
+// definite integral identities:
+//   intervalKind == 1: [0, 1]
+//   intervalKind == 2: [0, +inf)
+//   intervalKind == 3: [0, pi/2]
+bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
+                           Expr &valOut, bool &isDivergent)
+{
+    isDivergent = false;
+    std::vector<Expr> facs;
+    if (c.kind(term) == NodeKind::Mul) {
+        for (std::size_t i = 0; i < c.childCount(term); ++i)
+            facs.push_back(c.child(term, i));
+    } else {
+        facs.push_back(term);
+    }
+
+    std::vector<Expr> constFacs;
+    std::vector<Expr> expArgs;
+    Expr xExp = c.zero();
+    std::int64_t logPow = 0;
+    Expr sinExp = c.zero();
+    Expr cosExp = c.zero();
+    bool hasTrig = false;
+    int binomCount = 0;
+    Expr binC0, binC1, binM, binExp = c.zero();
+
+    for (const Expr &fac : facs) {
+        if (!mentionsVar(c, fac, var)) {
+            constFacs.push_back(fac);
+            continue;
+        }
+        if (fac == var) {
+            xExp = c.add({xExp, c.one()});
+            continue;
+        }
+        if (c.kind(fac) == NodeKind::Pow && c.child(fac, 0) == var &&
+            !mentionsVar(c, c.child(fac, 1), var)) {
+            xExp = c.add({xExp, c.child(fac, 1)});
+            continue;
+        }
+        if (c.kind(fac) == NodeKind::Func && c.funcName(fac) == "log" &&
+            c.child(fac, 0) == var) {
+            logPow += 1;
+            continue;
+        }
+        if (c.kind(fac) == NodeKind::Pow &&
+            c.kind(c.child(fac, 0)) == NodeKind::Func &&
+            c.funcName(c.child(fac, 0)) == "log" &&
+            c.child(c.child(fac, 0), 0) == var &&
+            c.kind(c.child(fac, 1)) == NodeKind::Number) {
+            const Rational &re = c.numberValue(c.child(fac, 1));
+            std::int64_t kVal = 0;
+            if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) && kVal >= 1 &&
+                kVal <= 20) {
+                logPow += kVal;
+                continue;
+            }
+        }
+        if (c.kind(fac) == NodeKind::Func && c.funcName(fac) == "exp") {
+            expArgs.push_back(c.child(fac, 0));
+            continue;
+        }
+        if (intervalKind == 3) {
+            std::string tFn;
+            Expr tArg, tExp;
+            if (c.kind(fac) == NodeKind::Func) {
+                tFn = c.funcName(fac);
+                tArg = c.child(fac, 0);
+                tExp = c.one();
+            } else if (c.kind(fac) == NodeKind::Pow &&
+                       c.kind(c.child(fac, 0)) == NodeKind::Func &&
+                       !mentionsVar(c, c.child(fac, 1), var)) {
+                tFn = c.funcName(c.child(fac, 0));
+                tArg = c.child(c.child(fac, 0), 0);
+                tExp = c.child(fac, 1);
+            }
+            if (!tFn.empty() && tArg == var) {
+                if (tFn == "sin") {
+                    sinExp = c.add({sinExp, tExp});
+                    hasTrig = true;
+                    continue;
+                }
+                if (tFn == "cos") {
+                    cosExp = c.add({cosExp, tExp});
+                    hasTrig = true;
+                    continue;
+                }
+                if (tFn == "tan") {
+                    sinExp = c.add({sinExp, tExp});
+                    cosExp = c.add({cosExp, c.neg(tExp)});
+                    hasTrig = true;
+                    continue;
+                }
+                if (tFn == "cot") {
+                    cosExp = c.add({cosExp, tExp});
+                    sinExp = c.add({sinExp, c.neg(tExp)});
+                    hasTrig = true;
+                    continue;
+                }
+                if (tFn == "sec") {
+                    cosExp = c.add({cosExp, c.neg(tExp)});
+                    hasTrig = true;
+                    continue;
+                }
+                if (tFn == "csc") {
+                    sinExp = c.add({sinExp, c.neg(tExp)});
+                    hasTrig = true;
+                    continue;
+                }
+            }
+        }
+        if (intervalKind == 1 || intervalKind == 2) {
+            Expr bBase = fac;
+            Expr bPow = c.one();
+            if (c.kind(fac) == NodeKind::Pow &&
+                !mentionsVar(c, c.child(fac, 1), var)) {
+                bBase = c.child(fac, 0);
+                bPow = c.child(fac, 1);
+            }
+            Expr c0, c1, m;
+            if (matchBinomialInVar(c, bBase, var, c0, c1, m)) {
+                if (binomCount == 0) {
+                    binC0 = c0;
+                    binC1 = c1;
+                    binM = m;
+                    binExp = bPow;
+                    binomCount = 1;
+                    continue;
+                }
+                if (c0 == binC0 && c1 == binC1 && m == binM) {
+                    binExp = c.add({binExp, bPow});
+                    continue;
+                }
+            }
+        }
+        return false;
+    }
+
+    const Expr constCoef = constFacs.empty() ? c.one() : c.mul(constFacs);
+
+    // Interval 1: [0, 1] — Euler Beta I and log-power integrals.
+    if (intervalKind == 1) {
+        if (!expArgs.empty() || hasTrig)
+            return false;
+        if (binomCount == 0) {
+            const Expr p = c.simplify(c.add({xExp, c.one()}));
+            if (c.isAssumedNonNegative(c.neg(p))) {
+                isDivergent = true;
+                return false;
+            }
+            if (!c.isAssumedPositive(p) || logPow > 20)
+                return false;
+            BigInt fact(1);
+            for (std::int64_t k = 2; k <= logPow; ++k)
+                fact = fact * BigInt(k);
+            if (logPow % 2 != 0)
+                fact = -fact;
+            valOut = c.simplify(c.mul(
+                {constCoef, c.number(Rational(fact, BigInt(1))),
+                 c.pow(p, c.number(-(logPow + 1)))}));
+            return true;
+        }
+        if (binomCount == 1 && logPow <= 1 && binC0 == c.one() &&
+            binC1 == c.number(std::int64_t{-1}) &&
+            c.isAssumedPositive(binM)) {
+            const Expr p = c.simplify(c.div(c.add({xExp, c.one()}), binM));
+            const Expr q = c.simplify(c.add({binExp, c.one()}));
+            if (c.isAssumedNonNegative(c.neg(p)) ||
+                c.isAssumedNonNegative(c.neg(q))) {
+                isDivergent = true;
+                return false;
+            }
+            if (!c.isAssumedPositive(p) || !c.isAssumedPositive(q))
+                return false;
+            const Expr pq = c.simplify(c.add({p, q}));
+            const Expr betaPart = c.div(
+                c.mul({c.func("gamma", p), c.func("gamma", q)}),
+                c.mul({binM, c.func("gamma", pq)}));
+            if (logPow == 0) {
+                valOut = c.simplify(c.mul({constCoef, betaPart}));
+                return true;
+            }
+            const Expr psiDiff =
+                c.add({c.func("digamma", p), c.neg(c.func("digamma", pq))});
+            valOut =
+                c.simplify(c.mul({constCoef, c.div(betaPart, binM), psiDiff}));
+            return true;
+        }
+        return false;
+    }
+
+    // Interval 2: [0, +inf) — Euler Gamma / log-Gamma and Euler Beta II.
+    if (intervalKind == 2) {
+        if (hasTrig)
+            return false;
+        if (!expArgs.empty() && binomCount == 0 && logPow <= 2) {
+            const Expr sumExp =
+                expArgs.size() == 1 ? expArgs[0] : c.simplify(c.add(expArgs));
+            Expr negA, qExp;
+            if (!matchMonomialInVar(c, sumExp, var, negA, qExp))
+                return false;
+            const Expr aCoeff = c.simplify(c.neg(negA));
+            if (!c.isAssumedPositive(aCoeff) || !c.isAssumedPositive(qExp))
+                return false;
+            const Expr s = c.simplify(c.div(c.add({xExp, c.one()}), qExp));
+            if (c.isAssumedNonNegative(c.neg(s))) {
+                isDivergent = true;
+                return false;
+            }
+            if (!c.isAssumedPositive(s))
+                return false;
+            const Expr baseG = c.div(
+                c.func("gamma", s),
+                c.mul({qExp, c.pow(aCoeff, s)}));
+            if (logPow == 0) {
+                valOut = c.simplify(c.mul({constCoef, baseG}));
+                return true;
+            }
+            const Expr shiftedPsi =
+                c.add({c.func("digamma", s), c.neg(c.func("log", aCoeff))});
+            if (logPow == 1) {
+                valOut = c.simplify(
+                    c.mul({constCoef, c.div(baseG, qExp), shiftedPsi}));
+                return true;
+            }
+            const Expr secondFactor = c.add(
+                {c.pow(shiftedPsi, c.number(std::int64_t{2})),
+                 c.func("trigamma", s)});
+            valOut = c.simplify(c.mul(
+                {constCoef,
+                 c.div(baseG, c.pow(qExp, c.number(std::int64_t{2}))),
+                 secondFactor}));
+            return true;
+        }
+        if (expArgs.empty() && binomCount == 1 && logPow == 0) {
+            if (!c.isAssumedPositive(binC0) || !c.isAssumedPositive(binC1) ||
+                !c.isAssumedPositive(binM))
+                return false;
+            const Expr gammaExp = c.simplify(c.neg(binExp));
+            const Expr p = c.simplify(c.div(c.add({xExp, c.one()}), binM));
+            const Expr q = c.simplify(c.add({gammaExp, c.neg(p)}));
+            if (c.isAssumedNonNegative(c.neg(p)) ||
+                c.isAssumedNonNegative(c.neg(q))) {
+                isDivergent = true;
+                return false;
+            }
+            if (!c.isAssumedPositive(p) || !c.isAssumedPositive(q))
+                return false;
+            const Expr c0Pow =
+                c.pow(binC0, c.simplify(c.add({p, c.neg(gammaExp)})));
+            const Expr c1Pow = c.pow(binC1, c.neg(p));
+            const Expr beta2 = c.div(
+                c.mul({c0Pow, c1Pow, c.func("gamma", p), c.func("gamma", q)}),
+                c.mul({binM, c.func("gamma", gammaExp)}));
+            valOut = c.simplify(c.mul({constCoef, beta2}));
+            return true;
+        }
+        return false;
+    }
+
+    // Interval 3: [0, pi/2] — Wallis / Trigonometric Beta integral.
+    if (intervalKind == 3) {
+        if (!expArgs.empty() || binomCount != 0 || logPow != 0 ||
+            !c.isZero(c.simplify(xExp)) || !hasTrig)
+            return false;
+        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+        const Expr p = c.simplify(c.mul({half, c.add({sinExp, c.one()})}));
+        const Expr q = c.simplify(c.mul({half, c.add({cosExp, c.one()})}));
+        if (c.isAssumedNonNegative(c.neg(p)) ||
+            c.isAssumedNonNegative(c.neg(q))) {
+            isDivergent = true;
+            return false;
+        }
+        if (!c.isAssumedPositive(p) || !c.isAssumedPositive(q))
+            return false;
+        const Expr pq = c.simplify(c.add({p, q}));
+        const Expr wallis = c.mul(
+            {half,
+             c.div(c.mul({c.func("gamma", p), c.func("gamma", q)}),
+                   c.func("gamma", pq))});
+        valOut = c.simplify(c.mul({constCoef, wallis}));
+        return true;
+    }
+
+    return false;
+}
+
+bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
+                                       bool aIsInf, int aInfDir, bool bIsInf,
+                                       int bInfDir, DefiniteIntegral &out)
+{
+    int intervalKind = 0;
+    int orientSign = 1;
+    if (!aIsInf && !bIsInf) {
+        if (c.isZero(a) && b == c.one()) {
+            intervalKind = 1;
+            orientSign = +1;
+        } else if (a == c.one() && c.isZero(b)) {
+            intervalKind = 1;
+            orientSign = -1;
+        } else {
+            Rational aPi, bPi;
+            if (matchRationalMultipleOfPi(c, a, aPi) &&
+                matchRationalMultipleOfPi(c, b, bPi)) {
+                const Rational half(std::int64_t{1}, BigInt(2));
+                if (aPi.isZero() && bPi == half) {
+                    intervalKind = 3;
+                    orientSign = +1;
+                } else if (aPi == half && bPi.isZero()) {
+                    intervalKind = 3;
+                    orientSign = -1;
+                }
+            }
+        }
+    } else if (c.isZero(a) && bIsInf && bInfDir > 0) {
+        intervalKind = 2;
+        orientSign = +1;
+    } else if (aIsInf && aInfDir > 0 && c.isZero(b)) {
+        intervalKind = 2;
+        orientSign = -1;
+    }
+    if (intervalKind == 0)
+        return false;
+
+    std::vector<Expr> terms;
+    if (c.kind(f) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(f); ++i)
+            terms.push_back(c.child(f, i));
+    } else {
+        terms.push_back(f);
+    }
+
+    std::vector<Expr> pieceVals;
+    pieceVals.reserve(terms.size());
+    for (const Expr &t : terms) {
+        Expr val;
+        bool isDiv = false;
+        if (!tryEulerGammaBetaTerm(c, t, var, intervalKind, val, isDiv)) {
+            if (isDiv && terms.size() == 1) {
+                out.status = DefiniteIntegral::Status::Divergent;
+                out.reason = "divergent Euler Gamma/Beta integral";
+                return true;
+            }
+            return false;
+        }
+        pieceVals.push_back(val);
+    }
+    const Expr total =
+        pieceVals.size() == 1 ? pieceVals[0] : c.add(pieceVals);
+    out.value = c.simplify(
+        orientSign > 0 ? total : c.neg(total));
+    out.status = DefiniteIntegral::Status::ProvedSymbolic;
+    return true;
+}
+
 } // namespace
 
 DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
@@ -3517,6 +3935,10 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                 }
             }
         }
+        if (tryEulerGammaBetaDefiniteIntegral(c, f, var, a, b, aIsInf, aInfDir,
+                                              bIsInf, bInfDir, out)) {
+            return out;
+        }
         out.reason = indef.reason;
         return out;
     }
@@ -3544,6 +3966,10 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
         return out;
     }
     if (!limB.proved()) {
+        if (tryEulerGammaBetaDefiniteIntegral(c, f, var, a, b, aIsInf, aInfDir,
+                                              bIsInf, bInfDir, out)) {
+            return out;
+        }
         out.reason = limB.reason.empty()
                          ? "unable to evaluate antiderivative at upper bound"
                          : limB.reason;
@@ -3557,6 +3983,10 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
         return out;
     }
     if (!limA.proved()) {
+        if (tryEulerGammaBetaDefiniteIntegral(c, f, var, a, b, aIsInf, aInfDir,
+                                              bIsInf, bInfDir, out)) {
+            return out;
+        }
         out.reason = limA.reason.empty()
                          ? "unable to evaluate antiderivative at lower bound"
                          : limA.reason;

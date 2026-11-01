@@ -650,6 +650,21 @@ bool Ctx::evalExact(
                 return true;
             }
         }
+        if (name == "gamma" && a.den() == BigInt(1)) {
+            std::int64_t k = 0;
+            if (a.num().fitsInt64(k) && k >= 1 && k <= 31) {
+                BigInt fact(1);
+                for (std::int64_t i = 2; i <= k - 1; ++i)
+                    fact = fact * BigInt(i);
+                out = Rational(fact, BigInt(1));
+                return true;
+            }
+        }
+        if ((name == "lgamma" || name == "loggamma") &&
+            (a == one || a == Rational(std::int64_t{2}))) {
+            out = zero;
+            return true;
+        }
         return false;
     }
     case NodeKind::Pow: {
@@ -996,6 +1011,85 @@ bool evalDilogDouble(double x, double &out)
     return std::isfinite(out);
 }
 
+bool evalDigammaDouble(double x, double &out)
+{
+    if (!std::isfinite(x))
+        return false;
+    if (x <= 0.0) {
+        if (std::floor(x) == x)
+            return false;
+        double sub = 0.0;
+        if (!evalDigammaDouble(1.0 - x, sub))
+            return false;
+        const double r = x - std::floor(x);
+        const double s = std::sin(kPiDouble * r);
+        if (s == 0.0)
+            return false;
+        out = sub - kPiDouble * (std::cos(kPiDouble * r) / s);
+        return std::isfinite(out);
+    }
+    double shift = 0.0;
+    while (x < 10.0) {
+        shift -= 1.0 / x;
+        x += 1.0;
+    }
+    const double invX = 1.0 / x;
+    const double invX2 = invX * invX;
+    // psi(x) ~ ln(x) - 1/(2x) - sum_{k=1}^7 B_{2k}/(2k * x^{2k})
+    const double poly =
+        (1.0 / 12.0) +
+        invX2 *
+            ((-1.0 / 120.0) +
+             invX2 *
+                 ((1.0 / 252.0) +
+                  invX2 *
+                      ((-1.0 / 240.0) +
+                       invX2 *
+                           ((1.0 / 132.0) +
+                            invX2 * ((-691.0 / 32760.0) +
+                                     invX2 * (1.0 / 12.0))))));
+    out = shift + std::log(x) - 0.5 * invX - invX2 * poly;
+    return std::isfinite(out);
+}
+
+bool evalTrigammaDouble(double x, double &out)
+{
+    if (!std::isfinite(x))
+        return false;
+    if (x <= 0.0) {
+        if (std::floor(x) == x)
+            return false;
+        double sub = 0.0;
+        if (!evalTrigammaDouble(1.0 - x, sub))
+            return false;
+        const double r = x - std::floor(x);
+        const double s = std::sin(kPiDouble * r);
+        if (s == 0.0)
+            return false;
+        out = (kPiDouble * kPiDouble) / (s * s) - sub;
+        return std::isfinite(out);
+    }
+    double shift = 0.0;
+    while (x < 10.0) {
+        shift += 1.0 / (x * x);
+        x += 1.0;
+    }
+    const double invX = 1.0 / x;
+    const double invX2 = invX * invX;
+    // psi_1(x) ~ 1/x + 1/(2x^2) + sum_{k=1}^6 B_{2k}/x^{2k+1}
+    const double poly =
+        (1.0 / 6.0) +
+        invX2 *
+            ((-1.0 / 30.0) +
+             invX2 *
+                 ((1.0 / 42.0) +
+                  invX2 *
+                      ((-1.0 / 30.0) +
+                       invX2 * ((5.0 / 66.0) + invX2 * (-691.0 / 2730.0)))));
+    out = shift + invX + 0.5 * invX2 + (invX * invX2) * poly;
+    return std::isfinite(out);
+}
+
 bool evalDoubleRec(
     const Ctx &c, Expr e,
     const std::vector<std::pair<std::string, double>> &vals,
@@ -1033,6 +1127,9 @@ bool evalDoubleRec(
                 found = true;
             } else if (name == "e" || name == "E") {
                 res = 2.718281828459045235360287471352662498;
+                found = true;
+            } else if (name == "euler_gamma" || name == "EulerGamma") {
+                res = kEulerGamma;
                 found = true;
             }
         }
@@ -1215,6 +1312,13 @@ bool evalDoubleRec(
         } else if (fn == "factorial") {
             if (a < 0.0 && std::floor(a) == a) return false;
             res = std::tgamma(a + 1.0);
+        } else if (fn == "lgamma" || fn == "loggamma") {
+            if (a <= 0.0) return false;
+            res = std::lgamma(a);
+        } else if (fn == "digamma" || fn == "psi") {
+            if (!evalDigammaDouble(a, res)) return false;
+        } else if (fn == "trigamma") {
+            if (!evalTrigammaDouble(a, res)) return false;
         } else {
             return false;
         }
@@ -1535,7 +1639,8 @@ bool Ctx::isAssumedPositive(Expr e) const
         const AssumeDomain dom = assumption(nm);
         if (dom != AssumeDomain::Any)
             return dom == AssumeDomain::Positive;
-        return nm == "pi" || nm == "e" || nm == "E";
+        return nm == "pi" || nm == "e" || nm == "E" || nm == "euler_gamma" ||
+               nm == "EulerGamma";
     }
     case NodeKind::RootOf:
         return false;
@@ -1560,9 +1665,12 @@ bool Ctx::isAssumedPositive(Expr e) const
             return isAssumedReal(u);
         if (fn == "abs")
             return isAssumedPositive(u) || isAssumedNegative(u);
+        if (fn == "factorial")
+            return isAssumedNonNegative(u);
         if (fn == "sqrt" || fn == "sinh" || fn == "tanh" || fn == "asinh" ||
             fn == "atan" || fn == "erf" || fn == "erfi" || fn == "Si" ||
-            fn == "FresnelS" || fn == "FresnelC" || fn == "gamma")
+            fn == "FresnelS" || fn == "FresnelC" || fn == "gamma" ||
+            fn == "trigamma")
             return isAssumedPositive(u);
         return false;
     }
@@ -1728,7 +1836,8 @@ bool Ctx::isAssumedReal(Expr e) const
     case NodeKind::Symbol: {
         const std::string &nm = symbolName(e);
         return assumption(nm) != AssumeDomain::Any || nm == "pi" ||
-               nm == "e" || nm == "E";
+               nm == "e" || nm == "E" || nm == "euler_gamma" ||
+               nm == "EulerGamma";
     }
     case NodeKind::RootOf:
         return false;
@@ -1749,7 +1858,8 @@ bool Ctx::isAssumedReal(Expr e) const
     case NodeKind::Func: {
         const std::string &fn = funcName(e);
         const Expr u = child(e, 0);
-        if (fn == "log" || fn == "Ci")
+        if (fn == "log" || fn == "Ci" || fn == "lgamma" || fn == "loggamma" ||
+            fn == "digamma" || fn == "psi" || fn == "trigamma" || fn == "gamma")
             return isAssumedPositive(u);
         if (fn == "Ei")
             return isAssumedPositive(u) || isAssumedNegative(u);

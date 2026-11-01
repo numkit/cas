@@ -341,5 +341,78 @@ TEST(SimplifyTest, AssumptionsInferenceAndSimplification)
     EXPECT_EQ(c.simplify(parseExpr(c, "sqrt(u^2)")), parseExpr(c, "(u^2)^(1/2)"));
 }
 
+TEST(SimplifyTest, GammaDigammaTrigammaIdentitiesAndEvaluation)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    // 1. Exact integer and half-integer values of gamma and lgamma
+    EXPECT_EQ(c.simplify(parseExpr(c, "gamma(1)")), c.one());
+    EXPECT_EQ(c.simplify(parseExpr(c, "gamma(5)")), c.number(24));
+    EXPECT_EQ(c.simplify(parseExpr(c, "gamma(1/2)")),
+              c.simplify(parseExpr(c, "sqrt(pi)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "gamma(5/2)")),
+              c.simplify(parseExpr(c, "(3/4)*sqrt(pi)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "gamma(-1/2)")),
+              c.simplify(parseExpr(c, "-2*sqrt(pi)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "lgamma(1)")), c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(c, "loggamma(2)")), c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(c, "lgamma(4)")),
+              c.simplify(parseExpr(c, "log(6)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "lgamma(1/2)")),
+              c.simplify(parseExpr(c, "(1/2)*log(pi)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "exp(lgamma(x))")),
+              parseExpr(c, "gamma(x)"));
+
+    // 2. Exact values of digamma (psi) and trigamma
+    EXPECT_EQ(c.simplify(parseExpr(c, "psi(1)")),
+              parseExpr(c, "-euler_gamma"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "digamma(4)")),
+              c.simplify(parseExpr(c, "11/6 - euler_gamma")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "digamma(1/2)")),
+              c.simplify(parseExpr(c, "-euler_gamma - 2*log(2)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "digamma(3/2)")),
+              c.simplify(parseExpr(c, "2 - euler_gamma - 2*log(2)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "digamma(1/4)")),
+              c.simplify(parseExpr(c, "-euler_gamma - pi/2 - 3*log(2)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "digamma(3/4)")),
+              c.simplify(parseExpr(c, "-euler_gamma + pi/2 - 3*log(2)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "trigamma(1)")),
+              c.simplify(parseExpr(c, "pi^2/6")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "trigamma(3)")),
+              c.simplify(parseExpr(c, "pi^2/6 - 5/4")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "trigamma(1/2)")),
+              c.simplify(parseExpr(c, "pi^2/2")));
+
+    // 3. Gamma integer-shift ratio, Euler reflection, and polygamma recurrences
+    EXPECT_EQ(c.simplify(parseExpr(c, "gamma(x + 2)/gamma(x)")),
+              c.simplify(parseExpr(c, "x*(x + 1)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "gamma(1/3)*gamma(2/3)")),
+              c.simplify(parseExpr(c, "2*3^(-1/2)*pi")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "gamma(1/4)*gamma(3/4)")),
+              c.simplify(parseExpr(c, "sqrt(2)*pi")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "digamma(x + 2) - digamma(x)")),
+              c.simplify(parseExpr(c, "1/x + 1/(x + 1)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "trigamma(x + 1) - trigamma(x)")),
+              c.simplify(parseExpr(c, "-1/x^2")));
+
+    // 4. Derivatives and IEEE-754 double evaluation
+    EXPECT_EQ(c.simplify(c.diff(parseExpr(c, "gamma(x^2)"), x)),
+              c.simplify(parseExpr(c, "2*x*gamma(x^2)*digamma(x^2)")));
+    EXPECT_EQ(c.simplify(c.diff(parseExpr(c, "lgamma(x)"), x)),
+              parseExpr(c, "digamma(x)"));
+    EXPECT_EQ(c.simplify(c.diff(parseExpr(c, "digamma(x)"), x)),
+              parseExpr(c, "trigamma(x)"));
+
+    double vPsi = 0.0, vTri = 0.0, vEG = 0.0;
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "euler_gamma"), {}, vEG));
+    EXPECT_NEAR(vEG, 0.57721566490153286, 1e-15);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "digamma(1)"), {}, vPsi));
+    EXPECT_NEAR(vPsi, -vEG, 1e-14);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "trigamma(1)"), {}, vTri));
+    EXPECT_NEAR(vTri, 3.14159265358979323846 * 3.14159265358979323846 / 6.0,
+                1e-14);
+}
+
 } // namespace
 } // namespace numkit::cas

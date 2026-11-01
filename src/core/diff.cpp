@@ -220,6 +220,15 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         else if (name == "dilog" || name == "Li2" || name == "polylog2")
             result = neg(mul({func("log", add({one(), neg(u)})),
                               pow(u, number(std::int64_t{-1})), du}));
+        else if (name == "gamma")
+            result = mul({e, func("digamma", u), du});
+        else if (name == "factorial") {
+            const Expr up1 = add({u, one()});
+            result = mul({e, func("digamma", up1), du});
+        } else if (name == "lgamma" || name == "loggamma")
+            result = mul({func("digamma", u), du});
+        else if (name == "digamma" || name == "psi")
+            result = mul({func("trigamma", u), du});
         else {
             assert(!"diff: unsupported function");
             result = Expr();

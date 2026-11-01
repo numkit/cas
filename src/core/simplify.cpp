@@ -483,13 +483,145 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 }
             }
         }
+
+        // 6. Polygamma integer-shift recurrence reduction:
+        //    In any Z-coset of digamma or trigamma terms with >= 2 distinct arguments
+        //    separated by integers |m| <= 16, shift all arguments down to the minimum
+        //    argument v0 of the coset:
+        //      digamma(v0 + m)  -> digamma(v0)  + sum_{k=0}^{m-1} (v0 + k)^(-1),
+        //      trigamma(v0 + m) -> trigamma(v0) - sum_{k=0}^{m-1} (v0 + k)^(-2).
+        auto matchPolygammaTerm = [&](Expr t, Expr &coefOut, std::string &fnOut,
+                                      Expr &argOut) -> bool {
+            if (c.kind(t) == NodeKind::Func &&
+                (c.funcName(t) == "digamma" || c.funcName(t) == "psi" ||
+                 c.funcName(t) == "trigamma")) {
+                coefOut = c.one();
+                fnOut = (c.funcName(t) == "psi") ? "digamma" : c.funcName(t);
+                argOut = c.child(t, 0);
+                return true;
+            }
+            if (c.kind(t) == NodeKind::Mul) {
+                std::vector<Expr> others;
+                std::string fn;
+                Expr arg;
+                for (std::size_t k = 0; k < c.childCount(t); ++k) {
+                    const Expr ch = c.child(t, k);
+                    if (fn.empty() && c.kind(ch) == NodeKind::Func &&
+                        (c.funcName(ch) == "digamma" || c.funcName(ch) == "psi" ||
+                         c.funcName(ch) == "trigamma")) {
+                        fn = (c.funcName(ch) == "psi") ? "digamma" : c.funcName(ch);
+                        arg = c.child(ch, 0);
+                    } else {
+                        others.push_back(ch);
+                    }
+                }
+                if (!fn.empty() && !others.empty()) {
+                    coefOut = others.size() == 1 ? others[0] : c.mul(others);
+                    fnOut = fn;
+                    argOut = arg;
+                    return true;
+                }
+            }
+            return false;
+        };
+        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+            Expr coefI, argI;
+            std::string fnI;
+            if (!matchPolygammaTerm(terms[i], coefI, fnI, argI))
+                continue;
+            struct CosetMember {
+                std::size_t termIdx;
+                Expr coef;
+                Expr arg;
+                std::int64_t offset; // arg - argI
+            };
+            std::vector<CosetMember> coset;
+            coset.push_back({i, coefI, argI, 0});
+            std::int64_t minOff = 0;
+            std::int64_t maxOff = 0;
+            Expr minArg = argI;
+            bool hasDistinctShift = false;
+            for (std::size_t j = i + 1; j < terms.size(); ++j) {
+                Expr coefJ, argJ;
+                std::string fnJ;
+                if (!matchPolygammaTerm(terms[j], coefJ, fnJ, argJ) ||
+                    fnJ != fnI)
+                    continue;
+                const Expr diffJI =
+                    simplifyRationalExpr(c, c.add({argJ, c.neg(argI)}));
+                std::int64_t m = 0;
+                if (!diffJI.isNull() && c.kind(diffJI) == NodeKind::Number &&
+                    c.numberValue(diffJI).den() == BigInt(1) &&
+                    c.numberValue(diffJI).num().fitsInt64(m) &&
+                    std::abs(m) <= 16) {
+                    coset.push_back({j, coefJ, argJ, m});
+                    if (m != 0)
+                        hasDistinctShift = true;
+                    if (m < minOff) {
+                        minOff = m;
+                        minArg = argJ;
+                    }
+                    if (m > maxOff)
+                        maxOff = m;
+                }
+            }
+            if (hasDistinctShift && (maxOff - minOff) <= 16) {
+                std::vector<Expr> totalCoefTerms;
+                std::vector<Expr> rationalTailTerms;
+                for (const auto &cm : coset) {
+                    totalCoefTerms.push_back(cm.coef);
+                    const std::int64_t shift = cm.offset - minOff;
+                    if (shift > 0) {
+                        std::vector<Expr> stepTerms;
+                        for (std::int64_t r = 0; r < shift; ++r) {
+                            const Expr denomBase =
+                                r == 0 ? minArg
+                                       : simplifyRationalExpr(
+                                             c, c.add({minArg, c.number(r)}));
+                            const Expr step =
+                                (fnI == "digamma")
+                                    ? c.pow(denomBase, c.number(std::int64_t{-1}))
+                                    : c.neg(c.pow(denomBase,
+                                                  c.number(std::int64_t{-2})));
+                            stepTerms.push_back(step);
+                        }
+                        const Expr sumSteps = stepTerms.size() == 1
+                                                  ? stepTerms[0]
+                                                  : c.add(stepTerms);
+                        rationalTailTerms.push_back(c.mul({cm.coef, sumSteps}));
+                    }
+                }
+                Expr combinedCoef =
+                    simplifyRationalExpr(c, c.add(totalCoefTerms));
+                if (combinedCoef.isNull())
+                    combinedCoef = c.add(totalCoefTerms);
+                std::vector<Expr> replacementTerms;
+                if (!c.isZero(combinedCoef)) {
+                    replacementTerms.push_back(
+                        c.mul({combinedCoef, c.func(fnI, minArg)}));
+                }
+                for (const Expr &rt : rationalTailTerms)
+                    replacementTerms.push_back(rt);
+                terms[coset[0].termIdx] =
+                    replacementTerms.empty() ? c.zero() : c.add(replacementTerms);
+                for (std::size_t idx = coset.size() - 1; idx >= 1; --idx) {
+                    terms.erase(terms.begin() +
+                                static_cast<std::ptrdiff_t>(coset[idx].termIdx));
+                }
+                changed = true;
+                break;
+            }
+        }
     }
 
     return terms.empty() ? c.zero() : c.add(terms);
 }
 
+Expr simplifyFuncNode(Ctx &c, Expr e);
+
 // Simplify a Mul node: exp(u)*exp(v) -> exp(u+v), sin(u)*cos(u)^(-1) -> tan(u),
-// sinh(u)*cosh(u)^(-1) -> tanh(u), and 2*sin(u)*cos(u) -> sin(2*u).
+// sinh(u)*cosh(u)^(-1) -> tanh(u), 2*sin(u)*cos(u) -> sin(2*u), and
+// Gamma integer-shift / Euler reflection identities.
 Expr simplifyMulNode(Ctx &c, Expr e)
 {
     if (c.kind(e) != NodeKind::Mul)
@@ -610,6 +742,143 @@ Expr simplifyMulNode(Ctx &c, Expr e)
         }
     }
 
+    // Gamma integer-shift ratio and Euler reflection formula:
+    //   1) gamma(u + m) * gamma(u)^(-1) -> prod_{k=0}^{m-1} (u + k)  (|m| <= 12)
+    //   2) gamma(u) * gamma(v) where u + v = m in Z (|m - 1| <= 12):
+    //        gamma(u) * gamma(1 - u) -> pi * sin(pi * u)^(-1)
+    bool mergedGamma = true;
+    while (mergedGamma) {
+        mergedGamma = false;
+        for (std::size_t i = 0; i < factors.size() && !mergedGamma; ++i) {
+            std::string fnI;
+            Expr uI;
+            Rational expI;
+            if (!extractTrigPow(factors[i], fnI, uI, expI) || fnI != "gamma")
+                continue;
+            const bool isPosUnitI = (expI == Rational(std::int64_t{1}));
+            const bool isNegUnitI = (expI == Rational(std::int64_t{-1}));
+            if (!isPosUnitI && !isNegUnitI)
+                continue;
+            for (std::size_t j = i + 1; j < factors.size() && !mergedGamma; ++j) {
+                std::string fnJ;
+                Expr uJ;
+                Rational expJ;
+                if (!extractTrigPow(factors[j], fnJ, uJ, expJ) || fnJ != "gamma")
+                    continue;
+                // Case 1: opposite unit exponents -> integer-shift ratio
+                if (expI == -expJ) {
+                    const Expr numArg = isPosUnitI ? uI : uJ;
+                    const Expr denArg = isPosUnitI ? uJ : uI;
+                    const Expr diffArgs =
+                        simplifyRationalExpr(c, c.add({numArg, c.neg(denArg)}));
+                    std::int64_t m = 0;
+                    if (!diffArgs.isNull() &&
+                        c.kind(diffArgs) == NodeKind::Number &&
+                        c.numberValue(diffArgs).den() == BigInt(1) &&
+                        c.numberValue(diffArgs).num().fitsInt64(m) &&
+                        std::abs(m) <= 12) {
+                        std::vector<Expr> pochFactors;
+                        if (m > 0) {
+                            for (std::int64_t k = 0; k < m; ++k) {
+                                const Expr step =
+                                    k == 0 ? denArg
+                                           : simplifyRationalExpr(
+                                                 c, c.add({denArg, c.number(k)}));
+                                pochFactors.push_back(step);
+                            }
+                        } else if (m < 0) {
+                            for (std::int64_t k = 0; k < -m; ++k) {
+                                const Expr step =
+                                    k == 0 ? numArg
+                                           : simplifyRationalExpr(
+                                                 c, c.add({numArg, c.number(k)}));
+                                pochFactors.push_back(
+                                    c.pow(step, c.number(std::int64_t{-1})));
+                            }
+                        }
+                        factors[i] = pochFactors.empty() ? c.one()
+                                                         : c.mul(pochFactors);
+                        factors.erase(factors.begin() +
+                                      static_cast<std::ptrdiff_t>(j));
+                        mergedGamma = true;
+                        break;
+                    }
+                }
+                // Case 2: equal unit exponents -> Euler reflection when uI + uJ in Z
+                if (expI == expJ) {
+                    const Expr sumArgs =
+                        simplifyRationalExpr(c, c.add({uI, uJ}));
+                    std::int64_t m = 0;
+                    if (!sumArgs.isNull() &&
+                        c.kind(sumArgs) == NodeKind::Number &&
+                        c.numberValue(sumArgs).den() == BigInt(1) &&
+                        c.numberValue(sumArgs).num().fitsInt64(m) &&
+                        std::abs(m - 1) <= 12) {
+                        // Choose canonical argument u for sin(pi * u):
+                        // if rational, shift into (0, 1); otherwise pick lower-cost arg.
+                        Expr uBase = uI;
+                        Expr vOther = uJ;
+                        if (c.kind(uI) == NodeKind::Number &&
+                            c.kind(uJ) == NodeKind::Number) {
+                            const Rational &rI = c.numberValue(uI);
+                            const Rational &rJ = c.numberValue(uJ);
+                            if (rI.den() == BigInt(1) || rJ.den() == BigInt(1))
+                                continue;
+                            if (!(rI > Rational(std::int64_t{0}) &&
+                                  rI < Rational(std::int64_t{1})) &&
+                                (rJ > Rational(std::int64_t{0}) &&
+                                 rJ < Rational(std::int64_t{1}))) {
+                                std::swap(uBase, vOther);
+                            }
+                        } else if (c.exprCost(uJ) < c.exprCost(uI)) {
+                            std::swap(uBase, vOther);
+                        }
+                        // Shift uBase by integer if rational outside (0, 1), or shift vOther
+                        // relative to (1 - uBase): vOther = (1 - uBase) + (m - 1).
+                        const Expr oneMinusU = simplifyRationalExpr(
+                            c, c.add({c.one(), c.neg(uBase)}));
+                        const Expr sinArg = simplifyRationalExpr(
+                            c, c.mul({c.symbol("pi"), uBase}));
+                        const Expr sinVal = simplifyFuncNode(
+                            c, c.func("sin", sinArg.isNull()
+                                                 ? c.mul({c.symbol("pi"), uBase})
+                                                 : sinArg));
+                        if (c.isZero(sinVal))
+                            continue;
+                        std::vector<Expr> reflFactors;
+                        reflFactors.push_back(c.symbol("pi"));
+                        reflFactors.push_back(
+                            c.pow(sinVal, c.number(std::int64_t{-1})));
+                        const std::int64_t shiftM = m - 1;
+                        if (shiftM > 0) {
+                            for (std::int64_t k = 0; k < shiftM; ++k) {
+                                const Expr step = simplifyRationalExpr(
+                                    c, c.add({oneMinusU, c.number(k)}));
+                                reflFactors.push_back(step);
+                            }
+                        } else if (shiftM < 0) {
+                            for (std::int64_t k = 0; k < -shiftM; ++k) {
+                                const Expr step = simplifyRationalExpr(
+                                    c, c.add({vOther, c.number(k)}));
+                                reflFactors.push_back(
+                                    c.pow(step, c.number(std::int64_t{-1})));
+                            }
+                        }
+                        const Expr prodRefl = c.mul(reflFactors);
+                        factors[i] = isPosUnitI
+                                         ? prodRefl
+                                         : c.pow(prodRefl,
+                                                 c.number(std::int64_t{-1}));
+                        factors.erase(factors.begin() +
+                                      static_cast<std::ptrdiff_t>(j));
+                        mergedGamma = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     return factors.empty() ? c.one() : c.mul(factors);
 }
 
@@ -646,6 +915,123 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             return c.add({c.mul({c.number(Rational(std::int64_t{1}, BigInt(12))), pi2}),
                           c.mul({c.number(Rational(std::int64_t{-1}, BigInt(2))),
                                  c.pow(log2, c.number(std::int64_t{2}))})});
+        }
+    }
+
+    // Canonicalize loggamma -> lgamma, psi -> digamma, and evaluate exact
+    // values of gamma, lgamma, digamma, and trigamma.
+    if (fn == "loggamma") {
+        return simplifyFuncNode(c, c.func("lgamma", arg));
+    }
+    if (fn == "psi") {
+        return simplifyFuncNode(c, c.func("digamma", arg));
+    }
+    if (fn == "gamma" && c.kind(arg) == NodeKind::Number) {
+        const Rational &ra = c.numberValue(arg);
+        std::int64_t p = 0;
+        if (ra.den() == BigInt(2) && ra.num().fitsInt64(p) &&
+            std::abs(p) <= 41) {
+            const Expr sqrtPi = c.pow(
+                c.symbol("pi"), c.number(Rational(std::int64_t{1}, BigInt(2))));
+            if (p > 0) {
+                const std::int64_t n = (p - 1) / 2;
+                BigInt df(1);
+                for (std::int64_t k = 1; k <= n; ++k)
+                    df = df * BigInt(2 * k - 1);
+                const Rational coef(df,
+                                    BigInt(1) << static_cast<std::uint64_t>(n));
+                return c.mul({c.number(coef), sqrtPi});
+            }
+            const std::int64_t n = (1 - p) / 2;
+            BigInt df(1);
+            for (std::int64_t k = 1; k <= n; ++k)
+                df = df * BigInt(2 * k - 1);
+            BigInt num = BigInt(1) << static_cast<std::uint64_t>(n);
+            if (n % 2 != 0)
+                num = -num;
+            return c.mul({c.number(Rational(num, df)), sqrtPi});
+        }
+    }
+    if (fn == "lgamma" && c.kind(arg) == NodeKind::Number) {
+        const Rational &ra = c.numberValue(arg);
+        std::int64_t k = 0;
+        if (ra.den() == BigInt(1) && ra.num().fitsInt64(k) && k >= 3 &&
+            k <= 31) {
+            BigInt fact(1);
+            for (std::int64_t i = 2; i <= k - 1; ++i)
+                fact = fact * BigInt(i);
+            return c.func("log", c.number(Rational(fact, BigInt(1))));
+        }
+        if (ra == Rational(std::int64_t{1}, BigInt(2))) {
+            return c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))),
+                          c.func("log", c.symbol("pi"))});
+        }
+    }
+    if (fn == "digamma" && c.kind(arg) == NodeKind::Number) {
+        const Rational &ra = c.numberValue(arg);
+        std::int64_t p = 0, q = 0;
+        if (ra.num().fitsInt64(p) && ra.den().fitsInt64(q) && p > 0 &&
+            p <= 80 && (q == 1 || q == 2 || q == 3 || q == 4)) {
+            const Expr negEG = c.neg(c.symbol("euler_gamma"));
+            const std::int64_t n = (p - 1) / q;
+            const std::int64_t rem = p - n * q; // in {1, ..., q}
+            Rational harmShift(std::int64_t{0});
+            for (std::int64_t k = 0; k < n; ++k) {
+                harmShift =
+                    harmShift + Rational(q, BigInt(rem + k * q));
+            }
+            std::vector<Expr> terms{negEG};
+            if (!harmShift.isZero())
+                terms.push_back(c.number(harmShift));
+            if (q == 2) {
+                terms.push_back(c.mul(
+                    {c.number(std::int64_t{-2}),
+                     c.func("log", c.number(std::int64_t{2}))}));
+            } else if (q == 4) {
+                terms.push_back(c.mul(
+                    {c.number(std::int64_t{-3}),
+                     c.func("log", c.number(std::int64_t{2}))}));
+                const Expr halfPi = c.mul(
+                    {c.number(Rational(std::int64_t{1}, BigInt(2))),
+                     c.symbol("pi")});
+                terms.push_back(rem == 1 ? c.neg(halfPi) : halfPi);
+            } else if (q == 3) {
+                terms.push_back(c.mul(
+                    {c.number(Rational(std::int64_t{-3}, BigInt(2))),
+                     c.func("log", c.number(std::int64_t{3}))}));
+                const Expr piSqrt3Over6 = c.mul(
+                    {c.number(Rational(std::int64_t{1}, BigInt(6))),
+                     c.pow(c.number(std::int64_t{3}),
+                           c.number(Rational(std::int64_t{1}, BigInt(2)))),
+                     c.symbol("pi")});
+                terms.push_back(rem == 1 ? c.neg(piSqrt3Over6) : piSqrt3Over6);
+            }
+            return c.add(terms);
+        }
+    }
+    if (fn == "trigamma" && c.kind(arg) == NodeKind::Number) {
+        const Rational &ra = c.numberValue(arg);
+        std::int64_t p = 0, q = 0;
+        if (ra.num().fitsInt64(p) && ra.den().fitsInt64(q) && p > 0 &&
+            p <= 80 && (q == 1 || q == 2)) {
+            const Expr pi2 = c.pow(c.symbol("pi"), c.number(std::int64_t{2}));
+            const std::int64_t n = (p - 1) / q;
+            const std::int64_t rem = p - n * q;
+            Rational shiftSum(std::int64_t{0});
+            for (std::int64_t k = 0; k < n; ++k) {
+                const std::int64_t denom = rem + k * q;
+                shiftSum =
+                    shiftSum - Rational(q * q, BigInt(denom * denom));
+            }
+            const Expr lead =
+                (q == 1)
+                    ? c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))),
+                             pi2})
+                    : c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))),
+                             pi2});
+            return shiftSum.isZero()
+                       ? lead
+                       : c.add({c.number(shiftSum), lead});
         }
     }
 
@@ -885,6 +1271,9 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             (fn == "cosh" && innerFn == "acosh") ||
             (fn == "tanh" && innerFn == "atanh")) {
             return u;
+        }
+        if (fn == "exp" && (innerFn == "lgamma" || innerFn == "loggamma")) {
+            return simplifyFuncNode(c, c.func("gamma", u));
         }
         if (((fn == "asinh" && innerFn == "sinh") ||
              (fn == "atanh" && innerFn == "tanh")) &&

@@ -804,5 +804,70 @@ TEST(SeriesTest, PropertyPadeAndMultivariateTaylor)
     }
 }
 
+TEST(SeriesTest, GammaDigammaLaurentResidueAndPolygammaSymsum)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr k = c.symbol("k");
+    const Expr n = c.symbol("n");
+
+    // 1. Taylor/Laurent expansions and residues of gamma, lgamma, digamma
+    const Expr tLg = taylor(c, parseExpr(c, "lgamma(1 + x)"), x, c.zero(), 2);
+    ASSERT_FALSE(tLg.isNull());
+    EXPECT_TRUE(exprEq(c, tLg, parseExpr(c, "-euler_gamma*x + pi^2/12*x^2")));
+
+    const Expr tGam = taylor(c, parseExpr(c, "gamma(1 + x)"), x, c.zero(), 2);
+    ASSERT_FALSE(tGam.isNull());
+    EXPECT_TRUE(exprEq(
+        c, tGam,
+        parseExpr(c, "1 - euler_gamma*x + (1/2*euler_gamma^2 + pi^2/12)*x^2")));
+
+    const Expr lGam0 = laurent(c, parseExpr(c, "gamma(x)"), x, c.zero(), 1);
+    ASSERT_FALSE(lGam0.isNull());
+    EXPECT_TRUE(exprEq(
+        c, lGam0,
+        parseExpr(c, "1/x - euler_gamma + (1/2*euler_gamma^2 + pi^2/12)*x")));
+
+    const Expr lPsi0 = laurent(c, parseExpr(c, "digamma(x)"), x, c.zero(), 1);
+    ASSERT_FALSE(lPsi0.isNull());
+    EXPECT_TRUE(
+        exprEq(c, lPsi0, parseExpr(c, "-1/x - euler_gamma + pi^2/6*x")));
+
+    EXPECT_EQ(residue(c, parseExpr(c, "gamma(x)"), x, c.zero()), c.one());
+    EXPECT_EQ(residue(c, parseExpr(c, "gamma(x)"), x, c.number(-1)),
+              c.number(-1));
+    EXPECT_EQ(residue(c, parseExpr(c, "gamma(x)"), x, c.number(-2)),
+              c.number(Rational(1, BigInt(2))));
+    EXPECT_EQ(residue(c, parseExpr(c, "gamma(x)"), x, c.number(-3)),
+              c.number(Rational(-1, BigInt(6))));
+    EXPECT_EQ(residue(c, parseExpr(c, "digamma(x)"), x, c.number(-2)),
+              c.number(-1));
+
+    const LimitResult limGam =
+        limit(c, parseExpr(c, "(gamma(1 + x) - 1)/x"), x, c.zero());
+    ASSERT_TRUE(limGam.proved());
+    EXPECT_EQ(limGam.value, parseExpr(c, "-euler_gamma"));
+
+    // 2. Closed-form finite rational sums via digamma and trigamma
+    const SymSumResult sHarm =
+        symsum(c, parseExpr(c, "1/k"), k, c.one(), n);
+    ASSERT_TRUE(sHarm.proved()) << sHarm.reason;
+    EXPECT_TRUE(
+        exprEq(c, sHarm.value, parseExpr(c, "digamma(n + 1) + euler_gamma")));
+
+    const SymSumResult sSq =
+        symsum(c, parseExpr(c, "1/k^2"), k, c.one(), n);
+    ASSERT_TRUE(sSq.proved()) << sSq.reason;
+    EXPECT_TRUE(
+        exprEq(c, sSq.value, parseExpr(c, "pi^2/6 - trigamma(n + 1)")));
+
+    const SymSumResult sOdd =
+        symsum(c, parseExpr(c, "1/(2*k - 1)"), k, c.one(), n);
+    ASSERT_TRUE(sOdd.proved()) << sOdd.reason;
+    EXPECT_TRUE(exprEq(
+        c, sOdd.value,
+        parseExpr(c, "1/2*digamma(n + 1/2) + 1/2*euler_gamma + log(2)")));
+}
+
 } // namespace
 } // namespace numkit::cas

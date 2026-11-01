@@ -1823,7 +1823,75 @@ TEST_F(RatIntTest, DilogarithmIdentitiesIndefiniteAndDefinite)
     }
 }
 
+TEST_F(RatIntTest, EulerGammaBetaAndWallisDefiniteIntegrals)
+{
+    struct EulerCase
+    {
+        const char *f;
+        const char *a;
+        const char *b;
+        const char *expected;
+    };
+    const EulerCase cases[] = {
+        // 1. Euler Beta integrals of the 1st kind on [0, 1]
+        {"x^(1/2)*(1 - x)^(1/2)", "0", "1", "1/8*pi"},
+        {"x^(-1/3)*(1 - x)^(-2/3)", "0", "1", "2*3^(-1/2)*pi"},
+        {"x^(-1/4)*(1 - x)^(-3/4)", "0", "1", "2^(1/2)*pi"},
+        {"x^(1/2)*(1 - x^2)^(1/2)", "0", "1", "1/2*gamma(3/4)*gamma(3/2)/gamma(9/4)"},
+        {"x^2*log(x)^3", "0", "1", "-2/27"},
 
+        // 2. Euler Beta integrals of the 2nd kind on [0, inf)
+        {"x^(-1/3)/(1 + x)", "0", "inf", "2*3^(-1/2)*pi"},
+        {"x^(1/2)/(1 + x)^2", "0", "inf", "1/2*pi"},
+        {"x^(1/2)/(1 + x^2)", "0", "inf", "1/2*2^(1/2)*pi"},
 
+        // 3. Euler Gamma and log-Gamma integrals on [0, inf)
+        {"x^(1/2)*exp(-x)", "0", "inf", "1/2*pi^(1/2)"},
+        {"x^3*exp(-2*x)", "0", "inf", "3/8"},
+        {"exp(-x)*log(x)", "0", "inf", "-euler_gamma"},
+        {"x*exp(-x)*log(x)", "0", "inf", "1 - euler_gamma"},
+        {"exp(-x)*log(x)^2", "0", "inf", "euler_gamma^2 + 1/6*pi^2"},
+        {"exp(-x^3)", "0", "inf", "1/3*gamma(1/3)"},
 
+        // 4. Wallis / Trigonometric Beta integrals on [0, pi/2]
+        {"sin(x)^(1/2)*cos(x)^(1/2)", "0", "pi/2", "pi^(-1/2)*gamma(3/4)^2"},
+        {"tan(x)^(1/2)", "0", "pi/2", "1/2*2^(1/2)*pi"},
+    };
+
+    for (const auto &tc : cases) {
+        const Expr f = numkit::cas::parseExpr(c, tc.f);
+        const Expr a = numkit::cas::parseExpr(c, tc.a);
+        const Expr b = numkit::cas::parseExpr(c, tc.b);
+        const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
+        const numkit::cas::DefiniteIntegral r =
+            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        ASSERT_TRUE(r.proved())
+            << "Euler/Beta definiteIntegrate failed for " << tc.f << " on ["
+            << tc.a << ", " << tc.b << "]: " << r.reason;
+        EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
+            << "for " << tc.f << " on [" << tc.a << ", " << tc.b << "]: got "
+            << c.toString(r.value) << ", expected " << c.toString(expVal);
+    }
+
+    // Symbolic parameter Gamma/Beta integrals under AssumeDomain::Positive
+    c.assume("s", numkit::cas::AssumeDomain::Positive);
+    c.assume("p", numkit::cas::AssumeDomain::Positive);
+    c.assume("q", numkit::cas::AssumeDomain::Positive);
+    const auto symGam = numkit::cas::definiteIntegrate(
+        c, numkit::cas::parseExpr(c, "x^(s - 1)*exp(-x)"), x, c.zero(),
+        numkit::cas::parseExpr(c, "inf"));
+    ASSERT_TRUE(symGam.proved()) << symGam.reason;
+    EXPECT_EQ(symGam.value, numkit::cas::parseExpr(c, "gamma(s)"));
+
+    const auto symBeta = numkit::cas::definiteIntegrate(
+        c, numkit::cas::parseExpr(c, "x^(p - 1)*(1 - x)^(q - 1)"), x, c.zero(),
+        c.one());
+    ASSERT_TRUE(symBeta.proved()) << symBeta.reason;
+    EXPECT_EQ(c.simplify(c.add(
+                  {symBeta.value,
+                   c.neg(numkit::cas::parseExpr(
+                       c, "gamma(p)*gamma(q)/gamma(p + q)"))})),
+              c.zero());
+    c.clearAssumptions();
+}
 

@@ -428,6 +428,11 @@
 56. ✅ (v0.6-пул, Эшелон 6) Уравнения Эйлера–Коши, уравнения в полных дифференциалах с интегрирующим множителем и линейные ОДУ $N$-го порядка (`dsolve2EulerCauchy` / `dsolve2EulerCauchyIVP`, расширение `dsolve1` однородными и точными ОДУ с интегрирующими множителями $\mu(x)$ и $\mu(y)$, `dsolveNLinear` / `dsolveNLinearIVP` в `ode/dsolve`).
 57. ✅ (v0.6-пул, Эшелон 6) Аппроксимации Паде `pade(c, f, var, x0, m, n)` с сертификатом совпадения ряда Тейлора до порядка $m+n$ и многомерный ряд Тейлора `mtaylor` (`core/series` + CLI `nkcas pade`).
 58. ✅ Релизная отсечка `v0.6.0` (Эшелон 6 завершён: `CHANGELOG.md`, `CMakeLists.txt` `VERSION 0.6.0`, `README.md`, `AGENTS.md`, `tools/vendor_sync.py`, 272/272 тестов Release за 31.3 с, тег `v0.6.0`).
+59. ✅ (v0.7-пул, Эшелон 7) Гамма-, лог-гамма-, дигамма- и тригамма-функции (`gamma`, `lgamma`, `digamma` / `psi`, `trigamma`), постоянная Эйлера–Маскерони `euler_gamma` сквозь всё ядро (`diff`, `evalExact`/`evalDouble`, `simplify`, `taylor`/`laurent`/`residue`), замкнутые суммы рациональных дробей через $\psi$ и $\psi_1$ в `symsum` и интегралы Эйлера 1-го и 2-го рода (Бета, Валлиса, обобщённые Гамма и логарифмически-степенные) в `definiteIntegrate`.
+60. ⬜ (v0.7-пул, Эшелон 7) Двустороннее преобразование Фурье `fourier` / `ifourier` с круговым сертификатом (`transform/fourier` + CLI `nkcas fourier` / `nkcas ifourier`).
+61. ⬜ (v0.7-пул, Эшелон 7) Векторный анализ (`divergence`, `curl`, `laplacian`, `wronskian`, `scalarPotential` с сертификатом $\operatorname{gradient}(\varphi) \equiv \mathbf{F}$ в `linalg/symmatrix`) и уравнения Риккати, Клеро и нелинейные ОДУ 2-го порядка с понижением порядка (`dsolve2Nonlinear` в `ode/dsolve`).
+62. ⬜ (v0.7-пул, Эшелон 7) Базисы Грёбнера (алгоритм Бухбергера в $\mathbb{Q}[x_1, \dots, x_k]$ с порядками `Lex` и `GrevLex`, редукция `polyReduceMulti`) и решатель нелинейных полиномиальных систем от $N$ переменных (`poly/groebner`, `solveSystem` в `core/symsolve`).
+63. ⬜ Релизная отсечка `v0.7.0` (Эшелон 7 завершён).
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
 
@@ -2722,5 +2727,22 @@ MATLAB Symbolic Math Toolbox (три эшелона):
 - Проверен `tools/vendor_sync.py --dry-run` (22 публичных заголовка и 24 файла реализации).
 - Полный прогон `ctest --test-dir build/msvc -C Release`: **272/272 тестов пройдено за 31.32 с** (100%).
 - Выставлен аннотированный тег `v0.6.0` и синхронизирован с основным репозиторием `git@github.com:numkit/cas.git`.
+
+
+## 2026-11-01: Реализация пункта 59 — Гамма-, лог-гамма-, дигамма- и тригамма-функции, суммы через $\psi$/$\psi_1$ и интегралы Эйлера в `definiteIntegrate`
+
+Реализован первый пакет Эшелона 7 (пул `v0.7.0`):
+
+1. **Гамма-семейство (`gamma`, `lgamma`/`loggamma`, `digamma`/`psi`, `trigamma`) и постоянная Эйлера–Маскерони `euler_gamma` в ядре (`src/core/diff.cpp`, `src/core/expr.cpp`, `src/core/simplify.cpp`)**:
+   - Производные: $\frac{d}{dx}\Gamma(u) = \Gamma(u)\psi(u)u'$, $\frac{d}{dx}\operatorname{lgamma}(u) = \psi(u)u'$, $\frac{d}{dx}\psi(u) = \psi_1(u)u'$.
+   - `evalExact` и `evalDouble`: точные факториальные значения $\Gamma(n) = (n-1)!$, $\operatorname{lgamma}(1) = \operatorname{lgamma}(2) = 0$; численное IEEE-754 вычисление `euler_gamma`, `lgamma`, `digamma` и `trigamma` через сдвиг рекуррентностью к $x \ge 10$, формулу отражения Эйлера при $x < 0$ и асимптотический ряд Бернулли.
+   - `simplify`: полуцелые значения $\Gamma(n + 1/2) = \frac{(2n-1)!!}{2^n}\sqrt{\pi}$ и $\Gamma(1/2 - n) = \frac{(-2)^n}{(2n-1)!!}\sqrt{\pi}$, теорема Гаусса о дигамма-функции для знаменателей $q \in \{1, 2, 3, 4\}$, значения $\psi_1(n)$ и $\psi_1(n + 1/2)$, сокращение целочисленных сдвигов $\Gamma(u + m)/\Gamma(u)$, формула дополнения Эйлера $\Gamma(u)\Gamma(v) \to \frac{\pi}{\sin(\pi u)}\prod(1 - u + k)$ при $u + v \in \mathbb{Z}$ и сдвиг $\mathbb{Z}$-косетов $\psi(v_0 + m)$ и $\psi_1(v_0 + m)$ к минимальному аргументу косета.
+
+2. **Ряды Лорана, вычеты в целых неположительных полюсах и замкнутое суммирование через $\psi$ и $\psi_1$ (`src/core/series.cpp`)**:
+   - В `evalFuncSeries` добавлены разложения `gamma`, `factorial`, `lgamma`, `digamma` и `trigamma` в целых точках $m \ge 1$ и неположительных целых полюсах $m = -n \le 0$ ($\operatorname{Res}_{z=-n}\Gamma(z) = \frac{(-1)^n}{n!}$, $\operatorname{Res}_{z=-n}\psi(z) = -1$).
+   - В `discreteAntidiff` / `symsum` для конечных символьных сумм $\sum_{k=a}^b R(k)$ при ненулевой сумме вычетов $\mathbb{Z}$-косета полюсов порядка $p = 1$ или $p = 2$ выделяется рациональная телескопирующая часть и добавляется $\text{sumC}\cdot\psi(k - r_{\max})$ ($p = 1$) либо $-\text{sumC}\cdot\psi_1(k - r_{\max})$ ($p = 2$) с автоматической сертификацией `certifyDiscreteAntidiff`.
+
+3. **Определённые интегралы Эйлера 1-го и 2-го рода и Валлиса (`src/integrate/ratint.cpp`)**:
+   - В `definiteIntegrate` добавлен решатель `tryEulerGammaBetaDefiniteIntegral` для бета-интегралов 1-го рода $\int_0^1 x^\alpha(1 - x^m)^\beta(\log x)^k\,dx$, бета-интегралов 2-го рода $\int_0^\infty \frac{x^\alpha}{(c_0 + c_1 x^m)^\gamma}\,dx$, обобщённых гамма- и лог-гамма-интегралов $\int_0^\infty x^\alpha e^{-a x^q}(\log x)^k\,dx$ ($k \in \{0, 1, 2\}$) и тригонометрических интегралов Валлиса $\int_0^{\pi/2}\sin^\alpha(x)\cos^\beta(x)\,dx$.
 
 

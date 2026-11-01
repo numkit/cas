@@ -834,6 +834,160 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
         out = addSeries(c, makeConstSeries(c, f0, L), intPart);
         return true;
     }
+    if (fn == "factorial") {
+        const Laurent argPlus1 =
+            addSeries(c, arg, makeConstSeries(c, c.one(), L));
+        return evalFuncSeries(c, "gamma", argPlus1, out, positiveT);
+    }
+    if (fn == "gamma" || fn == "lgamma" || fn == "loggamma" ||
+        fn == "digamma" || fn == "psi" || fn == "trigamma") {
+        std::int64_t m = 0;
+        if (!c0.isNull() && c.kind(c0) == NodeKind::Number &&
+            c.numberValue(c0).den() == BigInt(1) &&
+            c.numberValue(c0).num().fitsInt64(m) && m >= -12 && m <= 12) {
+            const Expr eg = c.symbol("euler_gamma");
+            const Expr pi2 = c.pow(c.symbol("pi"), c.number(std::int64_t{2}));
+            const Expr pi2Over6 = c.mul(
+                {c.number(Rational(std::int64_t{1}, BigInt(6))), pi2});
+            const Expr pi2Over12 = c.mul(
+                {c.number(Rational(std::int64_t{1}, BigInt(12))), pi2});
+
+            auto buildLgamma1PlusU = [&](Laurent &lgOut) {
+                const int degCap = std::min(L, 2);
+                Laurent uCap = u;
+                uCap.maxDeg = std::min(uCap.maxDeg, degCap);
+                normalizeSeries(c, uCap);
+                const Laurent u2Cap = mulSeries(c, uCap, uCap);
+                lgOut = addSeries(
+                    c, scaleSeries(c, uCap, c.neg(eg)),
+                    scaleSeries(c, u2Cap, pi2Over12));
+            };
+            auto buildDigamma1PlusU = [&](Laurent &psiOut) {
+                const int degCap = std::min(L, 1);
+                Laurent uCap = u;
+                uCap.maxDeg = std::min(uCap.maxDeg, degCap);
+                normalizeSeries(c, uCap);
+                psiOut = addSeries(
+                    c, makeConstSeries(c, c.neg(eg), degCap),
+                    scaleSeries(c, uCap, pi2Over6));
+            };
+
+            if (m >= 1) {
+                if (fn == "lgamma" || fn == "loggamma") {
+                    Laurent acc;
+                    buildLgamma1PlusU(acc);
+                    for (std::int64_t k = 1; k < m; ++k) {
+                        Laurent logK;
+                        if (!evalFuncSeries(
+                                c, "log",
+                                addSeries(c, makeConstSeries(c, c.number(k), L), u),
+                                logK, positiveT))
+                            return false;
+                        acc = addSeries(c, acc, logK);
+                    }
+                    out = acc;
+                    return true;
+                }
+                if (fn == "gamma") {
+                    Laurent lg1, acc;
+                    buildLgamma1PlusU(lg1);
+                    if (!evalFuncSeries(c, "exp", lg1, acc, positiveT))
+                        return false;
+                    for (std::int64_t k = 1; k < m; ++k) {
+                        acc = mulSeries(
+                            c, acc,
+                            addSeries(c, makeConstSeries(c, c.number(k), L), u));
+                    }
+                    out = acc;
+                    return true;
+                }
+                if (fn == "digamma" || fn == "psi") {
+                    Laurent acc;
+                    buildDigamma1PlusU(acc);
+                    for (std::int64_t k = 1; k < m; ++k) {
+                        Laurent invK;
+                        if (!invSeries(
+                                c,
+                                addSeries(c, makeConstSeries(c, c.number(k), L), u),
+                                invK))
+                            return false;
+                        acc = addSeries(c, acc, invK);
+                    }
+                    out = acc;
+                    return true;
+                }
+                // trigamma at m >= 1: pi^2/6 - sum_{k=1}^{m-1} (k + u)^(-2) + O(u)
+                Laurent acc = makeConstSeries(c, pi2Over6, std::min(L, 0));
+                for (std::int64_t k = 1; k < m; ++k) {
+                    Laurent invK;
+                    if (!invSeries(
+                            c,
+                            addSeries(c, makeConstSeries(c, c.number(k), L), u),
+                            invK))
+                        return false;
+                    const Laurent invK2 = mulSeries(c, invK, invK);
+                    acc = addSeries(
+                        c, acc,
+                        scaleSeries(c, invK2, c.number(std::int64_t{-1})));
+                }
+                out = acc;
+                return true;
+            }
+
+            // Non-positive integer pole m = -n <= 0
+            if (fn == "lgamma" || fn == "loggamma" || u.coeffs.empty())
+                return false;
+            const std::int64_t n = -m;
+            if (fn == "gamma") {
+                Laurent lg1, g1;
+                buildLgamma1PlusU(lg1);
+                if (!evalFuncSeries(c, "exp", lg1, g1, positiveT))
+                    return false;
+                Laurent den = u;
+                for (std::int64_t k = 1; k <= n; ++k) {
+                    den = mulSeries(
+                        c, den,
+                        addSeries(c, makeConstSeries(c, c.number(-k), L), u));
+                }
+                Laurent invDen;
+                if (!invSeries(c, den, invDen))
+                    return false;
+                out = mulSeries(c, g1, invDen);
+                return true;
+            }
+            if (fn == "digamma" || fn == "psi") {
+                Laurent acc;
+                buildDigamma1PlusU(acc);
+                for (std::int64_t k = 0; k <= n; ++k) {
+                    Laurent step =
+                        k == 0 ? u
+                               : addSeries(c, makeConstSeries(c, c.number(-k), L),
+                                           u);
+                    Laurent invStep;
+                    if (!invSeries(c, step, invStep))
+                        return false;
+                    acc = addSeries(
+                        c, acc,
+                        scaleSeries(c, invStep, c.number(std::int64_t{-1})));
+                }
+                out = acc;
+                return true;
+            }
+            // trigamma at m = -n <= 0: pi^2/6 + sum_{k=0}^n (u - k)^(-2) + O(u)
+            Laurent acc = makeConstSeries(c, pi2Over6, std::min(L, 0));
+            for (std::int64_t k = 0; k <= n; ++k) {
+                Laurent step =
+                    k == 0 ? u
+                           : addSeries(c, makeConstSeries(c, c.number(-k), L), u);
+                Laurent invStep;
+                if (!invSeries(c, step, invStep))
+                    return false;
+                acc = addSeries(c, acc, mulSeries(c, invStep, invStep));
+            }
+            out = acc;
+            return true;
+        }
+    }
     return false;
 }
 
@@ -1878,7 +2032,7 @@ Expr polyDiscreteAntidiff(Ctx &c, const std::vector<Expr> &pCoeffs, Expr var)
 }
 
 bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
-                      Expr *geomRatioOut = nullptr)
+                      Expr *geomRatioOut = nullptr, bool allowPolygamma = false)
 {
     if (!checkSeriesBudget(c, budget))
         return false;
@@ -2085,15 +2239,23 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                             maxRoot = poleTerms[j].root;
                     }
                 }
-                if (!sumCoeff.isZero()) {
-                    canTelescope = false;
-                    break;
-                }
                 const int p = poleTerms[i].order;
                 const Expr baseL =
                     maxRoot.isZero()
                         ? var
                         : c.add({var, c.number(-maxRoot)});
+                if (!sumCoeff.isZero()) {
+                    if (allowPolygamma && p == 1) {
+                        gPieces.push_back(c.mul(
+                            {c.number(sumCoeff), c.func("digamma", baseL)}));
+                    } else if (allowPolygamma && p == 2) {
+                        gPieces.push_back(c.mul(
+                            {c.number(-sumCoeff), c.func("trigamma", baseL)}));
+                    } else {
+                        canTelescope = false;
+                        break;
+                    }
+                }
                 for (std::size_t idx : group) {
                     const Rational shiftRat = maxRoot - poleTerms[idx].root;
                     std::int64_t s = 0;
@@ -2183,7 +2345,8 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
         pieces.reserve(c.childCount(fExp));
         for (std::size_t i = 0; i < c.childCount(fExp); ++i) {
             Expr gi;
-            if (!discreteAntidiff(c, c.child(fExp, i), var, budget, gi))
+            if (!discreteAntidiff(c, c.child(fExp, i), var, budget, gi, nullptr,
+                                  allowPolygamma))
                 return false;
             pieces.push_back(gi);
         }
@@ -2251,7 +2414,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         }
 
         Expr G;
-        if (discreteAntidiff(c, f, var, budget, G)) {
+        if (discreteAntidiff(c, f, var, budget, G, nullptr, !hasIntSpan)) {
             const Expr gB1 =
                 safeSubsAndFold(c, G, var, c.add({b, c.one()}));
             const Expr gA = safeSubsAndFold(c, G, var, a);

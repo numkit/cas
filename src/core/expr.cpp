@@ -614,6 +614,146 @@ void Ctx::print(Expr e, std::string &out) const
     printPrec(e, out, 0);
 }
 
+namespace {
+
+bool bernoulliExact(std::int64_t n, Rational &out)
+{
+    if (n < 0 || n > 60)
+        return false;
+    if (n == 0) {
+        out = Rational(1);
+        return true;
+    }
+    if (n == 1) {
+        out = Rational(-1, BigInt(2));
+        return true;
+    }
+    if (n % 2 != 0) {
+        out = Rational(0);
+        return true;
+    }
+    // Akiyama-Tanigawa algorithm for B_n (with B_1 = -1/2 since n >= 2 is even).
+    std::vector<Rational> a(static_cast<std::size_t>(n + 1));
+    for (std::int64_t m = 0; m <= n; ++m) {
+        a[static_cast<std::size_t>(m)] = Rational(1, BigInt(m + 1));
+        for (std::int64_t j = m; j >= 1; --j) {
+            const std::size_t idx = static_cast<std::size_t>(j - 1);
+            a[idx] = Rational(j) * (a[idx] - a[idx + 1]);
+        }
+    }
+    out = a[0];
+    return true;
+}
+
+bool eulerExact(std::int64_t n, Rational &out)
+{
+    if (n < 0 || n > 40)
+        return false;
+    if (n == 0) {
+        out = Rational(1);
+        return true;
+    }
+    if (n % 2 != 0) {
+        out = Rational(0);
+        return true;
+    }
+    const std::int64_t mMax = n / 2;
+    std::vector<BigInt> eEven(static_cast<std::size_t>(mMax + 1), BigInt(0));
+    eEven[0] = BigInt(1);
+    for (std::int64_t m = 1; m <= mMax; ++m) {
+        BigInt sum(0);
+        BigInt binom(1);
+        for (std::int64_t k = 0; k < m; ++k) {
+            if (k > 0) {
+                binom = (binom * BigInt(2 * m - 2 * k + 2) *
+                         BigInt(2 * m - 2 * k + 1)) /
+                        (BigInt(2 * k - 1) * BigInt(2 * k));
+            }
+            sum = sum + binom * eEven[static_cast<std::size_t>(k)];
+        }
+        eEven[static_cast<std::size_t>(m)] = -sum;
+    }
+    out = Rational(eEven[static_cast<std::size_t>(mMax)], BigInt(1));
+    return true;
+}
+
+bool evalBernoulliPolyExact(std::int64_t n, const Rational &x, Rational &out)
+{
+    if (n < 0 || n > 40)
+        return false;
+    Rational sum(0);
+    BigInt binom(1);
+    for (std::int64_t k = 0; k <= n; ++k) {
+        if (k > 0)
+            binom = (binom * BigInt(n - k + 1)) / BigInt(k);
+        Rational bk;
+        if (!bernoulliExact(k, bk))
+            return false;
+        if (!bk.isZero()) {
+            sum = sum + Rational(binom, BigInt(1)) * bk *
+                            Rational::powUInt(
+                                x, static_cast<std::uint64_t>(n - k));
+        }
+    }
+    out = sum;
+    return true;
+}
+
+bool evalEulerPolyExact(std::int64_t n, const Rational &x, Rational &out)
+{
+    if (n < 0 || n > 40)
+        return false;
+    const Rational xShift = x - Rational(1, BigInt(2));
+    Rational sum(0);
+    BigInt binom(1);
+    for (std::int64_t k = 0; k <= n; ++k) {
+        if (k > 0)
+            binom = (binom * BigInt(n - k + 1)) / BigInt(k);
+        Rational ek;
+        if (!eulerExact(k, ek))
+            return false;
+        if (!ek.isZero()) {
+            const BigInt twoPow =
+                BigInt::powUInt(BigInt(2), static_cast<std::size_t>(k));
+            sum = sum + Rational(binom, twoPow) * ek *
+                            Rational::powUInt(
+                                xShift, static_cast<std::uint64_t>(n - k));
+        }
+    }
+    out = sum;
+    return true;
+}
+
+bool evalPolylogNegIntExact(std::int64_t m, const Rational &z, Rational &out)
+{
+    if (m < 0 || m > 20 || z == Rational(1))
+        return false;
+    const Rational den =
+        Rational::powUInt(Rational(1) - z, static_cast<std::uint64_t>(m + 1));
+    if (m == 0) {
+        out = z / den;
+        return true;
+    }
+    std::vector<BigInt> eul(static_cast<std::size_t>(m), BigInt(0));
+    eul[0] = BigInt(1);
+    for (std::int64_t i = 2; i <= m; ++i) {
+        for (std::int64_t k = i - 1; k >= 1; --k) {
+            eul[static_cast<std::size_t>(k)] =
+                BigInt(k + 1) * eul[static_cast<std::size_t>(k)] +
+                BigInt(i - k) * eul[static_cast<std::size_t>(k - 1)];
+        }
+    }
+    Rational num(0);
+    for (std::int64_t k = 0; k < m; ++k) {
+        num = num + Rational(eul[static_cast<std::size_t>(k)], BigInt(1)) *
+                        Rational::powUInt(z, static_cast<std::uint64_t>(m - k));
+    }
+    out = num / den;
+    return true;
+}
+
+} // namespace
+
 bool Ctx::evalExact(
     Expr e, const std::vector<std::pair<std::string, Rational>> &vals,
     Rational &out)
@@ -639,9 +779,14 @@ bool Ctx::evalExact(
         const Rational zero(0), one(1);
         if (childCount(e) == 2) {
             Rational nVal, xVal;
-            if (!evalExact(child(e, 0), vals, nVal))
-                return false;
+            const bool hasN = evalExact(child(e, 0), vals, nVal);
             const bool hasX = evalExact(child(e, 1), vals, xVal);
+            if (name == "polylog" && hasX && xVal == zero) {
+                out = zero;
+                return true;
+            }
+            if (!hasN)
+                return false;
             if (name == "ellipticF" || name == "ellipticEInc" ||
                 name == "ellipticE") {
                 if (nVal == zero) {
@@ -761,11 +906,65 @@ bool Ctx::evalExact(
                 out = lCur;
                 return true;
             }
+            if (name == "bernoulliB")
+                return evalBernoulliPolyExact(n, xVal, out);
+            if (name == "eulerE")
+                return evalEulerPolyExact(n, xVal, out);
+            if (name == "polylog" && n <= 0)
+                return evalPolylogNegIntExact(-n, xVal, out);
             return false;
         }
         Rational a;
         if (!evalExact(child(e, 0), vals, a))
             return false;
+        if (name == "bernoulliB" && a.den() == BigInt(1)) {
+            std::int64_t k = 0;
+            if (a.num().fitsInt64(k))
+                return bernoulliExact(k, out);
+            return false;
+        }
+        if (name == "eulerE" && a.den() == BigInt(1)) {
+            std::int64_t k = 0;
+            if (a.num().fitsInt64(k))
+                return eulerExact(k, out);
+            return false;
+        }
+        if (name == "zeta" && a.den() == BigInt(1)) {
+            std::int64_t s = 0;
+            if (a.num().fitsInt64(s) && s <= 0 && s >= -59) {
+                if (s == 0) {
+                    out = Rational(-1, BigInt(2));
+                    return true;
+                }
+                const std::int64_t m = -s;
+                Rational bVal;
+                if (!bernoulliExact(m + 1, bVal))
+                    return false;
+                const Rational sgn(m % 2 == 0 ? 1 : -1);
+                out = sgn * bVal / Rational(m + 1);
+                return true;
+            }
+            return false;
+        }
+        if (name == "dirichletEta" && a.den() == BigInt(1)) {
+            std::int64_t s = 0;
+            if (a.num().fitsInt64(s) && s <= 0 && s >= -59) {
+                if (s == 0) {
+                    out = Rational(1, BigInt(2));
+                    return true;
+                }
+                const std::int64_t m = -s;
+                Rational bVal;
+                if (!bernoulliExact(m + 1, bVal))
+                    return false;
+                const BigInt twoPow =
+                    BigInt::powUInt(BigInt(2), static_cast<std::size_t>(m + 1));
+                const Rational sgn(m % 2 == 0 ? -1 : 1);
+                out = sgn * Rational(twoPow - BigInt(1), BigInt(m + 1)) * bVal;
+                return true;
+            }
+            return false;
+        }
         if (name == "sqrt" && (a == zero || a == one)) { out = a; return true; }
         if (name == "exp" && a == zero) { out = one; return true; }
         if (name == "log" && a == one) { out = zero; return true; }
@@ -1954,6 +2153,213 @@ bool evalElliptic2ArgDouble(const std::string &fn, double a0, double a1,
     return false;
 }
 
+bool evalZetaDouble(double s, double &out)
+{
+    if (!std::isfinite(s) || s == 1.0)
+        return false;
+    if (s == 0.0) {
+        out = -0.5;
+        return true;
+    }
+    if (s < 0.0 && std::floor(s) == s) {
+        const std::int64_t m = static_cast<std::int64_t>(-s);
+        if (m % 2 == 0) {
+            out = 0.0;
+            return true;
+        }
+    }
+    if (s < 0.5) {
+        double zComp = 0.0;
+        if (!evalZetaDouble(1.0 - s, zComp))
+            return false;
+        out = std::pow(2.0, s) * std::pow(kPiDouble, s - 1.0) *
+              std::sin(0.5 * kPiDouble * s) * std::tgamma(1.0 - s) * zComp;
+        return std::isfinite(out);
+    }
+    // Euler-Maclaurin summation with N = 16 and 8 Bernoulli correction terms.
+    static constexpr double kB2kOverFact[8] = {
+        (1.0 / 6.0) / 2.0,
+        (-1.0 / 30.0) / 24.0,
+        (1.0 / 42.0) / 720.0,
+        (-1.0 / 30.0) / 40320.0,
+        (5.0 / 66.0) / 3628800.0,
+        (-691.0 / 2730.0) / 479001600.0,
+        (7.0 / 6.0) / 87178291200.0,
+        (-3617.0 / 510.0) / 20922789888000.0};
+    constexpr int N = 16;
+    double sum = 0.0;
+    for (int n = 1; n < N; ++n)
+        sum += std::pow(static_cast<double>(n), -s);
+    const double nD = static_cast<double>(N);
+    const double nPowNegS = std::pow(nD, -s);
+    sum += (nD * nPowNegS) / (s - 1.0) + 0.5 * nPowNegS;
+
+    const double invN2 = 1.0 / (nD * nD);
+    double poch = s;
+    double nFactor = nPowNegS / nD;
+    for (int k = 1; k <= 8; ++k) {
+        if (k > 1) {
+            poch *= (s + static_cast<double>(2 * k - 3)) *
+                    (s + static_cast<double>(2 * k - 2));
+            nFactor *= invN2;
+        }
+        const double contrib = kB2kOverFact[k - 1] * poch * nFactor;
+        sum += contrib;
+        if (std::abs(contrib) <= 1e-16 * std::abs(sum))
+            break;
+    }
+    out = sum;
+    return std::isfinite(out);
+}
+
+bool evalDirichletEtaDouble(double s, double &out)
+{
+    if (!std::isfinite(s))
+        return false;
+    if (s == 1.0) {
+        out = std::log(2.0);
+        return true;
+    }
+    double z = 0.0;
+    if (!evalZetaDouble(s, z))
+        return false;
+    out = (1.0 - std::pow(2.0, 1.0 - s)) * z;
+    return std::isfinite(out);
+}
+
+bool evalPolylogDouble(double s, double z, double &out)
+{
+    if (!std::isfinite(s) || !std::isfinite(z) || z > 1.0)
+        return false;
+    if (z == 0.0) {
+        out = 0.0;
+        return true;
+    }
+    if (s == 2.0)
+        return evalDilogDouble(z, out);
+    if (s == 1.0) {
+        if (z >= 1.0)
+            return false;
+        out = -std::log(1.0 - z);
+        return std::isfinite(out);
+    }
+    if (z == 1.0) {
+        if (s <= 1.0)
+            return false;
+        return evalZetaDouble(s, out);
+    }
+    if (z == -1.0) {
+        double eta = 0.0;
+        if (!evalDirichletEtaDouble(s, eta))
+            return false;
+        out = -eta;
+        return std::isfinite(out);
+    }
+    if (s <= 0.0 && std::floor(s) == s) {
+        const std::int64_t m = static_cast<std::int64_t>(-s);
+        if (m == 0) {
+            out = z / (1.0 - z);
+            return std::isfinite(out);
+        }
+        if (m <= 20) {
+            std::vector<double> eul(static_cast<std::size_t>(m), 0.0);
+            eul[0] = 1.0;
+            for (std::int64_t i = 2; i <= m; ++i) {
+                for (std::int64_t k = i - 1; k >= 1; --k) {
+                    eul[static_cast<std::size_t>(k)] =
+                        static_cast<double>(k + 1) *
+                            eul[static_cast<std::size_t>(k)] +
+                        static_cast<double>(i - k) *
+                            eul[static_cast<std::size_t>(k - 1)];
+                }
+            }
+            double num = 0.0;
+            for (std::int64_t k = 0; k < m; ++k) {
+                num += eul[static_cast<std::size_t>(k)] *
+                       std::pow(z, static_cast<double>(m - k));
+            }
+            out = num / std::pow(1.0 - z, static_cast<double>(m + 1));
+            return std::isfinite(out);
+        }
+    }
+    if (std::abs(z) <= 0.75) {
+        double sum = 0.0;
+        double zPow = z;
+        for (int k = 1; k <= 160; ++k) {
+            const double contrib = zPow * std::pow(static_cast<double>(k), -s);
+            sum += contrib;
+            if (std::abs(contrib) <= 1e-16 * std::abs(sum))
+                break;
+            zPow *= z;
+        }
+        out = sum;
+        return std::isfinite(out);
+    }
+    if (z < 1.0 && z > -1.0) {
+        double sum = 0.0;
+        double zPow = z;
+        for (int k = 1; k <= 800; ++k) {
+            const double contrib = zPow * std::pow(static_cast<double>(k), -s);
+            sum += contrib;
+            if (std::abs(contrib) <= 1e-16 * std::abs(sum))
+                break;
+            zPow *= z;
+        }
+        out = sum;
+        return std::isfinite(out);
+    }
+    return false;
+}
+
+bool evalBernoulliEuler2ArgDouble(const std::string &fn, double nVal, double x,
+                                  double &out)
+{
+    if (!std::isfinite(nVal) || !std::isfinite(x) || std::floor(nVal) != nVal)
+        return false;
+    const std::int64_t n = static_cast<std::int64_t>(nVal);
+    if (n < 0 || n > 40)
+        return false;
+    if (fn == "bernoulliB") {
+        double sum = 0.0;
+        double binom = 1.0;
+        for (std::int64_t k = 0; k <= n; ++k) {
+            if (k > 0)
+                binom = (binom * static_cast<double>(n - k + 1)) /
+                        static_cast<double>(k);
+            Rational bk;
+            if (!bernoulliExact(k, bk))
+                return false;
+            if (!bk.isZero()) {
+                sum += binom * bk.toDouble() *
+                       std::pow(x, static_cast<double>(n - k));
+            }
+        }
+        out = sum;
+        return std::isfinite(out);
+    }
+    if (fn == "eulerE") {
+        const double xShift = x - 0.5;
+        double sum = 0.0;
+        double binom = 1.0;
+        for (std::int64_t k = 0; k <= n; ++k) {
+            if (k > 0)
+                binom = (binom * static_cast<double>(n - k + 1)) /
+                        static_cast<double>(k);
+            Rational ek;
+            if (!eulerExact(k, ek))
+                return false;
+            if (!ek.isZero()) {
+                sum += binom * ek.toDouble() *
+                       std::pow(2.0, -static_cast<double>(k)) *
+                       std::pow(xShift, static_cast<double>(n - k));
+            }
+        }
+        out = sum;
+        return std::isfinite(out);
+    }
+    return false;
+}
+
 bool evalDoubleRec(
     const Ctx &c, Expr e,
     const std::vector<std::pair<std::string, double>> &vals,
@@ -2083,6 +2489,10 @@ bool evalDoubleRec(
             } else if (fn == "ellipticF" || fn == "ellipticEInc" ||
                        fn == "ellipticE" || fn == "ellipticPi") {
                 if (!evalElliptic2ArgDouble(fn, a0, a1, res)) return false;
+            } else if (fn == "polylog") {
+                if (!evalPolylogDouble(a0, a1, res)) return false;
+            } else if (fn == "bernoulliB" || fn == "eulerE") {
+                if (!evalBernoulliEuler2ArgDouble(fn, a0, a1, res)) return false;
             } else {
                 return false;
             }
@@ -2215,6 +2625,18 @@ bool evalDoubleRec(
             if (!evalAiryDouble(fn, a, res)) return false;
         } else if (fn == "ellipticK" || fn == "ellipticE") {
             if (!evalElliptic1ArgDouble(fn, a, res)) return false;
+        } else if (fn == "zeta") {
+            if (!evalZetaDouble(a, res)) return false;
+        } else if (fn == "dirichletEta") {
+            if (!evalDirichletEtaDouble(a, res)) return false;
+        } else if (fn == "bernoulliB" || fn == "eulerE") {
+            if (std::floor(a) != a) return false;
+            Rational rVal;
+            const std::int64_t nInt = static_cast<std::int64_t>(a);
+            if (!(fn == "bernoulliB" ? bernoulliExact(nInt, rVal)
+                                     : eulerExact(nInt, rVal)))
+                return false;
+            res = rVal.toDouble();
         } else {
             return false;
         }
@@ -2362,6 +2784,40 @@ Expr Ctx::expand(Expr e)
                         }
                         return lCur;
                     }
+                } else if (fn == "bernoulliB" && n >= 0 && n <= 40) {
+                    std::vector<Expr> terms;
+                    BigInt binom(1);
+                    for (std::int64_t k = 0; k <= n; ++k) {
+                        if (k > 0)
+                            binom = (binom * BigInt(n - k + 1)) / BigInt(k);
+                        Rational bk;
+                        if (bernoulliExact(k, bk) && !bk.isZero()) {
+                            const Rational coef =
+                                Rational(binom, BigInt(1)) * bk;
+                            const Expr xPow = pow(xArg, number(n - k));
+                            terms.push_back(mul({number(coef), xPow}));
+                        }
+                    }
+                    return terms.empty() ? zero() : expand(add(terms));
+                } else if (fn == "eulerE" && n >= 0 && n <= 40) {
+                    const Expr xShift =
+                        add({xArg, number(Rational(-1, BigInt(2)))});
+                    std::vector<Expr> terms;
+                    BigInt binom(1);
+                    for (std::int64_t k = 0; k <= n; ++k) {
+                        if (k > 0)
+                            binom = (binom * BigInt(n - k + 1)) / BigInt(k);
+                        Rational ek;
+                        if (eulerExact(k, ek) && !ek.isZero()) {
+                            const BigInt twoPow = BigInt::powUInt(
+                                BigInt(2), static_cast<std::size_t>(k));
+                            const Rational coef =
+                                Rational(binom, twoPow) * ek;
+                            const Expr xPow = pow(xShift, number(n - k));
+                            terms.push_back(mul({number(coef), xPow}));
+                        }
+                    }
+                    return terms.empty() ? zero() : expand(add(terms));
                 }
             }
         }

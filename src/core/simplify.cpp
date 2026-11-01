@@ -756,6 +756,136 @@ Expr simplifyAddNode(Ctx &c, Expr e)
         }
     }
 
+    // 7. Bernoulli and Euler polynomial shift identities:
+    //    bernoulliB(n, x + 1) - bernoulliB(n, x) -> n * x^(n - 1)
+    //    eulerE(n, x + 1) + eulerE(n, x)         -> 2 * x^n
+    {
+        auto matchBEPoly = [&](Expr t, Expr &coefOut, std::string &fnOut,
+                               Expr &nOut, Expr &xOut) -> bool {
+            std::vector<Expr> facs;
+            if (c.kind(t) == NodeKind::Mul) {
+                for (std::size_t i = 0; i < c.childCount(t); ++i)
+                    facs.push_back(c.child(t, i));
+            } else {
+                facs.push_back(t);
+            }
+            Expr fnNode;
+            std::vector<Expr> rest;
+            for (const Expr &f : facs) {
+                if (fnNode.isNull() && c.kind(f) == NodeKind::Func &&
+                    c.childCount(f) == 2 &&
+                    (c.funcName(f) == "bernoulliB" ||
+                     c.funcName(f) == "eulerE")) {
+                    fnNode = f;
+                } else {
+                    rest.push_back(f);
+                }
+            }
+            if (fnNode.isNull())
+                return false;
+            coefOut = rest.empty() ? c.one() : c.mul(rest);
+            fnOut = c.funcName(fnNode);
+            nOut = c.child(fnNode, 0);
+            xOut = c.child(fnNode, 1);
+            return true;
+        };
+
+        bool changed = true;
+        while (changed && terms.size() >= 2) {
+            changed = false;
+            for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+                Expr cI, nI, xI;
+                std::string fnI;
+                if (!matchBEPoly(terms[i], cI, fnI, nI, xI))
+                    continue;
+                for (std::size_t j = 0; j < terms.size(); ++j) {
+                    if (j == i)
+                        continue;
+                    Expr cJ, nJ, xJ;
+                    std::string fnJ;
+                    if (!matchBEPoly(terms[j], cJ, fnJ, nJ, xJ) ||
+                        fnJ != fnI || !(nJ == nI))
+                        continue;
+                    const Expr xDiff =
+                        simplifyRationalExpr(c, c.add({xI, c.neg(xJ)}));
+                    if (xDiff != c.one())
+                        continue;
+                    if (fnI == "bernoulliB" &&
+                        c.isZero(simplifyRationalExpr(c, c.add({cI, cJ})))) {
+                        terms[i] = c.mul({
+                            cI, nI,
+                            c.pow(xJ, c.add({nI, c.number(std::int64_t{-1})}))});
+                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                        changed = true;
+                        break;
+                    }
+                    if (fnI == "eulerE" &&
+                        c.isZero(
+                            simplifyRationalExpr(c, c.add({cI, c.neg(cJ)})))) {
+                        terms[i] =
+                            c.mul({c.number(std::int64_t{2}), cI, c.pow(xJ, nI)});
+                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 8. Dirichlet eta - Riemann zeta relation:
+    //    dirichletEta(s) = (1 - 2^(1 - s)) * zeta(s) when both appear in a sum.
+    {
+        bool hasEta = false, hasZeta = false;
+        auto scanEtaZeta = [&](auto &self, Expr node) -> void {
+            if (node.isNull())
+                return;
+            if (c.kind(node) == NodeKind::Func && c.childCount(node) == 1) {
+                if (c.funcName(node) == "dirichletEta")
+                    hasEta = true;
+                else if (c.funcName(node) == "zeta")
+                    hasZeta = true;
+            }
+            for (std::size_t i = 0; i < c.childCount(node); ++i)
+                self(self, c.child(node, i));
+        };
+        for (const Expr &t : terms)
+            scanEtaZeta(scanEtaZeta, t);
+        if (hasEta && hasZeta) {
+            auto replaceEta = [&](auto &self, Expr node) -> Expr {
+                if (node.isNull())
+                    return node;
+                if (c.kind(node) == NodeKind::Func &&
+                    c.childCount(node) == 1 &&
+                    c.funcName(node) == "dirichletEta") {
+                    const Expr s = c.child(node, 0);
+                    return c.mul({
+                        c.add({c.one(),
+                               c.neg(c.pow(c.number(2),
+                                           c.add({c.one(), c.neg(s)})))}),
+                        c.func("zeta", s)});
+                }
+                if (c.childCount(node) == 0)
+                    return node;
+                std::vector<Expr> ch;
+                ch.reserve(c.childCount(node));
+                for (std::size_t i = 0; i < c.childCount(node); ++i)
+                    ch.push_back(self(self, c.child(node, i)));
+                if (c.kind(node) == NodeKind::Add)
+                    return c.add(ch);
+                if (c.kind(node) == NodeKind::Mul)
+                    return c.mul(ch);
+                if (c.kind(node) == NodeKind::Pow)
+                    return c.pow(ch[0], ch[1]);
+                return c.func(c.funcName(node), ch);
+            };
+            const Expr replaced =
+                c.expand(replaceEta(replaceEta, c.add(terms)));
+            if (!replaced.isNull())
+                return replaced;
+        }
+    }
+
     return terms.empty() ? c.zero() : c.add(terms);
 }
 
@@ -1271,10 +1401,121 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             }
             return e;
         }
+
+        if (fn == "bernoulliB" || fn == "eulerE") {
+            if (c.kind(nArg) == NodeKind::Number) {
+                const Expr expd = c.expand(e);
+                if (!expd.isNull() && !(expd == e))
+                    return expd;
+            }
+            if (fn == "bernoulliB" && c.isZero(xArg))
+                return simplifyFuncNode(c, c.func("bernoulliB", nArg));
+            return e;
+        }
+
+        if (fn == "polylog") {
+            if (c.isZero(xArg))
+                return c.zero();
+            if (nArg == c.number(std::int64_t{2}))
+                return simplifyFuncNode(c, c.func("dilog", xArg));
+            if (nArg == c.one()) {
+                return c.neg(simplifyFuncNode(
+                    c, c.func("log", c.add({c.one(), c.neg(xArg)}))));
+            }
+            if (c.kind(nArg) == NodeKind::Number) {
+                const Rational &rn = c.numberValue(nArg);
+                std::int64_t sInt = 0;
+                if (rn.den() == BigInt(1) && rn.num().fitsInt64(sInt) &&
+                    sInt <= 0 && sInt >= -12) {
+                    const std::int64_t m = -sInt;
+                    const Expr oneMinusX = c.add({c.one(), c.neg(xArg)});
+                    const Expr denPow =
+                        c.pow(oneMinusX, c.number(-(m + 1)));
+                    if (m == 0)
+                        return c.mul({xArg, denPow});
+                    std::vector<BigInt> eul(static_cast<std::size_t>(m),
+                                            BigInt(0));
+                    eul[0] = BigInt(1);
+                    for (std::int64_t i = 2; i <= m; ++i) {
+                        for (std::int64_t k = i - 1; k >= 1; --k) {
+                            eul[static_cast<std::size_t>(k)] =
+                                BigInt(k + 1) *
+                                    eul[static_cast<std::size_t>(k)] +
+                                BigInt(i - k) *
+                                    eul[static_cast<std::size_t>(k - 1)];
+                        }
+                    }
+                    std::vector<Expr> numTerms;
+                    for (std::int64_t k = 0; k < m; ++k) {
+                        numTerms.push_back(c.mul({
+                            c.number(Rational(
+                                eul[static_cast<std::size_t>(k)], BigInt(1))),
+                            c.pow(xArg, c.number(m - k))}));
+                    }
+                    return c.mul({c.add(numTerms), denPow});
+                }
+            }
+            if (xArg == c.one()) {
+                if ((c.kind(nArg) == NodeKind::Number &&
+                     c.numberValue(nArg) > Rational(1)) ||
+                    c.isAssumedPositive(
+                        c.add({nArg, c.number(std::int64_t{-1})}))) {
+                    return simplifyFuncNode(c, c.func("zeta", nArg));
+                }
+            }
+            if (xArg == c.number(std::int64_t{-1})) {
+                if ((c.kind(nArg) == NodeKind::Number &&
+                     c.numberValue(nArg) > Rational(0)) ||
+                    c.isAssumedPositive(nArg)) {
+                    return c.neg(
+                        simplifyFuncNode(c, c.func("dirichletEta", nArg)));
+                }
+            }
+            return e;
+        }
         return e;
     }
 
     const Expr arg = c.child(e, 0);
+
+    if (fn == "zeta" && c.kind(arg) == NodeKind::Number) {
+        const Rational &ra = c.numberValue(arg);
+        std::int64_t sInt = 0;
+        if (ra.den() == BigInt(1) && ra.num().fitsInt64(sInt) && sInt >= 2 &&
+            (sInt % 2 == 0) && sInt <= 30) {
+            Rational b2k;
+            if (c.evalExact(c.func("bernoulliB", arg), {}, b2k)) {
+                const std::int64_t k = sInt / 2;
+                BigInt fact2k(1);
+                for (std::int64_t j = 2; j <= sInt; ++j)
+                    fact2k = fact2k * BigInt(j);
+                const BigInt twoPow = BigInt::powUInt(
+                    BigInt(2), static_cast<std::size_t>(sInt - 1));
+                const Rational sign(k % 2 == 1 ? 1 : -1);
+                const Rational coef =
+                    sign * Rational(twoPow, fact2k) * b2k;
+                return c.mul({
+                    c.number(coef),
+                    c.pow(c.symbol("pi"), c.number(sInt))});
+            }
+        }
+    }
+
+    if (fn == "dirichletEta" && c.kind(arg) == NodeKind::Number) {
+        const Rational &ra = c.numberValue(arg);
+        if (ra == Rational(1))
+            return c.func("log", c.number(std::int64_t{2}));
+        std::int64_t sInt = 0;
+        if (ra.den() == BigInt(1) && ra.num().fitsInt64(sInt) && sInt >= 2 &&
+            sInt <= 30) {
+            const BigInt twoPow =
+                BigInt::powUInt(BigInt(2), static_cast<std::size_t>(sInt - 1));
+            const Rational etaFactor(twoPow - BigInt(1), twoPow);
+            return c.mul({
+                c.number(etaFactor),
+                simplifyFuncNode(c, c.func("zeta", arg))});
+        }
+    }
 
     if (c.isZero(arg)) {
         if (fn == "ellipticK" || fn == "ellipticE") {

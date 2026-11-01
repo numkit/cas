@@ -439,7 +439,7 @@
 67. ✅ (v0.8-пул, Эшелон 8) Кратные неопределённые и определённые интегралы `integrateMulti` / `definiteIntegrateMulti`, криволинейные интегралы 1-го и 2-го рода `lineIntegralScalar` / `lineIntegralVector` / `lineIntegral` и символический поиск безусловных и условных экстремумов методом множителей Лагранжа `lagrangeExtrema` (`integrate/ratint`, `linalg/symmatrix`).
 68. ✅ Релизная отсечка `v0.8.0` (Эшелон 8 завершён: `CHANGELOG.md`, `CMakeLists.txt` `VERSION 0.8.0`, `README.md`, `AGENTS.md`, `tools/vendor_sync.py`, 292/292 тестов Release за 32.8 с, тег `v0.8.0`).
 69. ✅ (v0.9-пул, Эшелон 9) Полные и неполные эллиптические интегралы 1-го, 2-го и 3-го рода (`ellipticK`, `ellipticE`, `ellipticPi`, `ellipticF`, `ellipticEInc`) сквозь всё ядро (`diff`, `evalExact`/`evalDouble` через симметрические формы Карлсона $R_F, R_D, R_J$, `simplify` со специальными значениями и тождеством Лежандра, `taylor` и эллиптические неопределённые/определённые интегралы в `integrate`/`definiteIntegrate`).
-70. ⬜ (v0.9-пул, Эшелон 9) Дзета-функция Римана $\zeta(s)$, эта-функция Дирихле $\eta(s)$, полилогарифмы произвольного порядка $\operatorname{Li}_s(z)$ (`polylog(s, z)`) и числа/полиномы Бернулли и Эйлера (`bernoulliB`, `eulerE`) сквозь ядро, `symsum` и `definiteIntegrate`.
+70. ✅ (v0.9-пул, Эшелон 9) Дзета-функция Римана $\zeta(s)$ (`zeta`), эта-функция Дирихле $\eta(s)$ (`dirichletEta`), полилогарифмы произвольного порядка $\operatorname{Li}_s(z)$ (`polylog(s, z)`) и числа/полиномы Бернулли и Эйлера (`bernoulliB`, `eulerE`) сквозь ядро (`diff`, `evalExact`/`evalDouble`, `expand`, `simplify`, `taylor`/`laurent`/`residue`), `symsum` и `integrate`/`definiteIntegrate`.
 71. ⬜ (v0.9-пул, Эшелон 9) Поверхностные интегралы 1-го и 2-го рода (`surfaceIntegralScalar`, `surfaceIntegralVector`, `surfaceIntegral`) и символьная верификация классических интегральных теорем векторного анализа (формула Грина, теорема Стокса и теорема Остроградского–Гаусса).
 72. ⬜ (v0.9-пул, Эшелон 9) Вариационное исчисление и аналитическая механика: уравнения Эйлера–Лагранжа `eulerLagrange` (включая функционалы с высшими производными и несколькими полевыми функциями), скобки Пуассона `poissonBracket`, преобразование Лежанжа к гамильтониану и канонические уравнения Гамильтона `hamiltonEquations` (`linalg/`, `ode/`).
 73. ⬜ Релизная отсечка `v0.9.0` (Эшелон 9 завершён).
@@ -2908,6 +2908,24 @@ MATLAB Symbolic Math Toolbox (три эшелона):
 4. **Разложения Тейлора–Маклорена и эллиптическое интегрирование (`src/core/series.cpp`, `src/integrate/ratint.cpp`)**:
    - Прямые гипергеометрические ряды Маклорена для `ellipticK(u)` и `ellipticE(u)` через квадраты двойных факториалов $\left(\frac{(2k-1)!!}{(2k)!!}\right)^2$, почленное интегрирование композиции для `ellipticF(phi, m)` и `ellipticEInc(phi, m)` и двумерный ряд для `ellipticPi(n, m)`.
    - Сертифицированное неопределённое интегрирование $\int (c_0 + c_1\sin^2(ax+b) + c_2\cos^2(ax+b))^{\pm 1/2}\,dx$ через `ellipticF` и `ellipticEInc` (включая длину дуги эллипса) и определённые полные эллиптические интегралы 1-го, 2-го и 3-го рода в тригонометрической форме Лежандра на $[0, \pi/2]$ и алгебраической форме Якоби на $[0, 1]$.
+
+
+## 2026-11-01: Реализация пункта 70 — Дзета-функция Римана $\zeta(s)$, эта-функция Дирихле $\eta(s)$, полилогарифмы $\operatorname{Li}_s(z)$ и числа/полиномы Бернулли и Эйлера
+
+Реализован второй пакет Эшелона 9 (пул `v0.9.0`):
+
+1. **Числа и полиномы Бернулли и Эйлера (`bernoulliB`, `eulerE`) (`src/core/expr.cpp`, `src/core/diff.cpp`, `src/core/simplify.cpp`)**:
+   - Точное рациональное вычисление чисел Бернулли $B_n$ (`bernoulliB(n)` с конвенцией $B_1 = -1/2$) и чисел Эйлера $E_n$ (`eulerE(n)`) по треугольнику Паскаля, а также точных значений полиномов $B_n(x) = \sum_{k=0}^n \binom{n}{k} B_k x^{n-k}$ и $E_n(x) = \sum_{k=0}^n \binom{n}{k} \frac{E_k}{2^k}\left(x - \frac{1}{2}\right)^{n-k}$ в `evalExact` и явное полиномиальное раскрытие в `Ctx::expand` для $0 \le n \le 40$.
+   - Производные $\frac{\partial}{\partial x}B_n(u(x)) = n B_{n-1}(u(x)) u'(x)$ и $\frac{\partial}{\partial x}E_n(u(x)) = n E_{n-1}(u(x)) u'(x)$ и разностные тождества $B_n(x+1) - B_n(x) \to n x^{n-1}$, $E_n(x+1) + E_n(x) \to 2 x^n$ для символьного $n$.
+2. **Дзета-функция Римана $\zeta(s)$, эта-функция Дирихле $\eta(s)$ и полилогарифмы $\operatorname{Li}_s(z)$ (`src/core/expr.cpp`, `src/core/simplify.cpp`, `src/core/series.cpp`)**:
+   - В `evalExact` и `simplify`: точные значения $\zeta(0) = -1/2$, $\zeta(-m) = -\frac{B_{m+1}}{m+1}$ (включая тривиальные нули $\zeta(-2k) = 0$), формула Эйлера для чётных аргументов $\zeta(2k) = \frac{(-1)^{k-1}(2\pi)^{2k}B_{2k}}{2(2k)!}$, $\eta(1) = \log(2)$ и связь $\eta(s) = (1 - 2^{1-s})\zeta(s)$.
+   - Для полилогарифмов `polylog(s, z)`: $\operatorname{Li}_2(z) \to \operatorname{dilog}(z)$, $\operatorname{Li}_1(z) \to -\log(1-z)$, замкнутая рациональная форма $\operatorname{Li}_{-m}(z) = (1-z)^{-(m+1)}\sum_{k=0}^{m-1}\left\langle\begin{matrix}m\\k\end{matrix}\right\rangle z^{m-k}$ через числа Эйлера первого рода, $\operatorname{Li}_s(1) \to \zeta(s)$, $\operatorname{Li}_s(-1) \to -\eta(s)$ и производная $\frac{\partial}{\partial z}\operatorname{Li}_s(z) = \frac{\operatorname{Li}_{s-1}(z)}{z}$.
+   - В `evalDouble`: формула суммирования Эйлера–Маклорена и функциональное уравнение Римана для $\zeta(s)$ и $\eta(s)$, степенной ряд и ускорение Эйлера для $\operatorname{Li}_s(z)$.
+   - В `series`: разложение Лорана $\zeta(1 + u) = u^{-1} + \gamma + O(u)$ (с автоматическим вычетом $\operatorname{Res}_{s=1}\zeta(s) = 1$), ряд Маклорена $\operatorname{Li}_s(u) = \sum_{m=1}^N \frac{u^m}{m^s}$ и замкнутое суммирование нечётных $p$-рядов $\sum_{k=1}^\infty k^{-(2m+1)} = \zeta(2m+1)$ и полилогарифмических степенных рядов $\sum_{k=1}^\infty z^k k^{-s} = \operatorname{Li}_s(z)$ в `symsum`.
+3. **Первообразные полилогарифмов и определённые интегралы Бозе–Эйнштейна / Ферми–Дирака (`src/integrate/ratint.cpp`)**:
+   - Неопределённое интегрирование $\int \operatorname{rest}(x)\operatorname{Li}_s(u(x))\,dx = q\operatorname{Li}_{s+1}(u(x))$ (и $\int \frac{\operatorname{dilog}(x)}{x}\,dx = \operatorname{Li}_3(x)$) с сертификатом $D(F) \equiv f$, а также интегрирование полиномов Бернулли и Эйлера.
+   - Определённые логарифмически-степенные интегралы на $[0, 1]$: $\int_0^1 \frac{x^{k-1}\log^m(x)}{c_0 + c_1 x^k}\,dx = \frac{(-1)^{m+1}m!}{c_1 k^{m+1}}\operatorname{Li}_{m+1}(-c_1/c_0)$ и интегралы Бозе–Эйнштейна и Ферми–Дирака на $[0, +\infty)$: $\int_0^\infty \frac{x^{s-1}}{e^{ax} \mp 1}\,dx = \frac{\Gamma(s)}{a^s}\zeta(s)$ (или $\eta(s)$).
+
 
 
 

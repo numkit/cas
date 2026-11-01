@@ -275,6 +275,19 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                              nextF}),
                         du});
                 }
+            } else if (name == "polylog") {
+                const Expr nm1 = add({n, number(std::int64_t{-1})});
+                result = mul({
+                    func("polylog", nm1, u),
+                    pow(u, number(std::int64_t{-1})),
+                    du});
+            } else if (name == "bernoulliB" || name == "eulerE") {
+                if (isZero(n)) {
+                    result = zero();
+                } else {
+                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    result = mul({n, func(name, nm1, u), du});
+                }
             } else {
                 result = Expr();
             }

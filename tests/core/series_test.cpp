@@ -923,5 +923,43 @@ TEST(SeriesTest, EllipticIntegralMaclaurinSeries)
             c, "1/2*pi + (1/4*a + 1/8*b)*pi*x + (3/16*a^2 + 3/32*a*b + 9/128*b^2)*pi*x^2")));
 }
 
+TEST(SeriesTest, ZetaPolylogSeriesAndInfiniteSums)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr k = c.symbol("k");
+    const Expr z = c.symbol("z");
+
+    // 1. Laurent expansion of zeta(s) at s = 1:
+    //    zeta(1 + x) = 1/x + euler_gamma + O(x)
+    const Expr lZeta = laurent(c, parseExpr(c, "zeta(1 + x)"), x, c.zero(), 0);
+    ASSERT_FALSE(lZeta.isNull());
+    EXPECT_TRUE(exprEq(c, lZeta, parseExpr(c, "x^(-1) + euler_gamma")));
+    EXPECT_EQ(residue(c, parseExpr(c, "zeta(x)"), x, c.one()), c.one());
+
+    // 2. Maclaurin expansion of polylog(3, x)
+    const Expr tLi3 = taylor(c, parseExpr(c, "polylog(3, x)"), x, c.zero(), 4);
+    ASSERT_FALSE(tLi3.isNull());
+    EXPECT_TRUE(exprEq(
+        c, tLi3, parseExpr(c, "x + 1/8*x^2 + 1/27*x^3 + 1/64*x^4")));
+
+    // 3. Infinite p-series and polylogarithm series in symsum
+    EXPECT_EQ(
+        symsum(c, parseExpr(c, "k^(-3)"), k, c.one(), c.symbol("inf")).value,
+        parseExpr(c, "zeta(3)"));
+    EXPECT_EQ(symsum(c, parseExpr(c, "(-1)^(k - 1)*k^(-3)"), k, c.one(),
+                     c.symbol("inf"))
+                  .value,
+              c.simplify(parseExpr(c, "3/4*zeta(3)")));
+    EXPECT_EQ(symsum(c, parseExpr(c, "z^k*k^(-3)"), k, c.one(),
+                     c.symbol("inf"))
+                  .value,
+              parseExpr(c, "polylog(3, z)"));
+    EXPECT_EQ(symsum(c, parseExpr(c, "2^(-k)*k^(-2)"), k, c.one(),
+                     c.symbol("inf"))
+                  .value,
+              c.simplify(parseExpr(c, "1/12*pi^2 - 1/2*log(2)^2")));
+}
+
 } // namespace
 } // namespace numkit::cas

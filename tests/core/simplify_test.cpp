@@ -560,5 +560,96 @@ TEST(SimplifyTest, EllipticIntegralsAndLegendreIdentity)
     EXPECT_NEAR(eInc, 0.9649514576429924, 1e-14);
 }
 
+TEST(SimplifyTest, ZetaDirichletEtaPolylogAndBernoulliEuler)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr s = c.symbol("s");
+    const Expr n = c.symbol("n");
+
+    // 1. Exact Bernoulli & Euler numbers and polynomials
+    EXPECT_EQ(c.simplify(parseExpr(c, "bernoulliB(0)")), c.one());
+    EXPECT_EQ(c.simplify(parseExpr(c, "bernoulliB(1)")),
+              parseExpr(c, "-1/2"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "bernoulliB(2)")),
+              parseExpr(c, "1/6"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "bernoulliB(4)")),
+              parseExpr(c, "-1/30"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "bernoulliB(12)")),
+              parseExpr(c, "-691/2730"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "eulerE(0)")), c.one());
+    EXPECT_EQ(c.simplify(parseExpr(c, "eulerE(2)")), c.number(-1));
+    EXPECT_EQ(c.simplify(parseExpr(c, "eulerE(4)")), c.number(5));
+    EXPECT_EQ(c.simplify(parseExpr(c, "eulerE(6)")), c.number(-61));
+
+    // Polynomial expansion of bernoulliB(n, x) and eulerE(n, x)
+    EXPECT_EQ(c.simplify(c.expand(parseExpr(c, "bernoulliB(3, x)"))),
+              c.simplify(parseExpr(c, "x^3 - 3/2*x^2 + 1/2*x")));
+    EXPECT_EQ(c.simplify(c.expand(parseExpr(c, "eulerE(3, x)"))),
+              c.simplify(parseExpr(c, "x^3 - 3/2*x^2 + 1/4")));
+
+    // Shift and derivative identities for symbolic n:
+    //   bernoulliB(n, x + 1) - bernoulliB(n, x) = n*x^(n - 1)
+    //   eulerE(n, x + 1) + eulerE(n, x)         = 2*x^n
+    EXPECT_EQ(c.simplify(parseExpr(
+                  c, "bernoulliB(n, x + 1) - bernoulliB(n, x) - n*x^(n - 1)")),
+              c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(
+                  c, "eulerE(n, x + 1) + eulerE(n, x) - 2*x^n")),
+              c.zero());
+    EXPECT_EQ(c.simplify(c.diff(parseExpr(c, "bernoulliB(n, x)"), x)),
+              c.simplify(parseExpr(c, "n*bernoulliB(n - 1, x)")));
+    EXPECT_EQ(c.simplify(c.diff(parseExpr(c, "eulerE(n, x)"), x)),
+              c.simplify(parseExpr(c, "n*eulerE(n - 1, x)")));
+
+    // 2. Exact values of zeta(s) and dirichletEta(s)
+    EXPECT_EQ(c.simplify(parseExpr(c, "zeta(0)")), parseExpr(c, "-1/2"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "zeta(-1)")), parseExpr(c, "-1/12"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "zeta(-2)")), c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(c, "zeta(-3)")), parseExpr(c, "1/120"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "zeta(2)")),
+              c.simplify(parseExpr(c, "1/6*pi^2")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "zeta(4)")),
+              c.simplify(parseExpr(c, "1/90*pi^4")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "zeta(6)")),
+              c.simplify(parseExpr(c, "1/945*pi^6")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "dirichletEta(1)")),
+              parseExpr(c, "log(2)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "dirichletEta(2)")),
+              c.simplify(parseExpr(c, "1/12*pi^2")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "dirichletEta(3)")),
+              c.simplify(parseExpr(c, "3/4*zeta(3)")));
+    EXPECT_EQ(c.simplify(parseExpr(
+                  c, "dirichletEta(s) - (1 - 2^(1 - s))*zeta(s)")),
+              c.zero());
+
+    // 3. Polylogarithm reductions and differentiation
+    EXPECT_EQ(c.simplify(parseExpr(c, "polylog(2, x)")),
+              parseExpr(c, "dilog(x)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "polylog(1, x)")),
+              c.simplify(parseExpr(c, "-log(1 - x)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "polylog(0, x)")),
+              c.simplify(parseExpr(c, "x*(1 - x)^(-1)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "polylog(-1, x)")),
+              c.simplify(parseExpr(c, "x*(1 - x)^(-2)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "polylog(-2, x)")),
+              c.simplify(parseExpr(c, "x*(1 + x)*(1 - x)^(-3)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "polylog(3, 1)")),
+              parseExpr(c, "zeta(3)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "polylog(3, -1)")),
+              c.simplify(parseExpr(c, "-3/4*zeta(3)")));
+    EXPECT_EQ(c.simplify(c.diff(parseExpr(c, "polylog(4, x)"), x)),
+              c.simplify(parseExpr(c, "x^(-1)*polylog(3, x)")));
+
+    // 4. IEEE-754 double evaluation of zeta, dirichletEta, polylog
+    double z3 = 0.0, eta3 = 0.0, li3Half = 0.0;
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "zeta(3)"), {}, z3));
+    EXPECT_NEAR(z3, 1.2020569031595942, 1e-13);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "dirichletEta(3)"), {}, eta3));
+    EXPECT_NEAR(eta3, 0.9015426773696957, 1e-13);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "polylog(3, 1/2)"), {}, li3Half));
+    EXPECT_NEAR(li3Half, 0.5372131936080402, 1e-14);
+}
+
 } // namespace
 } // namespace numkit::cas

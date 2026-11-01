@@ -2913,12 +2913,78 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 }
             }
         }
+
+        // 4f. Polylogarithm / dilogarithm antiderivatives:
+        //     int rest(x) * polylog(s, u(x)) dx = q * polylog(s + 1, u(x))
+        //     int rest(x) * dilog(u(x)) dx      = q * polylog(3, u(x))
+        //     where q = rest(x) * u(x) / u'(x) is independent of `var`.
+        Expr polylogFac;
+        std::vector<Expr> polylogOtherFacs;
+        for (const Expr &fac : factors) {
+            if (polylogFac.isNull() && c.kind(fac) == NodeKind::Func &&
+                ((c.funcName(fac) == "polylog" && c.childCount(fac) == 2 &&
+                  !mentionsVar(c, c.child(fac, 0), var)) ||
+                 (c.funcName(fac) == "dilog" && c.childCount(fac) == 1))) {
+                polylogFac = fac;
+            } else {
+                polylogOtherFacs.push_back(fac);
+            }
+        }
+        if (!polylogFac.isNull()) {
+            const bool isDilog = (c.funcName(polylogFac) == "dilog");
+            const Expr sOrd =
+                isDilog ? c.number(std::int64_t{2}) : c.child(polylogFac, 0);
+            const Expr uArg =
+                isDilog ? c.child(polylogFac, 0) : c.child(polylogFac, 1);
+            const Expr du = c.diff(uArg, var);
+            if (!c.isZero(du)) {
+                const Expr rest = polylogOtherFacs.empty()
+                                      ? c.one()
+                                      : c.mul(polylogOtherFacs);
+                const Expr q = c.simplify(c.div(c.mul({rest, uArg}), du));
+                if (!mentionsVar(c, q, var)) {
+                    const Expr sNext = c.simplify(c.add({sOrd, c.one()}));
+                    const Expr F =
+                        c.simplify(c.mul({q, c.func("polylog", sNext, uArg)}));
+                    if (certifySpecialIntegral(c, F, f, var)) {
+                        out.F = F;
+                        out.status = RationalIntegral::Status::ProvedSymbolic;
+                        return out;
+                    }
+                }
+            }
+        }
     }
 
-    // 5. Orthogonal polynomials with concrete integer degree: expand to polynomial and integrate.
+    // 5. Orthogonal / Bernoulli / Euler polynomials with concrete integer degree:
+    //    expand to explicit polynomial and integrate.
     const Expr fExpanded = c.expand(f);
     if (!fExpanded.isNull() && !(fExpanded == f)) {
         return integrate(c, fExpanded, var, budget);
+    }
+
+    // 6. Symbolic-order Bernoulli and Euler polynomials:
+    //    int bernoulliB(n, a*x + b) dx = bernoulliB(n + 1, a*x + b) / (a * (n + 1))
+    //    int eulerE(n, a*x + b) dx     = eulerE(n + 1, a*x + b) / (a * (n + 1))
+    if (c.kind(f) == NodeKind::Func && c.childCount(f) == 2 &&
+        (c.funcName(f) == "bernoulliB" || c.funcName(f) == "eulerE") &&
+        !mentionsVar(c, c.child(f, 0), var)) {
+        const Expr nOrd = c.child(f, 0);
+        const Expr uArg = c.child(f, 1);
+        std::vector<Expr> uCoeffs;
+        if (extractPolyInVar(c, uArg, var, 1, uCoeffs) &&
+            uCoeffs.size() == 2 && !c.isZero(uCoeffs[1])) {
+            const Expr nP1 = c.simplify(c.add({nOrd, c.one()}));
+            if (!c.isZero(nP1)) {
+                const Expr F = c.div(c.func(c.funcName(f), nP1, uArg),
+                                     c.mul({uCoeffs[1], nP1}));
+                if (certifySpecialIntegral(c, F, f, var)) {
+                    out.F = F;
+                    out.status = RationalIntegral::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+        }
     }
 
     return out;
@@ -3679,6 +3745,8 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     bool hasTrig = false;
     int binomCount = 0;
     Expr binC0, binC1, binM, binExp = c.zero();
+    int expDenomCount = 0;
+    Expr expDenC0, expDenC1, expDenA;
 
     for (const Expr &fac : facs) {
         if (!mentionsVar(c, fac, var)) {
@@ -3715,6 +3783,56 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         if (c.kind(fac) == NodeKind::Func && c.funcName(fac) == "exp") {
             expArgs.push_back(c.child(fac, 0));
             continue;
+        }
+        if (intervalKind == 2 && expDenomCount == 0 &&
+            c.kind(fac) == NodeKind::Pow &&
+            c.child(fac, 1) == c.number(std::int64_t{-1}) &&
+            c.kind(c.child(fac, 0)) == NodeKind::Add &&
+            c.childCount(c.child(fac, 0)) == 2) {
+            const Expr sumNode = c.child(fac, 0);
+            Expr cPart, vPart;
+            if (!mentionsVar(c, c.child(sumNode, 0), var) &&
+                mentionsVar(c, c.child(sumNode, 1), var)) {
+                cPart = c.child(sumNode, 0);
+                vPart = c.child(sumNode, 1);
+            } else if (!mentionsVar(c, c.child(sumNode, 1), var) &&
+                       mentionsVar(c, c.child(sumNode, 0), var)) {
+                cPart = c.child(sumNode, 1);
+                vPart = c.child(sumNode, 0);
+            }
+            if (!cPart.isNull() && !vPart.isNull()) {
+                std::vector<Expr> vFacs;
+                if (c.kind(vPart) == NodeKind::Mul) {
+                    for (std::size_t i = 0; i < c.childCount(vPart); ++i)
+                        vFacs.push_back(c.child(vPart, i));
+                } else {
+                    vFacs.push_back(vPart);
+                }
+                std::vector<Expr> c1Facs;
+                Expr eArg;
+                bool okExpTerm = true;
+                for (const Expr &vf : vFacs) {
+                    if (!mentionsVar(c, vf, var)) {
+                        c1Facs.push_back(vf);
+                    } else if (eArg.isNull() && c.kind(vf) == NodeKind::Func &&
+                               c.funcName(vf) == "exp" && c.childCount(vf) == 1) {
+                        eArg = c.child(vf, 0);
+                    } else {
+                        okExpTerm = false;
+                        break;
+                    }
+                }
+                Expr aCand, oneExp;
+                if (okExpTerm && !eArg.isNull() &&
+                    matchMonomialInVar(c, eArg, var, aCand, oneExp) &&
+                    oneExp == c.one()) {
+                    expDenC0 = cPart;
+                    expDenC1 = c1Facs.empty() ? c.one() : c.mul(c1Facs);
+                    expDenA = aCand;
+                    expDenomCount = 1;
+                    continue;
+                }
+            }
         }
         if (intervalKind == 3) {
             std::string tFn;
@@ -3816,6 +3934,45 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
                  c.pow(p, c.number(-(logPow + 1)))}));
             return true;
         }
+        // Polylogarithm log-power integral on [0, 1]:
+        //   int_0^1 x^(k-1) * log(x)^m / (c0 + c1 * x^k) dx
+        //     = (-1)^(m+1) * m! / (c1 * k^(m+1)) * polylog(m + 1, -c1 / c0)
+        // for integer m >= 1, k > 0, and z = -c1/c0 <= 1.
+        if (binomCount == 1 && binExp == c.number(std::int64_t{-1}) &&
+            logPow >= 1 && logPow <= 20 && !c.isZero(binC0) &&
+            !c.isZero(binC1) && c.isAssumedPositive(binM) &&
+            c.isZero(c.simplify(c.add({xExp, c.one(), c.neg(binM)})))) {
+            const Expr zArg = c.simplify(c.neg(c.div(binC1, binC0)));
+            bool validZ = false;
+            if (zArg == c.one()) {
+                validZ = true;
+            } else if (c.kind(zArg) == NodeKind::Number) {
+                validZ = (c.numberValue(zArg) <= Rational(std::int64_t{1}));
+            } else {
+                const Expr oneMinusZ = c.simplify(c.add({c.one(), c.neg(zArg)}));
+                if (c.isAssumedNonNegative(oneMinusZ)) {
+                    validZ = true;
+                } else {
+                    double zVal = 0.0;
+                    if (!c.evalDouble(zArg, {}, zVal) || zVal <= 1.0)
+                        validZ = true;
+                }
+            }
+            if (validZ) {
+                BigInt fact(1);
+                for (std::int64_t k = 2; k <= logPow; ++k)
+                    fact = fact * BigInt(k);
+                if ((logPow + 1) % 2 != 0)
+                    fact = -fact;
+                const Expr mPlus1 = c.number(logPow + 1);
+                const Expr polyTerm = c.func("polylog", mPlus1, zArg);
+                valOut = c.simplify(c.mul(
+                    {constCoef, c.number(Rational(fact, BigInt(1))),
+                     c.pow(binC1, c.number(std::int64_t{-1})),
+                     c.pow(binM, c.number(-(logPow + 1))), polyTerm}));
+                return true;
+            }
+        }
         if (binomCount == 1 && logPow <= 1 && binC0 == c.one() &&
             binC1 == c.number(std::int64_t{-1}) &&
             c.isAssumedPositive(binM)) {
@@ -3845,10 +4002,66 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         return false;
     }
 
-    // Interval 2: [0, +inf) — Euler Gamma / log-Gamma and Euler Beta II.
+    // Interval 2: [0, +inf) — Euler Gamma / log-Gamma, Bose-Einstein / Fermi-Dirac,
+    // and Euler Beta II.
     if (intervalKind == 2) {
         if (hasTrig)
             return false;
+        if (expDenomCount == 1) {
+            if (!expArgs.empty() || binomCount != 0 || logPow != 0)
+                return false;
+            if (!c.isAssumedPositive(expDenA) || c.isZero(expDenC0) ||
+                c.isZero(expDenC1))
+                return false;
+            const Expr s = c.simplify(c.add({xExp, c.one()}));
+            const Expr zArg = c.simplify(c.neg(c.div(expDenC0, expDenC1)));
+            if (zArg == c.one()) {
+                // Bose-Einstein integral: int_0^inf x^(s-1) / (c1 * (exp(a*x) - 1)) dx
+                //   = gamma(s) * zeta(s) / (c1 * a^s) for s > 1.
+                const Expr sMinus1 = c.simplify(c.add({s, c.number(std::int64_t{-1})}));
+                if (c.isAssumedNonNegative(c.neg(sMinus1))) {
+                    isDivergent = true;
+                    return false;
+                }
+                if (!c.isAssumedPositive(sMinus1))
+                    return false;
+                valOut = c.simplify(c.div(
+                    c.mul({constCoef, c.func("gamma", s), c.func("zeta", s)}),
+                    c.mul({expDenC1, c.pow(expDenA, s)})));
+                return true;
+            }
+            if (c.isAssumedNonNegative(c.neg(s))) {
+                isDivergent = true;
+                return false;
+            }
+            if (!c.isAssumedPositive(s))
+                return false;
+            if (zArg == c.number(std::int64_t{-1})) {
+                // Fermi-Dirac integral: int_0^inf x^(s-1) / (c1 * (exp(a*x) + 1)) dx
+                //   = gamma(s) * dirichletEta(s) / (c1 * a^s) for s > 0.
+                valOut = c.simplify(c.div(
+                    c.mul({constCoef, c.func("gamma", s),
+                           c.func("dirichletEta", s)}),
+                    c.mul({expDenC1, c.pow(expDenA, s)})));
+                return true;
+            }
+            bool validZ = false;
+            if (c.kind(zArg) == NodeKind::Number) {
+                validZ = (c.numberValue(zArg) < Rational(std::int64_t{1}));
+            } else {
+                const Expr oneMinusZ = c.simplify(c.add({c.one(), c.neg(zArg)}));
+                if (c.isAssumedPositive(oneMinusZ))
+                    validZ = true;
+            }
+            if (validZ) {
+                valOut = c.simplify(c.neg(c.div(
+                    c.mul({constCoef, c.func("gamma", s),
+                           c.func("polylog", s, zArg)}),
+                    c.mul({expDenC0, c.pow(expDenA, s)}))));
+                return true;
+            }
+            return false;
+        }
         if (!expArgs.empty() && binomCount == 0 && logPow <= 2) {
             const Expr sumExp =
                 expArgs.size() == 1 ? expArgs[0] : c.simplify(c.add(expArgs));

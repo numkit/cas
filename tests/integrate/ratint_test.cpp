@@ -2134,5 +2134,95 @@ TEST_F(RatIntTest, EllipticIntegralsIndefiniteAndDefinite)
     }
 }
 
+TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
+{
+    using numkit::cas::AssumeDomain;
+    using numkit::cas::Expr;
+
+    const Expr a = c.symbol("a");
+    c.assume(a, AssumeDomain::Positive);
+    const Expr inf = c.symbol("inf");
+
+    // 1. Indefinite polylogarithm and Bernoulli/Euler polynomial antiderivatives
+    {
+        const auto r1 = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "x^(-1)*dilog(x)"), x);
+        ASSERT_TRUE(r1.proved()) << r1.reason;
+        EXPECT_EQ(c.simplify(r1.F),
+                  numkit::cas::parseExpr(c, "polylog(3, x)"));
+
+        const auto r2 = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "x^(-1)*polylog(3, -a*x^2)"), x);
+        ASSERT_TRUE(r2.proved()) << r2.reason;
+        EXPECT_EQ(c.simplify(r2.F),
+                  c.simplify(numkit::cas::parseExpr(
+                      c, "1/2*polylog(4, -a*x^2)")));
+
+        const auto rBern = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "bernoulliB(2, x)"), x);
+        ASSERT_TRUE(rBern.proved()) << rBern.reason;
+        const auto dBern = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "bernoulliB(2, x)"), x, c.zero(),
+            c.one());
+        ASSERT_TRUE(dBern.proved()) << dBern.reason;
+        EXPECT_EQ(dBern.value, c.zero());
+    }
+
+    // 2. Polylogarithm log-power integrals on [0, 1]
+    {
+        // int_0^1 log(x)^2 / (1 - x) dx = 2*zeta(3)
+        const auto d1 = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "log(x)^2*(1 - x)^(-1)"), x, c.zero(),
+            c.one());
+        ASSERT_TRUE(d1.proved()) << d1.reason;
+        EXPECT_EQ(d1.value,
+                  c.simplify(numkit::cas::parseExpr(c, "2*zeta(3)")));
+
+        // int_0^1 log(x)^2 / (1 + x) dx = 3/2*zeta(3)
+        const auto d2 = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "log(x)^2*(1 + x)^(-1)"), x, c.zero(),
+            c.one());
+        ASSERT_TRUE(d2.proved()) << d2.reason;
+        EXPECT_EQ(d2.value,
+                  c.simplify(numkit::cas::parseExpr(c, "3/2*zeta(3)")));
+
+        // int_0^1 log(x)^3 / (1 - x) dx = -pi^4 / 15
+        const auto d3 = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "log(x)^3*(1 - x)^(-1)"), x, c.zero(),
+            c.one());
+        ASSERT_TRUE(d3.proved()) << d3.reason;
+        EXPECT_EQ(d3.value,
+                  c.simplify(numkit::cas::parseExpr(c, "-1/15*pi^4")));
+    }
+
+    // 3. Bose-Einstein and Fermi-Dirac integrals on [0, +inf)
+    {
+        // int_0^inf x^3 / (exp(x) - 1) dx = pi^4 / 15
+        const auto be3 = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "x^3*(exp(x) - 1)^(-1)"), x, c.zero(),
+            inf);
+        ASSERT_TRUE(be3.proved()) << be3.reason;
+        EXPECT_EQ(be3.value,
+                  c.simplify(numkit::cas::parseExpr(c, "1/15*pi^4")));
+
+        // int_0^inf x^2 / (exp(a*x) - 1) dx = 2*zeta(3) / a^3
+        const auto be2 = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "x^2*(exp(a*x) - 1)^(-1)"), x,
+            c.zero(), inf);
+        ASSERT_TRUE(be2.proved()) << be2.reason;
+        EXPECT_EQ(be2.value,
+                  c.simplify(numkit::cas::parseExpr(c, "2*a^(-3)*zeta(3)")));
+
+        // int_0^inf x^3 / (exp(x) + 1) dx = 7*pi^4 / 120
+        const auto fd3 = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "x^3*(exp(x) + 1)^(-1)"), x, c.zero(),
+            inf);
+        ASSERT_TRUE(fd3.proved()) << fd3.reason;
+        EXPECT_EQ(fd3.value,
+                  c.simplify(numkit::cas::parseExpr(c, "7/120*pi^4")));
+    }
+}
+
+
 
 

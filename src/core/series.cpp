@@ -1011,6 +1011,37 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
         }
     }
 
+    if (fn == "zeta" || fn == "dirichletEta") {
+        if (c0 == c.one()) {
+            const Expr eg = c.symbol("euler_gamma");
+            if (fn == "zeta") {
+                if (u.coeffs.empty())
+                    return false;
+                Laurent invU;
+                if (!invSeries(c, u, invU))
+                    return false;
+                out = addSeries(
+                    c, invU, makeConstSeries(c, eg, std::min(L, 0)));
+                return true;
+            }
+            // dirichletEta(1 + u) = (1 - 2^(-u)) * zeta(1 + u)
+            // = log(2) + (euler_gamma * log(2) - 1/2 * log(2)^2) * u + O(u^2)
+            const Expr log2 = c.func("log", c.number(std::int64_t{2}));
+            const int degCap = std::min(L, 1);
+            Laurent uCap = u;
+            uCap.maxDeg = std::min(uCap.maxDeg, degCap);
+            normalizeSeries(c, uCap);
+            const Expr c1 = c.add({
+                c.mul({eg, log2}),
+                c.mul({c.number(Rational(-1, BigInt(2))),
+                       c.pow(log2, c.number(2))})});
+            out = addSeries(
+                c, makeConstSeries(c, log2, degCap),
+                scaleSeries(c, uCap, c1));
+            return true;
+        }
+    }
+
     if (fn == "ellipticK" || fn == "ellipticE") {
         if (isZeroCoeff(c, c0)) {
             const Expr halfPi = c.mul(
@@ -1155,7 +1186,8 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
             const Expr uExpr = c.child(e, 1);
             if (fn == "legendreP" || fn == "chebyshevT" ||
                 fn == "chebyshevU" || fn == "hermiteH" || fn == "laguerreL" ||
-                fn == "ellipticPi") {
+                fn == "ellipticPi" || fn == "bernoulliB" || fn == "eulerE" ||
+                fn == "polylog") {
                 const Expr expd = c.simplify(e);
                 if (!expd.isNull() && !(expd == e)) {
                     return computeLaurent(c, expd, var, x0, maxDeg, budget,
@@ -1322,6 +1354,24 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     out = sum;
                     return true;
                 }
+            }
+            if (fn == "polylog" && isZeroCoeff(c, c0) &&
+                !mentionsSymbol(c, ord, var)) {
+                const int L = static_cast<int>(argSeries.coeffs.size()) - 1;
+                Laurent u = argSeries;
+                if (u.val == 0 && !u.coeffs.empty())
+                    u.coeffs[0] = c.zero();
+                Laurent sum = makeConstSeries(c, c.zero(), L);
+                Laurent upow = u;
+                for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                    const Expr coef =
+                        foldConst(c, c.pow(c.number(k), c.neg(ord)));
+                    sum = addSeries(c, sum, scaleSeries(c, upow, coef));
+                    if (k + 1 <= L)
+                        upow = mulSeries(c, upow, u);
+                }
+                out = sum;
+                return true;
             }
             if (!isZeroCoeff(c, c0)) {
                 const int L = static_cast<int>(argSeries.coeffs.size()) - 1;
@@ -2965,8 +3015,12 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     }
                     continue;
                 }
-                if (p >= 2 && (p % 2 == 0) && p <= 16) {
-                    const Expr zetaP = eulerZetaEven(c, p);
+                if (p >= 2 && p <= 16) {
+                    const Expr zetaP =
+                        (p % 2 == 0)
+                            ? eulerZetaEven(c, p)
+                            : c.func("zeta",
+                                     c.number(static_cast<std::int64_t>(p)));
                     for (std::size_t idx : group) {
                         const Rational rt = poleTerms[idx].root;
                         const Rational cf = poleTerms[idx].coeff;
@@ -3111,15 +3165,21 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                                 if (p == 1) {
                                     baseSeries =
                                         c.func("log", c.number(std::int64_t{2}));
-                                } else if (p >= 2 && (p % 2 == 0) && p <= 16) {
+                                } else if (p >= 2 && p <= 16) {
                                     const BigInt pow2 =
                                         BigInt(1)
                                         << static_cast<std::size_t>(p - 1);
                                     const Rational etaFactor(pow2 - BigInt(1),
                                                              pow2);
-                                    baseSeries = c.mul(
-                                        {c.number(etaFactor),
-                                         eulerZetaEven(c, p)});
+                                    const Expr zetaP =
+                                        (p % 2 == 0)
+                                            ? eulerZetaEven(c, p)
+                                            : c.func("zeta",
+                                                     c.number(
+                                                         static_cast<std::int64_t>(
+                                                             p)));
+                                    baseSeries =
+                                        c.mul({c.number(etaFactor), zetaP});
                                 }
                                 if (!baseSeries.isNull()) {
                                     Rational head(std::int64_t{0});
@@ -3266,6 +3326,94 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                             headTerms.push_back(c.neg(fk));
                     }
                     out.value = c.simplify(c.add(headTerms));
+                    out.status = SymSumResult::Status::ProvedSymbolic;
+                    return out;
+                }
+            }
+        }
+
+        // Polylogarithm and symbolic p-series: sum_{k = a0}^{inf} c * z^k * k^(-s)
+        // for a0 >= 1.
+        if (a0 >= 1 && a0 <= 32) {
+            std::vector<Expr> cFacs;
+            Expr kPowExp = c.zero();
+            std::vector<Expr> zFacs;
+            bool okPolylog = true;
+            for (const Expr &fac : facs) {
+                if (!mentionsSymbol(c, fac, var)) {
+                    cFacs.push_back(fac);
+                } else if (fac == var) {
+                    kPowExp = c.add({kPowExp, c.one()});
+                } else if (c.kind(fac) == NodeKind::Pow &&
+                           c.child(fac, 0) == var &&
+                           !mentionsSymbol(c, c.child(fac, 1), var)) {
+                    kPowExp = c.add({kPowExp, c.child(fac, 1)});
+                } else if (c.kind(fac) == NodeKind::Pow &&
+                           !mentionsSymbol(c, c.child(fac, 0), var)) {
+                    std::vector<Expr> ePoly;
+                    if (extractPolyCoeffsInVar(c, c.child(fac, 1), var, 1,
+                                               ePoly) &&
+                        ePoly.size() == 2 && !c.isZero(ePoly[1])) {
+                        cFacs.push_back(c.pow(c.child(fac, 0), ePoly[0]));
+                        zFacs.push_back(c.pow(c.child(fac, 0), ePoly[1]));
+                    } else {
+                        okPolylog = false;
+                        break;
+                    }
+                } else if (c.kind(fac) == NodeKind::Func &&
+                           c.funcName(fac) == "exp") {
+                    std::vector<Expr> ePoly;
+                    if (extractPolyCoeffsInVar(c, c.child(fac, 0), var, 1,
+                                               ePoly) &&
+                        ePoly.size() == 2 && !c.isZero(ePoly[1])) {
+                        cFacs.push_back(c.func("exp", ePoly[0]));
+                        zFacs.push_back(c.func("exp", ePoly[1]));
+                    } else {
+                        okPolylog = false;
+                        break;
+                    }
+                } else {
+                    okPolylog = false;
+                    break;
+                }
+            }
+            if (okPolylog && !c.isZero(kPowExp)) {
+                const Expr sOrder = c.simplify(c.neg(kPowExp));
+                const Expr zBase =
+                    zFacs.empty() ? c.one()
+                                  : c.simplify(zFacs.size() == 1 ? zFacs[0]
+                                                                 : c.mul(zFacs));
+                const Expr cScale = cFacs.empty() ? c.one() : c.mul(cFacs);
+                Expr fullLi;
+                if (zBase == c.one()) {
+                    if ((c.kind(sOrder) == NodeKind::Number &&
+                         c.numberValue(sOrder) > Rational(1)) ||
+                        c.isAssumedPositive(
+                            c.add({sOrder, c.number(std::int64_t{-1})}))) {
+                        fullLi = c.func("zeta", sOrder);
+                    }
+                } else if (zBase == c.number(std::int64_t{-1})) {
+                    if ((c.kind(sOrder) == NodeKind::Number &&
+                         c.numberValue(sOrder) > Rational(0)) ||
+                        c.isAssumedPositive(sOrder)) {
+                        fullLi = c.neg(c.func("dirichletEta", sOrder));
+                    }
+                } else if (!c.isZero(zBase)) {
+                    double zVal = 0.0;
+                    const bool hasNumZ = c.evalDouble(zBase, {}, zVal);
+                    if (!hasNumZ || std::abs(zVal) < 1.0 - 1e-12) {
+                        fullLi = c.func("polylog", sOrder, zBase);
+                    }
+                }
+                if (!fullLi.isNull()) {
+                    std::vector<Expr> terms{fullLi};
+                    for (std::int64_t k = 1; k < a0; ++k) {
+                        terms.push_back(c.neg(c.mul({
+                            c.pow(zBase, c.number(k)),
+                            c.pow(c.number(k), c.neg(sOrder))})));
+                    }
+                    out.value =
+                        c.simplify(c.mul({cScale, c.add(terms)}));
                     out.status = SymSumResult::Status::ProvedSymbolic;
                     return out;
                 }

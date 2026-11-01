@@ -1,5 +1,92 @@
 # Changelog
 
+## v0.6.0 — 2026-11-01
+
+Echelon 6 release: Spence's dilogarithm $\operatorname{Li}_2$ (`dilog`) across
+differentiation, exact/IEEE-754 evaluation, simplification, Taylor/Laurent
+series, asymptotic limits, and certified log-rational and Bose–Fermi
+symbolic/definite integration (`core/`, `integrate/ratint`); certified finite
+and infinite symbolic summation `symsum(c, f, var, a, b)` (`core/series`);
+1st-order homogeneous and exact/integrating-factor ODEs in `dsolve1`, 2nd-order
+equidimensional Euler–Cauchy ODEs `dsolve2EulerCauchy` / `dsolve2EulerCauchyIVP`,
+and $N$-th order constant-coefficient linear ODEs `dsolveNLinear` /
+`dsolveNLinearIVP` (`ode/dsolve`); and $[m/n]$ Padé rational approximants
+`pade(c, f, var, x0, m, n)` with Taylor-matching certification plus
+multivariate Taylor expansion `mtaylor` (`core/series`).
+
+### Highlights & New Capabilities
+
+- **Spence's Dilogarithm $\operatorname{Li}_2$ & Polylogarithmic Integration (`core/`, `integrate/ratint`, Item 54)**:
+  - Full support for `dilog` (and aliases `Li2`, `polylog2`) across `Ctx::diff`
+    ($\frac{d}{dx}\operatorname{dilog}(u) = -\frac{\log(1-u)}{u}u'$),
+    `Ctx::evalExact` ($\operatorname{dilog}(0) = 0$), dependency-free
+    `Ctx::evalDouble` on $(-\infty, 1]$ via Euler's inversion, Landen's
+    identity, and Euler's reflection into fast power series on $[-0.5, 0.5]$,
+    and `simplify` (special values $\operatorname{dilog}(1) = \pi^2/6$,
+    $\operatorname{dilog}(-1) = -\pi^2/12$,
+    $\operatorname{dilog}(1/2) = \pi^2/12 - \frac{1}{2}\log^2 2$, and Euler's
+    reflection identity $k\operatorname{dilog}(u) + k\operatorname{dilog}(1-u) \to k(\pi^2/6 - \log u \log(1-u))$).
+  - Power series expansion and asymptotic inversion
+    $\operatorname{dilog}(u) \to -\operatorname{dilog}(1/u) - \frac{\pi^2}{6} - \frac{1}{2}\log^2(-u)$
+    in `core/series` (`expandAsymptoticLogsAndDilog`) canceling quadratic
+    $\log^2(t)$ singularities in endpoint limits.
+  - Certified antiderivatives for log-rational integrands
+    $\int \frac{P(x)\log(ax+b)}{(c_1 x + c_0)^k}\,dx$,
+    $\int \frac{N(x)}{D(x)}\log(ax+b)\,dx$ (when $D(x)$ splits into linear
+    factors over $\mathbb{Q}$), and Bose–Einstein / Fermi–Dirac / Debye
+    integrals $\int \frac{p_1 x + p_0}{A e^{bx+d} + B}\,dx$ and
+    $\int \log(1 + a e^{bx+d})\,dx$, plus closed-form Euler–Basel definite
+    integrals in `definiteIntegrate` ($\int_0^1 \frac{\log(1\pm x)}{x}\,dx$,
+    $\int_0^1 \frac{\log x}{1\pm x}\,dx$,
+    $\int_0^\infty \frac{\log x}{x^2-1}\,dx = \frac{\pi^2}{4}$,
+    $\int_0^\infty \frac{x}{e^x \pm 1}\,dx$).
+- **Symbolic Finite & Infinite Summation (`core/series`, Item 55)**:
+  - `symsum(Ctx&, f, var, a, b, Budget*)` (`SymSumResult` with
+    `ProvedSymbolic`, `Divergent`, and `Unevaluated` verdicts), exposed in CLI
+    as `nkcas symsum`:
+    1. Faulhaber–Bernoulli polynomial summation $\sum_{k=a}^b P(k)$ of
+       arbitrary degree via exact Bernoulli numbers $B_m$.
+    2. Geometric and arithmetico-geometric sums $\sum P(k) r^{c_1 k + c_0}$ via
+       upper-triangular finite-difference back-substitution.
+    3. Rational partial-fraction / Gosper $\mathbb{Z}$-orbit telescoping and
+       logarithmic telescoping $\sum \log\frac{ak+b_1}{ak+b_0}$, with every
+       discrete antidifference $G(k)$ certified by $G(k+1) - G(k) \equiv f(k)$.
+    4. Classical infinite series ($b = \text{inf}$): Euler–Riemann $\zeta(2m)$
+       at integer and half-integer poles, Dirichlet alternating $\eta(2m)$ and
+       $\sum \frac{(-1)^{k-1}}{k} = \log 2$, Gregory–Leibniz
+       $\sum \frac{(-1)^k}{2k+1} = \frac{\pi}{4}$, and Dobiński–Bell
+       exponential factorial series $\sum_{k=a_0}^\infty \frac{P(k) r^k}{k!}$.
+- **Euler–Cauchy, Exact/Homogeneous 1st-Order & $N$-th Order Linear ODEs (`ode/dsolve`, Item 56)**:
+  - `dsolve1` / `dsolve1IVP` extended with homogeneous 1st-order ODEs
+    $y' = F(y/x)$ (`tryHomogeneousOde1`) and exact differential equations
+    $M(x,y)\,dx + N(x,y)\,dy = 0$ with single-variable integrating factors
+    $\mu(x) = \exp(\int \frac{M_y - N_x}{N}\,dx)$ and
+    $\mu(y) = \exp(\int \frac{N_x - M_y}{M}\,dy)$ (`tryExactOde1`).
+  - `dsolve2EulerCauchy` and `dsolve2EulerCauchyIVP` solving 2nd-order
+    equidimensional Euler–Cauchy ODEs $a x^2 y'' + b x y' + d y = f(x)$ across
+    all three indicial regimes ($x^{r_1}, x^{r_2}$; $x^r, x^r\log x$;
+    $x^\alpha\cos(\omega\log x), x^\alpha\sin(\omega\log x)$) via variation of
+    parameters and $x = e^t$ undetermined-coefficients fallback.
+  - `dsolveNLinear` and `dsolveNLinearIVP` solving $N$-th order
+    constant-coefficient linear ODEs $\sum_{k=0}^N a_k y^{(k)}(x) = f(x)$ via
+    characteristic polynomial factorization over $\mathbb{Q}[\lambda]$,
+    generalized differential-closure undetermined coefficients, companion-system
+    variation of parameters, and $N \times N$ Wronskian IVP solver, certified by
+    substitution into the ODE.
+- **Certified Padé Approximants & Multivariate Taylor Series (`core/series`, Item 57)**:
+  - `pade(Ctx&, f, var, x0, m, n, Budget*)` (`PadeResult`, exposed in CLI as
+    `nkcas pade`): computes $[m/n]$ rational approximants
+    $R_{m,n}(x) = P_m(x - x_0) / Q_n(x - x_0)$ ($Q_n(x_0) = 1$) via Toeplitz
+    linear system solving (`linsolve` + `rref` fallback for rank-deficient
+    blocks), certified by `taylor(c, R_{m,n} - f, var, x0, m + n) == 0`.
+  - `mtaylor(Ctx&, f, vars, x0s, order, Budget*)`: multivariate Taylor
+    expansion up to total degree `order` around `x0s` via homogeneous Euler
+    directional scaling (with exact multivariate polynomial division
+    `polyDivExactMulti` in `simplifyRationalExpr` to cancel removable
+    homogeneous singularities) and simultaneous partial-derivative fallback.
+
+---
+
 ## v0.5.0 — 2026-10-21
 
 Echelon 5 release: non-elementary special functions (`erf`, `erfc`, `erfi`,

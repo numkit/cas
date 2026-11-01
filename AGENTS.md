@@ -5,15 +5,20 @@
 - Symbolic computation core for Numkit (exact arithmetic, hash-consed
   expression DAG, symbolic integration with proof-carrying verification).
   Specification: `notes/cas-integrator-plan.md` (v0.4).
-- **Released: v0.5.0** (Echelon 5 Symbolic Toolbox: non-elementary special
-  functions `erf`/`erfc`/`erfi`/`Ei`/`li`/`Si`/`Ci`/`FresnelS`/`FresnelC`,
-  symbolic `residue` + contour `definiteIntegrate`, `ztrans`/`iztrans` +
-  `rsolve`/`rsolveIVP`, and `SymMatrix` `rref`/`rank`/`lu`/`gramSchmidt`/`qr`/
-  `jordanForm`, plus v0.4.0 `definiteIntegrate`, `AssumeDomain`, `laplace`/
+- **Released: v0.6.0** (Echelon 6 Symbolic Toolbox: Spence's dilogarithm
+  `dilog` / `Li2` across derivatives, evaluation, simplification, series, and
+  certified symbolic/definite integration; symbolic summation `symsum`;
+  1st-order homogeneous and exact/integrating-factor ODEs, 2nd-order
+  Euler–Cauchy ODEs `dsolve2EulerCauchy`/`dsolve2EulerCauchyIVP`, and $N$-th
+  order constant-coefficient linear ODEs `dsolveNLinear`/`dsolveNLinearIVP`;
+  certified Padé approximants `pade` and multivariate Taylor series `mtaylor`;
+  plus v0.5.0 special functions `erf`..`FresnelC`, `residue`, contour
+  `definiteIntegrate`, `ztrans`/`iztrans`/`rsolve`, `SymMatrix` `rref`/`rank`/
+  `lu`/`gramSchmidt`/`qr`/`jordanForm`, v0.4.0 `AssumeDomain`, `laplace`/
   `ilaplace`, `nullspace`/`eigenvalues`/`eigenvectors`/`matrixExp`,
   `dsolveSystem1Linear`, and v0.3.0 `simplify`, Rubi R1–R5 2058 rules,
   `solveSymbolic`/`solveSystem2`, `dsolve1`/`dsolve2Linear`; see `CHANGELOG.md`).
-- **Working goal: post-v0.5.0 autonomous pool in `notes/c1-algebraic-layer.md`**.
+- **Working goal: post-v0.6.0 autonomous pool in `notes/c1-algebraic-layer.md`**.
   The Numkit vendoring spike (item 23 remainder) waits for the user's
   explicit command.
 - **Integration contract is BINDING for all code** (the core is vendored into

@@ -231,4 +231,93 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
                                        Expr x0, const std::vector<Expr> &y0,
                                        Budget *budget = nullptr);
 
+// ---------------------------------------------------------------------------
+// Partial Differential Equations (1st- and 2nd-order PDEs)
+// ---------------------------------------------------------------------------
+
+struct PdeResult
+{
+    enum class Status
+    {
+        Unevaluated,
+        Proved,
+    };
+
+    Status status = Status::Unevaluated;
+    Expr u;             // certified explicit solution u(x, y) or u(x, t)
+    Expr charInvariant; // 1st characteristic invariant I_1(x, y) = const (when applicable)
+    std::string reason;
+
+    bool proved() const { return status == Status::Proved; }
+};
+
+enum class PdeBoundaryKind
+{
+    Dirichlet, // homogeneous Dirichlet: u(0, t) = 0, u(L, t) = 0
+    Neumann,   // homogeneous Neumann:   u_x(0, t) = 0, u_x(L, t) = 0
+};
+
+// Solve a 1st-order linear / semilinear / quasilinear PDE:
+//   a(x, y, u) * u_x + b(x, y, u) * u_y = rhs(x, y, u)
+// via the Lagrange-Charpit method of characteristics, returning an explicit
+// general solution u(x, y) involving arbitrary function `F(charInvariant)`
+// and certifying `simplify(a*u_x + b*u_y - rhs) == 0`.
+PdeResult pdsolve1Quasilinear(Ctx &c, Expr a, Expr b, Expr rhs,
+                              Expr x, Expr y, Expr u,
+                              Budget *budget = nullptr);
+
+// Solve a 1st-order quasilinear Cauchy problem:
+//   a(x, y, u) * u_x + b(x, y, u) * u_y = rhs(x, y, u),
+//   u(x0(s), y0(s)) = u0(s)
+// via the parametric method of characteristics, certifying both the PDE
+// `simplify(a*u_x + b*u_y - rhs) == 0` and the Cauchy curve condition
+// `simplify(u(x0(s), y0(s)) - u0(s)) == 0`.
+PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
+                         Expr x, Expr y, Expr u,
+                         Expr s, Expr x0S, Expr y0S, Expr u0S,
+                         Budget *budget = nullptr);
+
+// Solve the 1D wave equation on R x [0, oo):
+//   u_tt - cWave^2 * u_xx = forcing(x, t)
+// with initial conditions u(x, 0) = phi(x), u_t(x, 0) = psi(x) via d'Alembert's
+// formula and Duhamel's principle (or return the general solution
+// F1(x - c*t) + F2(x + c*t) when phi, psi, and forcing are null/zero).
+// Certified against the wave PDE and both initial conditions.
+PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
+                               Expr phi = Expr{}, Expr psi = Expr{},
+                               Expr forcing = Expr{},
+                               Budget *budget = nullptr);
+
+// Solve the 1D heat equation on a finite interval [0, L]:
+//   u_t - alpha * u_xx = 0,   u(x, 0) = initU(x)
+// with homogeneous Dirichlet (u(0,t)=u(L,t)=0) or Neumann (u_x(0,t)=u_x(L,t)=0)
+// boundary conditions via Fourier separation of variables up to `maxModes`.
+// Certified against `u_t - alpha*u_xx == 0` and both boundary conditions.
+PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
+                        Expr x, Expr t,
+                        PdeBoundaryKind bc = PdeBoundaryKind::Dirichlet,
+                        int maxModes = 5,
+                        Budget *budget = nullptr);
+
+// Solve the 1D wave equation on a finite interval [0, L]:
+//   u_tt - cWave^2 * u_xx = 0,   u(x, 0) = initU(x),   u_t(x, 0) = initUt(x)
+// with homogeneous Dirichlet or Neumann boundary conditions via Fourier
+// separation of variables up to `maxModes`.
+// Certified against `u_tt - cWave^2*u_xx == 0` and both boundary conditions.
+PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
+                        Expr x, Expr t,
+                        PdeBoundaryKind bc = PdeBoundaryKind::Dirichlet,
+                        int maxModes = 5,
+                        Budget *budget = nullptr);
+
+// Solve the 2D Laplace equation on a rectangle [0, a] x [0, b]:
+//   u_xx + u_yy = 0
+// with u(0, y) = 0, u(a, y) = 0, u(x, 0) = 0, u(x, b) = topProfile(x)
+// via Fourier separation of variables up to `maxModes`.
+// Certified against `u_xx + u_yy == 0` and the homogeneous boundary conditions.
+PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
+                               Expr x, Expr y,
+                               int maxModes = 5,
+                               Budget *budget = nullptr);
+
 } // namespace numkit::cas

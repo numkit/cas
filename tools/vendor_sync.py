@@ -35,6 +35,7 @@ HEADERS = [
     "include/numkit/cas/integrate/verify.hpp",
     "include/numkit/cas/linalg/symmatrix.hpp",
     "include/numkit/cas/ode/dsolve.hpp",
+    "include/numkit/cas/pde/pdsolve.hpp",
     "include/numkit/cas/poly/upoly.hpp",
     "include/numkit/cas/poly/sturm.hpp",
     "include/numkit/cas/poly/algebraic.hpp",

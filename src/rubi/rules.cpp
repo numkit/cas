@@ -27,7 +27,7 @@ namespace numkit::cas::rubi {
 
 namespace {
 
-bool exprMatchesTerm(const RuleTables &t, Ctx &c, Expr e,
+bool exprMatchesTerm(const RuleTables &t, Ctx &c, Expr e, Expr var,
                      std::int32_t tag, std::int32_t valId)
 {
     switch (tag) {
@@ -38,9 +38,13 @@ bool exprMatchesTerm(const RuleTables &t, Ctx &c, Expr e,
         return Rational::tryParse(r, t.str(valId)) &&
                c.numberValue(e) == r;
     }
-    case kTagSym:
+    case kTagSym: {
+        const char *symName = t.str(valId);
+        if (symName[0] == 'x' && symName[1] == '\0' && !var.isNull())
+            return e == var;
         return c.kind(e) == NodeKind::Symbol &&
-               c.symbolName(e) == t.str(valId);
+               c.symbolName(e) == symName;
+    }
     case kTagHead:
         return c.kind(e) == NodeKind::Func &&
                c.funcName(e) == t.str(valId);
@@ -93,7 +97,7 @@ using LeafCallback =
 // pattern variable `blank == "_."`, `opt == 1`). Calls `onLeaf`
 // whenever `work` empties at a leaf node; stops and returns true as
 // soon as `onLeaf` accepts.
-bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
+bool matchStep(const RuleTables &t, Ctx &c, Expr var, std::int32_t node,
                std::vector<Expr> &work, std::vector<Binding> &acc,
                const LeafCallback &onLeaf, bool inMul = false)
 {
@@ -120,7 +124,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
             if (!existing || !(existing->value == one))
                 continue;
             work.pop_back();
-            if (matchStep(t, c, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
+            if (matchStep(t, c, var, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
                 return true;
             work.push_back(e);
         }
@@ -132,7 +136,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
                 continue;
             work.pop_back();
             acc.push_back(Binding{vName, one});
-            if (matchStep(t, c, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
+            if (matchStep(t, c, var, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
                 return true;
             acc.pop_back();
             work.push_back(e);
@@ -157,7 +161,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
         const std::int32_t valId = t.edgeRow(ei, 1);
         const std::int32_t next = t.edgeRow(ei, 2);
         const std::int32_t arity = t.edgeRow(ei, 3);
-        if (!exprMatchesTerm(t, c, e, tag, valId) ||
+        if (!exprMatchesTerm(t, c, e, var, tag, valId) ||
             static_cast<std::int32_t>(c.childCount(e)) != arity)
             continue;
 
@@ -170,7 +174,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
                 for (std::int32_t ci = arity; ci > 0; --ci)
                     work.push_back(
                         c.child(e, perm[static_cast<std::size_t>(ci - 1)]));
-                if (matchStep(t, c, next, work, acc, onLeaf, nextInMul))
+                if (matchStep(t, c, var, next, work, acc, onLeaf, nextInMul))
                     return true;
                 work.resize(work.size() - static_cast<std::size_t>(arity));
                 work.push_back(e);
@@ -180,7 +184,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
             work.pop_back();
             for (std::size_t ci = c.childCount(e); ci > 0; --ci)
                 work.push_back(c.child(e, ci - 1));
-            if (matchStep(t, c, next, work, acc, onLeaf, inMul))
+            if (matchStep(t, c, var, next, work, acc, onLeaf, inMul))
                 return true;
             work.resize(work.size() - c.childCount(e));
             work.push_back(e);
@@ -208,7 +212,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
                 const std::size_t mark = acc.size();
                 if (!existing)
                     acc.push_back(Binding{vName, one});
-                if (matchStep(t, c, afterV, work, acc, onLeaf, inMul))
+                if (matchStep(t, c, var, afterV, work, acc, onLeaf, inMul))
                     return true;
                 acc.resize(mark);
             }
@@ -240,7 +244,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
                     work.pop_back();
                     work.push_back(c.child(e, ord == 0 ? 1 : 0));
                     work.push_back(c.child(e, ord == 0 ? 0 : 1));
-                    if (matchStep(t, c, afterV, work, acc, onLeaf, inMul))
+                    if (matchStep(t, c, var, afterV, work, acc, onLeaf, inMul))
                         return true;
                     work.pop_back();
                     work.pop_back();
@@ -273,7 +277,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
                 const std::size_t mark = acc.size();
                 if (!existing)
                     acc.push_back(Binding{vName, zero});
-                if (matchStep(t, c, afterV, work, acc, onLeaf, inMul))
+                if (matchStep(t, c, var, afterV, work, acc, onLeaf, inMul))
                     return true;
                 acc.resize(mark);
             }
@@ -290,7 +294,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
             work.pop_back();
             work.push_back(Expr());
             work.push_back(e);
-            if (matchStep(t, c, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
+            if (matchStep(t, c, var, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
                 return true;
             work.pop_back();
             work.pop_back();
@@ -306,7 +310,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
         if (!existing || !(existing->value == e))
             continue;
         work.pop_back();
-        if (matchStep(t, c, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
+        if (matchStep(t, c, var, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
             return true;
         work.push_back(e);
     }
@@ -319,7 +323,7 @@ bool matchStep(const RuleTables &t, Ctx &c, std::int32_t node,
             continue;
         work.pop_back();
         acc.push_back(Binding{vName, e});
-        if (matchStep(t, c, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
+        if (matchStep(t, c, var, t.edgeRow(ei, 2), work, acc, onLeaf, inMul))
             return true;
         acc.pop_back();
         work.push_back(e);
@@ -336,7 +340,7 @@ int matchFirst(const RuleTables &t, Ctx &c, Expr e,
     int matchedRule = -1;
     std::vector<Expr> work{e};
     std::vector<Binding> acc;
-    matchStep(t, c, 0, work, acc,
+    matchStep(t, c, c.symbol("x"), 0, work, acc,
               [&](std::int32_t rule, const std::vector<Binding> &bnd) {
                   matchedRule = rule;
                   bindings = bnd;
@@ -701,7 +705,8 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
         for (const Binding &b : bnd)
             if (b.name == s)
                 return b.value;
-        if (c.kind(var) == NodeKind::Symbol && c.symbolName(var) == s)
+        if (s == "x" ||
+            (c.kind(var) == NodeKind::Symbol && c.symbolName(var) == s))
             return var; // the integration variable itself
         if (s == "E")
             return c.symbol("e");
@@ -2315,7 +2320,7 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
     std::vector<Expr> work{e};
     std::vector<Binding> acc;
     matchStep(
-        t, c, 0, work, acc,
+        t, c, var, 0, work, acc,
         [&](std::int32_t firstRule, const std::vector<Binding> &bnd) {
             for (std::int32_t rule = firstRule; rule >= 0;
                  rule = t.ruleRow(rule, 3)) {

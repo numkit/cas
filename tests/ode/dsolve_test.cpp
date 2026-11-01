@@ -1020,5 +1020,138 @@ TEST(DsolveTest, PowerSeriesAndFrobeniusOdeSolver)
     }
 }
 
+TEST(DsolveTest, PartialDifferentialEquationsPdsolve)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr t = c.symbol("t");
+    const Expr u = c.symbol("u");
+    const Expr s = c.symbol("s");
+
+    // 1. 1st-order PDE general solutions via method of characteristics:
+    //    2*u_x + 3*u_y = 0 -> u = F(3*x - 2*y)
+    {
+        const PdeResult r1 = pdsolve1Quasilinear(
+            c, c.number(2), c.number(3), c.zero(), x, y, u);
+        ASSERT_TRUE(r1.proved()) << r1.reason;
+        EXPECT_TRUE(sameExpr(c, r1.u, P(c, "F(3*x - 2*y)")))
+            << "got: " << c.toString(r1.u);
+
+        // u_x + 2*u_y = -3*u -> u = F(2*x - y)*exp(-3*x)
+        const PdeResult r2 = pdsolve1Quasilinear(
+            c, c.one(), c.number(2), P(c, "-3*u"), x, y, u);
+        ASSERT_TRUE(r2.proved()) << r2.reason;
+        EXPECT_TRUE(sameExpr(c, r2.u, P(c, "F(2*x - y)*exp(-3*x)")))
+            << "got: " << c.toString(r2.u);
+
+        // Euler homogeneous PDE: x*u_x + y*u_y = 2*u -> u = x^2*F(y/x)
+        const PdeResult r3 = pdsolve1Quasilinear(
+            c, x, y, P(c, "2*u"), x, y, u);
+        ASSERT_TRUE(r3.proved()) << r3.reason;
+        const Expr res3 = c.simplify(c.add(
+            {c.mul({x, c.diff(r3.u, x)}),
+             c.mul({y, c.diff(r3.u, y)}),
+             c.neg(c.mul({c.number(2), r3.u}))}));
+        EXPECT_TRUE(c.isZero(res3));
+    }
+
+    // 2. 1st-order PDE Cauchy initial value problems:
+    {
+        // Linear advection: c*u_x + u_t = 0, u(s, 0) = sin(s) -> u(x, t) = sin(x - c*t)
+        const Expr cSpd = c.symbol("c");
+        const PdeResult adv = pdsolve1Cauchy(
+            c, cSpd, c.one(), c.zero(), x, t, u, s, s, c.zero(),
+            P(c, "sin(s)"));
+        ASSERT_TRUE(adv.proved()) << adv.reason;
+        EXPECT_TRUE(sameExpr(c, adv.u, P(c, "sin(x - c*t)")))
+            << "got: " << c.toString(adv.u);
+
+        // Variable-coefficient PDE: x*u_x + y*u_y = 2*u with u(s, 1) = s^2 + 1 -> x^2 + y^2
+        const PdeResult varPde = pdsolve1Cauchy(
+            c, x, y, P(c, "2*u"), x, y, u, s, s, c.one(), P(c, "s^2 + 1"));
+        ASSERT_TRUE(varPde.proved()) << varPde.reason;
+        EXPECT_TRUE(sameExpr(c, varPde.u, P(c, "x^2 + y^2")))
+            << "got: " << c.toString(varPde.u);
+
+        // Quasilinear inviscid Burgers' equation:
+        //   u*u_x + u_t = 0,  u(s, 0) = 2*s + 1  ->  u(x, t) = (2*x + 1)/(2*t + 1)
+        const PdeResult burgers = pdsolve1Cauchy(
+            c, u, c.one(), c.zero(), x, t, u, s, s, c.zero(),
+            P(c, "2*s + 1"));
+        ASSERT_TRUE(burgers.proved()) << burgers.reason;
+        EXPECT_TRUE(sameExpr(c, burgers.u, P(c, "(2*x + 1)/(2*t + 1)")))
+            << "got: " << c.toString(burgers.u);
+    }
+
+    // 3. 1D wave equation via d'Alembert's formula and Duhamel's principle:
+    {
+        const Expr cSpd = c.symbol("c");
+        const PdeResult genWave = pdsolveWaveDalembert(c, cSpd, x, t);
+        ASSERT_TRUE(genWave.proved()) << genWave.reason;
+        EXPECT_TRUE(sameExpr(c, genWave.u, P(c, "F1(x - c*t) + F2(x + c*t)")));
+
+        // u_tt - 4*u_xx = 0, u(x, 0) = cos(x), u_t(x, 0) = sin(x)
+        //   -> 3/4*cos(x - 2*t) + 1/4*cos(x + 2*t)
+        const PdeResult ivpWave = pdsolveWaveDalembert(
+            c, c.number(2), x, t, P(c, "cos(x)"), P(c, "sin(x)"));
+        ASSERT_TRUE(ivpWave.proved()) << ivpWave.reason;
+        EXPECT_TRUE(sameExpr(c, ivpWave.u,
+                             P(c, "3/4*cos(x - 2*t) + 1/4*cos(x + 2*t)")))
+            << "got: " << c.toString(ivpWave.u);
+
+        // Forced wave equation: u_tt - c^2*u_xx = 6*x*t, u(x, 0) = x^2, u_t(x, 0) = 0
+        //   -> x^2 + c^2*t^2 + x*t^3
+        const PdeResult forcedWave = pdsolveWaveDalembert(
+            c, cSpd, x, t, P(c, "x^2"), c.zero(), P(c, "6*x*t"));
+        ASSERT_TRUE(forcedWave.proved()) << forcedWave.reason;
+        EXPECT_TRUE(sameExpr(c, forcedWave.u, P(c, "x^2 + c^2*t^2 + x*t^3")))
+            << "got: " << c.toString(forcedWave.u);
+    }
+
+    // 4. 1D heat & wave equations on [0, L] via Fourier separation of variables,
+    //    plus 2D Laplace equation on [0, pi] x [0, 1]:
+    {
+        const Expr alpha = c.symbol("alpha");
+        const Expr piSym = c.symbol("pi");
+
+        // Heat Dirichlet on [0, pi]: u_t = alpha*u_xx, u(x, 0) = 3*sin(x) - 5*sin(2*x)
+        const PdeResult heatDir = pdsolveHeat1D(
+            c, alpha, piSym, P(c, "3*sin(x) - 5*sin(2*x)"), x, t,
+            PdeBoundaryKind::Dirichlet, 3);
+        ASSERT_TRUE(heatDir.proved()) << heatDir.reason;
+        EXPECT_TRUE(sameExpr(
+            c, heatDir.u,
+            P(c, "3*exp(-alpha*t)*sin(x) - 5*exp(-4*alpha*t)*sin(2*x)")))
+            << "got: " << c.toString(heatDir.u);
+
+        // Heat Neumann on [0, pi]: u_t = alpha*u_xx, u(x, 0) = 4 + 2*cos(3*x)
+        const PdeResult heatNeu = pdsolveHeat1D(
+            c, alpha, piSym, P(c, "4 + 2*cos(3*x)"), x, t,
+            PdeBoundaryKind::Neumann, 3);
+        ASSERT_TRUE(heatNeu.proved()) << heatNeu.reason;
+        EXPECT_TRUE(sameExpr(
+            c, heatNeu.u, P(c, "4 + 2*exp(-9*alpha*t)*cos(3*x)")))
+            << "got: " << c.toString(heatNeu.u);
+
+        // Wave Dirichlet on [0, pi]: u_tt = 9*u_xx, u(x, 0) = sin(x), u_t(x, 0) = 6*sin(2*x)
+        const PdeResult waveDir = pdsolveWave1D(
+            c, c.number(3), piSym, P(c, "sin(x)"), P(c, "6*sin(2*x)"), x, t,
+            PdeBoundaryKind::Dirichlet, 3);
+        ASSERT_TRUE(waveDir.proved()) << waveDir.reason;
+        EXPECT_TRUE(sameExpr(
+            c, waveDir.u, P(c, "cos(3*t)*sin(x) + sin(6*t)*sin(2*x)")))
+            << "got: " << c.toString(waveDir.u);
+
+        // 2D Laplace on [0, pi] x [0, 1]: u_xx + u_yy = 0, u(x, 1) = 2*sin(x)
+        const PdeResult lap2d = pdsolveLaplace2DRect(
+            c, piSym, c.one(), P(c, "2*sin(x)"), x, y, 2);
+        ASSERT_TRUE(lap2d.proved()) << lap2d.reason;
+        EXPECT_TRUE(sameExpr(
+            c, lap2d.u, P(c, "2*sinh(y)/sinh(1)*sin(x)")))
+            << "got: " << c.toString(lap2d.u);
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

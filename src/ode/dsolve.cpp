@@ -3424,4 +3424,819 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// Partial Differential Equations (Item 75: pdsolve)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+bool verifyPde1(Ctx &c, Expr uSol, Expr a, Expr b, Expr rhs,
+                Expr x, Expr y, Expr u)
+{
+    if (uSol.isNull())
+        return false;
+    const Expr ux = c.diff(uSol, x);
+    const Expr uy = c.diff(uSol, y);
+    if (ux.isNull() || uy.isNull())
+        return false;
+    const Expr aSub = u.isNull() ? a : c.subs(a, u, uSol);
+    const Expr bSub = u.isNull() ? b : c.subs(b, u, uSol);
+    const Expr rhsSub = u.isNull() ? rhs : c.subs(rhs, u, uSol);
+    const Expr res = c.add({c.mul({aSub, ux}), c.mul({bSub, uy}), c.neg(rhsSub)});
+    return isZeroSimp(c, res);
+}
+
+struct CharCurveCandidate
+{
+    Expr inv;   // I_1(x, y)
+    Expr yOfX;  // y(x, xiSym)
+    Expr xOfY;  // x(y, xiSym)
+};
+
+// Apply trig product-to-sum identities on a product with sin/cos(n*pi*x/L)
+// so Fourier projection integrals evaluate directly and fast even for symbolic L.
+Expr applyTrigProductToSum(Ctx &c, Expr e)
+{
+    const Expr expd = c.expand(e);
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+
+    auto rewriteMul = [&](Expr term) -> Expr {
+        if (c.kind(term) != NodeKind::Mul)
+            return term;
+        std::vector<Expr> other;
+        std::vector<std::pair<std::string, Expr>> trigFactors;
+        for (std::size_t i = 0; i < c.childCount(term); ++i) {
+            const Expr f = c.child(term, i);
+            if (c.kind(f) == NodeKind::Func && c.childCount(f) == 1 &&
+                (c.funcName(f) == "sin" || c.funcName(f) == "cos")) {
+                trigFactors.emplace_back(std::string(c.funcName(f)), c.child(f, 0));
+            } else if (c.kind(f) == NodeKind::Pow &&
+                       c.kind(c.child(f, 0)) == NodeKind::Func &&
+                       c.childCount(c.child(f, 0)) == 1 &&
+                       (c.funcName(c.child(f, 0)) == "sin" ||
+                        c.funcName(c.child(f, 0)) == "cos") &&
+                       c.kind(c.child(f, 1)) == NodeKind::Number &&
+                       c.numberValue(c.child(f, 1)) == Rational(2)) {
+                const Expr fn = c.child(f, 0);
+                trigFactors.emplace_back(std::string(c.funcName(fn)), c.child(fn, 0));
+                trigFactors.emplace_back(std::string(c.funcName(fn)), c.child(fn, 0));
+            } else {
+                other.push_back(f);
+            }
+        }
+        if (trigFactors.size() != 2)
+            return term;
+        const std::string &fn1 = trigFactors[0].first;
+        const std::string &fn2 = trigFactors[1].first;
+        const Expr A = trigFactors[0].second;
+        const Expr B = trigFactors[1].second;
+        const Expr diffAB = c.simplify(c.add({A, c.neg(B)}));
+        const Expr sumAB = c.simplify(c.add({A, B}));
+        Expr comb;
+        if (fn1 == "sin" && fn2 == "sin") {
+            comb = c.mul({half, c.add({c.func("cos", diffAB),
+                                       c.neg(c.func("cos", sumAB))})});
+        } else if (fn1 == "cos" && fn2 == "cos") {
+            comb = c.mul({half, c.add({c.func("cos", diffAB),
+                                       c.func("cos", sumAB)})});
+        } else if (fn1 == "sin" && fn2 == "cos") {
+            comb = c.mul({half, c.add({c.func("sin", diffAB),
+                                       c.func("sin", sumAB)})});
+        } else {
+            comb = c.mul({half, c.add({c.func("sin", sumAB),
+                                       c.neg(c.func("sin", diffAB))})});
+        }
+        other.push_back(comb);
+        return c.expand(c.mul(other));
+    };
+
+    if (c.kind(expd) == NodeKind::Add) {
+        std::vector<Expr> terms;
+        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+            terms.push_back(rewriteMul(c.child(expd, i)));
+        return c.add(terms);
+    }
+    return rewriteMul(expd);
+}
+
+Expr definiteIntegralOn0L(Ctx &c, Expr integrand, Expr x, Expr L, Budget *budget)
+{
+    const Expr rewritten = applyTrigProductToSum(c, integrand);
+    const RationalIntegral ir = integrate(c, rewritten, x, budget);
+    if (ir.proved() && !ir.F.isNull()) {
+        const Expr atL = c.simplify(c.subs(ir.F, x, L));
+        const Expr at0 = c.simplify(c.subs(ir.F, x, c.zero()));
+        if (!atL.isNull() && !at0.isNull())
+            return c.simplify(c.add({atL, c.neg(at0)}));
+    }
+    const DefiniteIntegral defIr =
+        definiteIntegrate(c, rewritten, x, c.zero(), L, budget);
+    if (defIr.proved() && !defIr.value.isNull())
+        return c.simplify(defIr.value);
+    return {};
+}
+
+} // namespace
+
+PdeResult pdsolve1Quasilinear(Ctx &c, Expr a, Expr b, Expr rhs,
+                              Expr x, Expr y, Expr u, Budget *budget)
+{
+    PdeResult out;
+    if (a.isNull() || b.isNull() || rhs.isNull() || x.isNull() || y.isNull()) {
+        out.reason = "invalid 1st-order PDE arguments";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr uVar = u.isNull() ? c.symbol("_pde_u") : u;
+    const Expr C1 = c.symbol("C1");
+    const Expr xiSym = c.symbol("_pde_xi");
+
+    if (!mentionsSym(c, a, uVar) && !mentionsSym(c, b, uVar)) {
+        if (isZeroSimp(c, a) && !isZeroSimp(c, b)) {
+            const Expr charInv = x;
+            const OdeResult odeY =
+                dsolve1(c, c.simplify(c.div(rhs, b)), y, uVar, budget);
+            if (odeY.proved()) {
+                const Expr uCand =
+                    c.simplify(c.subs(odeY.y, C1, c.func("F", charInv)));
+                if (verifyPde1(c, uCand, a, b, rhs, x, y, uVar)) {
+                    out.status = PdeResult::Status::Proved;
+                    out.u = uCand;
+                    out.charInvariant = charInv;
+                    return out;
+                }
+            }
+        }
+        if (isZeroSimp(c, b) && !isZeroSimp(c, a)) {
+            const Expr charInv = y;
+            const OdeResult odeX =
+                dsolve1(c, c.simplify(c.div(rhs, a)), x, uVar, budget);
+            if (odeX.proved()) {
+                const Expr uCand =
+                    c.simplify(c.subs(odeX.y, C1, c.func("F", charInv)));
+                if (verifyPde1(c, uCand, a, b, rhs, x, y, uVar)) {
+                    out.status = PdeResult::Status::Proved;
+                    out.u = uCand;
+                    out.charInvariant = charInv;
+                    return out;
+                }
+            }
+        }
+
+        if (!isZeroSimp(c, a) && !isZeroSimp(c, b)) {
+            std::vector<CharCurveCandidate> candidates;
+
+            // 1. Constant-coefficient principal part: b*x - a*y = xi
+            if (!mentionsSym(c, a, x) && !mentionsSym(c, a, y) &&
+                !mentionsSym(c, b, x) && !mentionsSym(c, b, y)) {
+                CharCurveCandidate cc;
+                cc.inv = c.simplify(c.add({c.mul({b, x}), c.neg(c.mul({a, y}))}));
+                cc.yOfX = c.simplify(c.div(c.add({c.mul({b, x}), c.neg(xiSym)}), a));
+                cc.xOfY = c.simplify(c.div(c.add({xiSym, c.mul({a, y})}), b));
+                candidates.push_back(cc);
+            }
+
+            // 2. General characteristic ODE dy/dx = b(x, y) / a(x, y)
+            const OdeResult charOdeY =
+                dsolve1(c, c.simplify(c.div(b, a)), x, y, budget);
+            if (charOdeY.proved()) {
+                const std::vector<Expr> invSols = solveSymbolic(
+                    c, c.add({y, c.neg(charOdeY.y)}), C1, budget);
+                for (const Expr &inv : invSols) {
+                    CharCurveCandidate cc;
+                    cc.inv = c.simplify(inv);
+                    cc.yOfX = c.simplify(c.subs(charOdeY.y, C1, xiSym));
+                    const std::vector<Expr> xSols = solveSymbolic(
+                        c, c.add({y, c.neg(cc.yOfX)}), x, budget);
+                    if (!xSols.empty())
+                        cc.xOfY = c.simplify(xSols[0]);
+                    candidates.push_back(cc);
+                }
+            }
+
+            // 3. Characteristic ODE dx/dy = a(x, y) / b(x, y)
+            const OdeResult charOdeX =
+                dsolve1(c, c.simplify(c.div(a, b)), y, x, budget);
+            if (charOdeX.proved()) {
+                const std::vector<Expr> invSols = solveSymbolic(
+                    c, c.add({x, c.neg(charOdeX.y)}), C1, budget);
+                for (const Expr &inv : invSols) {
+                    CharCurveCandidate cc;
+                    cc.inv = c.simplify(inv);
+                    cc.xOfY = c.simplify(c.subs(charOdeX.y, C1, xiSym));
+                    const std::vector<Expr> ySols = solveSymbolic(
+                        c, c.add({x, c.neg(cc.xOfY)}), y, budget);
+                    if (!ySols.empty())
+                        cc.yOfX = c.simplify(ySols[0]);
+                    candidates.push_back(cc);
+                }
+            }
+
+            // 4. Exact 1-form b(x,y) dx - a(x,y) dy = 0 when ∂b/∂y + ∂a/∂x == 0
+            if (isZeroSimp(c, c.add({c.diff(b, y), c.diff(a, x)}))) {
+                const RationalIntegral intB = integrate(c, b, x, budget);
+                if (intB.proved()) {
+                    const Expr remY = c.simplify(
+                        c.add({c.neg(a), c.neg(c.diff(intB.F, y))}));
+                    if (!mentionsSym(c, remY, x)) {
+                        const RationalIntegral intRem = integrate(c, remY, y, budget);
+                        if (intRem.proved()) {
+                            CharCurveCandidate cc;
+                            cc.inv = c.simplify(c.add(
+                                {intB.F, intRem.F}));
+                            const std::vector<Expr> ySols = solveSymbolic(
+                                c, c.add({cc.inv, c.neg(xiSym)}), y, budget);
+                            if (!ySols.empty())
+                                cc.yOfX = c.simplify(ySols[0]);
+                            const std::vector<Expr> xSols = solveSymbolic(
+                                c, c.add({cc.inv, c.neg(xiSym)}), x, budget);
+                            if (!xSols.empty())
+                                cc.xOfY = c.simplify(xSols[0]);
+                            candidates.push_back(cc);
+                        }
+                    }
+                }
+            }
+
+            for (const auto &cc : candidates) {
+                if (cc.inv.isNull())
+                    continue;
+                // Check characteristic invariant identity a*d(inv)/dx + b*d(inv)/dy == 0
+                if (!isZeroSimp(c, c.add({c.mul({a, c.diff(cc.inv, x)}),
+                                          c.mul({b, c.diff(cc.inv, y)})}))) {
+                    continue;
+                }
+                if (isZeroSimp(c, rhs)) {
+                    const Expr uCand = c.func("F", cc.inv);
+                    if (verifyPde1(c, uCand, a, b, rhs, x, y, uVar)) {
+                        out.status = PdeResult::Status::Proved;
+                        out.u = uCand;
+                        out.charInvariant = cc.inv;
+                        return out;
+                    }
+                }
+                if (!cc.yOfX.isNull()) {
+                    const Expr odeRhsX =
+                        c.simplify(c.subs(c.div(rhs, a), y, cc.yOfX));
+                    const OdeResult odeU = dsolve1(c, odeRhsX, x, uVar, budget);
+                    if (odeU.proved()) {
+                        const Expr withF =
+                            c.subs(odeU.y, C1, c.func("F", xiSym));
+                        const Expr uCand =
+                            c.simplify(c.subs(withF, xiSym, cc.inv));
+                        if (verifyPde1(c, uCand, a, b, rhs, x, y, uVar)) {
+                            out.status = PdeResult::Status::Proved;
+                            out.u = uCand;
+                            out.charInvariant = cc.inv;
+                            return out;
+                        }
+                    }
+                }
+                if (!cc.xOfY.isNull()) {
+                    const Expr odeRhsY =
+                        c.simplify(c.subs(c.div(rhs, b), x, cc.xOfY));
+                    const OdeResult odeU = dsolve1(c, odeRhsY, y, uVar, budget);
+                    if (odeU.proved()) {
+                        const Expr withF =
+                            c.subs(odeU.y, C1, c.func("F", xiSym));
+                        const Expr uCand =
+                            c.simplify(c.subs(withF, xiSym, cc.inv));
+                        if (verifyPde1(c, uCand, a, b, rhs, x, y, uVar)) {
+                            out.status = PdeResult::Status::Proved;
+                            out.u = uCand;
+                            out.charInvariant = cc.inv;
+                            return out;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    out.reason = "unable to construct certified explicit general solution for 1st-order PDE";
+    return out;
+}
+
+PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
+                         Expr x, Expr y, Expr u,
+                         Expr s, Expr x0S, Expr y0S, Expr u0S,
+                         Budget *budget)
+{
+    PdeResult out;
+    if (a.isNull() || b.isNull() || rhs.isNull() || x.isNull() || y.isNull() ||
+        s.isNull() || x0S.isNull() || y0S.isNull() || u0S.isNull()) {
+        out.reason = "invalid 1st-order PDE Cauchy arguments";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr uVar = u.isNull() ? c.symbol("_pde_u") : u;
+    const Expr xiSym = c.symbol("_pde_xi");
+
+    auto verifyCauchy = [&](Expr uCand, Expr invCand) -> bool {
+        if (!verifyPde1(c, uCand, a, b, rhs, x, y, uVar))
+            return false;
+        const Expr onCurve =
+            c.simplify(c.subs(c.subs(uCand, x, x0S), y, y0S));
+        if (!isZeroSimp(c, c.add({onCurve, c.neg(u0S)})))
+            return false;
+        out.status = PdeResult::Status::Proved;
+        out.u = uCand;
+        out.charInvariant = invCand;
+        return true;
+    };
+
+    // Path 1: Specialize general solution from pdsolve1Quasilinear
+    const PdeResult gen = pdsolve1Quasilinear(c, a, b, rhs, x, y, uVar, budget);
+    if (gen.proved() && !gen.charInvariant.isNull()) {
+        const Expr fNode = c.func("F", gen.charInvariant);
+        const Expr fValSym = c.symbol("_pde_F_val");
+        const Expr uWithFVal = c.subs(gen.u, fNode, fValSym);
+        const Expr uOnCurve =
+            c.simplify(c.subs(c.subs(uWithFVal, x, x0S), y, y0S));
+        const Expr invOnCurve =
+            c.simplify(c.subs(c.subs(gen.charInvariant, x, x0S), y, y0S));
+
+        const std::vector<Expr> fValSols = solveSymbolic(
+            c, c.add({uOnCurve, c.neg(u0S)}), fValSym, budget);
+        const std::vector<Expr> sOfXiSols = solveSymbolic(
+            c, c.add({invOnCurve, c.neg(xiSym)}), s, budget);
+
+        for (const Expr &fValS : fValSols) {
+            for (const Expr &sXi : sOfXiSols) {
+                const Expr fAtXi = c.subs(fValS, s, sXi);
+                const Expr fAtInv = c.subs(fAtXi, xiSym, gen.charInvariant);
+                const Expr uCand =
+                    c.simplify(c.subs(uWithFVal, fValSym, fAtInv));
+                if (verifyCauchy(uCand, gen.charInvariant))
+                    return out;
+            }
+        }
+    }
+
+    // Path 2: Parametric Lagrange-Charpit characteristics
+    //   dx/dtau = a(x, y, u),  dy/dtau = b(x, y, u),  du/dtau = rhs(x, y, u)
+    //   x(0) = x0(s),          y(0) = y0(s),          u(0) = u0(s)
+    const Expr tau = c.symbol("_pde_tau");
+    Expr xTau;
+    Expr yTau;
+    Expr uTau;
+    Expr curA = a;
+    Expr curB = b;
+    Expr curRhs = rhs;
+
+    for (int pass = 0; pass < 3; ++pass) {
+        if (xTau.isNull() && !mentionsSym(c, curA, y) && !mentionsSym(c, curA, uVar)) {
+            const OdeResult rX =
+                dsolve1IVP(c, curA, tau, x, c.zero(), x0S, budget);
+            if (rX.proved()) {
+                xTau = rX.y;
+                curB = c.simplify(c.subs(curB, x, xTau));
+                curRhs = c.simplify(c.subs(curRhs, x, xTau));
+            }
+        }
+        if (yTau.isNull() && !mentionsSym(c, curB, x) && !mentionsSym(c, curB, uVar)) {
+            const OdeResult rY =
+                dsolve1IVP(c, curB, tau, y, c.zero(), y0S, budget);
+            if (rY.proved()) {
+                yTau = rY.y;
+                curA = c.simplify(c.subs(curA, y, yTau));
+                curRhs = c.simplify(c.subs(curRhs, y, yTau));
+            }
+        }
+        if (uTau.isNull() && !mentionsSym(c, curRhs, x) && !mentionsSym(c, curRhs, y)) {
+            const OdeResult rU =
+                dsolve1IVP(c, curRhs, tau, uVar, c.zero(), u0S, budget);
+            if (rU.proved()) {
+                uTau = rU.y;
+                curA = c.simplify(c.subs(curA, uVar, uTau));
+                curB = c.simplify(c.subs(curB, uVar, uTau));
+            }
+        }
+    }
+
+    if (!xTau.isNull() && !yTau.isNull() && !uTau.isNull()) {
+        const Expr eqX = c.simplify(c.add({xTau, c.neg(x)}));
+        const Expr eqY = c.simplify(c.add({yTau, c.neg(y)}));
+
+        // Try eliminating tau from eqY first, then solving eqX for s
+        const std::vector<Expr> tauFromY = solveSymbolic(c, eqY, tau, budget);
+        for (const Expr &tVal : tauFromY) {
+            const Expr eqXSub = c.simplify(c.subs(eqX, tau, tVal));
+            const std::vector<Expr> sSols = solveSymbolic(c, eqXSub, s, budget);
+            for (const Expr &sVal : sSols) {
+                const Expr tauFinal = c.simplify(c.subs(tVal, s, sVal));
+                const Expr uCand =
+                    c.simplify(c.subs(c.subs(uTau, tau, tauFinal), s, sVal));
+                if (verifyCauchy(uCand, sVal))
+                    return out;
+            }
+        }
+
+        // Try eliminating tau from eqX first, then solving eqY for s
+        const std::vector<Expr> tauFromX = solveSymbolic(c, eqX, tau, budget);
+        for (const Expr &tVal : tauFromX) {
+            const Expr eqYSub = c.simplify(c.subs(eqY, tau, tVal));
+            const std::vector<Expr> sSols = solveSymbolic(c, eqYSub, s, budget);
+            for (const Expr &sVal : sSols) {
+                const Expr tauFinal = c.simplify(c.subs(tVal, s, sVal));
+                const Expr uCand =
+                    c.simplify(c.subs(c.subs(uTau, tau, tauFinal), s, sVal));
+                if (verifyCauchy(uCand, sVal))
+                    return out;
+            }
+        }
+
+        // Try eliminating s from eqX first, then solving eqY for tau
+        const std::vector<Expr> sFromX = solveSymbolic(c, eqX, s, budget);
+        for (const Expr &sVal : sFromX) {
+            const Expr eqYSub = c.simplify(c.subs(eqY, s, sVal));
+            const std::vector<Expr> tauSols = solveSymbolic(c, eqYSub, tau, budget);
+            for (const Expr &tVal : tauSols) {
+                const Expr sFinal = c.simplify(c.subs(sVal, tau, tVal));
+                const Expr uCand =
+                    c.simplify(c.subs(c.subs(uTau, tau, tVal), s, sFinal));
+                if (verifyCauchy(uCand, sFinal))
+                    return out;
+            }
+        }
+    }
+
+    out.reason = "unable to invert characteristic surface or certify Cauchy solution";
+    return out;
+}
+
+PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
+                               Expr phi, Expr psi, Expr forcing,
+                               Budget *budget)
+{
+    PdeResult out;
+    if (cWave.isNull() || isZeroSimp(c, cWave) || x.isNull() || t.isNull()) {
+        out.reason = "invalid wave speed or variables in pdsolveWaveDalembert";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr two = c.number(std::int64_t{2});
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr c2 = c.pow(cWave, two);
+    const Expr xMinusCt = c.add({x, c.neg(c.mul({cWave, t}))});
+    const Expr xPlusCt = c.add({x, c.mul({cWave, t})});
+    const Expr fExpr = forcing.isNull() ? c.zero() : forcing;
+
+    // General homogeneous wave solution when phi, psi, and forcing are omitted
+    if (phi.isNull() && psi.isNull() && isZeroSimp(c, fExpr)) {
+        const Expr uGen =
+            c.add({c.func("F1", xMinusCt), c.func("F2", xPlusCt)});
+        const Expr utt = c.diff(c.diff(uGen, t), t);
+        const Expr uxx = c.diff(c.diff(uGen, x), x);
+        if (isZeroSimp(c, c.add({utt, c.neg(c.mul({c2, uxx}))}))) {
+            out.status = PdeResult::Status::Proved;
+            out.u = uGen;
+            out.charInvariant = xMinusCt;
+            return out;
+        }
+    }
+
+    const Expr phiExpr = phi.isNull() ? c.zero() : phi;
+    const Expr psiExpr = psi.isNull() ? c.zero() : psi;
+
+    // 1. Travelling wave average: 1/2 * (phi(x - c*t) + phi(x + c*t))
+    const Expr uPhi = c.mul(
+        {half, c.add({c.subs(phiExpr, x, xMinusCt),
+                      c.subs(phiExpr, x, xPlusCt)})});
+
+    // 2. Initial velocity integral: 1/(2*c) * int_{x - c*t}^{x + c*t} psi(s) ds
+    Expr uPsi = c.zero();
+    if (!isZeroSimp(c, psiExpr)) {
+        const Expr sSym = c.symbol("_pde_wave_s");
+        const Expr psiS = c.subs(psiExpr, x, sSym);
+        const RationalIntegral intPsi = integrate(c, psiS, sSym, budget);
+        if (!intPsi.proved() || intPsi.F.isNull()) {
+            out.reason = "unable to integrate initial velocity psi(x)";
+            return out;
+        }
+        const Expr diffAntideriv =
+            c.add({c.subs(intPsi.F, sSym, xPlusCt),
+                   c.neg(c.subs(intPsi.F, sSym, xMinusCt))});
+        uPsi = c.div(diffAntideriv, c.mul({two, cWave}));
+    }
+
+    // 3. Duhamel forcing integral:
+    //    1/(2*c) * int_0^t (int_{x - c*(t - tau)}^{x + c*(t - tau)} f(s, tau) ds) dtau
+    Expr uForce = c.zero();
+    if (!isZeroSimp(c, fExpr)) {
+        const Expr sSym = c.symbol("_pde_wave_s");
+        const Expr tauSym = c.symbol("_pde_wave_tau");
+        const Expr fSTau = c.subs(c.subs(fExpr, x, sSym), t, tauSym);
+        const RationalIntegral intS = integrate(c, fSTau, sSym, budget);
+        if (!intS.proved() || intS.F.isNull()) {
+            out.reason = "unable to integrate wave forcing f(x, t) over space";
+            return out;
+        }
+        const Expr dt = c.add({t, c.neg(tauSym)});
+        const Expr upperS = c.add({x, c.mul({cWave, dt})});
+        const Expr lowerS = c.add({x, c.neg(c.mul({cWave, dt}))});
+        const Expr innerIntegral = c.simplify(
+            c.add({c.subs(intS.F, sSym, upperS),
+                   c.neg(c.subs(intS.F, sSym, lowerS))}));
+        const RationalIntegral intTau = integrate(c, innerIntegral, tauSym, budget);
+        if (!intTau.proved() || intTau.F.isNull()) {
+            out.reason = "unable to integrate Duhamel wave term over time";
+            return out;
+        }
+        const Expr outerDiff =
+            c.add({c.subs(intTau.F, tauSym, t),
+                   c.neg(c.subs(intTau.F, tauSym, c.zero()))});
+        uForce = c.div(outerDiff, c.mul({two, cWave}));
+    }
+
+    const Expr uCand = c.simplify(c.add({uPhi, uPsi, uForce}));
+    const Expr ut = c.diff(uCand, t);
+    const Expr utt = c.diff(ut, t);
+    const Expr uxx = c.diff(c.diff(uCand, x), x);
+
+    const Expr pdeRes = c.add({utt, c.neg(c.mul({c2, uxx})), c.neg(fExpr)});
+    const Expr ic0Res = c.add({c.subs(uCand, t, c.zero()), c.neg(phiExpr)});
+    const Expr ic1Res = c.add({c.subs(ut, t, c.zero()), c.neg(psiExpr)});
+
+    if (isZeroSimp(c, pdeRes) && isZeroSimp(c, ic0Res) && isZeroSimp(c, ic1Res)) {
+        out.status = PdeResult::Status::Proved;
+        out.u = uCand;
+        out.charInvariant = xMinusCt;
+        return out;
+    }
+
+    out.reason = "d'Alembert solution failed wave PDE or initial condition certificate";
+    return out;
+}
+
+PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
+                        Expr x, Expr t, PdeBoundaryKind bc, int maxModes,
+                        Budget *budget)
+{
+    PdeResult out;
+    if (alpha.isNull() || L.isNull() || isZeroSimp(c, L) || initU.isNull() ||
+        x.isNull() || t.isNull() || maxModes < 1) {
+        out.reason = "invalid arguments in pdsolveHeat1D";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr piSym = c.symbol("pi");
+    const Expr two = c.number(std::int64_t{2});
+    const Expr twoOverL = c.div(two, L);
+    std::vector<Expr> modeTerms;
+
+    if (bc == PdeBoundaryKind::Neumann) {
+        const Expr int0 = definiteIntegralOn0L(c, initU, x, L, budget);
+        if (int0.isNull()) {
+            out.reason = "unable to compute 0th Fourier cosine coefficient on [0, L]";
+            return out;
+        }
+        const Expr a0Half = c.simplify(c.div(int0, L));
+        if (!c.isZero(a0Half))
+            modeTerms.push_back(a0Half);
+    }
+
+    for (int n = 1; n <= maxModes; ++n) {
+        if (!checkOdeBudget(c, budget)) {
+            out.reason = "budget exhausted";
+            return out;
+        }
+        const Expr nExpr = c.number(static_cast<std::int64_t>(n));
+        const Expr kN = c.div(c.mul({nExpr, piSym}), L);
+        const Expr argX = c.mul({kN, x});
+        const Expr basisN = (bc == PdeBoundaryKind::Dirichlet)
+                                ? c.func("sin", argX)
+                                : c.func("cos", argX);
+        const Expr intN =
+            definiteIntegralOn0L(c, c.mul({initU, basisN}), x, L, budget);
+        if (intN.isNull()) {
+            out.reason = "unable to compute Fourier mode coefficient on [0, L]";
+            return out;
+        }
+        const Expr aN = c.simplify(c.mul({twoOverL, intN}));
+        if (isZeroSimp(c, aN))
+            continue;
+        const Expr decay =
+            c.func("exp", c.neg(c.mul({alpha, c.pow(kN, two), t})));
+        modeTerms.push_back(c.mul({aN, decay, basisN}));
+    }
+
+    const Expr uCand =
+        modeTerms.empty() ? c.zero() : c.simplify(c.add(modeTerms));
+    const Expr ut = c.diff(uCand, t);
+    const Expr ux = c.diff(uCand, x);
+    const Expr uxx = c.diff(ux, x);
+    const Expr pdeRes = c.add({ut, c.neg(c.mul({alpha, uxx}))});
+
+    const bool bcOk =
+        (bc == PdeBoundaryKind::Dirichlet)
+            ? (isZeroSimp(c, c.subs(uCand, x, c.zero())) &&
+               isZeroSimp(c, c.subs(uCand, x, L)))
+            : (isZeroSimp(c, c.subs(ux, x, c.zero())) &&
+               isZeroSimp(c, c.subs(ux, x, L)));
+
+    if (isZeroSimp(c, pdeRes) && bcOk) {
+        out.status = PdeResult::Status::Proved;
+        out.u = uCand;
+        return out;
+    }
+
+    out.reason = "1D heat Fourier solution failed PDE or boundary condition certificate";
+    return out;
+}
+
+PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
+                        Expr x, Expr t, PdeBoundaryKind bc, int maxModes,
+                        Budget *budget)
+{
+    PdeResult out;
+    if (cWave.isNull() || isZeroSimp(c, cWave) || L.isNull() ||
+        isZeroSimp(c, L) || x.isNull() || t.isNull() || maxModes < 1) {
+        out.reason = "invalid arguments in pdsolveWave1D";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr fExpr = initU.isNull() ? c.zero() : initU;
+    const Expr gExpr = initUt.isNull() ? c.zero() : initUt;
+    const Expr piSym = c.symbol("pi");
+    const Expr two = c.number(std::int64_t{2});
+    const Expr twoOverL = c.div(two, L);
+    std::vector<Expr> modeTerms;
+
+    if (bc == PdeBoundaryKind::Neumann) {
+        if (!isZeroSimp(c, fExpr)) {
+            const Expr intF0 = definiteIntegralOn0L(c, fExpr, x, L, budget);
+            if (intF0.isNull()) {
+                out.reason = "unable to compute 0th cosine displacement mode";
+                return out;
+            }
+            const Expr a0Half = c.simplify(c.div(intF0, L));
+            if (!c.isZero(a0Half))
+                modeTerms.push_back(a0Half);
+        }
+        if (!isZeroSimp(c, gExpr)) {
+            const Expr intG0 = definiteIntegralOn0L(c, gExpr, x, L, budget);
+            if (intG0.isNull()) {
+                out.reason = "unable to compute 0th cosine velocity mode";
+                return out;
+            }
+            const Expr b0Half = c.simplify(c.div(intG0, L));
+            if (!c.isZero(b0Half))
+                modeTerms.push_back(c.mul({b0Half, t}));
+        }
+    }
+
+    for (int n = 1; n <= maxModes; ++n) {
+        if (!checkOdeBudget(c, budget)) {
+            out.reason = "budget exhausted";
+            return out;
+        }
+        const Expr nExpr = c.number(static_cast<std::int64_t>(n));
+        const Expr kN = c.div(c.mul({nExpr, piSym}), L);
+        const Expr omegaN = c.mul({cWave, kN});
+        const Expr argX = c.mul({kN, x});
+        const Expr argT = c.mul({omegaN, t});
+        const Expr basisN = (bc == PdeBoundaryKind::Dirichlet)
+                                ? c.func("sin", argX)
+                                : c.func("cos", argX);
+
+        Expr aN = c.zero();
+        if (!isZeroSimp(c, fExpr)) {
+            const Expr intF =
+                definiteIntegralOn0L(c, c.mul({fExpr, basisN}), x, L, budget);
+            if (intF.isNull()) {
+                out.reason = "unable to compute Fourier displacement mode on [0, L]";
+                return out;
+            }
+            aN = c.simplify(c.mul({twoOverL, intF}));
+        }
+
+        Expr bN = c.zero();
+        if (!isZeroSimp(c, gExpr)) {
+            const Expr intG =
+                definiteIntegralOn0L(c, c.mul({gExpr, basisN}), x, L, budget);
+            if (intG.isNull()) {
+                out.reason = "unable to compute Fourier velocity mode on [0, L]";
+                return out;
+            }
+            bN = c.simplify(c.div(c.mul({twoOverL, intG}), omegaN));
+        }
+
+        std::vector<Expr> timeParts;
+        if (!isZeroSimp(c, aN))
+            timeParts.push_back(c.mul({aN, c.func("cos", argT)}));
+        if (!isZeroSimp(c, bN))
+            timeParts.push_back(c.mul({bN, c.func("sin", argT)}));
+        if (!timeParts.empty()) {
+            const Expr timeFactor =
+                timeParts.size() == 1 ? timeParts[0] : c.add(timeParts);
+            modeTerms.push_back(c.mul({timeFactor, basisN}));
+        }
+    }
+
+    const Expr uCand =
+        modeTerms.empty() ? c.zero() : c.simplify(c.add(modeTerms));
+    const Expr utt = c.diff(c.diff(uCand, t), t);
+    const Expr ux = c.diff(uCand, x);
+    const Expr uxx = c.diff(ux, x);
+    const Expr c2 = c.pow(cWave, two);
+    const Expr pdeRes = c.add({utt, c.neg(c.mul({c2, uxx}))});
+
+    const bool bcOk =
+        (bc == PdeBoundaryKind::Dirichlet)
+            ? (isZeroSimp(c, c.subs(uCand, x, c.zero())) &&
+               isZeroSimp(c, c.subs(uCand, x, L)))
+            : (isZeroSimp(c, c.subs(ux, x, c.zero())) &&
+               isZeroSimp(c, c.subs(ux, x, L)));
+
+    if (isZeroSimp(c, pdeRes) && bcOk) {
+        out.status = PdeResult::Status::Proved;
+        out.u = uCand;
+        return out;
+    }
+
+    out.reason = "1D wave Fourier solution failed PDE or boundary condition certificate";
+    return out;
+}
+
+PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
+                               Expr x, Expr y, int maxModes, Budget *budget)
+{
+    PdeResult out;
+    if (a.isNull() || isZeroSimp(c, a) || b.isNull() || isZeroSimp(c, b) ||
+        topProfile.isNull() || x.isNull() || y.isNull() || maxModes < 1) {
+        out.reason = "invalid arguments in pdsolveLaplace2DRect";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr piSym = c.symbol("pi");
+    const Expr two = c.number(std::int64_t{2});
+    const Expr twoOverA = c.div(two, a);
+    std::vector<Expr> modeTerms;
+
+    for (int n = 1; n <= maxModes; ++n) {
+        if (!checkOdeBudget(c, budget)) {
+            out.reason = "budget exhausted";
+            return out;
+        }
+        const Expr nExpr = c.number(static_cast<std::int64_t>(n));
+        const Expr kN = c.div(c.mul({nExpr, piSym}), a);
+        const Expr basisX = c.func("sin", c.mul({kN, x}));
+        const Expr intN =
+            definiteIntegralOn0L(c, c.mul({topProfile, basisX}), x, a, budget);
+        if (intN.isNull()) {
+            out.reason = "unable to compute Laplace Fourier mode on [0, a]";
+            return out;
+        }
+        const Expr aN = c.simplify(c.mul({twoOverA, intN}));
+        if (isZeroSimp(c, aN))
+            continue;
+        const Expr sinhY = c.func("sinh", c.mul({kN, y}));
+        const Expr sinhB = c.func("sinh", c.mul({kN, b}));
+        modeTerms.push_back(c.mul({aN, c.div(sinhY, sinhB), basisX}));
+    }
+
+    const Expr uCand =
+        modeTerms.empty() ? c.zero() : c.simplify(c.add(modeTerms));
+    const Expr uxx = c.diff(c.diff(uCand, x), x);
+    const Expr uyy = c.diff(c.diff(uCand, y), y);
+    const Expr lapRes = c.add({uxx, uyy});
+
+    if (isZeroSimp(c, lapRes) &&
+        isZeroSimp(c, c.subs(uCand, x, c.zero())) &&
+        isZeroSimp(c, c.subs(uCand, x, a)) &&
+        isZeroSimp(c, c.subs(uCand, y, c.zero()))) {
+        out.status = PdeResult::Status::Proved;
+        out.u = uCand;
+        return out;
+    }
+
+    out.reason = "2D Laplace Fourier solution failed harmonic or boundary certificate";
+    return out;
+}
+
 } // namespace numkit::cas

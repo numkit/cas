@@ -524,6 +524,18 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                 half, num,
                 pow(u, number(std::int64_t{-1})),
                 du});
+        } else if (name == "F") {
+            result = mul({func("dF", u), du});
+        } else if (name == "dF") {
+            result = mul({func("ddF", u), du});
+        } else if (name == "F1") {
+            result = mul({func("dF1", u), du});
+        } else if (name == "dF1") {
+            result = mul({func("ddF1", u), du});
+        } else if (name == "F2") {
+            result = mul({func("dF2", u), du});
+        } else if (name == "dF2") {
+            result = mul({func("ddF2", u), du});
         } else {
             assert(!"diff: unsupported function");
             result = Expr();

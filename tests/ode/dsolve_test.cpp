@@ -686,5 +686,117 @@ TEST(DsolveTest, NthOrderConstantCoefficientLinearOdeAndIVP)
     }
 }
 
+TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr dy = c.symbol("dy");
+
+    // 1. Riccati ODE with polynomial particular solution yp(x) = x:
+    //    y' = 1 + x^2 - 2*x*y + y^2
+    {
+        const Expr rhs = P(c, "1 + x^2 - 2*x*y + y^2");
+        const OdeResult sol = dsolve1(c, rhs, x, y);
+        ASSERT_TRUE(sol.proved()) << sol.reason;
+        EXPECT_TRUE(
+            sameExpr(c, c.diff(sol.y, x), c.subs(rhs, y, sol.y)));
+
+        // Riccati IVP: y(0) = 1 -> y(x) = x + 1/(1 - x)
+        const OdeResult ivp = dsolve1IVP(c, rhs, x, y, c.zero(), c.one());
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x + 1/(1 - x)")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 2. Riccati ODE with supplied particular solution via `dsolve1Riccati`:
+    //    y' = -1/x^2 - y/x + y^2  (particular solution yp = 1/x)
+    {
+        const Expr rhs = P(c, "-1/x^2 - y/x + y^2");
+        const OdeResult sol = dsolve1Riccati(c, rhs, x, y, P(c, "1/x"));
+        ASSERT_TRUE(sol.proved()) << sol.reason;
+        EXPECT_TRUE(
+            sameExpr(c, c.diff(sol.y, x), c.subs(rhs, y, sol.y)));
+    }
+
+    // 3. Euler-Cauchy Riccati ODE solved automatically via 2nd-order reduction:
+    //    y' = y^2 - 2/x^2
+    {
+        const Expr rhs = P(c, "y^2 - 2/x^2");
+        const OdeResult sol = dsolve1(c, rhs, x, y);
+        ASSERT_TRUE(sol.proved()) << sol.reason;
+        EXPECT_TRUE(
+            sameExpr(c, c.diff(sol.y, x), c.subs(rhs, y, sol.y)));
+    }
+
+    // 4. Clairaut ODE: y = x * y' - (y')^2 -> general C1*x - C1^2, singular x^2/4
+    {
+        const Expr p = c.symbol("p");
+        const ClairautResult cl = dsolve1Clairaut(c, P(c, "-p^2"), x, p);
+        ASSERT_TRUE(cl.proved()) << cl.reason;
+        EXPECT_TRUE(sameExpr(c, cl.general, P(c, "C1*x - C1^2")));
+        ASSERT_FALSE(cl.singular.isNull());
+        EXPECT_TRUE(sameExpr(c, cl.singular, P(c, "1/4*x^2")));
+    }
+
+    // 5. 2nd-order nonlinear ODE (missing y): y'' = -dy^2 and y'' = -2*x*dy^2
+    //    IVP1: y'' = -dy^2, y(1) = 0, y'(1) = 1 -> y(x) = log(x)
+    //    IVP2: y'' = -2*x*dy^2, y(0) = 0, y'(0) = 1 -> y(x) = atan(x)
+    {
+        const Expr rhs1 = P(c, "-dy^2");
+        const OdeResult gen1 = dsolve2Nonlinear(c, rhs1, x, y, dy);
+        ASSERT_TRUE(gen1.proved()) << gen1.reason;
+
+        const OdeResult ivp1 =
+            dsolve2NonlinearIVP(c, rhs1, x, y, dy, c.one(), c.zero(), c.one());
+        ASSERT_TRUE(ivp1.proved()) << ivp1.reason;
+        EXPECT_TRUE(sameExpr(c, ivp1.y, P(c, "log(x)")))
+            << "got: " << c.toString(ivp1.y);
+
+        const Expr rhs2 = P(c, "-2*x*dy^2");
+        const OdeResult ivp2 =
+            dsolve2NonlinearIVP(c, rhs2, x, y, dy, c.zero(), c.zero(), c.one());
+        ASSERT_TRUE(ivp2.proved()) << ivp2.reason;
+        EXPECT_TRUE(sameExpr(c, ivp2.y, P(c, "atan(x)")))
+            << "got: " << c.toString(ivp2.y);
+    }
+
+    // 6. 2nd-order nonlinear autonomous ODE (missing x): y'' = 2 * y * y'
+    //    IVP: y(0) = 0, y'(0) = 1 -> y(x) = tan(x)
+    {
+        const Expr rhs = P(c, "2*y*dy");
+        const OdeResult ivp =
+            dsolve2NonlinearIVP(c, rhs, x, y, dy, c.zero(), c.zero(), c.one());
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "tan(x)")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 7. 2nd-order nonlinear autonomous ODE: y * y'' = (y')^2  (i.e. y'' = dy^2 / y)
+    //    IVP: y(0) = 1, y'(0) = 2 -> y(x) = exp(2*x)
+    {
+        const Expr rhs = P(c, "dy^2 / y");
+        const OdeResult gen = dsolve2Nonlinear(c, rhs, x, y, dy);
+        ASSERT_TRUE(gen.proved()) << gen.reason;
+
+        const OdeResult ivp = dsolve2NonlinearIVP(
+            c, rhs, x, y, dy, c.zero(), c.one(), c.number(2));
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "exp(2*x)")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 8. 2nd-order nonlinear autonomous ODE: y'' = 2*y^3
+    //    IVP: y(0) = 1, y'(0) = 1 -> dp/dy = 2*y^3 / p => p^2 = y^4 => p = y^2 => y(x) = 1/(1 - x)
+    {
+        const Expr rhs = P(c, "2*y^3");
+        const OdeResult ivp =
+            dsolve2NonlinearIVP(c, rhs, x, y, dy, c.zero(), c.one(), c.one());
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1/(1 - x)")))
+            << "got: " << c.toString(ivp.y);
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

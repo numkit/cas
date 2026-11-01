@@ -719,6 +719,229 @@ SymMatrix hessian(Ctx &c, Expr f, const std::vector<Expr> &vars)
     return H;
 }
 
+Expr divergence(Ctx &c, const std::vector<Expr> &F,
+                const std::vector<Expr> &vars)
+{
+    if (F.empty() || F.size() != vars.size())
+        return Expr{};
+    std::vector<Expr> terms;
+    terms.reserve(F.size());
+    for (std::size_t i = 0; i < F.size(); ++i) {
+        if (F[i].isNull() || vars[i].isNull() ||
+            c.kind(vars[i]) != NodeKind::Symbol) {
+            return Expr{};
+        }
+        const Expr dFi = c.diff(F[i], vars[i]);
+        if (dFi.isNull())
+            return Expr{};
+        terms.push_back(dFi);
+    }
+    return c.simplify(simplifyRationalExpr(c, c.add(terms)));
+}
+
+SymMatrix curl(Ctx &c, const std::vector<Expr> &F,
+               const std::vector<Expr> &vars)
+{
+    if (F.size() != 3 || vars.size() != 3)
+        return SymMatrix{};
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (F[i].isNull() || vars[i].isNull() ||
+            c.kind(vars[i]) != NodeKind::Symbol) {
+            return SymMatrix{};
+        }
+    }
+    const Expr dF2y = c.diff(F[2], vars[1]);
+    const Expr dF1z = c.diff(F[1], vars[2]);
+    const Expr dF0z = c.diff(F[0], vars[2]);
+    const Expr dF2x = c.diff(F[2], vars[0]);
+    const Expr dF1x = c.diff(F[1], vars[0]);
+    const Expr dF0y = c.diff(F[0], vars[1]);
+    if (dF2y.isNull() || dF1z.isNull() || dF0z.isNull() || dF2x.isNull() ||
+        dF1x.isNull() || dF0y.isNull()) {
+        return SymMatrix{};
+    }
+    SymMatrix out(3, 1);
+    out.at(0, 0) =
+        c.simplify(simplifyRationalExpr(c, c.add({dF2y, c.neg(dF1z)})));
+    out.at(1, 0) =
+        c.simplify(simplifyRationalExpr(c, c.add({dF0z, c.neg(dF2x)})));
+    out.at(2, 0) =
+        c.simplify(simplifyRationalExpr(c, c.add({dF1x, c.neg(dF0y)})));
+    return out;
+}
+
+Expr laplacian(Ctx &c, Expr f, const std::vector<Expr> &vars)
+{
+    if (f.isNull() || vars.empty())
+        return Expr{};
+    std::vector<Expr> terms;
+    terms.reserve(vars.size());
+    for (const Expr &v : vars) {
+        if (v.isNull() || c.kind(v) != NodeKind::Symbol)
+            return Expr{};
+        const Expr d1 = c.diff(f, v);
+        if (d1.isNull())
+            return Expr{};
+        const Expr d2 = c.diff(d1, v);
+        if (d2.isNull())
+            return Expr{};
+        terms.push_back(d2);
+    }
+    return c.simplify(simplifyRationalExpr(c, c.add(terms)));
+}
+
+SymMatrix wronskianMatrix(Ctx &c, const std::vector<Expr> &funcs, Expr var)
+{
+    if (funcs.empty() || var.isNull() || c.kind(var) != NodeKind::Symbol)
+        return SymMatrix{};
+    const std::size_t n = funcs.size();
+    SymMatrix W(n, n);
+    for (std::size_t j = 0; j < n; ++j) {
+        if (funcs[j].isNull())
+            return SymMatrix{};
+        Expr cur = funcs[j];
+        W.at(0, j) = cur;
+        for (std::size_t i = 1; i < n; ++i) {
+            cur = c.diff(cur, var);
+            if (cur.isNull())
+                return SymMatrix{};
+            W.at(i, j) = c.simplify(cur);
+        }
+    }
+    return W;
+}
+
+Expr wronskian(Ctx &c, const std::vector<Expr> &funcs, Expr var,
+               Budget *budget)
+{
+    const SymMatrix W = wronskianMatrix(c, funcs, var);
+    if (W.empty())
+        return Expr{};
+    const Expr d = det(c, W, budget);
+    if (d.isNull())
+        return Expr{};
+    return simplify(c, d, budget);
+}
+
+namespace {
+
+bool mentionsVarLinalg(const Ctx &c, Expr e, Expr var)
+{
+    if (e.isNull())
+        return false;
+    if (e == var)
+        return true;
+    for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        if (mentionsVarLinalg(c, c.child(e, i), var))
+            return true;
+    }
+    return false;
+}
+
+bool isZeroLinalg(Ctx &c, Expr e)
+{
+    if (e.isNull())
+        return false;
+    if (c.isZero(e))
+        return true;
+    const Expr r = simplifyRationalExpr(c, e);
+    if (!r.isNull() && c.isZero(r))
+        return true;
+    const Expr s = c.simplify(e);
+    if (c.isZero(s))
+        return true;
+    const Expr sr = simplifyRationalExpr(c, s);
+    return !sr.isNull() && c.isZero(sr);
+}
+
+} // namespace
+
+PotentialResult scalarPotential(Ctx &c, const std::vector<Expr> &F,
+                                const std::vector<Expr> &vars,
+                                Budget *budget)
+{
+    PotentialResult out;
+    if (F.empty() || F.size() != vars.size()) {
+        out.reason = "invalid vector field or variable dimensions";
+        return out;
+    }
+    const std::size_t n = F.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        if (F[i].isNull() || vars[i].isNull() ||
+            c.kind(vars[i]) != NodeKind::Symbol) {
+            out.reason = "invalid component or variable symbol";
+            return out;
+        }
+    }
+    if (!checkLinalgBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    // 1. Check conservative / curl-free integrability conditions:
+    //    dF_i / dx_j == dF_j / dx_i for all 0 <= i < j < n.
+    for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t j = i + 1; j < n; ++j) {
+            const Expr dFi = c.diff(F[i], vars[j]);
+            const Expr dFj = c.diff(F[j], vars[i]);
+            if (dFi.isNull() || dFj.isNull() ||
+                !isZeroLinalg(c, c.add({dFi, c.neg(dFj)}))) {
+                out.reason =
+                    "vector field is not conservative (dF_i/dx_j != dF_j/dx_i)";
+                return out;
+            }
+        }
+    }
+
+    // 2. Sequential line integration along coordinate axes.
+    Expr phi = c.zero();
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!checkLinalgBudget(c, budget)) {
+            out.reason = "budget exhausted";
+            return out;
+        }
+        const Expr dPhi = c.diff(phi, vars[i]);
+        if (dPhi.isNull()) {
+            out.reason = "differentiation failed during potential reconstruction";
+            return out;
+        }
+        Expr rem = simplify(c, c.add({F[i], c.neg(dPhi)}), budget);
+        for (std::size_t k = 0; k < i; ++k) {
+            if (mentionsVarLinalg(c, rem, vars[k])) {
+                const Expr ratRem = simplifyRationalExpr(c, rem);
+                if (!ratRem.isNull())
+                    rem = ratRem;
+            }
+            if (mentionsVarLinalg(c, rem, vars[k])) {
+                out.reason =
+                    "residual depends on previously integrated variable";
+                return out;
+            }
+        }
+        if (c.isZero(rem))
+            continue;
+        const RationalIntegral intRem = integrate(c, rem, vars[i], budget);
+        if (!intRem.proved()) {
+            out.reason = "unable to integrate component: " + intRem.reason;
+            return out;
+        }
+        phi = simplify(c, c.add({phi, intRem.F}), budget);
+    }
+
+    // 3. Proof-carrying certificate: verify gradient(phi) == F componentwise.
+    for (std::size_t i = 0; i < n; ++i) {
+        const Expr dPhi = c.diff(phi, vars[i]);
+        if (dPhi.isNull() || !isZeroLinalg(c, c.add({dPhi, c.neg(F[i])}))) {
+            out.reason = "scalar potential failed gradient certificate";
+            return out;
+        }
+    }
+
+    out.status = PotentialResult::Status::ProvedSymbolic;
+    out.phi = phi;
+    return out;
+}
+
 // ============================================================================
 // Faddeev-LeVerrier: charpoly, adjugate, det, inv
 // ============================================================================

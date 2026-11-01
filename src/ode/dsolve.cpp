@@ -392,11 +392,16 @@ bool trySeparableOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
     const Expr implicitEq =
         c.add({intH.F, c.neg(intG.F), c.neg(C1)});
     const std::vector<Expr> sols = solveSymbolic(c, implicitEq, y, budget);
+    Expr bestCand;
     for (const Expr &cand : sols) {
         if (verifyOde1(c, cand, rhs, x, y)) {
-            yOut = cand;
-            return true;
+            if (bestCand.isNull() || c.exprCost(cand) < c.exprCost(bestCand))
+                bestCand = cand;
         }
+    }
+    if (!bestCand.isNull()) {
+        yOut = bestCand;
+        return true;
     }
     return false;
 }
@@ -661,6 +666,159 @@ bool tryExactOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
     return false;
 }
 
+// Extract quadratic polynomial coefficients `q0(x), q1(x), q2(x)` of `rhs` in `y`:
+//   rhs(x, y) == q0(x) + q1(x)*y + q2(x)*y^2  (with q2 != 0).
+bool extractRiccatiCoeffs(Ctx &c, Expr rhs, Expr y, Expr &q0Out, Expr &q1Out,
+                          Expr &q2Out)
+{
+    const Expr expd = c.expand(rhs);
+    const Expr d1 = c.diff(expd, y);
+    if (d1.isNull())
+        return false;
+    const Expr d2 = c.diff(d1, y);
+    if (d2.isNull())
+        return false;
+    const Expr d3 = c.diff(d2, y);
+    if (d3.isNull() || !isZeroSimp(c, d3))
+        return false;
+    // Also ensure expd has no negative or fractional powers of y (e.g. d2 is y-free)
+    if (mentionsSym(c, c.simplify(d2), y))
+        return false;
+    q2Out = c.simplify(
+        c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))), d2}));
+    if (isZeroSimp(c, q2Out))
+        return false;
+    q1Out = c.simplify(c.subs(d1, y, c.zero()));
+    q0Out = c.simplify(c.subs(expd, y, c.zero()));
+    if (q1Out.isNull() || q0Out.isNull())
+        return false;
+    const Expr recon = c.add(
+        {q0Out, c.mul({q1Out, y}), c.mul({q2Out, c.pow(y, c.number(2))})});
+    return isZeroSimp(c, c.add({expd, c.neg(recon)}));
+}
+
+// Reduce a Riccati ODE `y' = q0 + q1*y + q2*y^2` given a particular solution `yp(x)`
+// via `y(x) = yp(x) + 1/u(x)` -> `u' = -(q1 + 2*q2*yp)*u - q2`.
+bool solveRiccatiWithParticular(Ctx &c, Expr rhs, Expr q1, Expr q2, Expr yp,
+                                Expr x, Expr y, Expr C1, Budget *budget,
+                                Expr &yOut)
+{
+    if (yp.isNull() || !verifyOde1(c, yp, rhs, x, y))
+        return false;
+    const Expr uSym = c.symbol("_riccati_u");
+    const Expr uLinCoef =
+        c.simplify(c.neg(c.add({q1, c.mul({c.number(2), q2, yp})})));
+    const Expr uRhs = c.add({c.mul({uLinCoef, uSym}), c.neg(q2)});
+    Expr uSol;
+    if (!tryLinearOde1(c, uRhs, x, uSym, C1, budget, uSol) || uSol.isNull() ||
+        c.isZero(uSol)) {
+        return false;
+    }
+    const Expr cand =
+        c.simplify(c.add({yp, c.pow(uSol, c.number(std::int64_t{-1}))}));
+    if (verifyOde1(c, cand, rhs, x, y)) {
+        yOut = cand;
+        return true;
+    }
+    return false;
+}
+
+// 7. Riccati 1st-order ODE: y' = q0(x) + q1(x)*y + q2(x)*y^2
+bool tryRiccatiOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
+                    Expr &yOut)
+{
+    Expr q0, q1, q2;
+    if (!extractRiccatiCoeffs(c, rhs, y, q0, q1, q2) || isZeroSimp(c, q0))
+        return false;
+
+    // 7a. Try algebraic roots of q0(x) + q1(x)*y + q2(x)*y^2 = 0 (exact when constant)
+    //     and power-law / linear ansatze yp(x) = k * x^m (m in {-1, 0, 1, 2}) or a*x + b.
+    {
+        const std::vector<Expr> algRoots = solveSymbolic(c, rhs, y, budget);
+        for (const Expr &r : algRoots) {
+            if (solveRiccatiWithParticular(c, rhs, q1, q2, r, x, y, C1, budget,
+                                           yOut)) {
+                return true;
+            }
+        }
+
+        const Expr kSym = c.symbol("_riccati_k");
+        for (int m : {0, 1, -1, 2}) {
+            const Expr xm =
+                (m == 0) ? c.one() : c.pow(x, c.number(static_cast<std::int64_t>(m)));
+            const Expr ypAns = c.mul({kSym, xm});
+            const Expr dyp = c.diff(ypAns, x);
+            const Expr res = c.simplify(
+                c.expand(c.add({dyp, c.neg(c.subs(rhs, y, ypAns))})));
+            // Check at x = 1 and x = 2 to determine candidate constants kSym
+            const Expr resAt1 = c.simplify(c.subs(res, x, c.one()));
+            if (!resAt1.isNull() && mentionsSym(c, resAt1, kSym)) {
+                const std::vector<Expr> kVals =
+                    solveSymbolic(c, resAt1, kSym, budget);
+                for (const Expr &kv : kVals) {
+                    const Expr ypCand = c.simplify(c.subs(ypAns, kSym, kv));
+                    if (solveRiccatiWithParticular(c, rhs, q1, q2, ypCand, x, y,
+                                                   C1, budget, yOut)) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    // 7b. 2nd-order linear reduction y(x) = -v'(x) / (q2(x) * v(x)):
+    //     v'' - (q1 + q2'/q2)*v' + (q0*q2)*v = 0.
+    {
+        const Expr dq2 = c.diff(q2, x);
+        if (!dq2.isNull()) {
+            const Expr bCoeff =
+                c.simplify(c.neg(c.add({q1, c.div(dq2, q2)})));
+            const Expr dCoeff = c.simplify(c.mul({q0, q2}));
+            const Expr C2 = c.symbol("C2");
+            // Constant-coefficient 2nd-order linear reduction
+            if (!mentionsSym(c, bCoeff, x) && !mentionsSym(c, dCoeff, x)) {
+                const OdeResult vSol = dsolve2Linear(
+                    c, c.one(), bCoeff, dCoeff, c.zero(), x, budget);
+                if (vSol.proved()) {
+                    const Expr v = c.simplify(c.subs(vSol.y, C2, c.one()));
+                    const Expr dv = c.diff(v, x);
+                    if (!dv.isNull() && !isZeroSimp(c, v)) {
+                        const Expr cand =
+                            c.simplify(c.neg(c.div(dv, c.mul({q2, v}))));
+                        if (verifyOde1(c, cand, rhs, x, y)) {
+                            yOut = cand;
+                            return true;
+                        }
+                    }
+                }
+            }
+            // Euler-Cauchy 2nd-order linear reduction: x^2*v'' + bEC*x*v' + dEC*v = 0
+            const Expr bEC = simplifyRationalExpr(c, c.mul({x, bCoeff}));
+            const Expr dEC =
+                simplifyRationalExpr(c, c.mul({c.pow(x, c.number(2)), dCoeff}));
+            if (!bEC.isNull() && !dEC.isNull() && !mentionsSym(c, bEC, x) &&
+                !mentionsSym(c, dEC, x)) {
+                const OdeResult vSol = dsolve2EulerCauchy(
+                    c, c.one(), bEC, dEC, c.zero(), x, budget);
+                if (vSol.proved()) {
+                    const Expr v = c.simplify(c.subs(vSol.y, C2, c.one()));
+                    const Expr dv = c.diff(v, x);
+                    if (!dv.isNull() && !isZeroSimp(c, v)) {
+                        const Expr cand =
+                            c.simplify(c.neg(c.div(dv, c.mul({q2, v}))));
+                        if (verifyOde1(c, cand, rhs, x, y)) {
+                            yOut = cand;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 } // namespace
 
 OdeResult dsolve1(Ctx &c, Expr rhs, Expr x, Expr y, Budget *budget)
@@ -745,7 +903,113 @@ OdeResult dsolve1(Ctx &c, Expr rhs, Expr x, Expr y, Budget *budget)
         }
     }
 
+    // 7. Riccati 1st-order ODE: y' = q0(x) + q1(x)*y + q2(x)*y^2
+    {
+        Expr cand;
+        if (tryRiccatiOde1(c, rhs, x, y, C1, budget, cand) &&
+            verifyOde1(c, cand, rhs, x, y)) {
+            out.status = OdeResult::Status::Proved;
+            out.y = cand;
+            return out;
+        }
+    }
+
     out.reason = "ODE outside supported 1st-order classes or uncertified";
+    return out;
+}
+
+OdeResult dsolve1Riccati(Ctx &c, Expr rhs, Expr x, Expr y, Expr yPart,
+                         Budget *budget)
+{
+    OdeResult out;
+    if (rhs.isNull() || x.isNull() || y.isNull()) {
+        out.reason = "null input expression";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+    const Expr C1 = c.symbol("C1");
+    Expr q0, q1, q2;
+    if (!extractRiccatiCoeffs(c, rhs, y, q0, q1, q2)) {
+        out.reason = "not a quadratic Riccati ODE in y";
+        return out;
+    }
+    Expr cand;
+    if (!yPart.isNull()) {
+        if (solveRiccatiWithParticular(c, rhs, q1, q2, yPart, x, y, C1, budget,
+                                       cand)) {
+            out.status = OdeResult::Status::Proved;
+            out.y = cand;
+            return out;
+        }
+        out.reason =
+            "supplied yPart does not satisfy the Riccati ODE or reduction failed";
+        return out;
+    }
+    if (tryRiccatiOde1(c, rhs, x, y, C1, budget, cand)) {
+        out.status = OdeResult::Status::Proved;
+        out.y = cand;
+        return out;
+    }
+    out.reason = "unable to find particular solution for Riccati ODE";
+    return out;
+}
+
+ClairautResult dsolve1Clairaut(Ctx &c, Expr gOfP, Expr x, Expr p,
+                               Budget *budget)
+{
+    ClairautResult out;
+    if (gOfP.isNull() || x.isNull() || p.isNull() ||
+        c.kind(x) != NodeKind::Symbol || c.kind(p) != NodeKind::Symbol) {
+        out.reason = "invalid Clairaut input arguments";
+        return out;
+    }
+    if (mentionsSym(c, gOfP, x)) {
+        out.reason = "Clairaut nonlinearity g(p) must not depend on x";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    auto verifyClairaut = [&](Expr yCand) -> bool {
+        if (yCand.isNull())
+            return false;
+        const Expr dy = c.diff(yCand, x);
+        if (dy.isNull())
+            return false;
+        const Expr rhsClairaut =
+            c.add({c.mul({x, dy}), c.subs(gOfP, p, dy)});
+        return isZeroSimp(c, c.add({yCand, c.neg(rhsClairaut)}));
+    };
+
+    const Expr C1 = c.symbol("C1");
+    const Expr yGen =
+        c.simplify(c.add({c.mul({C1, x}), c.subs(gOfP, p, C1)}));
+    if (!verifyClairaut(yGen)) {
+        out.reason = "Clairaut general family failed certificate";
+        return out;
+    }
+    out.general = yGen;
+    out.status = ClairautResult::Status::Proved;
+
+    // Singular envelope solution: x + g'(p) = 0
+    const Expr dg = c.diff(gOfP, p);
+    if (!dg.isNull()) {
+        const Expr envEq = c.add({x, dg});
+        const std::vector<Expr> pRoots = solveSymbolic(c, envEq, p, budget);
+        for (const Expr &pSol : pRoots) {
+            const Expr ySing = c.simplify(
+                c.add({c.mul({x, pSol}), c.subs(gOfP, p, pSol)}));
+            if (verifyClairaut(ySing)) {
+                out.singular = ySing;
+                break;
+            }
+        }
+    }
     return out;
 }
 
@@ -757,17 +1021,25 @@ OdeResult dsolve1IVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr x0, Expr y0,
         return gen;
 
     const Expr C1 = c.symbol("C1");
-    const Expr atX0 = c.simplify(c.subs(gen.y, x, x0));
-    const Expr icEq = c.add({atX0, c.neg(y0)});
-    const std::vector<Expr> c1Vals = solveSymbolic(c, icEq, C1, budget);
-    for (const Expr &cVal : c1Vals) {
-        const Expr yPart = c.simplify(c.subs(gen.y, C1, cVal));
-        const Expr checkIC = c.simplify(c.add({c.subs(yPart, x, x0), c.neg(y0)}));
-        if (c.isZero(checkIC) && verifyOde1(c, yPart, rhs, x, y)) {
-            OdeResult out;
-            out.status = OdeResult::Status::Proved;
-            out.y = yPart;
-            return out;
+    std::vector<Expr> branches = {gen.y};
+    const Expr negGen = c.simplify(c.neg(gen.y));
+    if (!(negGen == gen.y) && verifyOde1(c, negGen, rhs, x, y))
+        branches.push_back(negGen);
+
+    for (const Expr &branch : branches) {
+        const Expr atX0 = c.simplify(c.subs(branch, x, x0));
+        const Expr icEq = c.add({atX0, c.neg(y0)});
+        const std::vector<Expr> c1Vals = solveSymbolic(c, icEq, C1, budget);
+        for (const Expr &cVal : c1Vals) {
+            const Expr yPart = c.simplify(c.subs(branch, C1, cVal));
+            const Expr checkIC =
+                c.simplify(c.add({c.subs(yPart, x, x0), c.neg(y0)}));
+            if (c.isZero(checkIC) && verifyOde1(c, yPart, rhs, x, y)) {
+                OdeResult out;
+                out.status = OdeResult::Status::Proved;
+                out.y = yPart;
+                return out;
+            }
         }
     }
 
@@ -1873,6 +2145,198 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A, Expr x,
                                        Budget *budget)
 {
     return dsolveSystem1LinearIVP(c, A, {}, x, x0, y0, budget);
+}
+
+// ============================================================================
+// 2nd-Order Nonlinear ODE Solver with Order Reduction
+// ============================================================================
+
+namespace {
+
+bool verifyOde2Nonlinear(Ctx &c, Expr yCand, Expr rhs, Expr x, Expr y, Expr dy)
+{
+    if (yCand.isNull())
+        return false;
+    const Expr d1 = c.diff(yCand, x);
+    if (d1.isNull())
+        return false;
+    const Expr d2 = c.diff(d1, x);
+    if (d2.isNull())
+        return false;
+    Expr rhsSub = c.subs(rhs, y, yCand);
+    rhsSub = c.subs(rhsSub, dy, d1);
+    const Expr res = c.add({d2, c.neg(rhsSub)});
+    return isZeroSimp(c, res);
+}
+
+} // namespace
+
+OdeResult dsolve2Nonlinear(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
+                           Budget *budget)
+{
+    OdeResult out;
+    if (rhs.isNull() || x.isNull() || y.isNull() || dy.isNull() ||
+        c.kind(x) != NodeKind::Symbol || c.kind(y) != NodeKind::Symbol ||
+        c.kind(dy) != NodeKind::Symbol) {
+        out.reason = "invalid input arguments";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr C1 = c.symbol("C1");
+    const Expr C2 = c.symbol("C2");
+
+    // Case 1: Dependent variable y missing (`y'' = F(x, y')`).
+    // Substitute p(x) = y'(x) -> p'(x) = F(x, p), then y(x) = int p(x) dx + C2.
+    if (!mentionsSym(c, rhs, y)) {
+        const OdeResult pSol = dsolve1(c, rhs, x, dy, budget);
+        if (pSol.proved()) {
+            const RationalIntegral intP = integrate(c, pSol.y, x, budget);
+            if (intP.proved()) {
+                const Expr yCand = c.simplify(c.add({intP.F, C2}));
+                if (verifyOde2Nonlinear(c, yCand, rhs, x, y, dy)) {
+                    out.status = OdeResult::Status::Proved;
+                    out.y = yCand;
+                    return out;
+                }
+            }
+        }
+    }
+
+    // Case 2: Independent variable x missing / autonomous (`y'' = F(y, y')`).
+    // Substitute y' = p(y), y'' = p * dp/dy -> dp/dy = F(y, p) / p,
+    // then solve separable dy/dx = p(y) -> int (1 / p(y)) dy = x + C2.
+    if (!mentionsSym(c, rhs, x)) {
+        const Expr dpDyRhs = c.simplify(c.div(rhs, dy));
+        const OdeResult pSol = dsolve1(c, dpDyRhs, y, dy, budget);
+        if (pSol.proved() && !isZeroSimp(c, pSol.y)) {
+            // Try both pSol.y as-is and with C1 replaced by 0 if symbolic C1
+            // blocks rational integration, though general solution keeps C1.
+            const Expr invP = c.pow(pSol.y, c.number(std::int64_t{-1}));
+            const RationalIntegral intY = integrate(c, invP, y, budget);
+            if (intY.proved()) {
+                const Expr impEq =
+                    c.add({intY.F, c.neg(c.add({x, C2}))});
+                const std::vector<Expr> ySols =
+                    solveSymbolic(c, impEq, y, budget);
+                for (const Expr &cand : ySols) {
+                    const Expr simpCand = c.simplify(cand);
+                    if (verifyOde2Nonlinear(c, simpCand, rhs, x, y, dy)) {
+                        out.status = OdeResult::Status::Proved;
+                        out.y = simpCand;
+                        return out;
+                    }
+                }
+            }
+        }
+    }
+
+    out.reason =
+        "2nd-order nonlinear ODE outside supported reduction classes or uncertified";
+    return out;
+}
+
+OdeResult dsolve2NonlinearIVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
+                              Expr x0, Expr y0, Expr dy0, Budget *budget)
+{
+    OdeResult out;
+    if (rhs.isNull() || x.isNull() || y.isNull() || dy.isNull() ||
+        x0.isNull() || y0.isNull() || dy0.isNull()) {
+        out.reason = "invalid IVP input arguments";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    auto verifyIVP2 = [&](Expr yCand) -> bool {
+        if (!verifyOde2Nonlinear(c, yCand, rhs, x, y, dy))
+            return false;
+        const Expr atX0 = c.subs(yCand, x, x0);
+        const Expr dyExpr = c.diff(yCand, x);
+        if (atX0.isNull() || dyExpr.isNull())
+            return false;
+        const Expr dyAtX0 = c.subs(dyExpr, x, x0);
+        if (dyAtX0.isNull())
+            return false;
+        return isZeroSimp(c, c.add({atX0, c.neg(y0)})) &&
+               isZeroSimp(c, c.add({dyAtX0, c.neg(dy0)}));
+    };
+
+    // Stage-wise IVP reduction 1: Missing y (`y'' = F(x, y')`)
+    // Solve p'(x) = F(x, p), p(x0) = dy0 first, then y(x) = y0 + int_{x0}^x p(t) dt.
+    if (!mentionsSym(c, rhs, y)) {
+        const OdeResult pIVP = dsolve1IVP(c, rhs, x, dy, x0, dy0, budget);
+        if (pIVP.proved()) {
+            const RationalIntegral intP = integrate(c, pIVP.y, x, budget);
+            if (intP.proved()) {
+                const Expr F0 = c.subs(intP.F, x, x0);
+                if (!F0.isNull()) {
+                    const Expr yCand =
+                        c.simplify(c.add({y0, intP.F, c.neg(F0)}));
+                    if (verifyIVP2(yCand)) {
+                        out.status = OdeResult::Status::Proved;
+                        out.y = yCand;
+                        return out;
+                    }
+                }
+            }
+        }
+    }
+
+    // Stage-wise IVP reduction 2: Autonomous / missing x (`y'' = F(y, y')`)
+    // Solve dp/dy = F(y, p)/p with p(y0) = dy0 first, then dy/dx = p(y) with y(x0) = y0.
+    if (!mentionsSym(c, rhs, x)) {
+        if (isZeroSimp(c, dy0) &&
+            isZeroSimp(c, c.subs(c.subs(rhs, y, y0), dy, dy0))) {
+            // Equilibrium solution y(x) == y0
+            if (verifyIVP2(y0)) {
+                out.status = OdeResult::Status::Proved;
+                out.y = y0;
+                return out;
+            }
+        }
+        const Expr dpDyRhs = c.simplify(c.div(rhs, dy));
+        const OdeResult pIVP = dsolve1IVP(c, dpDyRhs, y, dy, y0, dy0, budget);
+        if (pIVP.proved()) {
+            const OdeResult yIVP =
+                dsolve1IVP(c, pIVP.y, x, y, x0, y0, budget);
+            if (yIVP.proved() && verifyIVP2(yIVP.y)) {
+                out.status = OdeResult::Status::Proved;
+                out.y = yIVP.y;
+                return out;
+            }
+        }
+    }
+
+    // Fallback: solve general 2-parameter family and substitute C1, C2
+    const OdeResult gen = dsolve2Nonlinear(c, rhs, x, y, dy, budget);
+    if (gen.proved()) {
+        const Expr C1 = c.symbol("C1");
+        const Expr C2 = c.symbol("C2");
+        const Expr dGen = c.diff(gen.y, x);
+        if (!dGen.isNull()) {
+            const Expr eq1 = c.add({c.subs(gen.y, x, x0), c.neg(y0)});
+            const Expr eq2 = c.add({c.subs(dGen, x, x0), c.neg(dy0)});
+            const auto pairs = solveSystem2(c, eq1, eq2, C1, C2, budget);
+            for (const auto &pr : pairs) {
+                Expr yCand = c.subs(gen.y, C1, pr.first);
+                yCand = c.simplify(c.subs(yCand, C2, pr.second));
+                if (verifyIVP2(yCand)) {
+                    out.status = OdeResult::Status::Proved;
+                    out.y = yCand;
+                    return out;
+                }
+            }
+        }
+    }
+
+    out.reason = "unable to solve or certify 2nd-order nonlinear IVP";
+    return out;
 }
 
 } // namespace numkit::cas

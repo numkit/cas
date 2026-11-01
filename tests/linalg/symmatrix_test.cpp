@@ -693,5 +693,95 @@ TEST(SymMatrixTest, JordanCanonicalForm)
     }
 }
 
+TEST(SymMatrixTest, VectorCalculusDivergenceCurlLaplacianWronskianAndPotential)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr z = c.symbol("z");
+    const std::vector<Expr> vars3 = {x, y, z};
+
+    // 1. Divergence, curl, and Laplacian fixed vectors
+    {
+        const std::vector<Expr> F = {
+            parseExpr(c, "x^2*y"),
+            parseExpr(c, "y^2*z"),
+            parseExpr(c, "z^2*x")};
+        const Expr divF = divergence(c, F, vars3);
+        EXPECT_EQ(c.toString(divF), "2*x*y + 2*x*z + 2*y*z");
+
+        const SymMatrix curlF = curl(c, F, vars3);
+        ASSERT_EQ(curlF.rows(), 3u);
+        ASSERT_EQ(curlF.cols(), 1u);
+        EXPECT_EQ(c.toString(curlF.at(0, 0)), "-y^2");
+        EXPECT_EQ(c.toString(curlF.at(1, 0)), "-z^2");
+        EXPECT_EQ(c.toString(curlF.at(2, 0)), "-x^2");
+
+        // Identity: div(curl(F)) == 0
+        const std::vector<Expr> curlVec = {
+            curlF.at(0, 0), curlF.at(1, 0), curlF.at(2, 0)};
+        EXPECT_TRUE(c.isZero(divergence(c, curlVec, vars3)));
+
+        // Harmonic 3D potential r^(-1) -> Laplacian == 0 ( tested on polynomial x^3 - 3*x*y^2 )
+        const Expr harm = parseExpr(c, "x^3 - 3*x*y^2 + 2*z^2 - 2*x^2");
+        EXPECT_EQ(c.toString(laplacian(c, harm, vars3)), "0");
+
+        // Identity: curl(grad(phi)) == 0 and div(grad(phi)) == laplacian(phi)
+        const Expr phi = parseExpr(c, "x^2*y*z + sin(x)*cos(y) + exp(z)");
+        const SymMatrix gradPhi = gradient(c, phi, vars3);
+        const std::vector<Expr> gradVec = {
+            gradPhi.at(0, 0), gradPhi.at(1, 0), gradPhi.at(2, 0)};
+        const SymMatrix curlGrad = curl(c, gradVec, vars3);
+        EXPECT_TRUE(c.isZero(curlGrad.at(0, 0)));
+        EXPECT_TRUE(c.isZero(curlGrad.at(1, 0)));
+        EXPECT_TRUE(c.isZero(curlGrad.at(2, 0)));
+        EXPECT_TRUE(c.isZero(c.simplify(c.add(
+            {divergence(c, gradVec, vars3), c.neg(laplacian(c, phi, vars3))}))));
+    }
+
+    // 2. Wronskian matrix and determinant
+    {
+        // W(cos(x), sin(x)) = 1
+        const Expr wTrig = wronskian(
+            c, {parseExpr(c, "cos(x)"), parseExpr(c, "sin(x)")}, x);
+        EXPECT_EQ(c.toString(wTrig), "1");
+
+        // W(1, x, x^2) = 2
+        const Expr wPoly = wronskian(
+            c, {c.one(), x, parseExpr(c, "x^2")}, x);
+        EXPECT_EQ(c.toString(wPoly), "2");
+
+        // W(exp(x), x*exp(x), x^2*exp(x)) = 2*exp(3*x)
+        const Expr wExp = wronskian(
+            c,
+            {parseExpr(c, "exp(x)"),
+             parseExpr(c, "x*exp(x)"),
+             parseExpr(c, "x^2*exp(x)")},
+            x);
+        EXPECT_EQ(c.toString(wExp), "2*exp(3*x)");
+    }
+
+    // 3. Certified scalar potential reconstruction (`scalarPotential`)
+    {
+        // Conservative 3D field: grad(x^2*y + y*z^3 + cos(x))
+        const Expr phiTrue = parseExpr(c, "x^2*y + y*z^3 + cos(x)");
+        const SymMatrix g = gradient(c, phiTrue, vars3);
+        const std::vector<Expr> F = {g.at(0, 0), g.at(1, 0), g.at(2, 0)};
+        const PotentialResult pot = scalarPotential(c, F, vars3);
+        ASSERT_TRUE(pot.proved()) << pot.reason;
+        // Difference between pot.phi and phiTrue must be constant in (x, y, z)
+        const SymMatrix gDiff =
+            gradient(c, c.add({pot.phi, c.neg(phiTrue)}), vars3);
+        EXPECT_TRUE(c.isZero(c.simplify(gDiff.at(0, 0))));
+        EXPECT_TRUE(c.isZero(c.simplify(gDiff.at(1, 0))));
+        EXPECT_TRUE(c.isZero(c.simplify(gDiff.at(2, 0))));
+
+        // Non-conservative field F = (-y, x, 0) -> Unevaluated
+        const PotentialResult nonCons =
+            scalarPotential(c, {c.neg(y), x, c.zero()}, vars3);
+        EXPECT_FALSE(nonCons.proved());
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

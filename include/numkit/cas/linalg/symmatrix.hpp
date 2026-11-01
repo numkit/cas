@@ -72,13 +72,45 @@ private:
 Expr simplifyRationalExpr(Ctx &c, Expr e);
 
 // Multivariable vector calculus (MATLAB Symbolic Math Toolbox conventions):
-//   - jacobian(c, funcs, vars): m x n matrix J(i, j) = df_i / dx_j
-//   - gradient(c, f, vars):     n x 1 column vector grad(i, 0) = df / dx_i
-//   - hessian(c, f, vars):      n x n symmetric matrix H(i, j) = d^2f / (dx_i dx_j)
+//   - jacobian(c, funcs, vars):   m x n matrix J(i, j) = df_i / dx_j
+//   - gradient(c, f, vars):       n x 1 column vector grad(i, 0) = df / dx_i
+//   - hessian(c, f, vars):        n x n symmetric matrix H(i, j) = d^2f / (dx_i dx_j)
+//   - divergence(c, F, vars):     scalar sum_{i=0}^{n-1} dF_i / dx_i
+//   - curl(c, F, vars):           3 x 1 column vector nabla x F (3D vector field)
+//   - laplacian(c, f, vars):      scalar sum_{i=0}^{n-1} d^2f / dx_i^2
 SymMatrix jacobian(Ctx &c, const std::vector<Expr> &funcs,
                    const std::vector<Expr> &vars);
 SymMatrix gradient(Ctx &c, Expr f, const std::vector<Expr> &vars);
 SymMatrix hessian(Ctx &c, Expr f, const std::vector<Expr> &vars);
+Expr divergence(Ctx &c, const std::vector<Expr> &F,
+                const std::vector<Expr> &vars);
+SymMatrix curl(Ctx &c, const std::vector<Expr> &F,
+               const std::vector<Expr> &vars);
+Expr laplacian(Ctx &c, Expr f, const std::vector<Expr> &vars);
+
+// Construct the n x n Wronskian matrix W(i, j) = d^i f_j / d(var)^i (0 <= i, j < n)
+// and its exact determinant wronskian(c, funcs, var).
+SymMatrix wronskianMatrix(Ctx &c, const std::vector<Expr> &funcs, Expr var);
+Expr wronskian(Ctx &c, const std::vector<Expr> &funcs, Expr var,
+               Budget *budget = nullptr);
+
+struct PotentialResult
+{
+    enum class Status { Unevaluated, ProvedSymbolic };
+
+    Status status = Status::Unevaluated;
+    Expr phi; // scalar potential phi(vars) satisfying gradient(c, phi, vars) == F
+    std::string reason;
+
+    bool proved() const { return status == Status::ProvedSymbolic; }
+};
+
+// Reconstruct a scalar potential `phi` for a conservative vector field `F`
+// in `vars` (`nabla phi == F`), checking curl-free integrability conditions
+// `dF_i/dx_j == dF_j/dx_i` and certifying `gradient(c, phi, vars) == F`.
+PotentialResult scalarPotential(Ctx &c, const std::vector<Expr> &F,
+                                const std::vector<Expr> &vars,
+                                Budget *budget = nullptr);
 
 // Characteristic polynomial det(lambda * I - A) and adjugate matrix via
 // the division-free Faddeev-LeVerrier recurrence over Q(x).

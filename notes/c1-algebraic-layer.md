@@ -430,7 +430,7 @@
 58. ✅ Релизная отсечка `v0.6.0` (Эшелон 6 завершён: `CHANGELOG.md`, `CMakeLists.txt` `VERSION 0.6.0`, `README.md`, `AGENTS.md`, `tools/vendor_sync.py`, 272/272 тестов Release за 31.3 с, тег `v0.6.0`).
 59. ✅ (v0.7-пул, Эшелон 7) Гамма-, лог-гамма-, дигамма- и тригамма-функции (`gamma`, `lgamma`, `digamma` / `psi`, `trigamma`), постоянная Эйлера–Маскерони `euler_gamma` сквозь всё ядро (`diff`, `evalExact`/`evalDouble`, `simplify`, `taylor`/`laurent`/`residue`), замкнутые суммы рациональных дробей через $\psi$ и $\psi_1$ в `symsum` и интегралы Эйлера 1-го и 2-го рода (Бета, Валлиса, обобщённые Гамма и логарифмически-степенные) в `definiteIntegrate`.
 60. ✅ (v0.7-пул, Эшелон 7) Двустороннее преобразование Фурье `fourier` / `ifourier` с круговым сертификатом (`transform/fourier` + CLI `nkcas fourier` / `nkcas ifourier`).
-61. ⬜ (v0.7-пул, Эшелон 7) Векторный анализ (`divergence`, `curl`, `laplacian`, `wronskian`, `scalarPotential` с сертификатом $\operatorname{gradient}(\varphi) \equiv \mathbf{F}$ в `linalg/symmatrix`) и уравнения Риккати, Клеро и нелинейные ОДУ 2-го порядка с понижением порядка (`dsolve2Nonlinear` в `ode/dsolve`).
+61. ✅ (v0.7-пул, Эшелон 7) Векторный анализ (`divergence`, `curl`, `laplacian`, `wronskian`, `scalarPotential` с сертификатом $\operatorname{gradient}(\varphi) \equiv \mathbf{F}$ в `linalg/symmatrix`) и уравнения Риккати, Клеро и нелинейные ОДУ 2-го порядка с понижением порядка (`dsolve2Nonlinear` в `ode/dsolve`).
 62. ⬜ (v0.7-пул, Эшелон 7) Базисы Грёбнера (алгоритм Бухбергера в $\mathbb{Q}[x_1, \dots, x_k]$ с порядками `Lex` и `GrevLex`, редукция `polyReduceMulti`) и решатель нелинейных полиномиальных систем от $N$ переменных (`poly/groebner`, `solveSystem` в `core/symsolve`).
 63. ⬜ Релизная отсечка `v0.7.0` (Эшелон 7 завершён).
 
@@ -2762,6 +2762,21 @@ MATLAB Symbolic Math Toolbox (три эшелона):
    - Каждое обратное преобразование `ifourier` проходит строгий круговой сертификат `fourier(c, fCand, t, w) == F`.
 2. **Упрощения для `abs`, `sign`, `heaviside`, `dirac` в `src/core/simplify.cpp`**:
    - Добавлены чётность $\operatorname{abs}(-u) \to \operatorname{abs}(u)$, $\operatorname{dirac}(-u) \to \operatorname{dirac}(u)$, нечётность $\operatorname{sign}(-u) \to -\operatorname{sign}(u)$, раскрытие по предположениям знака, $\operatorname{abs}(u)^{2k} \to u^{2k}$, $\operatorname{abs}(u)\operatorname{sign}(u) \to u$ и вынесение положительных символьных множителей из дробных степеней произведений.
+
+
+## 2026-11-01: Реализация пункта 61 — Векторный анализ в `linalg/symmatrix` и уравнения Риккати, Клеро и нелинейные ОДУ 2-го порядка в `ode/dsolve`
+
+Реализован третий пакет Эшелона 7 (пул `v0.7.0`):
+
+1. **Операторы векторного анализа и вронскиан (`include/numkit/cas/linalg/symmatrix.hpp`, `src/linalg/symmatrix.cpp`)**:
+   - `divergence(c, F, vars)` ($\nabla \cdot \mathbf{F} = \sum_i \partial F_i / \partial x_i$), `curl(c, F, vars)` ($\nabla \times \mathbf{F}$ для 3D-полей), `laplacian(c, f, vars)` ($\Delta f = \sum_i \partial^2 f / \partial x_i^2$).
+   - `wronskianMatrix(c, funcs, var)` и `wronskian(c, funcs, var)` ($W_{i,j} = f_j^{(i)}$, $\det W$).
+   - `scalarPotential(c, F, vars)`: проверка потенциальности $\partial F_i/\partial x_j \equiv \partial F_j/\partial x_i$, последовательное криволинейное интегрирование по координатным осям и сертификат $\operatorname{gradient}(\varphi) \equiv \mathbf{F}$.
+2. **Уравнения Риккати, Клеро и нелинейные ОДУ 2-го порядка с понижением порядка (`include/numkit/cas/ode/dsolve.hpp`, `src/ode/dsolve.cpp`)**:
+   - `dsolve1Riccati` и шаг 7 в `dsolve1`: сведение $y' = q_0(x) + q_1(x)y + q_2(x)y^2$ через частное решение $y_p(x)$ ($y = y_p + 1/u$) либо подстановку $y = -v'/(q_2 v)$ к линейному ОДУ 2-го порядка / уравнению Эйлера–Коши.
+   - `dsolve1Clairaut`: общее линейное семейство $y = C_1 x + g(C_1)$ и огибающее особое решение из $x + g'(p) = 0$ с проверкой сертификата.
+   - `dsolve2Nonlinear` и `dsolve2NonlinearIVP`: понижение порядка для $y'' = F(x, y')$ ($p(x) = y'(x)$) и автономных $y'' = F(y, y')$ ($y' = p(y), y'' = p\,dp/dy$) с двухэтапным разрешением начальных условий $p(y_0) = y'(x_0)$ и правилом $(u^{4k})^{m/2} \to u^{2km}$ в `simplify`.
+
 
 
 

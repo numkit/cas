@@ -33,9 +33,38 @@ struct OdeResult
 //   4. Bernoulli:         y' = A(x)*y + B(x)*y^n
 //   5. Homogeneous:       y' = F(y / x) (substitution y = u * x)
 //   6. Exact / integrating factor: M(x, y)*dx + N(x, y)*dy = 0 with mu(x) or mu(y)
+//   7. Riccati:           y' = q0(x) + q1(x)*y + q2(x)*y^2 (automatic particular solution
+//                         search or 2nd-order linear / Euler-Cauchy reduction)
 // Every candidate solution is certified by checking `simplify(d(y)/dx - rhs(x, y)) == 0`.
 OdeResult dsolve1(Ctx &c, Expr rhs, Expr x, Expr y,
                   Budget *budget = nullptr);
+
+// Solve a 1st-order Riccati ODE `y'(x) = rhs(x, y) = q0(x) + q1(x)*y + q2(x)*y^2`
+// given a known particular solution `yPart(x)` (or null `yPart` to search
+// automatically), reducing via `y = yPart + 1/u` to a linear 1st-order ODE for `u(x)`
+// and certifying `simplify(d(y)/dx - rhs(x, y)) == 0`.
+OdeResult dsolve1Riccati(Ctx &c, Expr rhs, Expr x, Expr y,
+                         Expr yPart = Expr{}, Budget *budget = nullptr);
+
+struct ClairautResult
+{
+    enum class Status { Unevaluated, Proved };
+
+    Status status = Status::Unevaluated;
+    Expr general;  // general linear family y(x) = C1 * x + g(C1)
+    Expr singular; // singular envelope solution (if x + g'(p) = 0 is solvable; null otherwise)
+    std::string reason;
+
+    bool proved() const { return status == Status::Proved; }
+};
+
+// Solve a 1st-order Clairaut ODE `y(x) = x * y'(x) + g(y'(x))` where `gOfP`
+// is the expression `g(p)` in symbol `p = y'(x)`:
+//   - constructs and certifies the general linear family `y(x) = C1 * x + g(C1)`;
+//   - solves `x + g'(p) = 0` for `p(x)` to construct and certify the singular
+//     envelope solution when it exists.
+ClairautResult dsolve1Clairaut(Ctx &c, Expr gOfP, Expr x, Expr p,
+                               Budget *budget = nullptr);
 
 // Solve a 1st-order Initial Value Problem `y'(x) = rhs(x, y), y(x0) = y0`,
 // certifying both the ODE identity and the initial condition `y(x0) == y0`.
@@ -94,6 +123,25 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
 OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
                            Expr x, Expr x0, const std::vector<Expr> &initVals,
                            Budget *budget = nullptr);
+
+// Solve a 2nd-order nonlinear ODE `y''(x) = rhs(x, y, dy)` (where `dy` is the
+// symbol representing `y'(x)`) via exact order reduction with integration
+// constants "C1" and "C2":
+//   - Dependent variable y missing (`rhs = F(x, y')`): substitution `p(x) = y'(x)`
+//     reduces to 1st-order ODE `p'(x) = F(x, p)` followed by quadrature `y = int p dx + C2`;
+//   - Independent variable x missing / autonomous (`rhs = F(y, y')`): substitution
+//     `y' = p(y), y'' = p * dp/dy` reduces to `dp/dy = F(y, p) / p` followed by
+//     separable integration `int dy / p(y) = x + C2`.
+// Certified by verifying `simplify(y''(x) - rhs(x, y(x), y'(x))) == 0`.
+OdeResult dsolve2Nonlinear(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
+                           Budget *budget = nullptr);
+
+// Solve a 2nd-order nonlinear Initial Value Problem:
+//   y''(x) = rhs(x, y, dy),  y(x0) = y0,  y'(x0) = dy0
+// Certified against the ODE and both initial conditions `y(x0) == y0`, `y'(x0) == dy0`.
+OdeResult dsolve2NonlinearIVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
+                              Expr x0, Expr y0, Expr dy0,
+                              Budget *budget = nullptr);
 
 struct OdeSystemResult
 {

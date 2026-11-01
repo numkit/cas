@@ -1480,11 +1480,18 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
                  c.isAssumedPositive(outerEx))) {
                 return rewriteBottomUp(c, c.pow(u, c.mul({a, outerEx})));
             }
-            if (c.isAssumedNegative(u) && c.kind(a) == NodeKind::Number &&
+            if (c.kind(a) == NodeKind::Number &&
                 c.kind(outerEx) == NodeKind::Number) {
                 const Rational &ra = c.numberValue(a);
                 const Rational &re = c.numberValue(outerEx);
                 if (ra.den() == BigInt(1) &&
+                    (ra.num() % BigInt(4)).isZero() &&
+                    re.den() == BigInt(2)) {
+                    const Rational newExp(
+                        (ra.num() / BigInt(2)) * re.num(), BigInt(1));
+                    return rewriteBottomUp(c, c.pow(u, c.number(newExp)));
+                }
+                if (c.isAssumedNegative(u) && ra.den() == BigInt(1) &&
                     (ra.num() % BigInt(2)).isZero() &&
                     re.den() == BigInt(2)) {
                     const Rational newExp(

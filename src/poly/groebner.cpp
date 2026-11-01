@@ -2,9 +2,12 @@
 #include <numkit/cas/poly/groebner.hpp>
 
 #include <numkit/cas/linalg/symmatrix.hpp>
+#include <numkit/cas/poly/upoly.hpp>
+#include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <numeric>
 #include <string>
 #include <utility>
@@ -610,6 +613,983 @@ Expr polyReduceMulti(Ctx &c, Expr f, const std::vector<Expr> &G,
     if (!mpolyReduce(c, mf, mG, order, budget, rem, reason))
         return Expr{};
     return mpolyToExpr(c, rem, vars);
+}
+
+// ============================================================================
+// Multivariate Exact Division, GCD (`gcdMulti`), and Factorization (`factorMulti`)
+// ============================================================================
+
+namespace {
+
+void collectPolyVarsRec(const Ctx &c, Expr e, std::vector<Expr> &vars)
+{
+    if (e.isNull())
+        return;
+    if (c.kind(e) == NodeKind::Symbol) {
+        if (std::find(vars.begin(), vars.end(), e) == vars.end())
+            vars.push_back(e);
+        return;
+    }
+    for (std::size_t i = 0; i < c.childCount(e); ++i)
+        collectPolyVarsRec(c, c.child(e, i), vars);
+}
+
+std::vector<Expr> resolvePolyVars(const Ctx &c,
+                                  const std::vector<Expr> &exprs,
+                                  const std::vector<Expr> &userVars)
+{
+    if (!userVars.empty())
+        return userVars;
+    std::vector<Expr> vars;
+    for (const Expr &e : exprs)
+        collectPolyVarsRec(c, e, vars);
+    std::sort(vars.begin(), vars.end(),
+              [&](Expr a, Expr b) { return c.compare(a, b) < 0; });
+    return vars;
+}
+
+MPoly mpolyConst(const Rational &r, std::size_t kVars)
+{
+    MPoly out;
+    if (!r.isZero())
+        out.terms.push_back(MTerm{r, std::vector<int>(kVars, 0)});
+    return out;
+}
+
+bool mpolyIsConstant(const MPoly &p)
+{
+    if (p.isZero())
+        return true;
+    return p.terms.size() == 1 && totalDegree(p.terms[0].exp) == 0;
+}
+
+int mpolyDegInVar(const MPoly &p, std::size_t varIdx)
+{
+    int d = 0;
+    for (const MTerm &t : p.terms) {
+        if (t.exp[varIdx] > d)
+            d = t.exp[varIdx];
+    }
+    return d;
+}
+
+std::vector<int> mpolyMinMonomial(const MPoly &p, std::size_t kVars)
+{
+    std::vector<int> minExp(kVars, 0);
+    if (p.isZero())
+        return minExp;
+    minExp = p.terms[0].exp;
+    for (std::size_t i = 1; i < p.terms.size(); ++i) {
+        for (std::size_t j = 0; j < kVars; ++j)
+            minExp[j] = std::min(minExp[j], p.terms[i].exp[j]);
+    }
+    return minExp;
+}
+
+MPoly mpolyShiftMonomial(const MPoly &p, const std::vector<int> &shift)
+{
+    MPoly out = p;
+    for (MTerm &t : out.terms) {
+        for (std::size_t j = 0; j < shift.size(); ++j)
+            t.exp[j] += shift[j];
+    }
+    return out;
+}
+
+// Exact division in Q[x_1, ..., x_k]: returns true iff `a == b * qOut`.
+bool mpolyDivExact(const MPoly &a, const MPoly &b, MonomialOrder order,
+                   MPoly &qOut)
+{
+    if (b.isZero()) {
+        qOut.terms.clear();
+        return false;
+    }
+    if (a.isZero()) {
+        qOut.terms.clear();
+        return true;
+    }
+
+    MPoly p = a;
+    const MPoly divisor = b;
+    qOut.terms.clear();
+    const std::size_t maxSteps = p.terms.size() * 8 + 64;
+    std::size_t steps = 0;
+    while (!p.isZero()) {
+        if (++steps > maxSteps)
+            return false;
+        const MTerm ltP = p.lt();
+        const MTerm ltB = divisor.lt();
+        if (!monomialDivides(ltB.exp, ltP.exp))
+            return false;
+        const Rational qCoeff = ltP.coeff / ltB.coeff;
+        const std::vector<int> qExp = monomialSub(ltP.exp, ltB.exp);
+        qOut.terms.push_back(MTerm{qCoeff, qExp});
+        p = mpolySub(p, mpolyMulTerm(divisor, qCoeff, qExp), order);
+    }
+    normalizeMPoly(qOut, order);
+    return true;
+}
+
+MPoly mpolyDiffInVar(const MPoly &p, std::size_t varIdx, MonomialOrder order)
+{
+    MPoly out;
+    for (const MTerm &t : p.terms) {
+        const int e = t.exp[varIdx];
+        if (e > 0) {
+            std::vector<int> nExp = t.exp;
+            nExp[varIdx] = e - 1;
+            out.terms.push_back(
+                MTerm{t.coeff * Rational(static_cast<std::int64_t>(e)),
+                      std::move(nExp)});
+        }
+    }
+    normalizeMPoly(out, order);
+    return out;
+}
+
+std::vector<MPoly> mpolyDecomposeInVar(const MPoly &p, std::size_t varIdx,
+                                       std::size_t kVars, MonomialOrder order)
+{
+    const int d = mpolyDegInVar(p, varIdx);
+    std::vector<MPoly> coeffs(static_cast<std::size_t>(d + 1));
+    for (const MTerm &t : p.terms) {
+        const int e = t.exp[varIdx];
+        std::vector<int> cExp = t.exp;
+        cExp[varIdx] = 0;
+        coeffs[static_cast<std::size_t>(e)].terms.push_back(
+            MTerm{t.coeff, std::move(cExp)});
+    }
+    for (MPoly &cPoly : coeffs)
+        normalizeMPoly(cPoly, order);
+    (void)kVars;
+    return coeffs;
+}
+
+MPoly mpolyComposeInVar(const std::vector<MPoly> &coeffs, std::size_t varIdx,
+                        MonomialOrder order)
+{
+    MPoly out;
+    for (std::size_t d = 0; d < coeffs.size(); ++d) {
+        for (const MTerm &t : coeffs[d].terms) {
+            std::vector<int> nExp = t.exp;
+            nExp[varIdx] = static_cast<int>(d);
+            out.terms.push_back(MTerm{t.coeff, std::move(nExp)});
+        }
+    }
+    normalizeMPoly(out, order);
+    return out;
+}
+
+UPoly mpolyToUPolyInVar(const MPoly &p, std::size_t varIdx)
+{
+    if (p.isZero())
+        return UPoly{};
+    const int d = mpolyDegInVar(p, varIdx);
+    std::vector<Rational> coeffs(static_cast<std::size_t>(d + 1),
+                                 Rational(std::int64_t{0}));
+    for (const MTerm &t : p.terms) {
+        coeffs[static_cast<std::size_t>(t.exp[varIdx])] += t.coeff;
+    }
+    return UPoly(std::move(coeffs));
+}
+
+MPoly upolyToMPolyInVar(const UPoly &u, std::size_t varIdx, std::size_t kVars,
+                        MonomialOrder order)
+{
+    MPoly out;
+    if (u.isZero())
+        return out;
+    for (int d = 0; d <= u.deg(); ++d) {
+        const Rational c = u.coeff(d);
+        if (!c.isZero()) {
+            std::vector<int> exp(kVars, 0);
+            exp[varIdx] = d;
+            out.terms.push_back(MTerm{c, std::move(exp)});
+        }
+    }
+    normalizeMPoly(out, order);
+    return out;
+}
+
+MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, std::size_t kVars,
+                  MonomialOrder order, Budget *budget);
+
+MPoly mpolyContentInVar(const MPoly &p, std::size_t varIdx, std::size_t kVars,
+                        MonomialOrder order, Budget *budget)
+{
+    if (p.isZero())
+        return MPoly{};
+    const std::vector<MPoly> coeffs =
+        mpolyDecomposeInVar(p, varIdx, kVars, order);
+    MPoly g;
+    for (const MPoly &cPoly : coeffs) {
+        if (cPoly.isZero())
+            continue;
+        if (g.isZero())
+            g = cPoly;
+        else
+            g = mpolyGcdRec(g, cPoly, kVars, order, budget);
+        if (mpolyIsConstant(g)) {
+            return mpolyConst(Rational(std::int64_t{1}), kVars);
+        }
+    }
+    mpolyMakeMonic(g);
+    return g;
+}
+
+MPoly mpolyPrimitivePartInVar(const MPoly &p, std::size_t varIdx,
+                              std::size_t kVars, MonomialOrder order,
+                              Budget *budget)
+{
+    if (p.isZero())
+        return MPoly{};
+    const MPoly cont = mpolyContentInVar(p, varIdx, kVars, order, budget);
+    MPoly prim;
+    if (!cont.isZero() && !mpolyIsConstant(cont) &&
+        mpolyDivExact(p, cont, order, prim)) {
+        mpolyMakeMonic(prim);
+        return prim;
+    }
+    prim = p;
+    mpolyMakeMonic(prim);
+    return prim;
+}
+
+MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, std::size_t kVars,
+                  MonomialOrder order, Budget *budget)
+{
+    if (a.isZero()) {
+        MPoly out = b;
+        mpolyMakeMonic(out);
+        return out;
+    }
+    if (b.isZero()) {
+        MPoly out = a;
+        mpolyMakeMonic(out);
+        return out;
+    }
+    if (kVars == 0)
+        return mpolyConst(Rational(std::int64_t{1}), 0);
+
+    // 1. Strip greatest common monomial factor x^gExp
+    const std::vector<int> minA = mpolyMinMonomial(a, kVars);
+    const std::vector<int> minB = mpolyMinMonomial(b, kVars);
+    std::vector<int> gExp(kVars, 0);
+    std::vector<int> negA(kVars, 0), negB(kVars, 0);
+    for (std::size_t i = 0; i < kVars; ++i) {
+        gExp[i] = std::min(minA[i], minB[i]);
+        negA[i] = -minA[i];
+        negB[i] = -minB[i];
+    }
+
+    MPoly P = mpolyShiftMonomial(a, negA);
+    MPoly Q = mpolyShiftMonomial(b, negB);
+    mpolyMakeMonic(P);
+    mpolyMakeMonic(Q);
+
+    auto finishWithMonomial = [&](MPoly d) -> MPoly {
+        MPoly out = mpolyShiftMonomial(d, gExp);
+        normalizeMPoly(out, order);
+        mpolyMakeMonic(out);
+        return out;
+    };
+
+    if (mpolyIsConstant(P) || mpolyIsConstant(Q))
+        return finishWithMonomial(mpolyConst(Rational(std::int64_t{1}), kVars));
+
+    MPoly qTmp;
+    if (mpolyDivExact(Q, P, order, qTmp))
+        return finishWithMonomial(P);
+    if (mpolyDivExact(P, Q, order, qTmp))
+        return finishWithMonomial(Q);
+
+    // 2. Inspect active variables
+    std::vector<std::size_t> activeVars;
+    for (std::size_t i = 0; i < kVars; ++i) {
+        const int da = mpolyDegInVar(P, i);
+        const int db = mpolyDegInVar(Q, i);
+        if (da > 0 && db == 0) {
+            // Variable `i` appears in P but not in Q: gcd(P, Q) = gcd(cont_i(P), Q)
+            const MPoly contP = mpolyContentInVar(P, i, kVars, order, budget);
+            return finishWithMonomial(
+                mpolyGcdRec(contP, Q, kVars, order, budget));
+        }
+        if (db > 0 && da == 0) {
+            const MPoly contQ = mpolyContentInVar(Q, i, kVars, order, budget);
+            return finishWithMonomial(
+                mpolyGcdRec(P, contQ, kVars, order, budget));
+        }
+        if (da > 0 || db > 0)
+            activeVars.push_back(i);
+    }
+
+    if (activeVars.empty())
+        return finishWithMonomial(mpolyConst(Rational(std::int64_t{1}), kVars));
+
+    // Base case: univariate in `activeVars[0]`
+    if (activeVars.size() == 1) {
+        const std::size_t v = activeVars[0];
+        const UPoly uP = mpolyToUPolyInVar(P, v);
+        const UPoly uQ = mpolyToUPolyInVar(Q, v);
+        const UPoly uG = UPoly::gcd(uP, uQ);
+        return finishWithMonomial(upolyToMPolyInVar(uG, v, kVars, order));
+    }
+
+    // 3. Pick active variable `mainVar` of smallest positive max-degree
+    std::size_t mainVar = activeVars[0];
+    int bestMaxDeg =
+        std::max(mpolyDegInVar(P, mainVar), mpolyDegInVar(Q, mainVar));
+    int bestSumDeg =
+        mpolyDegInVar(P, mainVar) + mpolyDegInVar(Q, mainVar);
+    for (std::size_t idx = 1; idx < activeVars.size(); ++idx) {
+        const std::size_t v = activeVars[idx];
+        const int mx = std::max(mpolyDegInVar(P, v), mpolyDegInVar(Q, v));
+        const int sm = mpolyDegInVar(P, v) + mpolyDegInVar(Q, v);
+        if (mx < bestMaxDeg || (mx == bestMaxDeg && sm < bestSumDeg)) {
+            mainVar = v;
+            bestMaxDeg = mx;
+            bestSumDeg = sm;
+        }
+    }
+
+    const MPoly contP = mpolyContentInVar(P, mainVar, kVars, order, budget);
+    const MPoly contQ = mpolyContentInVar(Q, mainVar, kVars, order, budget);
+    const MPoly contG = mpolyGcdRec(contP, contQ, kVars, order, budget);
+
+    if (!mpolyIsConstant(contP))
+        mpolyDivExact(P, contP, order, P);
+    if (!mpolyIsConstant(contQ))
+        mpolyDivExact(Q, contQ, order, Q);
+    mpolyMakeMonic(P);
+    mpolyMakeMonic(Q);
+
+    if (mpolyDegInVar(P, mainVar) < mpolyDegInVar(Q, mainVar))
+        std::swap(P, Q);
+
+    // Primitive Polynomial Remainder Sequence (Primitive PRS) in `mainVar`
+    int prsIter = 0;
+    while (!Q.isZero() && mpolyDegInVar(Q, mainVar) > 0 && ++prsIter <= 64) {
+        if (budget && !budget->step())
+            break;
+        if (mpolyDivExact(P, Q, order, qTmp)) {
+            P = Q;
+            break;
+        }
+        const std::vector<MPoly> qCoeffs =
+            mpolyDecomposeInVar(Q, mainVar, kVars, order);
+        const int dQ = static_cast<int>(qCoeffs.size()) - 1;
+        const MPoly &lcQ = qCoeffs.back();
+
+        MPoly R = P;
+        int subSteps = 0;
+        while (!R.isZero() && mpolyDegInVar(R, mainVar) >= dQ &&
+               ++subSteps <= 64) {
+            const std::vector<MPoly> rCoeffs =
+                mpolyDecomposeInVar(R, mainVar, kVars, order);
+            const int dR = static_cast<int>(rCoeffs.size()) - 1;
+            const MPoly &lcR = rCoeffs.back();
+
+            // Cancel common factor between lcR and lcQ before cross-multiplying
+            const MPoly gLc = mpolyGcdRec(lcR, lcQ, kVars, order, budget);
+            MPoly mulR = lcQ;
+            MPoly mulQ = lcR;
+            if (!mpolyIsConstant(gLc)) {
+                mpolyDivExact(lcQ, gLc, order, mulR);
+                mpolyDivExact(lcR, gLc, order, mulQ);
+            }
+            std::vector<int> shiftExp(kVars, 0);
+            shiftExp[mainVar] = dR - dQ;
+            const MPoly shiftedQ = mpolyShiftMonomial(Q, shiftExp);
+            R = mpolySub(mpolyMul(mulR, R, order),
+                         mpolyMul(mulQ, shiftedQ, order), order);
+        }
+
+        if (R.isZero()) {
+            P = Q;
+            break;
+        }
+        if (mpolyDegInVar(R, mainVar) == 0) {
+            // Coprime in mainVar
+            P = mpolyConst(Rational(std::int64_t{1}), kVars);
+            break;
+        }
+        R = mpolyPrimitivePartInVar(R, mainVar, kVars, order, budget);
+        P = std::move(Q);
+        Q = std::move(R);
+    }
+
+    const MPoly combined = mpolyMul(contG, P, order);
+    return finishWithMonomial(combined);
+}
+
+// Substitute `varIdx -> val` in `p`.
+MPoly mpolyEvalVarAtRational(const MPoly &p, std::size_t varIdx,
+                             const Rational &val, MonomialOrder order)
+{
+    MPoly out;
+    for (const MTerm &t : p.terms) {
+        const int e = t.exp[varIdx];
+        Rational c = t.coeff;
+        if (e > 0) {
+            if (val.isZero())
+                continue;
+            const BigInt numP =
+                BigInt::powUInt(val.num(), static_cast<std::uint64_t>(e));
+            const BigInt denP =
+                BigInt::powUInt(val.den(), static_cast<std::uint64_t>(e));
+            c = c * Rational(numP, denP);
+        }
+        std::vector<int> nExp = t.exp;
+        nExp[varIdx] = 0;
+        out.terms.push_back(MTerm{c, std::move(nExp)});
+    }
+    normalizeMPoly(out, order);
+    return out;
+}
+
+// Shift variable `varIdx -> varIdx + shift` in `p`.
+MPoly mpolyShiftVarByRational(const MPoly &p, std::size_t varIdx,
+                              const Rational &shift, std::size_t kVars,
+                              MonomialOrder order)
+{
+    if (p.isZero() || shift.isZero())
+        return p;
+    const std::vector<MPoly> coeffs =
+        mpolyDecomposeInVar(p, varIdx, kVars, order);
+    if (coeffs.size() <= 1)
+        return p;
+
+    // Horner evaluation in (x_varIdx + shift)
+    MPoly xPlusShift;
+    std::vector<int> e1(kVars, 0);
+    e1[varIdx] = 1;
+    xPlusShift.terms.push_back(MTerm{Rational(std::int64_t{1}), e1});
+    xPlusShift.terms.push_back(MTerm{shift, std::vector<int>(kVars, 0)});
+    normalizeMPoly(xPlusShift, order);
+
+    MPoly acc = coeffs.back();
+    for (std::size_t idx = coeffs.size() - 1; idx > 0; --idx) {
+        acc = mpolyAdd(mpolyMul(acc, xPlusShift, order), coeffs[idx - 1], order);
+    }
+    return acc;
+}
+
+// Substitute `mainVar -> L(otherVars) * mainVar` in `p`.
+MPoly mpolyScaleVarByMPoly(const MPoly &p, std::size_t mainVar, const MPoly &L,
+                           std::size_t kVars, MonomialOrder order)
+{
+    const std::vector<MPoly> coeffs =
+        mpolyDecomposeInVar(p, mainVar, kVars, order);
+    if (coeffs.size() <= 1)
+        return p;
+    std::vector<MPoly> lPows(coeffs.size());
+    lPows[0] = mpolyConst(Rational(std::int64_t{1}), kVars);
+    for (std::size_t i = 1; i < coeffs.size(); ++i)
+        lPows[i] = mpolyMul(lPows[i - 1], L, order);
+
+    std::vector<MPoly> newCoeffs(coeffs.size());
+    for (std::size_t i = 0; i < coeffs.size(); ++i)
+        newCoeffs[i] = mpolyMul(coeffs[i], lPows[i], order);
+    return mpolyComposeInVar(newCoeffs, mainVar, order);
+}
+
+// Factor a primitive, squarefree multivariate polynomial `S` (containing no
+// monomial factors) into monic irreducible factors in Q[x_1, ..., x_k].
+void factorPrimitiveSquarefreeMPoly(const MPoly &S, std::size_t kVars,
+                                    MonomialOrder order, Budget *budget,
+                                    std::vector<MPoly> &irredOut)
+{
+    if (S.isZero() || mpolyIsConstant(S))
+        return;
+
+    std::vector<std::size_t> activeVars;
+    for (std::size_t i = 0; i < kVars; ++i) {
+        if (mpolyDegInVar(S, i) > 0)
+            activeVars.push_back(i);
+    }
+    if (activeVars.empty())
+        return;
+
+    // 1. Univariate base case
+    if (activeVars.size() == 1) {
+        const std::size_t v = activeVars[0];
+        const UPoly uS = mpolyToUPolyInVar(S, v);
+        const std::vector<UPoly> uFacs = factorOverQ(uS, budget);
+        for (const UPoly &uf : uFacs) {
+            if (uf.deg() > 0) {
+                MPoly mf = upolyToMPolyInVar(uf, v, kVars, order);
+                mpolyMakeMonic(mf);
+                irredOut.push_back(std::move(mf));
+            }
+        }
+        return;
+    }
+
+    // 2. Pick active variable `mainVar` of minimum positive degree
+    std::size_t mainVar = activeVars[0];
+    int minDeg = mpolyDegInVar(S, mainVar);
+    for (std::size_t idx = 1; idx < activeVars.size(); ++idx) {
+        const int d = mpolyDegInVar(S, activeVars[idx]);
+        if (d < minDeg) {
+            minDeg = d;
+            mainVar = activeVars[idx];
+        }
+    }
+
+    // Since S is primitive in every active variable, if minDeg == 1 then S is
+    // linear in `mainVar` with coprime coefficients, hence provably irreducible!
+    if (minDeg == 1) {
+        MPoly mS = S;
+        mpolyMakeMonic(mS);
+        irredOut.push_back(std::move(mS));
+        return;
+    }
+
+    std::vector<std::size_t> otherVars;
+    for (std::size_t v : activeVars) {
+        if (v != mainVar)
+            otherVars.push_back(v);
+    }
+
+    // 3. Gauss monic transformation in `mainVar`:
+    //    S(x, y) = sum_{i=0}^d A_i(y) * x^i,  L(y) = A_d(y)
+    //    S_monic(X, y) = X^d + sum_{i=0}^{d-1} A_i(y) * L(y)^(d - 1 - i) * X^i
+    MPoly curS = S;
+    mpolyMakeMonic(curS);
+
+    const std::vector<MPoly> sCoeffs =
+        mpolyDecomposeInVar(curS, mainVar, kVars, order);
+    const int dX = static_cast<int>(sCoeffs.size()) - 1;
+    const MPoly L = sCoeffs.back();
+
+    std::vector<MPoly> lPows(static_cast<std::size_t>(dX));
+    lPows[0] = mpolyConst(Rational(std::int64_t{1}), kVars);
+    for (int i = 1; i < dX; ++i) {
+        lPows[static_cast<std::size_t>(i)] =
+            mpolyMul(lPows[static_cast<std::size_t>(i - 1)], L, order);
+    }
+
+    std::vector<MPoly> monicCoeffs(static_cast<std::size_t>(dX + 1));
+    monicCoeffs[static_cast<std::size_t>(dX)] =
+        mpolyConst(Rational(std::int64_t{1}), kVars);
+    for (int i = 0; i < dX; ++i) {
+        monicCoeffs[static_cast<std::size_t>(i)] =
+            mpolyMul(sCoeffs[static_cast<std::size_t>(i)],
+                     lPows[static_cast<std::size_t>(dX - 1 - i)], order);
+    }
+    const MPoly sMonic = mpolyComposeInVar(monicCoeffs, mainVar, order);
+
+    // 4. Find a small integer evaluation point `b` for `otherVars` such that
+    //    L(b) != 0 and s0(X) = sMonic(X, b) is squarefree of degree dX.
+    static const int kCandCoords[] = {0, 1, -1, 2, -2, 3, -3, 4, 5};
+    std::vector<Rational> evalPt(otherVars.size(), Rational(std::int64_t{0}));
+    UPoly s0;
+    bool foundPt = false;
+    for (int trial = 0; trial < 45 && !foundPt; ++trial) {
+        int code = trial;
+        for (std::size_t j = 0; j < otherVars.size(); ++j) {
+            evalPt[j] = Rational(
+                static_cast<std::int64_t>(kCandCoords[code % 9]));
+            code /= 9;
+        }
+        MPoly lEval = L;
+        MPoly smEval = sMonic;
+        for (std::size_t j = 0; j < otherVars.size(); ++j) {
+            lEval = mpolyEvalVarAtRational(lEval, otherVars[j], evalPt[j], order);
+            smEval =
+                mpolyEvalVarAtRational(smEval, otherVars[j], evalPt[j], order);
+        }
+        if (lEval.isZero())
+            continue;
+        const UPoly candS0 = mpolyToUPolyInVar(smEval, mainVar);
+        if (candS0.deg() != dX)
+            continue;
+        const UPoly g0 = UPoly::gcd(candS0, candS0.derivative());
+        if (g0.deg() == 0) {
+            s0 = candS0;
+            foundPt = true;
+        }
+    }
+
+    if (!foundPt) {
+        irredOut.push_back(curS);
+        return;
+    }
+
+    std::vector<UPoly> uFactors = factorOverQ(s0, budget);
+    if (uFactors.size() <= 1) {
+        // Irreducible specialization => S is irreducible over Q[vars]
+        irredOut.push_back(curS);
+        return;
+    }
+
+    // 5. Shift `otherVars`: y_j -> u_j + evalPt[j] so the expansion point is u = 0.
+    MPoly sShifted = sMonic;
+    for (std::size_t j = 0; j < otherVars.size(); ++j) {
+        sShifted = mpolyShiftVarByRational(sShifted, otherVars[j], evalPt[j],
+                                           kVars, order);
+    }
+
+    auto otherTotalDeg = [&](const std::vector<int> &exp) -> int {
+        int d = 0;
+        for (std::size_t v : otherVars)
+            d += exp[v];
+        return d;
+    };
+
+    int maxOtherDeg = 0;
+    for (const MTerm &t : sShifted.terms)
+        maxOtherDeg = std::max(maxOtherDeg, otherTotalDeg(t.exp));
+
+    // Try lifting singletons first, then pairs if needed, via Multivariate Total-Degree Hensel Lifting
+    for (std::size_t subSize = 1; subSize <= uFactors.size() / 2; ++subSize) {
+        if (uFactors.size() <= 1)
+            break;
+        std::vector<bool> mask(uFactors.size(), false);
+        std::fill(mask.begin(),
+                  mask.begin() + static_cast<std::ptrdiff_t>(subSize), true);
+
+        bool factorFoundInPass = false;
+        do {
+            UPoly g0({Rational(std::int64_t{1})});
+            UPoly h0({Rational(std::int64_t{1})});
+            for (std::size_t i = 0; i < uFactors.size(); ++i) {
+                if (mask[i])
+                    g0 = g0 * uFactors[i];
+                else
+                    h0 = h0 * uFactors[i];
+            }
+            g0.makeMonic();
+            h0.makeMonic();
+
+            if (UPoly::gcd(g0, h0).deg() != 0)
+                continue;
+            const UPoly B = UPoly::invMod(h0, g0);
+            UPoly A;
+            UPoly remBezout;
+            UPoly::divMod(UPoly(Rational(std::int64_t{1})) - B * h0, g0, A,
+                          remBezout);
+
+            MPoly gLift = upolyToMPolyInVar(g0, mainVar, kVars, order);
+            MPoly hLift = upolyToMPolyInVar(h0, mainVar, kVars, order);
+
+            for (int degU = 1; degU <= maxOtherDeg; ++degU) {
+                const MPoly err =
+                    mpolySub(sShifted, mpolyMul(gLift, hLift, order), order);
+                if (err.isZero())
+                    break;
+
+                // Group terms of `err` that have total degree `degU` in `otherVars`
+                // by their `otherVars` exponent vector.
+                std::map<std::vector<int>, std::vector<Rational>> buckets;
+                for (const MTerm &t : err.terms) {
+                    if (otherTotalDeg(t.exp) != degU)
+                        continue;
+                    std::vector<int> uExp = t.exp;
+                    uExp[mainVar] = 0;
+                    auto &vec = buckets[uExp];
+                    const int xExp = t.exp[mainVar];
+                    if (static_cast<int>(vec.size()) <= xExp)
+                        vec.resize(static_cast<std::size_t>(xExp + 1),
+                                   Rational(std::int64_t{0}));
+                    vec[static_cast<std::size_t>(xExp)] += t.coeff;
+                }
+
+                for (const auto &kv : buckets) {
+                    const std::vector<int> &uExp = kv.first;
+                    const UPoly eAlpha(kv.second);
+                    if (eAlpha.isZero())
+                        continue;
+                    UPoly qAlpha;
+                    UPoly rAlpha;
+                    UPoly::divMod(B * eAlpha, g0, qAlpha, rAlpha);
+                    const UPoly dhAlpha = A * eAlpha + qAlpha * h0;
+
+                    if (!rAlpha.isZero()) {
+                        const MPoly dgM =
+                            upolyToMPolyInVar(rAlpha, mainVar, kVars, order);
+                        gLift = mpolyAdd(
+                            gLift,
+                            mpolyMulTerm(dgM, Rational(std::int64_t{1}), uExp),
+                            order);
+                    }
+                    if (!dhAlpha.isZero()) {
+                        const MPoly dhM =
+                            upolyToMPolyInVar(dhAlpha, mainVar, kVars, order);
+                        hLift = mpolyAdd(
+                            hLift,
+                            mpolyMulTerm(dhM, Rational(std::int64_t{1}), uExp),
+                            order);
+                    }
+                }
+            }
+
+            // Unshift `otherVars`: u_j -> y_j - evalPt[j]
+            MPoly gUnshifted = gLift;
+            for (std::size_t j = 0; j < otherVars.size(); ++j) {
+                gUnshifted = mpolyShiftVarByRational(
+                    gUnshifted, otherVars[j], -evalPt[j], kVars, order);
+            }
+            // Undo Gauss monic scaling: X -> L(y) * x_main
+            MPoly gScaled =
+                mpolyScaleVarByMPoly(gUnshifted, mainVar, L, kVars, order);
+            MPoly gCand =
+                mpolyPrimitivePartInVar(gScaled, mainVar, kVars, order, budget);
+            for (std::size_t v : otherVars) {
+                gCand =
+                    mpolyPrimitivePartInVar(gCand, v, kVars, order, budget);
+            }
+            mpolyMakeMonic(gCand);
+
+            MPoly qCand;
+            if (!mpolyIsConstant(gCand) &&
+                mpolyDivExact(curS, gCand, order, qCand)) {
+                irredOut.push_back(std::move(gCand));
+                mpolyMakeMonic(qCand);
+                factorPrimitiveSquarefreeMPoly(qCand, kVars, order, budget,
+                                               irredOut);
+                return;
+            }
+        } while (!factorFoundInPass &&
+                 std::prev_permutation(mask.begin(), mask.end()));
+    }
+
+    irredOut.push_back(curS);
+}
+
+void factorArbitraryMPolyRec(const MPoly &P, int mult, std::size_t kVars,
+                             MonomialOrder order, Budget *budget,
+                             std::vector<std::pair<MPoly, int>> &factorsOut)
+{
+    if (P.isZero() || mpolyIsConstant(P))
+        return;
+
+    // 1. Strip monomial powers x_i^{m_i}
+    const std::vector<int> minExp = mpolyMinMonomial(P, kVars);
+    std::vector<int> negMin(kVars, 0);
+    for (std::size_t i = 0; i < kVars; ++i) {
+        if (minExp[i] > 0) {
+            MPoly varPoly;
+            std::vector<int> vExp(kVars, 0);
+            vExp[i] = 1;
+            varPoly.terms.push_back(
+                MTerm{Rational(std::int64_t{1}), std::move(vExp)});
+            factorsOut.emplace_back(std::move(varPoly), mult * minExp[i]);
+        }
+        negMin[i] = -minExp[i];
+    }
+
+    MPoly cur = mpolyShiftMonomial(P, negMin);
+    mpolyMakeMonic(cur);
+    if (mpolyIsConstant(cur))
+        return;
+
+    // 2. Make `cur` primitive in every active variable by factoring out contents
+    for (std::size_t i = 0; i < kVars; ++i) {
+        if (mpolyDegInVar(cur, i) > 0) {
+            const MPoly cont =
+                mpolyContentInVar(cur, i, kVars, order, budget);
+            if (!cont.isZero() && !mpolyIsConstant(cont)) {
+                MPoly prim;
+                if (mpolyDivExact(cur, cont, order, prim)) {
+                    cur = std::move(prim);
+                    mpolyMakeMonic(cur);
+                    factorArbitraryMPolyRec(cont, mult, kVars, order, budget,
+                                            factorsOut);
+                }
+            }
+        }
+    }
+    if (mpolyIsConstant(cur))
+        return;
+
+    // 3. Squarefree decomposition in the first active variable `v0`
+    std::size_t v0 = 0;
+    for (std::size_t i = 0; i < kVars; ++i) {
+        if (mpolyDegInVar(cur, i) > 0) {
+            v0 = i;
+            break;
+        }
+    }
+
+    const MPoly dCur = mpolyDiffInVar(cur, v0, order);
+    const MPoly gSq = mpolyGcdRec(cur, dCur, kVars, order, budget);
+    if (!gSq.isZero() && !mpolyIsConstant(gSq)) {
+        MPoly rad;
+        if (mpolyDivExact(cur, gSq, order, rad)) {
+            // Factor `gSq` and `rad` via gcd(rad, gSq)
+            const MPoly common = mpolyGcdRec(rad, gSq, kVars, order, budget);
+            MPoly mult1Part = rad;
+            MPoly higherPart = gSq;
+            if (!common.isZero() && !mpolyIsConstant(common)) {
+                mpolyDivExact(rad, common, order, mult1Part);
+                mpolyDivExact(gSq, common, order, higherPart);
+                factorArbitraryMPolyRec(common, mult + 1, kVars, order, budget,
+                                        factorsOut);
+                if (!mpolyIsConstant(higherPart)) {
+                    factorArbitraryMPolyRec(higherPart, mult, kVars, order,
+                                            budget, factorsOut);
+                }
+            } else {
+                factorArbitraryMPolyRec(gSq, mult, kVars, order, budget,
+                                        factorsOut);
+            }
+            cur = std::move(mult1Part);
+            mpolyMakeMonic(cur);
+        }
+    }
+
+    if (mpolyIsConstant(cur))
+        return;
+
+    // 4. `cur` is now primitive in all variables and squarefree
+    std::vector<MPoly> irreds;
+    factorPrimitiveSquarefreeMPoly(cur, kVars, order, budget, irreds);
+    for (MPoly &ir : irreds) {
+        mpolyMakeMonic(ir);
+        if (!mpolyIsConstant(ir))
+            factorsOut.emplace_back(std::move(ir), mult);
+    }
+}
+
+} // namespace
+
+Expr divExactMulti(Ctx &c, Expr f, Expr g, const std::vector<Expr> &vars,
+                   Budget *budget)
+{
+    if (f.isNull() || g.isNull())
+        return Expr{};
+    const std::vector<Expr> allVars = resolvePolyVars(c, {f, g}, vars);
+    const MonomialOrder order = MonomialOrder::Lex;
+    MPoly mf, mg;
+    if (!exprToMPoly(c, f, allVars, order, mf) ||
+        !exprToMPoly(c, g, allVars, order, mg))
+        return Expr{};
+    if (budget && !budget->step())
+        return Expr{};
+    MPoly mq;
+    if (!mpolyDivExact(mf, mg, order, mq))
+        return Expr{};
+    return mpolyToExpr(c, mq, allVars);
+}
+
+Expr gcdMulti(Ctx &c, Expr f, Expr g, const std::vector<Expr> &vars,
+              Budget *budget)
+{
+    if (f.isNull() || g.isNull())
+        return Expr{};
+    const std::vector<Expr> allVars = resolvePolyVars(c, {f, g}, vars);
+    const MonomialOrder order = MonomialOrder::Lex;
+    MPoly mf, mg;
+    if (!exprToMPoly(c, f, allVars, order, mf) ||
+        !exprToMPoly(c, g, allVars, order, mg))
+        return Expr{};
+    if (mf.isZero() && mg.isZero())
+        return c.zero();
+
+    MPoly md = mpolyGcdRec(mf, mg, allVars.size(), order, budget);
+    mpolyMakeMonic(md);
+
+    // Proof-carrying divisibility certificate: f = d * q_f and g = d * q_g
+    MPoly qf, qg;
+    if (!mpolyDivExact(mf, md, order, qf) ||
+        !mpolyDivExact(mg, md, order, qg)) {
+        return c.one();
+    }
+    return mpolyToExpr(c, md, allVars);
+}
+
+FactorMultiResult factorMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
+                              Budget *budget)
+{
+    FactorMultiResult out;
+    if (f.isNull()) {
+        out.reason = "null input expression";
+        return out;
+    }
+    const std::vector<Expr> allVars = resolvePolyVars(c, {f}, vars);
+    const MonomialOrder order = MonomialOrder::Lex;
+    MPoly mf;
+    if (!exprToMPoly(c, f, allVars, order, mf)) {
+        out.reason = "input is not a polynomial in Q[vars]";
+        return out;
+    }
+
+    if (mf.isZero()) {
+        out.status = FactorMultiResult::Status::ProvedSymbolic;
+        out.content = Rational(std::int64_t{0});
+        out.expr = c.zero();
+        return out;
+    }
+
+    if (mpolyIsConstant(mf)) {
+        out.status = FactorMultiResult::Status::ProvedSymbolic;
+        out.content = mf.lt().coeff;
+        out.expr = c.number(out.content);
+        return out;
+    }
+
+    std::vector<std::pair<MPoly, int>> rawFactors;
+    factorArbitraryMPolyRec(mf, 1, allVars.size(), order, budget, rawFactors);
+
+    // Combine identical monic irreducible factors
+    std::vector<FactorMultiItem> merged;
+    for (const auto &pf : rawFactors) {
+        const Expr facExpr = mpolyToExpr(c, pf.first, allVars);
+        bool found = false;
+        for (FactorMultiItem &item : merged) {
+            if (item.factor == facExpr) {
+                item.multiplicity += pf.second;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            merged.push_back(FactorMultiItem{facExpr, pf.second});
+    }
+
+    std::sort(merged.begin(), merged.end(),
+              [&](const FactorMultiItem &a, const FactorMultiItem &b) {
+                  return c.compare(a.factor, b.factor) < 0;
+              });
+
+    // Compute exact leading scalar content by comparing leading coefficients
+    // of `mf` and the product of monic factors.
+    MPoly prodMonic = mpolyConst(Rational(std::int64_t{1}), allVars.size());
+    for (const auto &pf : rawFactors) {
+        for (int m = 0; m < pf.second; ++m)
+            prodMonic = mpolyMul(prodMonic, pf.first, order);
+    }
+    const Rational contentScalar =
+        prodMonic.isZero() ? mf.lt().coeff
+                           : (mf.lt().coeff / prodMonic.lt().coeff);
+
+    std::vector<Expr> mulParts;
+    if (!(contentScalar == Rational(std::int64_t{1})))
+        mulParts.push_back(c.number(contentScalar));
+    for (const FactorMultiItem &item : merged) {
+        if (item.multiplicity == 1)
+            mulParts.push_back(item.factor);
+        else
+            mulParts.push_back(
+                c.pow(item.factor,
+                      c.number(static_cast<std::int64_t>(item.multiplicity))));
+    }
+    const Expr reconExpr =
+        mulParts.empty() ? c.number(contentScalar) : c.mul(mulParts);
+
+    // Proof-carrying identity certificate: expand(reconExpr - f) == 0
+    const Expr diffCheck = c.expand(c.add({reconExpr, c.neg(f)}));
+    if (!c.isZero(diffCheck)) {
+        out.reason = "multivariate factorization failed expansion certificate";
+        return out;
+    }
+
+    out.status = FactorMultiResult::Status::ProvedSymbolic;
+    out.content = contentScalar;
+    out.factors = std::move(merged);
+    out.expr = reconExpr;
+    return out;
 }
 
 } // namespace numkit::cas

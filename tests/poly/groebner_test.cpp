@@ -174,5 +174,148 @@ TEST(GroebnerTest, BoundaryAndInvalidInputs)
     EXPECT_TRUE(polyReduceMulti(c, parseExpr(c, "sin(x)"), {x}, {x}).isNull());
 }
 
+// ============================================================================
+// Item 66: Multivariate GCD (`gcdMulti`) and Factorization (`factorMulti`)
+// ============================================================================
+
+TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr z = c.symbol("z");
+
+    auto samePoly = [&](Expr a, Expr b) {
+        return c.isZero(c.expand(c.add({a, c.neg(b)})));
+    };
+
+    // 1. Bivariate and trivariate GCD fixed vectors
+    {
+        const Expr f = parseExpr(c, "x^2 - y^2");
+        const Expr g = parseExpr(c, "x^2 + 2*x*y + y^2");
+        const Expr d = gcdMulti(c, f, g, {x, y});
+        ASSERT_FALSE(d.isNull());
+        EXPECT_TRUE(samePoly(d, parseExpr(c, "x + y")))
+            << "got: " << c.toString(d);
+
+        // Trivariate GCD with monomial factor:
+        // f3 = 6*x^2*y*(x + y + z)*(x - 2*y + 3*z)
+        // g3 = 9*x*y^2*(x + y + z)*(2*x + y - z)
+        // -> monic gcd = x*y*(x + y + z) = x^2*y + x*y^2 + x*y*z
+        const Expr f3 = c.expand(
+            parseExpr(c, "6*x^2*y*(x + y + z)*(x - 2*y + 3*z)"));
+        const Expr g3 = c.expand(
+            parseExpr(c, "9*x*y^2*(x + y + z)*(2*x + y - z)"));
+        const Expr d3 = gcdMulti(c, f3, g3);
+        ASSERT_FALSE(d3.isNull());
+        EXPECT_TRUE(samePoly(d3, parseExpr(c, "x*y*(x + y + z)")))
+            << "got: " << c.toString(d3);
+
+        // Exact division check
+        const Expr q3 = divExactMulti(c, f3, d3);
+        ASSERT_FALSE(q3.isNull());
+        EXPECT_TRUE(samePoly(q3, parseExpr(c, "6*x*(x - 2*y + 3*z)")));
+    }
+
+    // 2. Multivariate factorization `factorMulti`:
+    //    (a) Difference of fourth powers: x^4 - y^4 = (x - y)*(x + y)*(x^2 + y^2)
+    {
+        const Expr f = parseExpr(c, "x^4 - y^4");
+        const FactorMultiResult res = factorMulti(c, f, {x, y});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.content, Rational(std::int64_t{1}));
+        EXPECT_EQ(res.factors.size(), 3u);
+        for (const auto &it : res.factors)
+            EXPECT_EQ(it.multiplicity, 1);
+        EXPECT_TRUE(samePoly(res.expr, f));
+    }
+
+    //    (b) Non-homogeneous quadratic factors with multiplicities and content:
+    //        f = 3*x*(x + 2*y - 1)^2*(x^2 - y + 2)
+    {
+        const Expr f = c.expand(
+            parseExpr(c, "3*x*(x + 2*y - 1)^2*(x^2 - y + 2)"));
+        const FactorMultiResult res = factorMulti(c, f, {x, y});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.content, Rational(std::int64_t{3}));
+        ASSERT_EQ(res.factors.size(), 3u);
+        EXPECT_TRUE(samePoly(res.expr, f));
+    }
+
+    //    (c) Trivariate non-monic product of quadratics:
+    //        f = (x*y + z + 1)*(x^2 + y^2 - z)
+    {
+        const Expr f = c.expand(
+            parseExpr(c, "(x*y + z + 1)*(x^2 + y^2 - z)"));
+        const FactorMultiResult res = factorMulti(c, f, {x, y, z});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.factors.size(), 2u);
+        EXPECT_TRUE(samePoly(res.expr, f));
+    }
+
+    //    (d) Bivariate product of two irreducible quadratics in both x and y:
+    //        f = (x^2 + x*y + 2*y^2 + 1)*(2*x^2 - x*y + y^2 - 3)
+    {
+        const Expr f = c.expand(parseExpr(
+            c, "(x^2 + x*y + 2*y^2 + 1)*(2*x^2 - x*y + y^2 - 3)"));
+        const FactorMultiResult res = factorMulti(c, f, {x, y});
+        ASSERT_TRUE(res.proved()) << res.reason;
+        EXPECT_EQ(res.content, Rational(std::int64_t{2}));
+        EXPECT_EQ(res.factors.size(), 2u);
+        EXPECT_TRUE(samePoly(res.expr, f));
+    }
+}
+
+TEST(GroebnerTest, PropertyMultivariateGcdAndFactorRoundTrip)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr z = c.symbol("z");
+
+    std::mt19937_64 rng(0xFA470B66ULL);
+    std::uniform_int_distribution<int> cDist(-3, 3);
+
+    for (int iter = 0; iter < 25; ++iter) {
+        int a1 = cDist(rng), b1 = cDist(rng), c1 = cDist(rng);
+        if (a1 == 0)
+            a1 = 1;
+        int a2 = cDist(rng), b2 = cDist(rng), c2 = cDist(rng);
+        if (b2 == 0)
+            b2 = 1;
+        int a3 = cDist(rng), b3 = cDist(rng), c3 = cDist(rng);
+        if (c3 == 0)
+            c3 = 1;
+
+        const Expr p1 = c.add({c.mul({c.number(a1), x}),
+                               c.mul({c.number(b1), y}),
+                               c.number(c1)});
+        const Expr p2 = c.add({c.mul({c.number(a2), x}),
+                               c.mul({c.number(b2), y}),
+                               c.mul({c.number(c2), z}),
+                               c.one()});
+        const Expr p3 = c.add({c.pow(x, c.number(2)),
+                               c.mul({c.number(a3), y}),
+                               c.mul({c.number(c3), z}),
+                               c.number(2)});
+
+        const Expr f = c.expand(c.mul({p1, p2}));
+        const Expr g = c.expand(c.mul({p1, p3}));
+        const Expr d = gcdMulti(c, f, g, {x, y, z});
+        ASSERT_FALSE(d.isNull());
+        // p1 must divide d
+        EXPECT_FALSE(divExactMulti(c, d, p1, {x, y, z}).isNull());
+
+        const Expr prod = c.expand(c.mul({c.pow(p1, c.number(2)), p3}));
+        const FactorMultiResult fac = factorMulti(c, prod, {x, y, z});
+        ASSERT_TRUE(fac.proved()) << fac.reason;
+        EXPECT_TRUE(c.isZero(c.expand(c.add({fac.expr, c.neg(prod)}))));
+        int totalMult = 0;
+        for (const auto &it : fac.factors)
+            totalMult += it.multiplicity;
+        EXPECT_GE(totalMult, 3);
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

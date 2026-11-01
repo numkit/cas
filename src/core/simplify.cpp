@@ -2096,11 +2096,16 @@ Expr singleSimplifyPass(Ctx &c, Expr e, Budget *budget)
         }
         const Expr recReduced = reduceThreeTermRecurrences(c, rw);
         if (!recReduced.isNull() && !(recReduced == rw)) {
-            const Expr recRat = simplifyRationalExpr(c, recReduced);
-            if (!recRat.isNull()) {
-                const Expr recRw = rewriteBottomUp(c, recRat);
-                best = pickBest(c, best, recRat);
-                best = pickBest(c, best, recRw);
+            const Expr recExp =
+                rewriteBottomUp(c, c.expand(c.expand(recReduced)));
+            best = pickBest(c, best, recExp);
+            if (!c.isZero(best)) {
+                const Expr recRat = simplifyRationalExpr(c, recReduced);
+                if (!recRat.isNull()) {
+                    const Expr recRw = rewriteBottomUp(c, recRat);
+                    best = pickBest(c, best, recRat);
+                    best = pickBest(c, best, recRw);
+                }
             }
         }
     }

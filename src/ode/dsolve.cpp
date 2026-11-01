@@ -1,5 +1,6 @@
 #include <numkit/cas/ode/dsolve.hpp>
 
+#include <numkit/cas/core/series.hpp>
 #include <numkit/cas/core/simplify.hpp>
 #include <numkit/cas/core/symsolve.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
@@ -38,6 +39,9 @@ bool isZeroSimp(Ctx &c, Expr e)
     if (e.isNull())
         return false;
     if (c.isZero(e))
+        return true;
+    const Expr fastExp = c.expand(c.expand(e));
+    if (!fastExp.isNull() && c.isZero(fastExp))
         return true;
     const Expr s = c.simplify(e);
     if (s.isNull())
@@ -812,6 +816,21 @@ bool tryRiccatiOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
                         }
                     }
                 }
+            } else {
+                const OdeResult vSol = dsolve2Special(
+                    c, c.one(), bCoeff, dCoeff, c.zero(), x, budget);
+                if (vSol.proved()) {
+                    const Expr v = c.simplify(c.subs(vSol.y, C2, c.one()));
+                    const Expr dv = c.diff(v, x);
+                    if (!dv.isNull() && !isZeroSimp(c, v)) {
+                        const Expr cand =
+                            c.simplify(c.neg(c.div(dv, c.mul({q2, v}))));
+                        if (verifyOde1(c, cand, rhs, x, y)) {
+                            yOut = cand;
+                            return true;
+                        }
+                    }
+                }
             }
         }
     }
@@ -1060,10 +1079,12 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         out.reason = "null input expression";
         return out;
     }
-    if (isZeroSimp(c, a) || mentionsSym(c, a, x) || mentionsSym(c, b, x) ||
-        mentionsSym(c, d, x)) {
-        out.reason = "coefficients a, b, d must be non-zero constants in x";
+    if (isZeroSimp(c, a)) {
+        out.reason = "leading coefficient a must be non-zero";
         return out;
+    }
+    if (mentionsSym(c, a, x) || mentionsSym(c, b, x) || mentionsSym(c, d, x)) {
+        return dsolve2Special(c, a, b, d, f, x, budget);
     }
     if (!checkOdeBudget(c, budget)) {
         out.reason = "budget exhausted";
@@ -2336,6 +2357,950 @@ OdeResult dsolve2NonlinearIVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
     }
 
     out.reason = "unable to solve or certify 2nd-order nonlinear IVP";
+    return out;
+}
+
+// ============================================================================
+// 2nd-Order Variable-Coefficient Special-Function ODE Solver & Series Solver
+// ============================================================================
+
+namespace {
+
+bool hasLeadingNegativeCoeff(const Ctx &c, Expr e)
+{
+    if (e.isNull())
+        return false;
+    if (c.kind(e) == NodeKind::Number)
+        return c.numberValue(e).signum() < 0;
+    if (c.kind(e) == NodeKind::Mul && c.childCount(e) > 0 &&
+        c.kind(c.child(e, 0)) == NodeKind::Number)
+        return c.numberValue(c.child(e, 0)).signum() < 0;
+    return c.isAssumedNegative(e);
+}
+
+Expr pickPreferredParamRoot(const Ctx &c, const std::vector<Expr> &roots)
+{
+    if (roots.empty())
+        return Expr{};
+    // 1. Prefer non-negative integer
+    for (const Expr &r : roots) {
+        if (c.kind(r) == NodeKind::Number &&
+            c.numberValue(r).den() == BigInt(1) &&
+            c.numberValue(r).signum() >= 0)
+            return r;
+    }
+    // 2. Prefer non-negative rational
+    for (const Expr &r : roots) {
+        if (c.kind(r) == NodeKind::Number && c.numberValue(r).signum() >= 0)
+            return r;
+    }
+    // 3. Prefer shorter / positive symbolic expression without leading '-'
+    Expr best;
+    for (const Expr &r : roots) {
+        if (hasLeadingNegativeCoeff(c, r))
+            continue;
+        if (best.isNull() || c.exprCost(r) < c.exprCost(best))
+            best = r;
+    }
+    return best.isNull() ? roots.front() : best;
+}
+
+Expr principalSqrtExpr(Ctx &c, Expr val, Budget *budget)
+{
+    const Expr sVal = c.simplify(val);
+    if (isZeroSimp(c, sVal))
+        return c.zero();
+    const Expr sSym = c.symbol("_ode_sp_s");
+    const Expr eq =
+        c.add({c.pow(sSym, c.number(std::int64_t{2})), c.neg(sVal)});
+    const std::vector<Expr> roots = solveSymbolic(c, eq, sSym, budget);
+    const Expr picked = pickPreferredParamRoot(c, roots);
+    if (!picked.isNull())
+        return c.simplify(picked);
+    return c.simplify(
+        c.pow(sVal, c.number(Rational(std::int64_t{1}, BigInt(2)))));
+}
+
+bool exactInt64CubeRoot(std::int64_t v, std::int64_t &out)
+{
+    if (v < 0)
+        return false;
+    if (v == 0 || v == 1) {
+        out = v;
+        return true;
+    }
+    std::int64_t lo = 1;
+    std::int64_t hi = 2000000;
+    while (lo <= hi) {
+        const std::int64_t mid = lo + (hi - lo) / 2;
+        const std::int64_t sq = mid * mid;
+        if (mid > 0 && sq > v / mid) {
+            hi = mid - 1;
+        } else {
+            const std::int64_t cb = sq * mid;
+            if (cb == v) {
+                out = mid;
+                return true;
+            }
+            if (cb < v)
+                lo = mid + 1;
+            else
+                hi = mid - 1;
+        }
+    }
+    return false;
+}
+
+Expr realCubeRootExpr(Ctx &c, Expr val)
+{
+    const Expr sVal = c.simplify(val);
+    if (isZeroSimp(c, sVal))
+        return c.zero();
+    const Expr oneThird = c.number(Rational(std::int64_t{1}, BigInt(3)));
+    if (c.kind(sVal) == NodeKind::Number) {
+        const Rational r = c.numberValue(sVal);
+        const int sgn = r.signum() < 0 ? -1 : 1;
+        const Rational absR = r.abs();
+        std::int64_t numInt = 0;
+        std::int64_t denInt = 0;
+        std::int64_t numRt = 0;
+        std::int64_t denRt = 0;
+        if (absR.num().fitsInt64(numInt) && absR.den().fitsInt64(denInt) &&
+            exactInt64CubeRoot(numInt, numRt) &&
+            exactInt64CubeRoot(denInt, denRt) && denRt > 0) {
+            return c.number(Rational(sgn * numRt, BigInt(denRt)));
+        }
+        const Expr posPow = c.pow(c.number(absR), oneThird);
+        return sgn < 0 ? c.neg(posPow) : posPow;
+    }
+    if (hasLeadingNegativeCoeff(c, sVal))
+        return c.neg(realCubeRootExpr(c, c.neg(sVal)));
+    return c.simplify(c.pow(sVal, oneThird));
+}
+
+bool tryLiouvilleSecondSolution(Ctx &c, Expr a, Expr b, Expr d, Expr y1, Expr x,
+                                Budget *budget, Expr &y2Out)
+{
+    if (y1.isNull() || isZeroSimp(c, y1))
+        return false;
+    const Expr P = c.simplify(c.div(b, a));
+    const RationalIntegral intP = integrate(c, P, x, budget);
+    if (!intP.proved())
+        return false;
+    const Expr W = expOfIntegral(c, c.neg(intP.F));
+    const Expr integrand =
+        c.simplify(c.div(W, c.pow(y1, c.number(std::int64_t{2}))));
+    const RationalIntegral intW = integrate(c, integrand, x, budget);
+    if (!intW.proved())
+        return false;
+    const Expr cand = c.simplify(c.mul({y1, intW.F}));
+    if (!cand.isNull() && !isZeroSimp(c, cand) &&
+        verifyOde2(c, cand, a, b, d, c.zero(), x)) {
+        y2Out = cand;
+        return true;
+    }
+    return false;
+}
+
+bool attachParticularAndCertify(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
+                                Expr y1, Expr y2, Budget *budget,
+                                OdeResult &out)
+{
+    const Expr C1 = c.symbol("C1");
+    const Expr C2 = c.symbol("C2");
+    const Expr yh = y2.isNull()
+                        ? c.simplify(c.mul({C1, y1}))
+                        : c.simplify(c.add({c.mul({C1, y1}), c.mul({C2, y2})}));
+    if (isZeroSimp(c, f)) {
+        if (verifyOde2(c, yh, a, b, d, c.zero(), x)) {
+            out.status = OdeResult::Status::Proved;
+            out.y = yh;
+            return true;
+        }
+        return false;
+    }
+
+    Expr yp;
+    bool foundYp = tryUndeterminedCoeffs(c, a, b, d, f, x, budget, yp) &&
+                   verifyOde2(c, yp, a, b, d, f, x);
+    if (!foundYp && !y2.isNull()) {
+        const Expr dy1 = c.diff(y1, x);
+        const Expr dy2 = c.diff(y2, x);
+        const Expr W =
+            c.simplify(c.add({c.mul({y1, dy2}), c.neg(c.mul({dy1, y2}))}));
+        if (!isZeroSimp(c, W)) {
+            const Expr aW = c.simplify(c.mul({a, W}));
+            const Expr int1 = c.simplify(c.neg(c.div(c.mul({y2, f}), aW)));
+            const Expr int2 = c.simplify(c.div(c.mul({y1, f}), aW));
+            const RationalIntegral u1 = integrate(c, int1, x, budget);
+            const RationalIntegral u2 = integrate(c, int2, x, budget);
+            if (u1.proved() && u2.proved()) {
+                yp = c.simplify(
+                    c.add({c.mul({u1.F, y1}), c.mul({u2.F, y2})}));
+                foundYp = verifyOde2(c, yp, a, b, d, f, x);
+            }
+        }
+    }
+    if (!foundYp)
+        return false;
+
+    const Expr yTotal = c.simplify(c.add({yh, yp}));
+    if (verifyOde2(c, yTotal, a, b, d, f, x)) {
+        out.status = OdeResult::Status::Proved;
+        out.y = yTotal;
+        return true;
+    }
+    return false;
+}
+
+} // namespace
+
+OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
+                         Budget *budget)
+{
+    OdeResult out;
+    if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull()) {
+        out.reason = "null input expression";
+        return out;
+    }
+    if (isZeroSimp(c, a)) {
+        out.reason = "leading coefficient a(x) must be non-zero";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr two = c.number(std::int64_t{2});
+    const Expr P = c.simplify(c.div(b, a));
+    const Expr Q = c.simplify(c.div(d, a));
+    const Expr fNorm = c.simplify(c.div(f, a));
+
+    // 0. Constant-coefficient reduction after dividing by a(x)
+    if (!mentionsSym(c, P, x) && !mentionsSym(c, Q, x)) {
+        return dsolve2Linear(c, c.one(), P, Q, fNorm, x, budget);
+    }
+
+    // 1. Airy and shifted/scaled Airy ODE:
+    //    y'' + (q1*x + q0)*y = fNorm  (with P == 0 and q1 != 0 constant in x)
+    if (isZeroSimp(c, P)) {
+        const Expr q1 = c.simplify(c.diff(Q, x));
+        if (!q1.isNull() && !isZeroSimp(c, q1) && !mentionsSym(c, q1, x)) {
+            const Expr q0 = c.simplify(c.add({Q, c.neg(c.mul({q1, x}))}));
+            if (!q0.isNull() && !mentionsSym(c, q0, x)) {
+                const Expr k = c.simplify(c.neg(q1));
+                const Expr alpha = realCubeRootExpr(c, k);
+                const Expr shift = c.simplify(c.add({x, c.div(q0, q1)}));
+                const Expr z = c.simplify(c.mul({alpha, shift}));
+                const Expr y1 = c.func("airyAi", z);
+                const Expr y2 = c.func("airyBi", z);
+                if (attachParticularAndCertify(c, a, b, d, f, x, y1, y2, budget,
+                                               out))
+                    return out;
+            }
+        }
+    }
+
+    // 2. Bessel, Modified Bessel, Lommel/Spherical Bessel, and Euler-Cauchy ODEs:
+    //    x*P(x) = p0 (constant in x) and x^2*Q(x) = A*x^2 + C (A, C constants in x)
+    {
+        const Expr p0 = c.simplify(c.mul({x, P}));
+        if (!p0.isNull() && !mentionsSym(c, p0, x)) {
+            const Expr x2 = c.pow(x, two);
+            const Expr Q2 = c.expand(c.simplify(c.mul({x2, Q})));
+            if (!Q2.isNull()) {
+                if (!mentionsSym(c, Q2, x)) {
+                    const Expr fEC = c.simplify(c.mul({x2, fNorm}));
+                    return dsolve2EulerCauchy(c, c.one(), p0, Q2, fEC, x,
+                                              budget);
+                }
+                const Expr C = c.simplify(c.subs(Q2, x, c.zero()));
+                if (!C.isNull() && !mentionsSym(c, C, x)) {
+                    const Expr A =
+                        c.simplify(c.div(c.add({Q2, c.neg(C)}), x2));
+                    if (!A.isNull() && !isZeroSimp(c, A) &&
+                        !mentionsSym(c, A, x)) {
+                        const Expr beta = c.simplify(
+                            c.div(c.add({c.one(), c.neg(p0)}), two));
+                        const Expr nuSq =
+                            c.simplify(c.add({c.pow(beta, two), c.neg(C)}));
+                        const Expr nu = principalSqrtExpr(c, nuSq, budget);
+                        const Expr xBeta = c.pow(x, beta);
+                        Expr y1, y2;
+                        if (hasLeadingNegativeCoeff(c, A)) {
+                            const Expr omega =
+                                principalSqrtExpr(c, c.neg(A), budget);
+                            const Expr z = c.simplify(c.mul({omega, x}));
+                            y1 = c.simplify(
+                                c.mul({xBeta, c.func("besseli", nu, z)}));
+                            y2 = c.simplify(
+                                c.mul({xBeta, c.func("besselk", nu, z)}));
+                        } else {
+                            const Expr omega = principalSqrtExpr(c, A, budget);
+                            const Expr z = c.simplify(c.mul({omega, x}));
+                            y1 = c.simplify(
+                                c.mul({xBeta, c.func("besselj", nu, z)}));
+                            y2 = c.simplify(
+                                c.mul({xBeta, c.func("bessely", nu, z)}));
+                        }
+                        if (attachParticularAndCertify(c, a, b, d, f, x, y1, y2,
+                                                       budget, out))
+                            return out;
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Legendre and Chebyshev 1st & 2nd kind ODEs:
+    //    (1 - x^2)*y'' + beta1*x*y' + D1*y = 0
+    {
+        const Expr omx2 = c.add({c.one(), c.neg(c.pow(x, two))});
+        const Expr B1 = c.simplify(c.mul({omx2, P}));
+        const Expr D1 = c.simplify(c.mul({omx2, Q}));
+        const Expr beta1 = c.simplify(c.div(B1, x));
+        if (!beta1.isNull() && !D1.isNull() && !mentionsSym(c, beta1, x) &&
+            !mentionsSym(c, D1, x) && c.kind(beta1) == NodeKind::Number) {
+            const Rational bVal = c.numberValue(beta1);
+            if (bVal == Rational(std::int64_t{-2})) {
+                // Legendre's ODE: (1 - x^2)*y'' - 2*x*y' + n*(n + 1)*y = 0
+                const Expr nSym = c.symbol("_ode_leg_n");
+                const Expr eq =
+                    c.add({c.pow(nSym, two), nSym, c.neg(D1)});
+                const std::vector<Expr> roots =
+                    solveSymbolic(c, eq, nSym, budget);
+                const Expr nRoot = pickPreferredParamRoot(c, roots);
+                if (!nRoot.isNull()) {
+                    const Expr y1 =
+                        c.simplify(c.func("legendreP", nRoot, x));
+                    Expr y2;
+                    if (c.kind(nRoot) == NodeKind::Number &&
+                        c.numberValue(nRoot).den() == BigInt(1) &&
+                        c.numberValue(nRoot).signum() >= 0) {
+                        if (c.isZero(nRoot)) {
+                            y2 = c.func("atanh", x);
+                        } else {
+                            // Q_n(x) = P_n(x) * atanh(x) + q(x)
+                            // where (1 - x^2)*q'' - 2*x*q' + n*(n+1)*q = -2*P_n'(x)
+                            Expr qPoly;
+                            const Expr rhsQ = c.simplify(
+                                c.neg(c.mul({two, c.diff(y1, x)})));
+                            if (tryUndeterminedCoeffs(
+                                    c, omx2,
+                                    c.mul({c.number(std::int64_t{-2}), x}), D1,
+                                    rhsQ, x, budget, qPoly)) {
+                                const Expr cand2 = c.simplify(c.add(
+                                    {c.mul({y1, c.func("atanh", x)}), qPoly}));
+                                if (verifyOde2(c, cand2, a, b, d, c.zero(), x))
+                                    y2 = cand2;
+                            }
+                        }
+                    }
+                    if (attachParticularAndCertify(c, a, b, d, f, x, y1, y2,
+                                                   budget, out))
+                        return out;
+                }
+            } else if (bVal == Rational(std::int64_t{-1})) {
+                // Chebyshev 1st kind ODE: (1 - x^2)*y'' - x*y' + n^2*y = 0
+                Expr y1, y2;
+                if (isZeroSimp(c, D1)) {
+                    y1 = c.one();
+                    y2 = c.func("asin", x);
+                } else {
+                    const Expr nRoot = principalSqrtExpr(c, D1, budget);
+                    y1 = c.simplify(c.func("chebyshevT", nRoot, x));
+                    const Expr sqrtOmx2 = c.pow(
+                        omx2, c.number(Rational(std::int64_t{1}, BigInt(2))));
+                    const Expr nm1 =
+                        c.add({nRoot, c.number(std::int64_t{-1})});
+                    y2 = c.simplify(
+                        c.mul({sqrtOmx2, c.func("chebyshevU", nm1, x)}));
+                }
+                if (attachParticularAndCertify(c, a, b, d, f, x, y1, y2, budget,
+                                               out))
+                    return out;
+            } else if (bVal == Rational(std::int64_t{-3})) {
+                // Chebyshev 2nd kind ODE: (1 - x^2)*y'' - 3*x*y' + n*(n + 2)*y = 0
+                const Expr nSym = c.symbol("_ode_cheb2_n");
+                const Expr eq = c.add(
+                    {c.pow(nSym, two), c.mul({two, nSym}), c.neg(D1)});
+                const std::vector<Expr> roots =
+                    solveSymbolic(c, eq, nSym, budget);
+                const Expr nRoot = pickPreferredParamRoot(c, roots);
+                if (!nRoot.isNull()) {
+                    const Expr y1 =
+                        c.simplify(c.func("chebyshevU", nRoot, x));
+                    const Expr invSqrtOmx2 = c.pow(
+                        omx2, c.number(Rational(std::int64_t{-1}, BigInt(2))));
+                    const Expr np1 = c.add({nRoot, c.one()});
+                    const Expr y2 = c.simplify(
+                        c.mul({invSqrtOmx2, c.func("chebyshevT", np1, x)}));
+                    if (attachParticularAndCertify(c, a, b, d, f, x, y1, y2,
+                                                   budget, out))
+                        return out;
+                }
+            }
+        }
+    }
+
+    // 4. Hermite's ODE: y'' - 2*x*y' + 2*n*y = 0
+    {
+        const Expr pOverX = c.simplify(c.div(P, x));
+        if (!pOverX.isNull() && !mentionsSym(c, pOverX, x) &&
+            !mentionsSym(c, Q, x) && c.kind(pOverX) == NodeKind::Number &&
+            c.numberValue(pOverX) == Rational(std::int64_t{-2})) {
+            const Expr nOrder = c.simplify(c.div(Q, two));
+            const Expr y1 = c.simplify(c.func("hermiteH", nOrder, x));
+            Expr y2;
+            if (c.kind(nOrder) == NodeKind::Number &&
+                c.numberValue(nOrder).den() == BigInt(1) &&
+                c.numberValue(nOrder).signum() >= 0) {
+                if (c.isZero(nOrder)) {
+                    y2 = c.func("erfi", x);
+                } else {
+                    // y2 = y1 * sqrt(pi)/2 * erfi(x) + exp(x^2) * q(x)
+                    // where q'' + 2*x*q' + (Q + 2)*q = -2*y1'
+                    Expr qPoly;
+                    const Expr rhsQ =
+                        c.simplify(c.neg(c.mul({two, c.diff(y1, x)})));
+                    if (tryUndeterminedCoeffs(c, c.one(), c.mul({two, x}),
+                                              c.add({Q, two}), rhsQ, x, budget,
+                                              qPoly)) {
+                        const Expr sqrtPiHalf = c.mul(
+                            {c.number(Rational(std::int64_t{1}, BigInt(2))),
+                             c.pow(c.symbol("pi"),
+                                   c.number(Rational(std::int64_t{1},
+                                                     BigInt(2))))});
+                        const Expr cand2 = c.simplify(c.add(
+                            {c.mul({y1, sqrtPiHalf, c.func("erfi", x)}),
+                             c.mul({c.func("exp", c.pow(x, two)), qPoly})}));
+                        if (verifyOde2(c, cand2, a, b, d, c.zero(), x))
+                            y2 = cand2;
+                    }
+                }
+            }
+            if (attachParticularAndCertify(c, a, b, d, f, x, y1, y2, budget,
+                                           out))
+                return out;
+        }
+    }
+
+    // 5. Laguerre's ODE: x*y'' + (1 - x)*y' + n*y = 0
+    {
+        const Expr xP = c.simplify(c.mul({x, P}));
+        const Expr xQ = c.simplify(c.mul({x, Q}));
+        const Expr oneMinusX = c.add({c.one(), c.neg(x)});
+        if (!xP.isNull() && !xQ.isNull() &&
+            isZeroSimp(c, c.add({xP, c.neg(oneMinusX)})) &&
+            !mentionsSym(c, xQ, x)) {
+            const Expr nOrder = xQ;
+            const Expr y1 = c.simplify(c.func("laguerreL", nOrder, x));
+            Expr y2;
+            if (c.kind(nOrder) == NodeKind::Number &&
+                c.numberValue(nOrder).den() == BigInt(1) &&
+                c.numberValue(nOrder).signum() >= 0) {
+                if (c.isZero(nOrder)) {
+                    y2 = c.func("Ei", x);
+                } else {
+                    // y2 = y1 * Ei(x) + exp(x) * q(x)
+                    // where x*q'' + (x + 1)*q' + (n + 1)*q = -2*y1'
+                    Expr qPoly;
+                    const Expr rhsQ =
+                        c.simplify(c.neg(c.mul({two, c.diff(y1, x)})));
+                    if (tryUndeterminedCoeffs(
+                            c, x, c.add({x, c.one()}),
+                            c.add({nOrder, c.one()}), rhsQ, x, budget, qPoly)) {
+                        const Expr cand2 = c.simplify(c.add(
+                            {c.mul({y1, c.func("Ei", x)}),
+                             c.mul({c.func("exp", x), qPoly})}));
+                        if (verifyOde2(c, cand2, a, b, d, c.zero(), x))
+                            y2 = cand2;
+                    }
+                }
+            }
+            if (attachParticularAndCertify(c, a, b, d, f, x, y1, y2, budget,
+                                           out))
+                return out;
+        }
+    }
+
+    // 6. General variable-coefficient 2nd-order linear ODE admitting a low-degree
+    //    polynomial homogeneous solution y1(x) + Liouville reduction of order:
+    {
+        std::vector<Expr> polyBasis;
+        std::vector<Expr> polyImages;
+        std::vector<Expr> rowAtoms;
+        for (int deg = 0; deg <= 4; ++deg) {
+            const Expr phi =
+                (deg == 0) ? c.one()
+                           : c.pow(x, c.number(static_cast<std::int64_t>(deg)));
+            const Expr d1 = c.diff(phi, x);
+            const Expr d2 = c.diff(d1, x);
+            const Expr img = c.simplify(
+                c.add({c.mul({a, d2}), c.mul({b, d1}), c.mul({d, phi})}));
+            if (isZeroSimp(c, img)) {
+                Expr y2;
+                tryLiouvilleSecondSolution(c, a, b, d, phi, x, budget, y2);
+                if (attachParticularAndCertify(c, a, b, d, f, x, phi, y2,
+                                               budget, out))
+                    return out;
+            }
+            polyBasis.push_back(phi);
+            polyImages.push_back(img);
+            std::vector<std::pair<Expr, Expr>> terms;
+            splitIntoBasisTerms(c, img, x, terms);
+            for (const auto &kv : terms)
+                addUniqueAtom(c, rowAtoms, kv.second);
+        }
+        if (!rowAtoms.empty() && rowAtoms.size() <= 12) {
+            SymMatrix M =
+                SymMatrix::zeros(c, rowAtoms.size(), polyBasis.size());
+            for (std::size_t j = 0; j < polyBasis.size(); ++j) {
+                std::vector<std::pair<Expr, Expr>> terms;
+                splitIntoBasisTerms(c, polyImages[j], x, terms);
+                for (const auto &kv : terms) {
+                    for (std::size_t r = 0; r < rowAtoms.size(); ++r) {
+                        if (rowAtoms[r] == kv.second) {
+                            M.at(r, j) =
+                                c.simplify(c.add({M.at(r, j), kv.first}));
+                            break;
+                        }
+                    }
+                }
+            }
+            const std::vector<SymMatrix> ns = nullspace(c, M, budget);
+            if (!ns.empty()) {
+                auto buildVecPoly = [&](const SymMatrix &v) {
+                    std::vector<Expr> terms;
+                    for (std::size_t j = 0; j < polyBasis.size(); ++j) {
+                        if (!c.isZero(v.at(j, 0)))
+                            terms.push_back(
+                                c.mul({v.at(j, 0), polyBasis[j]}));
+                    }
+                    return terms.empty() ? c.zero() : c.simplify(c.add(terms));
+                };
+                const Expr y1 = buildVecPoly(ns[0]);
+                Expr y2;
+                if (ns.size() >= 2)
+                    y2 = buildVecPoly(ns[1]);
+                else
+                    tryLiouvilleSecondSolution(c, a, b, d, y1, x, budget, y2);
+                if (!isZeroSimp(c, y1) &&
+                    attachParticularAndCertify(c, a, b, d, f, x, y1, y2, budget,
+                                               out))
+                    return out;
+            }
+        }
+    }
+
+    out.reason =
+        "2nd-order variable-coefficient ODE outside supported special-function families";
+    return out;
+}
+
+OdeResult dsolve2SpecialIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
+                            Expr x0, Expr y0, Expr dy0, Budget *budget)
+{
+    OdeResult gen = dsolve2Special(c, a, b, d, f, x, budget);
+    if (!gen.proved())
+        return gen;
+
+    const Expr C1 = c.symbol("C1");
+    const Expr C2 = c.symbol("C2");
+    const Expr dyGen = c.diff(gen.y, x);
+
+    const Expr yAt0 = c.simplify(c.subs(gen.y, x, x0));
+    const Expr dyAt0 = c.simplify(c.subs(dyGen, x, x0));
+
+    if (!mentionsSym(c, gen.y, C2)) {
+        // 1-parameter polynomial family (e.g. orthogonal polynomial solution)
+        const std::vector<Expr> c1Sols =
+            solveSymbolic(c, c.add({yAt0, c.neg(y0)}), C1, budget);
+        for (const Expr &c1Val : c1Sols) {
+            const Expr yIVP = c.simplify(c.subs(gen.y, C1, c1Val));
+            const Expr dyIVP = c.diff(yIVP, x);
+            if (verifyOde2(c, yIVP, a, b, d, f, x) &&
+                isZeroSimp(c, c.add({c.subs(yIVP, x, x0), c.neg(y0)})) &&
+                isZeroSimp(c, c.add({c.subs(dyIVP, x, x0), c.neg(dy0)}))) {
+                OdeResult out;
+                out.status = OdeResult::Status::Proved;
+                out.y = yIVP;
+                return out;
+            }
+        }
+        OdeResult fail;
+        fail.reason = "initial conditions incompatible with 1-parameter branch";
+        return fail;
+    }
+
+    const Expr m00 = c.simplify(c.diff(yAt0, C1));
+    const Expr m01 = c.simplify(c.diff(yAt0, C2));
+    const Expr const0 =
+        c.simplify(c.subs(c.subs(yAt0, C1, c.zero()), C2, c.zero()));
+
+    const Expr m10 = c.simplify(c.diff(dyAt0, C1));
+    const Expr m11 = c.simplify(c.diff(dyAt0, C2));
+    const Expr const1 =
+        c.simplify(c.subs(c.subs(dyAt0, C1, c.zero()), C2, c.zero()));
+
+    const SymMatrix M(2, 2, {m00, m01, m10, m11});
+    const SymMatrix rhs(2, 1,
+                        {c.simplify(c.add({y0, c.neg(const0)})),
+                         c.simplify(c.add({dy0, c.neg(const1)}))});
+    const SymMatrix sol = linsolve(c, M, rhs, budget);
+    if (sol.empty()) {
+        OdeResult fail;
+        fail.reason = "singular Wronskian at initial point x0";
+        return fail;
+    }
+
+    const Expr yIVP = c.simplify(
+        c.subs(c.subs(gen.y, C1, sol.at(0, 0)), C2, sol.at(1, 0)));
+    const Expr dyIVP = c.diff(yIVP, x);
+    if (verifyOde2(c, yIVP, a, b, d, f, x) &&
+        isZeroSimp(c, c.add({c.subs(yIVP, x, x0), c.neg(y0)})) &&
+        isZeroSimp(c, c.add({c.subs(dyIVP, x, x0), c.neg(dy0)}))) {
+        OdeResult out;
+        out.status = OdeResult::Status::Proved;
+        out.y = yIVP;
+        return out;
+    }
+
+    OdeResult fail;
+    fail.reason = "special-function IVP solution failed verification";
+    return fail;
+}
+
+namespace {
+
+bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
+                            Budget *budget, std::vector<Expr> &coeffsOut)
+{
+    coeffsOut.assign(static_cast<std::size_t>(maxDeg + 1), c.zero());
+    const Expr tSym = c.symbol("_ode_jet_t");
+    const Expr shifted = c.subs(exprInX, x, c.add({x0, tSym}));
+    const Expr polyT = taylor(c, shifted, tSym, c.zero(), maxDeg, budget);
+    if (polyT.isNull())
+        return false;
+    const Expr expd = c.expand(polyT);
+
+    auto processTerm = [&](Expr term) -> bool {
+        if (c.isZero(term))
+            return true;
+        if (!mentionsSym(c, term, tSym)) {
+            coeffsOut[0] = c.simplify(c.add({coeffsOut[0], term}));
+            return true;
+        }
+        if (term == tSym) {
+            if (maxDeg >= 1)
+                coeffsOut[1] = c.simplify(c.add({coeffsOut[1], c.one()}));
+            return true;
+        }
+        std::int64_t kPow = 0;
+        if (c.kind(term) == NodeKind::Pow && c.child(term, 0) == tSym &&
+            c.kind(c.child(term, 1)) == NodeKind::Number &&
+            c.numberValue(c.child(term, 1)).fitsInt64(kPow)) {
+            const std::int64_t k = kPow;
+            if (k < 0)
+                return false;
+            if (k <= maxDeg) {
+                const auto idx = static_cast<std::size_t>(k);
+                coeffsOut[idx] = c.simplify(c.add({coeffsOut[idx], c.one()}));
+            }
+            return true;
+        }
+        if (c.kind(term) == NodeKind::Mul) {
+            std::int64_t degT = 0;
+            std::vector<Expr> coefParts;
+            for (std::size_t i = 0; i < c.childCount(term); ++i) {
+                const Expr f = c.child(term, i);
+                std::int64_t kf = 0;
+                if (!mentionsSym(c, f, tSym)) {
+                    coefParts.push_back(f);
+                } else if (f == tSym) {
+                    degT += 1;
+                } else if (c.kind(f) == NodeKind::Pow &&
+                           c.child(f, 0) == tSym &&
+                           c.kind(c.child(f, 1)) == NodeKind::Number &&
+                           c.numberValue(c.child(f, 1)).fitsInt64(kf)) {
+                    const std::int64_t k = kf;
+                    if (k < 0)
+                        return false;
+                    degT += k;
+                } else {
+                    return false;
+                }
+            }
+            if (degT <= maxDeg) {
+                const auto idx = static_cast<std::size_t>(degT);
+                const Expr coef =
+                    coefParts.empty() ? c.one() : c.mul(coefParts);
+                coeffsOut[idx] = c.simplify(c.add({coeffsOut[idx], coef}));
+            }
+            return true;
+        }
+        return false;
+    };
+
+    if (c.kind(expd) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+            if (!processTerm(c.child(expd, i)))
+                return false;
+    } else {
+        if (!processTerm(expd))
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
+                          Expr x0, Expr y0, Expr dy0, int order,
+                          Budget *budget)
+{
+    OdeResult out;
+    if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull() ||
+        x0.isNull() || y0.isNull() || dy0.isNull() || order < 2) {
+        out.reason = "invalid series IVP input arguments or order < 2";
+        return out;
+    }
+    if (!checkOdeBudget(c, budget)) {
+        out.reason = "budget exhausted";
+        return out;
+    }
+
+    const Expr aAt0 = c.simplify(c.subs(a, x, x0));
+    if (aAt0.isNull() || isZeroSimp(c, aAt0)) {
+        out.reason = "x0 is a singular point (a(x0) == 0); use dsolveSeries for Frobenius branches";
+        return out;
+    }
+
+    const int jetOrder = order - 2;
+    std::vector<Expr> pCoeffs;
+    std::vector<Expr> qCoeffs;
+    std::vector<Expr> rCoeffs;
+    if (!extractTaylorJetCoeffs(c, c.div(b, a), x, x0, jetOrder, budget,
+                                pCoeffs) ||
+        !extractTaylorJetCoeffs(c, c.div(d, a), x, x0, jetOrder, budget,
+                                qCoeffs) ||
+        !extractTaylorJetCoeffs(c, c.div(f, a), x, x0, jetOrder, budget,
+                                rCoeffs)) {
+        out.reason = "unable to expand ODE coefficients in Taylor series around x0";
+        return out;
+    }
+
+    std::vector<Expr> cCoeffs(static_cast<std::size_t>(order + 1), c.zero());
+    cCoeffs[0] = y0;
+    cCoeffs[1] = dy0;
+
+    for (int n = 0; n <= jetOrder; ++n) {
+        if (!checkOdeBudget(c, budget)) {
+            out.reason = "budget exhausted";
+            return out;
+        }
+        std::vector<Expr> sumTerms;
+        for (int k = 0; k <= n; ++k) {
+            const auto nkIdx = static_cast<std::size_t>(n - k);
+            const auto kIdx = static_cast<std::size_t>(k);
+            const auto kp1Idx = static_cast<std::size_t>(k + 1);
+            if (!c.isZero(pCoeffs[nkIdx]) && !c.isZero(cCoeffs[kp1Idx])) {
+                sumTerms.push_back(c.mul(
+                    {pCoeffs[nkIdx], c.number(static_cast<std::int64_t>(k + 1)),
+                     cCoeffs[kp1Idx]}));
+            }
+            if (!c.isZero(qCoeffs[nkIdx]) && !c.isZero(cCoeffs[kIdx])) {
+                sumTerms.push_back(c.mul({qCoeffs[nkIdx], cCoeffs[kIdx]}));
+            }
+        }
+        const Expr sumVal =
+            sumTerms.empty() ? c.zero() : c.simplify(c.add(sumTerms));
+        const Expr numer =
+            c.simplify(c.add({rCoeffs[static_cast<std::size_t>(n)],
+                              c.neg(sumVal)}));
+        const Expr denom =
+            c.number(static_cast<std::int64_t>((n + 2) * (n + 1)));
+        cCoeffs[static_cast<std::size_t>(n + 2)] =
+            c.simplify(c.div(numer, denom));
+    }
+
+    const Expr dx = c.add({x, c.neg(x0)});
+    std::vector<Expr> yTerms;
+    for (int k = 0; k <= order; ++k) {
+        const Expr ck = cCoeffs[static_cast<std::size_t>(k)];
+        if (c.isZero(ck))
+            continue;
+        const Expr dxPow =
+            (k == 0) ? c.one()
+                     : c.pow(dx, c.number(static_cast<std::int64_t>(k)));
+        yTerms.push_back(c.mul({ck, dxPow}));
+    }
+    const Expr yPoly = yTerms.empty() ? c.zero() : c.add(yTerms);
+
+    // Certificate: Taylor jet of residual a*y'' + b*y' + d*y - f at x0 up to order - 2 == 0,
+    // plus initial conditions y(x0) == y0 and y'(x0) == dy0.
+    const Expr dyPoly = c.diff(yPoly, x);
+    const Expr d2yPoly = c.diff(dyPoly, x);
+    const Expr res = c.add({c.mul({a, d2yPoly}), c.mul({b, dyPoly}),
+                            c.mul({d, yPoly}), c.neg(f)});
+    const Expr resJet = taylor(c, res, x, x0, jetOrder, budget);
+    if (!resJet.isNull() && isZeroSimp(c, resJet) &&
+        isZeroSimp(c, c.add({c.subs(yPoly, x, x0), c.neg(y0)})) &&
+        isZeroSimp(c, c.add({c.subs(dyPoly, x, x0), c.neg(dy0)}))) {
+        out.status = OdeResult::Status::Proved;
+        out.y = yPoly;
+        return out;
+    }
+
+    out.reason = "Taylor series solution failed residual jet certificate";
+    return out;
+}
+
+OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
+                       int order, Budget *budget)
+{
+    OdeResult out;
+    if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull() ||
+        x0.isNull() || order < 2) {
+        out.reason = "invalid series ODE input arguments or order < 2";
+        return out;
+    }
+
+    const Expr C1 = c.symbol("C1");
+    const Expr C2 = c.symbol("C2");
+    const Expr aAt0 = c.simplify(c.subs(a, x, x0));
+    if (!aAt0.isNull() && !isZeroSimp(c, aAt0)) {
+        // Ordinary point x0: general Taylor series with y(x0) = C1, y'(x0) = C2
+        return dsolveSeriesIVP(c, a, b, d, f, x, x0, C1, C2, order, budget);
+    }
+
+    // Regular singular point x0 (Frobenius method for homogeneous ODE f == 0):
+    if (!isZeroSimp(c, f)) {
+        out.reason = "Frobenius series at singular point requires homogeneous ODE (f == 0)";
+        return out;
+    }
+
+    const Expr dx = c.add({x, c.neg(x0)});
+    const Expr P1 = c.simplify(c.mul({dx, c.div(b, a)}));
+    const Expr Q2 =
+        c.simplify(c.mul({c.pow(dx, c.number(std::int64_t{2})), c.div(d, a)}));
+
+    std::vector<Expr> pCoeffs;
+    std::vector<Expr> qCoeffs;
+    if (!extractTaylorJetCoeffs(c, P1, x, x0, order, budget, pCoeffs) ||
+        !extractTaylorJetCoeffs(c, Q2, x, x0, order, budget, qCoeffs)) {
+        out.reason = "x0 is an irregular singular point (P1 or Q2 not analytic)";
+        return out;
+    }
+
+    const Expr rSym = c.symbol("_ode_frob_r");
+    const Expr two = c.number(std::int64_t{2});
+    auto evalIndicial = [&](Expr s) -> Expr {
+        return c.simplify(c.add({c.mul({s, c.add({s, c.number(std::int64_t{-1})})}),
+                                 c.mul({pCoeffs[0], s}), qCoeffs[0]}));
+    };
+
+    const Expr indEq = evalIndicial(rSym);
+    std::vector<Expr> roots = solveSymbolic(c, indEq, rSym, budget);
+    if (roots.empty()) {
+        out.reason = "unable to solve Frobenius indicial equation";
+        return out;
+    }
+
+    // Sort rational roots in descending order so the larger root r1 comes first
+    std::sort(roots.begin(), roots.end(), [&](Expr lhs, Expr rhs) {
+        if (c.kind(lhs) == NodeKind::Number && c.kind(rhs) == NodeKind::Number)
+            return c.numberValue(rhs) < c.numberValue(lhs);
+        return c.compare(lhs, rhs) < 0;
+    });
+
+    std::vector<Expr> uniqueRoots;
+    for (const Expr &rt : roots) {
+        bool dup = false;
+        for (const Expr &ex : uniqueRoots) {
+            if (isZeroSimp(c, c.add({rt, c.neg(ex)}))) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup)
+            uniqueRoots.push_back(rt);
+    }
+
+    std::vector<Expr> branches;
+    for (const Expr &rRoot : uniqueRoots) {
+        std::vector<Expr> cCoeffs(static_cast<std::size_t>(order + 1), c.zero());
+        cCoeffs[0] = c.one();
+        bool validBranch = true;
+        for (int n = 1; n <= order; ++n) {
+            const Expr rn =
+                c.add({rRoot, c.number(static_cast<std::int64_t>(n))});
+            const Expr indVal = evalIndicial(rn);
+            if (indVal.isNull() || isZeroSimp(c, indVal)) {
+                validBranch = false;
+                break;
+            }
+            std::vector<Expr> sumTerms;
+            for (int k = 0; k < n; ++k) {
+                const auto nkIdx = static_cast<std::size_t>(n - k);
+                const auto kIdx = static_cast<std::size_t>(k);
+                if (c.isZero(cCoeffs[kIdx]))
+                    continue;
+                const Expr rk =
+                    c.add({rRoot, c.number(static_cast<std::int64_t>(k))});
+                const Expr factor = c.simplify(
+                    c.add({c.mul({rk, pCoeffs[nkIdx]}), qCoeffs[nkIdx]}));
+                if (!c.isZero(factor))
+                    sumTerms.push_back(c.mul({factor, cCoeffs[kIdx]}));
+            }
+            const Expr sumVal =
+                sumTerms.empty() ? c.zero() : c.simplify(c.add(sumTerms));
+            cCoeffs[static_cast<std::size_t>(n)] =
+                c.simplify(c.neg(c.div(sumVal, indVal)));
+        }
+        if (!validBranch)
+            continue;
+
+        std::vector<Expr> sTerms;
+        for (int k = 0; k <= order; ++k) {
+            const Expr ck = cCoeffs[static_cast<std::size_t>(k)];
+            if (c.isZero(ck))
+                continue;
+            const Expr dxPow =
+                (k == 0) ? c.one()
+                         : c.pow(dx, c.number(static_cast<std::int64_t>(k)));
+            sTerms.push_back(c.mul({ck, dxPow}));
+        }
+        const Expr sPoly = sTerms.empty() ? c.zero() : c.add(sTerms);
+
+        // Certify normalized Frobenius operator on S(x):
+        //   (x-x0)^2 * S'' + (2*r + P1) * (x-x0) * S' + (r*(r-1) + r*P1 + Q2) * S == O((x-x0)^(order+1))
+        const Expr dS = c.diff(sPoly, x);
+        const Expr d2S = c.diff(dS, x);
+        const Expr frobRes = c.add(
+            {c.mul({c.pow(dx, two), d2S}),
+             c.mul({c.add({c.mul({two, rRoot}), P1}), dx, dS}),
+             c.mul({c.add({c.mul({rRoot, c.add({rRoot, c.number(std::int64_t{-1})})}),
+                           c.mul({rRoot, P1}), Q2}),
+                    sPoly})});
+        const Expr frobJet = taylor(c, frobRes, x, x0, order, budget);
+        if (!frobJet.isNull() && isZeroSimp(c, frobJet)) {
+            branches.push_back(c.mul({c.pow(dx, rRoot), sPoly}));
+        }
+    }
+
+    if (branches.empty()) {
+        out.reason = "Frobenius series branches failed recurrence or jet certificate";
+        return out;
+    }
+
+    out.status = OdeResult::Status::Proved;
+    if (branches.size() == 1) {
+        out.y = c.mul({C1, branches[0]});
+    } else {
+        out.y = c.add({c.mul({C1, branches[0]}), c.mul({C2, branches[1]})});
+    }
     return out;
 }
 

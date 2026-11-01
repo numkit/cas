@@ -798,5 +798,202 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
     }
 }
 
+TEST(DsolveTest, SpecialFunctionSecondOrderOdes)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+
+    // 1. Airy ODE: y'' - x*y = 0 and shifted/scaled y'' - 8*(x - 1)*y = 0
+    {
+        const OdeResult sol1 =
+            dsolve2Linear(c, c.one(), c.zero(), c.neg(x), c.zero(), x);
+        ASSERT_TRUE(sol1.proved()) << sol1.reason;
+        EXPECT_TRUE(sameExpr(c, sol1.y, P(c, "C1*airyAi(x) + C2*airyBi(x)")))
+            << "got: " << c.toString(sol1.y);
+
+        const OdeResult sol2 = dsolve2Special(
+            c, c.one(), c.zero(), P(c, "-8*(x - 1)"), c.zero(), x);
+        ASSERT_TRUE(sol2.proved()) << sol2.reason;
+        EXPECT_TRUE(sameExpr(c, sol2.y,
+                             P(c, "C1*airyAi(2*x - 2) + C2*airyBi(2*x - 2)")))
+            << "got: " << c.toString(sol2.y);
+
+        // Airy Riccati ODE: y' = x - y^2 solved via 2nd-order Airy reduction
+        const Expr ricRhs = P(c, "x - y^2");
+        const OdeResult ricSol = dsolve1(c, ricRhs, x, y);
+        ASSERT_TRUE(ricSol.proved()) << ricSol.reason;
+        EXPECT_TRUE(checkOde1(c, ricSol.y, ricRhs, x, y));
+    }
+
+    // 2. Bessel and Modified Bessel ODEs (concrete and symbolic orders):
+    //    x^2*y'' + x*y' + (4*x^2 - 9)*y = 0 -> C1*besselj(3, 2*x) + C2*bessely(3, 2*x)
+    //    x^2*y'' + x*y' + (x^2 - nu^2)*y = 0 -> C1*besselj(nu, x) + C2*bessely(nu, x)
+    //    x^2*y'' + x*y' - (9*x^2 + 4)*y = 0 -> C1*besseli(2, 3*x) + C2*besselk(2, 3*x)
+    {
+        const OdeResult bes1 = dsolve2Special(
+            c, P(c, "x^2"), x, P(c, "4*x^2 - 9"), c.zero(), x);
+        ASSERT_TRUE(bes1.proved()) << bes1.reason;
+        EXPECT_TRUE(sameExpr(c, bes1.y,
+                             P(c, "C1*besselj(3, 2*x) + C2*bessely(3, 2*x)")))
+            << "got: " << c.toString(bes1.y);
+
+        const OdeResult besSym = dsolve2Special(
+            c, P(c, "x^2"), x, P(c, "x^2 - nu^2"), c.zero(), x);
+        ASSERT_TRUE(besSym.proved()) << besSym.reason;
+        EXPECT_TRUE(checkOde2(c, besSym.y, P(c, "x^2"), x, P(c, "x^2 - nu^2"),
+                              c.zero(), x));
+
+        const OdeResult modBes = dsolve2Special(
+            c, P(c, "x^2"), x, P(c, "-(9*x^2 + 4)"), c.zero(), x);
+        ASSERT_TRUE(modBes.proved()) << modBes.reason;
+        EXPECT_TRUE(sameExpr(c, modBes.y,
+                             P(c, "C1*besseli(2, 3*x) + C2*besselk(2, 3*x)")))
+            << "got: " << c.toString(modBes.y);
+
+        // Spherical Bessel ODE (n = 1): x^2*y'' + 2*x*y' + (x^2 - 2)*y = 0
+        const OdeResult sphBes = dsolve2Special(
+            c, P(c, "x^2"), P(c, "2*x"), P(c, "x^2 - 2"), c.zero(), x);
+        ASSERT_TRUE(sphBes.proved()) << sphBes.reason;
+        EXPECT_TRUE(checkOde2(c, sphBes.y, P(c, "x^2"), P(c, "2*x"),
+                              P(c, "x^2 - 2"), c.zero(), x));
+    }
+
+    // 3. Legendre's ODE: (1 - x^2)*y'' - 2*x*y' + 6*y = 0 (n = 2) and symbolic n*(n + 1)
+    {
+        const OdeResult legGen = dsolve2Special(
+            c, P(c, "1 - x^2"), P(c, "-2*x"), c.number(6), c.zero(), x);
+        ASSERT_TRUE(legGen.proved()) << legGen.reason;
+        EXPECT_TRUE(checkOde2(c, legGen.y, P(c, "1 - x^2"), P(c, "-2*x"),
+                              c.number(6), c.zero(), x));
+
+        const OdeResult legIVP = dsolve2SpecialIVP(
+            c, P(c, "1 - x^2"), P(c, "-2*x"), c.number(6), c.zero(), x,
+            c.zero(), P(c, "-1/2"), c.zero());
+        ASSERT_TRUE(legIVP.proved()) << legIVP.reason;
+        EXPECT_TRUE(sameExpr(c, legIVP.y, P(c, "3/2*x^2 - 1/2")))
+            << "got: " << c.toString(legIVP.y);
+
+        const OdeResult legSym = dsolve2Special(
+            c, P(c, "1 - x^2"), P(c, "-2*x"), P(c, "n*(n + 1)"), c.zero(), x);
+        ASSERT_TRUE(legSym.proved()) << legSym.reason;
+        EXPECT_TRUE(sameExpr(c, legSym.y, P(c, "C1*legendreP(n, x)")))
+            << "got: " << c.toString(legSym.y);
+    }
+
+    // 4. Chebyshev 1st & 2nd kind ODEs:
+    //    (1 - x^2)*y'' - x*y' + 9*y = 0 (n = 3) and symbolic n^2
+    //    (1 - x^2)*y'' - 3*x*y' + 8*y = 0 (n = 2)
+    {
+        const OdeResult chebIVP = dsolve2SpecialIVP(
+            c, P(c, "1 - x^2"), P(c, "-x"), c.number(9), c.zero(), x,
+            c.zero(), c.zero(), c.number(-3));
+        ASSERT_TRUE(chebIVP.proved()) << chebIVP.reason;
+        EXPECT_TRUE(sameExpr(c, chebIVP.y, P(c, "4*x^3 - 3*x")))
+            << "got: " << c.toString(chebIVP.y);
+
+        const OdeResult chebSym = dsolve2Special(
+            c, P(c, "1 - x^2"), P(c, "-x"), P(c, "n^2"), c.zero(), x);
+        ASSERT_TRUE(chebSym.proved()) << chebSym.reason;
+        EXPECT_TRUE(checkOde2(c, chebSym.y, P(c, "1 - x^2"), P(c, "-x"),
+                              P(c, "n^2"), c.zero(), x));
+
+        const OdeResult cheb2 = dsolve2Special(
+            c, P(c, "1 - x^2"), P(c, "-3*x"), c.number(8), c.zero(), x);
+        ASSERT_TRUE(cheb2.proved()) << cheb2.reason;
+        EXPECT_TRUE(checkOde2(c, cheb2.y, P(c, "1 - x^2"), P(c, "-3*x"),
+                              c.number(8), c.zero(), x));
+    }
+
+    // 5. Hermite's ODE: y'' - 2*x*y' + 6*y = 0 (n = 3) and symbolic 2*n
+    {
+        const OdeResult hermIVP = dsolve2SpecialIVP(
+            c, c.one(), P(c, "-2*x"), c.number(6), c.zero(), x, c.zero(),
+            c.zero(), c.number(-12));
+        ASSERT_TRUE(hermIVP.proved()) << hermIVP.reason;
+        EXPECT_TRUE(sameExpr(c, hermIVP.y, P(c, "8*x^3 - 12*x")))
+            << "got: " << c.toString(hermIVP.y);
+
+        const OdeResult hermSym = dsolve2Special(
+            c, c.one(), P(c, "-2*x"), P(c, "2*n"), c.zero(), x);
+        ASSERT_TRUE(hermSym.proved()) << hermSym.reason;
+        EXPECT_TRUE(sameExpr(c, hermSym.y, P(c, "C1*hermiteH(n, x)")))
+            << "got: " << c.toString(hermSym.y);
+    }
+
+    // 6. Laguerre's ODE: x*y'' + (1 - x)*y' + 2*y = 0 (n = 2) and symbolic n
+    {
+        const OdeResult lagGen = dsolve2Special(
+            c, x, P(c, "1 - x"), c.number(2), c.zero(), x);
+        ASSERT_TRUE(lagGen.proved()) << lagGen.reason;
+        EXPECT_TRUE(checkOde2(c, lagGen.y, x, P(c, "1 - x"), c.number(2),
+                              c.zero(), x));
+
+        const OdeResult lagSym = dsolve2Special(
+            c, x, P(c, "1 - x"), P(c, "n"), c.zero(), x);
+        ASSERT_TRUE(lagSym.proved()) << lagSym.reason;
+        EXPECT_TRUE(sameExpr(c, lagSym.y, P(c, "C1*laguerreL(n, x)")))
+            << "got: " << c.toString(lagSym.y);
+    }
+}
+
+TEST(DsolveTest, PowerSeriesAndFrobeniusOdeSolver)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    // 1. Airy ODE Taylor series around x0 = 0 up to order 6:
+    //    y'' - x*y = 0 -> C1*(1 + x^3/6 + x^6/180) + C2*(x + x^4/12)
+    {
+        const OdeResult gen = dsolveSeries(
+            c, c.one(), c.zero(), c.neg(x), c.zero(), x, c.zero(), 6);
+        ASSERT_TRUE(gen.proved()) << gen.reason;
+        EXPECT_TRUE(sameExpr(
+            c, gen.y,
+            P(c, "C1*(1 + 1/6*x^3 + 1/180*x^6) + C2*(x + 1/12*x^4)")))
+            << "got: " << c.toString(gen.y);
+
+        const OdeResult ivp = dsolveSeriesIVP(
+            c, c.one(), c.zero(), c.neg(x), c.zero(), x, c.zero(), c.one(),
+            c.zero(), 6);
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1 + 1/6*x^3 + 1/180*x^6")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 2. Forced variable-coefficient IVP around ordinary point x0 = 0:
+    //    y'' + x*y' + y = 2*x, y(0) = 1, y'(0) = 0
+    //    Exact solution is y(x) = x + (1 - x)*exp(-x^2/2) = 1 + x - 1/2*x^2 - 1/6*x^3 + 1/8*x^4 + ...
+    //    Wait: let's check c0 = 1, c1 = 0:
+    //      n=0: 2*c2 = -q0*c0 = -1 => c2 = -1/2
+    //      n=1: 6*c3 = r1 - (p1*c1 + q0*c1) = 2 => c3 = 1/3
+    //      n=2: 12*c4 = -(2*p1*c2 + q0*c2) = 3/2 => c4 = 1/8
+    {
+        const OdeResult ivp = dsolveSeriesIVP(
+            c, c.one(), x, c.one(), P(c, "2*x"), x, c.zero(), c.one(),
+            c.zero(), 5);
+        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        EXPECT_TRUE(sameExpr(
+            c, ivp.y, P(c, "1 - 1/2*x^2 + 1/3*x^3 + 1/8*x^4 - 1/15*x^5")))
+            << "got: " << c.toString(ivp.y);
+    }
+
+    // 3. Frobenius series at regular singular point x0 = 0:
+    //    Bessel ODE of order nu = 1/3: x^2*y'' + x*y' + (x^2 - 1/9)*y = 0
+    //    Indicial roots r1 = 1/3, r2 = -1/3:
+    //      y1(x) = x^(1/3) * (1 - 3/16*x^2 + 9/896*x^4)
+    //      y2(x) = x^(-1/3) * (1 - 3/8*x^2 + 9/320*x^4)
+    {
+        const OdeResult frob = dsolveSeries(
+            c, P(c, "x^2"), x, P(c, "x^2 - 1/9"), c.zero(), x, c.zero(), 4);
+        ASSERT_TRUE(frob.proved()) << frob.reason;
+        EXPECT_TRUE(sameExpr(
+            c, frob.y,
+            P(c, "C1*x^(1/3)*(1 - 3/16*x^2 + 9/896*x^4) + "
+                 "C2*x^(-1/3)*(1 - 3/8*x^2 + 9/320*x^4)")))
+            << "got: " << c.toString(frob.y);
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

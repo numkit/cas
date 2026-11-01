@@ -135,10 +135,9 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                     const Expr nm1 = add({n, number(std::int64_t{-1})});
                     const Expr num = mul({
                         n,
-                        add({mul({u, e}), neg(func("legendreP", nm1, u))})});
+                        add({func("legendreP", nm1, u), neg(mul({u, e}))})});
                     const Expr den =
-                        add({pow(u, number(std::int64_t{2})),
-                             number(std::int64_t{-1})});
+                        add({one(), neg(pow(u, number(std::int64_t{2})))});
                     result = mul({num, pow(den, number(std::int64_t{-1})), du});
                 }
             } else if (name == "chebyshevT") {
@@ -154,11 +153,10 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                 } else {
                     const Expr np1 = add({n, one()});
                     const Expr num = add({
-                        mul({np1, func("chebyshevT", np1, u)}),
-                        neg(mul({u, e}))});
+                        mul({u, e}),
+                        neg(mul({np1, func("chebyshevT", np1, u)}))});
                     const Expr den =
-                        add({pow(u, number(std::int64_t{2})),
-                             number(std::int64_t{-1})});
+                        add({one(), neg(pow(u, number(std::int64_t{2})))});
                     result = mul({num, pow(den, number(std::int64_t{-1})), du});
                 }
             } else if (name == "hermiteH") {

@@ -108,6 +108,53 @@ OdeResult dsolve2EulerCauchyIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                                 Expr x0, Expr y0, Expr dy0,
                                 Budget *budget = nullptr);
 
+// Solve a 2nd-order variable-coefficient special-function linear ODE:
+//   a(x) * y''(x) + b(x) * y'(x) + d(x) * y(x) = f(x)
+// with integration constants "C1" and "C2", covering:
+//   - Airy and shifted/scaled Airy ODEs: y'' - k*(x - x0)*y = 0 -> airyAi, airyBi;
+//   - Bessel, Modified Bessel, and Lommel/spherical Bessel ODEs:
+//       x^2*y'' + p0*x*y' + (A*x^2 + C)*y = 0 -> x^((1-p0)/2) * (C1*J_nu(w*x) + C2*Y_nu(w*x))
+//       or x^((1-p0)/2) * (C1*I_nu(w*x) + C2*K_nu(w*x));
+//   - Legendre's ODE: (1 - x^2)*y'' - 2*x*y' + n*(n + 1)*y = 0 -> legendreP(n, x) (+ Q_n(x));
+//   - Chebyshev's 1st & 2nd kind ODEs:
+//       (1 - x^2)*y'' - x*y' + n^2*y = 0 -> C1*chebyshevT(n, x) + C2*sqrt(1 - x^2)*chebyshevU(n - 1, x),
+//       (1 - x^2)*y'' - 3*x*y' + n*(n + 2)*y = 0 -> C1*chebyshevU(n, x) + C2*(1 - x^2)^(-1/2)*chebyshevT(n + 1, x);
+//   - Hermite's ODE: y'' - 2*x*y' + 2*n*y = 0 -> hermiteH(n, x) (+ erfi second branch);
+//   - Laguerre's ODE: x*y'' + (1 - x)*y' + n*y = 0 -> laguerreL(n, x) (+ Ei second branch);
+//   - Liouville reduction of order and Variation of Parameters / Undetermined Coefficients
+//     for inhomogeneous forcing f(x).
+// Certified by verifying `simplify(a*y'' + b*y' + d*y - f) == 0`.
+OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
+                         Budget *budget = nullptr);
+
+// Solve a 2nd-order variable-coefficient special-function linear IVP:
+//   a(x) * y''(x) + b(x) * y'(x) + d(x) * y(x) = f(x),  y(x0) = y0,  y'(x0) = dy0
+// Certified against the ODE and both initial conditions.
+OdeResult dsolve2SpecialIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
+                            Expr x0, Expr y0, Expr dy0,
+                            Budget *budget = nullptr);
+
+// Solve a 2nd-order variable-coefficient linear ODE via certified Taylor or
+// Frobenius power series expansion around `x0` up to degree `order`:
+//   a(x) * y''(x) + b(x) * y'(x) + d(x) * y(x) = f(x)
+// - At an ordinary point `x0` (`a(x0) != 0`), constructs the general truncated
+//   Taylor series with integration constants `C1 = y(x0)` and `C2 = y'(x0)`,
+//   certified by verifying `taylor(a*y'' + b*y' + d*y - f, x, x0, order - 2) == 0`.
+// - At a regular singular point `x0` (`a(x0) == 0`, `f == 0`), solves the indicial
+//   equation `r*(r - 1) + p0*r + q0 = 0` and constructs certified Frobenius series
+//   branches `(x - x0)^r * sum_{k=0}^{order} c_k * (x - x0)^k`.
+OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
+                       Expr x0, int order = 6, Budget *budget = nullptr);
+
+// Solve a 2nd-order variable-coefficient linear Initial Value Problem via
+// certified Taylor power series around an ordinary point `x0` up to degree `order`:
+//   a(x) * y''(x) + b(x) * y'(x) + d(x) * y(x) = f(x),  y(x0) = y0,  y'(x0) = dy0
+// Certified by verifying `taylor(a*y'' + b*y' + d*y - f, x, x0, order - 2) == 0`,
+// `y(x0) == y0`, and `y'(x0) == dy0`.
+OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
+                          Expr x0, Expr y0, Expr dy0, int order = 6,
+                          Budget *budget = nullptr);
+
 // Solve an N-th order constant-coefficient linear ODE (N >= 1):
 //   coeffs[N] * y^(N)(x) + coeffs[N-1] * y^(N-1)(x) + ... + coeffs[0] * y(x) = f(x)
 // where `coeffs = {a_0, a_1, ..., a_N}` (from y(x) up to y^(N)(x), with a_N != 0)

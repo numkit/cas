@@ -70,10 +70,53 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, std::int64_t n)
         return rhs;
     if (c.isZero(rhs) || rhs == c.one())
         return rhs;
+    if (c.kind(rhs) != NodeKind::Pow && c.kind(rhs) != NodeKind::Number) {
+        // Check if expanding & factoring in a single parameter symbol yields a
+        // perfect n-th power (e.g. 1 + 4*m*(m + 1) -> (2*m + 1)^2).
+        Expr singleSym;
+        bool oneSym = true;
+        auto findSym = [&](auto &self, Expr cur) -> void {
+            if (cur.isNull() || !oneSym)
+                return;
+            if (c.kind(cur) == NodeKind::Symbol) {
+                if (singleSym.isNull())
+                    singleSym = cur;
+                else if (!(singleSym == cur))
+                    oneSym = false;
+                return;
+            }
+            for (std::size_t i = 0; i < c.childCount(cur); ++i)
+                self(self, c.child(cur, i));
+        };
+        findSym(findSym, rhs);
+        if (oneSym && !singleSym.isNull()) {
+            Expr fac;
+            if (factorExpr(c, c.expand(rhs), singleSym, fac) && !fac.isNull())
+                rhs = fac;
+        }
+    }
     if (c.kind(rhs) == NodeKind::Pow &&
         c.kind(c.child(rhs, 1)) == NodeKind::Number &&
         c.numberValue(c.child(rhs, 1)) == Rational(n)) {
         return c.child(rhs, 0);
+    }
+    if (c.kind(rhs) == NodeKind::Mul) {
+        bool hasExactPowerChild = false;
+        for (std::size_t i = 0; i < c.childCount(rhs); ++i) {
+            const Expr ch = c.child(rhs, i);
+            if (c.kind(ch) == NodeKind::Pow &&
+                c.kind(c.child(ch, 1)) == NodeKind::Number &&
+                c.numberValue(c.child(ch, 1)) == Rational(n)) {
+                hasExactPowerChild = true;
+                break;
+            }
+        }
+        if (hasExactPowerChild) {
+            std::vector<Expr> parts;
+            for (std::size_t i = 0; i < c.childCount(rhs); ++i)
+                parts.push_back(nthRootSymbolic(c, c.child(rhs, i), n));
+            return c.simplify(c.mul(parts));
+        }
     }
     if (n == 2 && c.kind(rhs) == NodeKind::Number &&
         c.numberValue(rhs).signum() > 0) {

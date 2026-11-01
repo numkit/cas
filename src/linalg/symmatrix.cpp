@@ -283,6 +283,161 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
                          rawPrim}));
 }
 
+bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
+                            std::vector<Expr> &coeffsOut)
+{
+    const Expr expd = c.expand(e);
+    std::vector<Expr> terms;
+    if (c.kind(expd) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+            terms.push_back(c.child(expd, i));
+    } else {
+        terms.push_back(expd);
+    }
+
+    int maxDeg = 0;
+    std::vector<std::pair<int, Expr>> parsed;
+    parsed.reserve(terms.size());
+    for (const Expr &t : terms) {
+        if (c.isZero(t))
+            continue;
+        int deg = 0;
+        std::vector<Expr> rest;
+        auto inspect = [&](Expr f) -> bool {
+            if (f == var) {
+                deg += 1;
+                return true;
+            }
+            if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == var &&
+                c.kind(c.child(f, 1)) == NodeKind::Number) {
+                const Rational &rv = c.numberValue(c.child(f, 1));
+                std::int64_t k = 0;
+                if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 0 &&
+                    k <= 24) {
+                    deg += static_cast<int>(k);
+                    return true;
+                }
+                return false;
+            }
+            rest.push_back(f);
+            return true;
+        };
+        if (c.kind(t) == NodeKind::Mul) {
+            for (std::size_t i = 0; i < c.childCount(t); ++i) {
+                if (!inspect(c.child(t, i)))
+                    return false;
+            }
+        } else {
+            if (!inspect(t))
+                return false;
+        }
+        if (deg > 24)
+            return false;
+        maxDeg = std::max(maxDeg, deg);
+        parsed.emplace_back(deg, rest.empty() ? c.one() : c.mul(rest));
+    }
+
+    coeffsOut.assign(static_cast<std::size_t>(maxDeg + 1), c.zero());
+    for (const auto &pr : parsed) {
+        const std::size_t idx = static_cast<std::size_t>(pr.first);
+        coeffsOut[idx] = c.expand(c.add({coeffsOut[idx], pr.second}));
+    }
+    while (!coeffsOut.empty() && c.isZero(coeffsOut.back()))
+        coeffsOut.pop_back();
+    return true;
+}
+
+bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, const std::vector<Expr> &syms,
+                       std::size_t symIdx, Expr &quotOut)
+{
+    if (c.isZero(Q))
+        return false;
+    if (c.isZero(P)) {
+        quotOut = c.zero();
+        return true;
+    }
+    if (P == Q) {
+        quotOut = c.one();
+        return true;
+    }
+    if (symIdx >= syms.size()) {
+        if (c.kind(P) == NodeKind::Number && c.kind(Q) == NodeKind::Number) {
+            quotOut = c.number(c.numberValue(P) / c.numberValue(Q));
+            return true;
+        }
+        return false;
+    }
+
+    const Expr var = syms[symIdx];
+    std::vector<Expr> pCoeffs, qCoeffs;
+    if (!extractPolyCoeffsInSym(c, P, var, pCoeffs) ||
+        !extractPolyCoeffsInSym(c, Q, var, qCoeffs) || qCoeffs.empty())
+        return false;
+
+    if (pCoeffs.empty()) {
+        quotOut = c.zero();
+        return true;
+    }
+
+    const int degP = static_cast<int>(pCoeffs.size()) - 1;
+    const int degQ = static_cast<int>(qCoeffs.size()) - 1;
+    if (degP < degQ)
+        return false;
+
+    if (degQ == 0) {
+        std::vector<Expr> terms;
+        for (int k = 0; k <= degP; ++k) {
+            if (c.isZero(pCoeffs[static_cast<std::size_t>(k)]))
+                continue;
+            Expr qk;
+            if (!polyDivExactMulti(c, pCoeffs[static_cast<std::size_t>(k)],
+                                   qCoeffs[0], syms, symIdx + 1, qk))
+                return false;
+            const Expr vPow =
+                (k == 0)
+                    ? c.one()
+                    : (k == 1
+                           ? var
+                           : c.pow(var, c.number(static_cast<std::int64_t>(k))));
+            terms.push_back(c.mul({qk, vPow}));
+        }
+        quotOut = terms.empty() ? c.zero() : c.expand(c.add(terms));
+        return true;
+    }
+
+    Expr R = P;
+    std::vector<Expr> qTerms;
+    for (int step = 0; step <= degP - degQ + 1; ++step) {
+        std::vector<Expr> rCoeffs;
+        if (!extractPolyCoeffsInSym(c, R, var, rCoeffs))
+            return false;
+        if (rCoeffs.empty()) {
+            quotOut = qTerms.empty() ? c.zero() : c.expand(c.add(qTerms));
+            return true;
+        }
+        const int degR = static_cast<int>(rCoeffs.size()) - 1;
+        if (degR < degQ)
+            return false;
+        Expr lcQuot;
+        if (!polyDivExactMulti(c, rCoeffs[static_cast<std::size_t>(degR)],
+                               qCoeffs[static_cast<std::size_t>(degQ)], syms,
+                               symIdx + 1, lcQuot))
+            return false;
+        const int dDiff = degR - degQ;
+        const Expr vPow =
+            (dDiff == 0)
+                ? c.one()
+                : (dDiff == 1
+                       ? var
+                       : c.pow(var,
+                               c.number(static_cast<std::int64_t>(dDiff))));
+        const Expr term = c.expand(c.mul({lcQuot, vPow}));
+        qTerms.push_back(term);
+        R = c.expand(c.add({R, c.neg(c.mul({term, Q}))}));
+    }
+    return false;
+}
+
 } // namespace
 
 Expr simplifyRationalExpr(Ctx &c, Expr e)
@@ -348,6 +503,13 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
             const Expr rD = upolyToExpr(c, upD, syms[0]);
             return c.div(rN, rD);
         }
+    } else if (pureRat && syms.size() >= 2 && syms.size() <= 6) {
+        Expr quot;
+        if (polyDivExactMulti(c, f.num, f.den, syms, 0, quot))
+            return quot;
+        if (polyDivExactMulti(c, f.den, f.num, syms, 0, quot) &&
+            !c.isZero(quot))
+            return c.pow(quot, c.number(std::int64_t{-1}));
     }
 
     return c.div(f.num, f.den);

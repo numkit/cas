@@ -617,5 +617,192 @@ TEST(SeriesTest, SymbolicSummationFiniteAndInfinite)
               SymSumResult::Status::Divergent);
 }
 
+TEST(SeriesTest, PadeApproximantsAndCertificates)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    struct PadeCase
+    {
+        const char *f;
+        const char *x0;
+        int m;
+        int n;
+        const char *expected;
+    };
+    const PadeCase cases[] = {
+        // 1. Classical Pade table of exp(x) at x0 = 0
+        {"exp(x)", "0", 1, 1, "(1 + 1/2*x)/(1 - 1/2*x)"},
+        {"exp(x)", "0", 2, 1, "(1 + 2/3*x + 1/6*x^2)/(1 - 1/3*x)"},
+        {"exp(x)", "0", 1, 2, "(1 + 1/3*x)/(1 - 2/3*x + 1/6*x^2)"},
+        {"exp(x)", "0", 2, 2,
+         "(1 + 1/2*x + 1/12*x^2)/(1 - 1/2*x + 1/12*x^2)"},
+        {"exp(x)", "0", 3, 3,
+         "(1 + 1/2*x + 1/10*x^2 + 1/120*x^3)/(1 - 1/2*x + 1/10*x^2 - 1/120*x^3)"},
+
+        // 2. Trigonometric, logarithmic, radical, and special functions
+        {"sin(x)", "0", 1, 2, "x/(1 + 1/6*x^2)"},
+        {"sin(x)", "0", 3, 2, "(x - 7/60*x^3)/(1 + 1/20*x^2)"},
+        {"cos(x)", "0", 2, 2, "(1 - 5/12*x^2)/(1 + 1/12*x^2)"},
+        {"cos(x)", "0", 2, 4, "(1 - 61/150*x^2)/(1 + 7/75*x^2 + 1/200*x^4)"},
+        {"tan(x)", "0", 3, 2, "(x - 1/15*x^3)/(1 - 2/5*x^2)"},
+        {"log(1 + x)", "0", 1, 1, "x/(1 + 1/2*x)"},
+        {"log(1 + x)", "0", 2, 2, "(x + 1/2*x^2)/(1 + x + 1/6*x^2)"},
+        {"(1 + x)^(1/2)", "0", 1, 1, "(1 + 3/4*x)/(1 + 1/4*x)"},
+        {"(1 + x)^(1/2)", "0", 2, 2,
+         "(1 + 5/4*x + 5/16*x^2)/(1 + 3/4*x + 1/16*x^2)"},
+        {"erf(x)", "0", 3, 2,
+         "2*pi^(-1/2)*(x - 1/30*x^3)/(1 + 3/10*x^2)"},
+        {"dilog(x)", "0", 2, 1, "(x - 7/36*x^2)/(1 - 4/9*x)"},
+
+        // 3. Non-zero expansion point x0 != 0 and symbolic parameters
+        {"log(x)", "1", 1, 1, "(x - 1)/(1 + 1/2*(x - 1))"},
+        {"exp(x)", "1", 1, 1, "exp(1)*(1 + 1/2*(x - 1))/(1 - 1/2*(x - 1))"},
+        {"exp(a*x)", "0", 1, 1, "(1 + 1/2*a*x)/(1 - 1/2*a*x)"},
+        {"1/(1 - a*x)", "0", 2, 2, "1/(1 - a*x)"},
+    };
+
+    for (const auto &tc : cases) {
+        const Expr f = parseExpr(c, tc.f);
+        const Expr x0 = parseExpr(c, tc.x0);
+        const Expr expVal = parseExpr(c, tc.expected);
+        const PadeResult r = pade(c, f, x, x0, tc.m, tc.n);
+        ASSERT_TRUE(r.proved())
+            << "pade[" << tc.m << "/" << tc.n << "] failed for " << tc.f
+            << " at " << tc.x0 << ": " << r.reason;
+        EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
+            << "for " << tc.f << " [" << tc.m << "/" << tc.n << "]: got "
+            << c.toString(r.value) << ", expected " << c.toString(expVal);
+        EXPECT_EQ(
+            c.simplify(taylor(c, c.add({r.value, c.neg(f)}), x, x0,
+                              tc.m + tc.n)),
+            c.zero());
+    }
+
+    // 4. [m/0] reduces to Taylor polynomial, and degenerate/pole cases return Unevaluated
+    const PadeResult padeTaylor =
+        pade(c, parseExpr(c, "sin(x)"), x, c.zero(), 5, 0);
+    ASSERT_TRUE(padeTaylor.proved());
+    EXPECT_TRUE(exprEq(c, padeTaylor.value,
+                       taylor(c, parseExpr(c, "sin(x)"), x, c.zero(), 5)));
+
+    EXPECT_FALSE(pade(c, parseExpr(c, "cos(x)"), x, c.zero(), 1, 1).proved());
+    EXPECT_FALSE(pade(c, parseExpr(c, "1/x"), x, c.zero(), 1, 1).proved());
+}
+
+TEST(SeriesTest, MultivariateTaylorExpansion)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr z = c.symbol("z");
+
+    // 1. 2D and 3D analytic expansions around the origin
+    EXPECT_TRUE(exprEq(
+        c, mtaylor(c, parseExpr(c, "exp(x + y)"), {x, y}, {c.zero(), c.zero()}, 2),
+        parseExpr(c, "1 + x + y + 1/2*x^2 + x*y + 1/2*y^2")));
+
+    EXPECT_TRUE(exprEq(
+        c, mtaylor(c, parseExpr(c, "sin(x)*cos(y)"), {x, y}, {c.zero(), c.zero()}, 3),
+        parseExpr(c, "x - 1/6*x^3 - 1/2*x*y^2")));
+
+    EXPECT_TRUE(exprEq(
+        c, mtaylor(c, parseExpr(c, "1/(1 - x - y)"), {x, y}, {c.zero(), c.zero()}, 2),
+        parseExpr(c, "1 + x + y + x^2 + 2*x*y + y^2")));
+
+    EXPECT_TRUE(exprEq(
+        c, mtaylor(c, parseExpr(c, "log(1 + x + y)"), {x, y}, {c.zero(), c.zero()}, 2),
+        parseExpr(c, "x + y - 1/2*x^2 - x*y - 1/2*y^2")));
+
+    EXPECT_TRUE(exprEq(
+        c,
+        mtaylor(c, parseExpr(c, "(1 + x + y^2)^(1/2)"), {x, y},
+                {c.zero(), c.zero()}, 2),
+        parseExpr(c, "1 + 1/2*x - 1/8*x^2 + 1/2*y^2")));
+
+    EXPECT_TRUE(exprEq(
+        c,
+        mtaylor(c, parseExpr(c, "exp(x)*sin(y + z)"), {x, y, z},
+                {c.zero(), c.zero(), c.zero()}, 2),
+        parseExpr(c, "y + z + x*y + x*z")));
+
+    // 2. Non-zero expansion point (x0, y0) = (1, 2)
+    const Expr mtShift = mtaylor(c, parseExpr(c, "x^2*y + y^2"), {x, y},
+                                 {c.one(), c.number(std::int64_t{2})}, 2);
+    ASSERT_FALSE(mtShift.isNull());
+    EXPECT_TRUE(exprEq(
+        c, mtShift,
+        parseExpr(
+            c,
+            "6 + 4*(x - 1) + 5*(y - 2) + 2*(x - 1)^2 + 2*(x - 1)*(y - 2) + (y - 2)^2")));
+
+    // 3. Removable homogeneous singularity cancellation
+    const Expr mtRem = mtaylor(
+        c, parseExpr(c, "(sin(x + y) - (x + y))/(x + y)^3"), {x, y},
+        {c.zero(), c.zero()}, 2);
+    ASSERT_FALSE(mtRem.isNull());
+    EXPECT_TRUE(exprEq(
+        c, mtRem, parseExpr(c, "-1/6 + 1/120*x^2 + 1/60*x*y + 1/120*y^2")));
+
+    // 4. Non-analytic / pole rejection at (0, 0)
+    EXPECT_TRUE(
+        mtaylor(c, parseExpr(c, "1/(x + y)"), {x, y}, {c.zero(), c.zero()}, 2)
+            .isNull());
+    EXPECT_TRUE(
+        mtaylor(c, parseExpr(c, "x*y/(x^2 + y^2)"), {x, y},
+                {c.zero(), c.zero()}, 2)
+            .isNull());
+    EXPECT_TRUE(
+        mtaylor(c, parseExpr(c, "x^2/(x + y)"), {x, y}, {c.zero(), c.zero()}, 0)
+            .isNull());
+}
+
+TEST(SeriesTest, PropertyPadeAndMultivariateTaylor)
+{
+    std::mt19937_64 rng(0x5A17E55EEDULL);
+    std::uniform_int_distribution<std::int64_t> coefDist(-4, 4);
+
+    // 1. Pade [2/2] exactly recovers any rational function P(x)/Q(x) with
+    //    deg(P) <= 2, deg(Q) <= 2, Q(0) = 1.
+    for (int iter = 0; iter < 50; ++iter) {
+        Ctx c;
+        const Expr x = c.symbol("x");
+        const Expr p0 = c.number(coefDist(rng));
+        const Expr p1 = c.number(coefDist(rng));
+        const Expr p2 = c.number(coefDist(rng));
+        const Expr q1 = c.number(coefDist(rng));
+        const Expr q2 = c.number(coefDist(rng));
+        const Expr P = c.add(
+            {p0, c.mul({p1, x}), c.mul({p2, c.pow(x, c.number(std::int64_t{2}))})});
+        const Expr Q = c.add(
+            {c.one(), c.mul({q1, x}),
+             c.mul({q2, c.pow(x, c.number(std::int64_t{2}))})});
+        const Expr rat = c.div(P, Q);
+        const PadeResult r = pade(c, rat, x, c.zero(), 2, 2);
+        ASSERT_TRUE(r.proved()) << "iter " << iter << ": " << r.reason;
+        EXPECT_EQ(c.simplify(c.add({r.value, c.neg(rat)})), c.zero());
+    }
+
+    // 2. Multivariate Taylor commutes with partial differentiation:
+    //    d/dx mtaylor(f, 3) == mtaylor(df/dx, 2) and
+    //    d/dy mtaylor(f, 3) == mtaylor(df/dy, 2).
+    {
+        Ctx c;
+        const Expr x = c.symbol("x");
+        const Expr y = c.symbol("y");
+        const Expr f = parseExpr(c, "exp(x + 2*y)*cos(x - y)");
+        const Expr mt3 = mtaylor(c, f, {x, y}, {c.zero(), c.zero()}, 3);
+        ASSERT_FALSE(mt3.isNull());
+        const Expr dMtDx = c.expand(c.diff(mt3, x));
+        const Expr dMtDy = c.expand(c.diff(mt3, y));
+        const Expr mtDfDx =
+            c.expand(mtaylor(c, c.diff(f, x), {x, y}, {c.zero(), c.zero()}, 2));
+        const Expr mtDfDy =
+            c.expand(mtaylor(c, c.diff(f, y), {x, y}, {c.zero(), c.zero()}, 2));
+        EXPECT_EQ(dMtDx, mtDfDx);
+        EXPECT_EQ(dMtDy, mtDfDy);
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

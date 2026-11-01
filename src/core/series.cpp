@@ -1,5 +1,6 @@
 #include <numkit/cas/core/series.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/linalg/symmatrix.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <algorithm>
@@ -2833,6 +2834,479 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
 
     out.reason = "unable to evaluate infinite series in closed form";
     return out;
+}
+
+namespace {
+
+Expr normalizeSeriesCoeff(Ctx &c, Expr e, Budget *budget)
+{
+    if (e.isNull())
+        return c.zero();
+    Expr folded = foldConst(c, e);
+    if (folded.isNull())
+        folded = e;
+    if (c.isZero(folded) || c.kind(folded) == NodeKind::Number ||
+        c.kind(folded) == NodeKind::Symbol)
+        return folded;
+    const Expr rat = simplifyRationalExpr(c, folded);
+    if (!rat.isNull()) {
+        if (c.isZero(rat) || c.kind(rat) == NodeKind::Number ||
+            c.kind(rat) == NodeKind::Symbol)
+            return rat;
+        const Expr simp = c.simplify(rat);
+        return simp.isNull() ? rat : simp;
+    }
+    const Expr simp = c.simplify(folded);
+    return simp.isNull() ? folded : simp;
+}
+
+bool isZeroSeriesCoeff(Ctx &c, Expr e, Budget *budget)
+{
+    if (e.isNull())
+        return false;
+    if (isZeroCoeff(c, e))
+        return true;
+    const Expr norm = normalizeSeriesCoeff(c, e, budget);
+    return !norm.isNull() && c.isZero(norm);
+}
+
+Expr buildPolyInDx(Ctx &c, const std::vector<Expr> &coeffs, Expr dx,
+                   Budget *budget)
+{
+    std::vector<Expr> terms;
+    for (std::size_t k = 0; k < coeffs.size(); ++k) {
+        const Expr &coef = coeffs[k];
+        if (coef.isNull() || isZeroSeriesCoeff(c, coef, budget))
+            continue;
+        if (k == 0) {
+            terms.push_back(coef);
+        } else if (k == 1) {
+            terms.push_back(c.mul({coef, dx}));
+        } else {
+            terms.push_back(c.mul(
+                {coef, c.pow(dx, c.number(static_cast<std::int64_t>(k)))}));
+        }
+    }
+    return terms.empty() ? c.zero() : c.add(terms);
+}
+
+bool mentionsAnyVar(const Ctx &c, Expr e, const std::vector<Expr> &vars)
+{
+    for (const Expr &v : vars) {
+        if (mentionsSymbol(c, e, v))
+            return true;
+    }
+    return false;
+}
+
+bool isPolynomialInVars(const Ctx &c, Expr e, const std::vector<Expr> &vars)
+{
+    if (e.isNull())
+        return false;
+    if (!mentionsAnyVar(c, e, vars))
+        return true;
+    for (const Expr &v : vars) {
+        if (e == v)
+            return true;
+    }
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return true;
+    case NodeKind::Add:
+    case NodeKind::Mul:
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            if (!isPolynomialInVars(c, c.child(e, i), vars))
+                return false;
+        }
+        return true;
+    case NodeKind::Pow: {
+        const Expr base = c.child(e, 0);
+        const Expr exp = c.child(e, 1);
+        if (mentionsAnyVar(c, exp, vars) || c.kind(exp) != NodeKind::Number)
+            return false;
+        const Rational &re = c.numberValue(exp);
+        if (re.den() != BigInt(1) || re.signum() < 0)
+            return false;
+        return isPolynomialInVars(c, base, vars);
+    }
+    case NodeKind::Func:
+        return false;
+    }
+    return false;
+}
+
+Expr safeSubsMultiAndFold(Ctx &c, Expr e, const std::vector<Expr> &vars,
+                          const std::vector<Expr> &x0s)
+{
+    if (e.isNull())
+        return Expr();
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        if (e == vars[i])
+            return x0s[i];
+    }
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func: {
+        const Expr a = safeSubsMultiAndFold(c, c.child(e, 0), vars, x0s);
+        if (a.isNull())
+            return Expr();
+        const std::string &fn = c.funcName(e);
+        if ((fn == "log" || fn == "Ei" || fn == "Ci") && isZeroCoeff(c, a))
+            return Expr();
+        if (fn == "li" &&
+            isZeroCoeff(c, c.add({a, c.number(std::int64_t{-1})})))
+            return Expr();
+        return foldConst(c, c.func(fn, a));
+    }
+    case NodeKind::Pow: {
+        const Expr b = safeSubsMultiAndFold(c, c.child(e, 0), vars, x0s);
+        const Expr ex = safeSubsMultiAndFold(c, c.child(e, 1), vars, x0s);
+        if (b.isNull() || ex.isNull())
+            return Expr();
+        if (isZeroCoeff(c, b)) {
+            if (c.kind(ex) != NodeKind::Number ||
+                c.numberValue(ex).signum() <= 0)
+                return Expr();
+            return c.zero();
+        }
+        return foldConst(c, c.pow(b, ex));
+    }
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        std::vector<Expr> kids;
+        kids.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const Expr k = safeSubsMultiAndFold(c, c.child(e, i), vars, x0s);
+            if (k.isNull())
+                return Expr();
+            kids.push_back(k);
+        }
+        return foldConst(
+            c, c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids));
+    }
+    }
+    return Expr();
+}
+
+bool mtaylorRecFallback(Ctx &c, Expr curDeriv, std::size_t varIdx,
+                        int remOrder, const std::vector<Expr> &vars,
+                        const std::vector<Expr> &x0s,
+                        const std::vector<Expr> &dxExprs, BigInt factProd,
+                        Expr monomProd, Budget *budget,
+                        std::vector<Expr> &termsOut)
+{
+    if (!checkSeriesBudget(c, budget))
+        return false;
+    if (varIdx == vars.size()) {
+        const Expr atX0 = safeSubsMultiAndFold(c, curDeriv, vars, x0s);
+        if (atX0.isNull())
+            return false;
+        if (!isZeroSeriesCoeff(c, atX0, budget)) {
+            const Expr coef = normalizeSeriesCoeff(
+                c, c.mul({c.number(Rational(BigInt(1), factProd)), atX0}),
+                budget);
+            if (!c.isZero(coef))
+                termsOut.push_back(c.mul({coef, monomProd}));
+        }
+        return true;
+    }
+
+    Expr dCur = curDeriv;
+    BigInt factK(1);
+    for (int k = 0; k <= remOrder; ++k) {
+        if (!checkSeriesBudget(c, budget))
+            return false;
+        if (k > 0) {
+            dCur = c.diff(dCur, vars[varIdx]);
+            factK = factK * BigInt(k);
+        }
+        const Expr dxPow =
+            (k == 0)
+                ? c.one()
+                : (k == 1 ? dxExprs[varIdx]
+                          : c.pow(dxExprs[varIdx],
+                                  c.number(static_cast<std::int64_t>(k))));
+        if (!mtaylorRecFallback(c, dCur, varIdx + 1, remOrder - k, vars, x0s,
+                                dxExprs, factProd * factK,
+                                c.mul({monomProd, dxPow}), budget, termsOut))
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
+{
+    PadeResult out;
+    if (f.isNull() || var.isNull() || x0.isNull() || m < 0 || n < 0) {
+        out.reason = "invalid input or negative Pade degree";
+        return out;
+    }
+    if (!checkSeriesBudget(c, budget)) {
+        out.reason = budget->status() == BudgetStatus::StepExhausted
+                         ? "step budget exhausted"
+                         : "arena byte budget exhausted";
+        return out;
+    }
+
+    const int N = m + n;
+    std::vector<Expr> coeffs(static_cast<std::size_t>(N + 1), c.zero());
+    bool haveCoeffs = false;
+    for (int pad : {8, 16}) {
+        Laurent s;
+        if (computeLaurent(c, f, var, x0, N + pad, budget, s)) {
+            if (!s.coeffs.empty() && s.val < 0) {
+                out.reason = "function has a pole at expansion point";
+                return out;
+            }
+            if (s.maxDeg >= N) {
+                for (int k = 0; k <= N; ++k) {
+                    coeffs[static_cast<std::size_t>(k)] =
+                        normalizeSeriesCoeff(c, coeffAt(c, s, k), budget);
+                }
+                haveCoeffs = true;
+                break;
+            }
+        }
+        if (budget && !budget->ok()) {
+            out.reason = budget->status() == BudgetStatus::StepExhausted
+                             ? "step budget exhausted"
+                             : "arena byte budget exhausted";
+            return out;
+        }
+    }
+
+    if (!haveCoeffs) {
+        Expr cur = f;
+        BigInt fact(1);
+        for (int k = 0; k <= N; ++k) {
+            if (!checkSeriesBudget(c, budget)) {
+                out.reason = budget->status() == BudgetStatus::StepExhausted
+                                 ? "step budget exhausted"
+                                 : "arena byte budget exhausted";
+                return out;
+            }
+            if (k > 0) {
+                cur = c.diff(cur, var);
+                fact = fact * BigInt(k);
+            }
+            const Expr atX0 = safeSubsAndFold(c, cur, var, x0);
+            if (atX0.isNull()) {
+                out.reason = "function is singular at expansion point";
+                return out;
+            }
+            coeffs[static_cast<std::size_t>(k)] = normalizeSeriesCoeff(
+                c, c.mul({c.number(Rational(BigInt(1), fact)), atX0}), budget);
+        }
+    }
+
+    // Solve Toeplitz linear system for denominator coefficients q_1, ..., q_n (q_0 = 1):
+    //   sum_{j=1}^n c_{m + 1 + i - j} * q_j = -c_{m + 1 + i},  i = 0, ..., n - 1.
+    std::vector<Expr> q(static_cast<std::size_t>(n + 1), c.zero());
+    q[0] = c.one();
+    if (n > 0) {
+        const std::size_t nSz = static_cast<std::size_t>(n);
+        SymMatrix A(nSz, nSz, c.zero());
+        SymMatrix B(nSz, 1, c.zero());
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < n; ++j) {
+                const int idx = m + i - j;
+                if (idx >= 0) {
+                    A.at(static_cast<std::size_t>(i),
+                         static_cast<std::size_t>(j)) =
+                        coeffs[static_cast<std::size_t>(idx)];
+                }
+            }
+            B.at(static_cast<std::size_t>(i), 0) =
+                c.neg(coeffs[static_cast<std::size_t>(m + 1 + i)]);
+        }
+
+        const SymMatrix qSol = linsolve(c, A, B, budget);
+        if (!qSol.empty()) {
+            for (std::size_t j = 0; j < nSz; ++j) {
+                q[j + 1] = normalizeSeriesCoeff(c, qSol.at(j, 0), budget);
+            }
+        } else {
+            // Rank-deficient Toeplitz system: solve via RREF of augmented matrix [A | B],
+            // setting free trailing denominator coefficients to zero when consistent.
+            SymMatrix aug(nSz, nSz + 1, c.zero());
+            for (std::size_t i = 0; i < nSz; ++i) {
+                for (std::size_t j = 0; j < nSz; ++j)
+                    aug.at(i, j) = A.at(i, j);
+                aug.at(i, nSz) = B.at(i, 0);
+            }
+            const SymMatrix R = rref(c, aug, nullptr, budget);
+            if (R.empty()) {
+                out.reason = "failed to reduce Pade Toeplitz system";
+                return out;
+            }
+            for (std::size_t r = 0; r < nSz; ++r) {
+                std::size_t pivCol = nSz + 1;
+                for (std::size_t col = 0; col <= nSz; ++col) {
+                    if (!isZeroSeriesCoeff(c, R.at(r, col), budget)) {
+                        pivCol = col;
+                        break;
+                    }
+                }
+                if (pivCol == nSz) {
+                    out.reason =
+                        "degenerate Pade table block (inconsistent linear system)";
+                    return out;
+                }
+                if (pivCol < nSz) {
+                    q[pivCol + 1] =
+                        normalizeSeriesCoeff(c, R.at(r, nSz), budget);
+                }
+            }
+        }
+    }
+
+    // Compute numerator coefficients p_0, ..., p_m:
+    //   p_k = sum_{j=0}^{min(k, n)} c_{k - j} * q_j.
+    std::vector<Expr> p(static_cast<std::size_t>(m + 1), c.zero());
+    for (int k = 0; k <= m; ++k) {
+        std::vector<Expr> terms;
+        const int jMax = std::min(k, n);
+        for (int j = 0; j <= jMax; ++j) {
+            const Expr &ckj = coeffs[static_cast<std::size_t>(k - j)];
+            const Expr &qj = q[static_cast<std::size_t>(j)];
+            if (!c.isZero(ckj) && !c.isZero(qj))
+                terms.push_back(c.mul({ckj, qj}));
+        }
+        p[static_cast<std::size_t>(k)] =
+            terms.empty() ? c.zero()
+                          : normalizeSeriesCoeff(c, c.add(terms), budget);
+    }
+
+    const Expr dx = c.isZero(x0) ? var : c.add({var, c.neg(x0)});
+    out.numerator = buildPolyInDx(c, p, dx, budget);
+    out.denominator = buildPolyInDx(c, q, dx, budget);
+    out.value = (out.denominator == c.one())
+                    ? out.numerator
+                    : c.div(out.numerator, out.denominator);
+
+    // Certificate: verify that R_{m,n}(var) - f(var) = O((var - x0)^(m + n + 1)).
+    const Expr diffExpr = c.add({out.value, c.neg(f)});
+    const Expr rem = taylor(c, diffExpr, var, x0, N, budget);
+    if (rem.isNull()) {
+        out.reason = "certificate failed: unable to expand Pade remainder";
+        return out;
+    }
+    bool certOk = isZeroSeriesCoeff(c, rem, budget);
+    if (!certOk) {
+        Laurent remS;
+        if (computeLaurent(c, rem, var, x0, N, budget, remS) &&
+            (remS.coeffs.empty() || remS.val >= 0)) {
+            certOk = true;
+            for (int k = 0; k <= N; ++k) {
+                if (!isZeroSeriesCoeff(c, coeffAt(c, remS, k), budget)) {
+                    certOk = false;
+                    break;
+                }
+            }
+        }
+    }
+    if (!certOk) {
+        out.reason = "certificate failed: Pade Taylor remainder is non-zero";
+        return out;
+    }
+
+    out.status = PadeResult::Status::ProvedSymbolic;
+    return out;
+}
+
+Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
+             const std::vector<Expr> &x0s, int order, Budget *budget)
+{
+    if (f.isNull() || order < 0 || vars.size() != x0s.size())
+        return Expr();
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol ||
+            x0s[i].isNull())
+            return Expr();
+        for (std::size_t j = 0; j < i; ++j) {
+            if (vars[i] == vars[j])
+                return Expr();
+        }
+    }
+    if (!checkSeriesBudget(c, budget))
+        return Expr();
+    if (vars.empty())
+        return foldConst(c, f);
+    if (vars.size() == 1)
+        return taylor(c, f, vars[0], x0s[0], order, budget);
+
+    std::vector<Expr> dSyms(vars.size());
+    std::vector<Expr> dxExprs(vars.size());
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        dSyms[i] = c.symbol("_mt_d_" + std::to_string(i));
+        dxExprs[i] =
+            c.isZero(x0s[i]) ? vars[i] : c.add({vars[i], c.neg(x0s[i])});
+    }
+
+    // 1. Primary path: directional homogeneous scaling
+    //    var_i <- x0_i + s * d_i, expanded in s around s = 0.
+    const Expr sSym = c.symbol("_s_mtaylor");
+    Expr fScaled = f;
+    for (std::size_t i = 0; i < vars.size(); ++i)
+        fScaled = c.subs(fScaled, vars[i], dSyms[i]);
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        fScaled = c.subs(fScaled, dSyms[i],
+                         c.add({x0s[i], c.mul({sSym, dSyms[i]})}));
+    }
+
+    for (int pad : {8, 16}) {
+        Laurent sSeries;
+        if (computeLaurent(c, fScaled, sSym, c.zero(), order + pad, budget,
+                           sSeries)) {
+            if (!sSeries.coeffs.empty() && sSeries.val < 0)
+                return Expr(); // pole at x0s
+            if (sSeries.maxDeg >= order) {
+                bool polyOk = true;
+                const int checkDeg = std::max(
+                    order,
+                    sSeries.coeffs.empty()
+                        ? order
+                        : std::min(sSeries.maxDeg, sSeries.val + 1));
+                std::vector<Expr> terms;
+                for (int m = 0; m <= checkDeg; ++m) {
+                    Expr cm = coeffAt(c, sSeries, m);
+                    if (isZeroCoeff(c, cm))
+                        continue;
+                    const Expr cmRat = simplifyRationalExpr(c, cm);
+                    if (!cmRat.isNull())
+                        cm = cmRat;
+                    cm = foldConst(c, c.expand(cm));
+                    if (cm.isNull() || !isPolynomialInVars(c, cm, dSyms)) {
+                        return Expr(); // directional singularity at x0s
+                    }
+                    if (m <= order && !isZeroCoeff(c, cm)) {
+                        Expr term = cm;
+                        for (std::size_t i = 0; i < vars.size(); ++i)
+                            term = c.subs(term, dSyms[i], dxExprs[i]);
+                        terms.push_back(term);
+                    }
+                }
+                if (polyOk)
+                    return terms.empty() ? c.zero() : c.add(terms);
+            }
+        }
+        if (budget && !budget->ok())
+            return Expr();
+    }
+
+    // 2. Fallback: exact iterated partial differentiation at x0s.
+    std::vector<Expr> fallbackTerms;
+    if (!mtaylorRecFallback(c, f, 0, order, vars, x0s, dxExprs, BigInt(1),
+                            c.one(), budget, fallbackTerms))
+        return Expr();
+    return fallbackTerms.empty() ? c.zero() : c.add(fallbackTerms);
 }
 
 } // namespace numkit::cas

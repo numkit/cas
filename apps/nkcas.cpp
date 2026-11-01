@@ -71,6 +71,22 @@ bool splitLine(const std::string &line, std::string &cmd,
         exprSrc = trim(line.substr(cmd.size()));
         return !exprSrc.empty();
     }
+    if (cmd == "pade") {
+        // "pade <expr...> <var> <x0> <m> <n>": last four tokens are var, x0, m, n.
+        if (words.size() < 6)
+            return false;
+        const std::string &nTok = words.back();
+        const std::string &mTok = words[words.size() - 2];
+        const std::string &x0Tok = words[words.size() - 3];
+        const std::string &varTok = words[words.size() - 4];
+        const std::size_t nOff = line.rfind(nTok);
+        const std::size_t mOff = line.rfind(mTok, nOff > 0 ? nOff - 1 : 0);
+        const std::size_t x0Off = line.rfind(x0Tok, mOff > 0 ? mOff - 1 : 0);
+        const std::size_t vOff = line.rfind(varTok, x0Off > 0 ? x0Off - 1 : 0);
+        exprSrc = trim(line.substr(cmd.size(), vOff - cmd.size()));
+        var = varTok + "\t" + x0Tok + "\t" + mTok + "\t" + nTok;
+        return !exprSrc.empty();
+    }
     if (cmd == "defint" || cmd == "symsum") {
         // "defint/symsum <expr...> <var> <a> <b>": last three tokens are var, a, b.
         if (words.size() < 5)
@@ -302,6 +318,31 @@ int runSymSum(const std::string &exprSrc, const std::string &varName,
     return 2;
 }
 
+int runPade(const std::string &exprSrc, const std::string &varName,
+            const std::string &x0Src, int m, int n)
+{
+    numkit::cas::Ctx ctx;
+    numkit::cas::Expr f, x0;
+    try {
+        f = numkit::cas::parseExpr(ctx, exprSrc);
+        x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
+    } catch (const numkit::cas::ParseError &e) {
+        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
+                  << "\n";
+        return 1;
+    }
+    const numkit::cas::Expr var = ctx.symbol(varName);
+    const numkit::cas::PadeResult r =
+        numkit::cas::pade(ctx, f, var, x0, m, n);
+    if (r.proved()) {
+        std::cout << ctx.toString(r.value) << "\n";
+        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        return 0;
+    }
+    std::cout << "Unevaluated: " << r.reason << "\n";
+    return 2;
+}
+
 int runLaplace(const std::string &exprSrc, const std::string &inVarName,
                const std::string &outVarName, bool inverse)
 {
@@ -357,6 +398,15 @@ int runZTrans(const std::string &exprSrc, const std::string &inVarName,
 int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
+    if (cmd == "pade") {
+        const std::size_t t1 = varName.find('\t');
+        const std::size_t t2 = varName.find('\t', t1 + 1);
+        const std::size_t t3 = varName.find('\t', t2 + 1);
+        return runPade(exprSrc, varName.substr(0, t1),
+                       varName.substr(t1 + 1, t2 - t1 - 1),
+                       std::atoi(varName.substr(t2 + 1, t3 - t2 - 1).c_str()),
+                       std::atoi(varName.substr(t3 + 1).c_str()));
+    }
     if (cmd == "defint" || cmd == "symsum") {
         const std::size_t t1 = varName.find('\t');
         const std::size_t t2 = varName.find('\t', t1 + 1);
@@ -582,6 +632,12 @@ void usage()
 
 int main(int argc, char **argv)
 {
+    if (argc == 7 && std::string(argv[1]) == "pade")
+        return runPade(argv[2], argv[3], argv[4], std::atoi(argv[5]),
+                       std::atoi(argv[6]));
+    if (argc == 6 && std::string(argv[1]) == "pade")
+        return runPade(argv[2], argv[3], "", std::atoi(argv[4]),
+                       std::atoi(argv[5]));
     if (argc == 6 && std::string(argv[1]) == "taylor")
         return runTaylor(argv[2], argv[3], argv[4], std::atoi(argv[5]));
     if (argc == 6 && std::string(argv[1]) == "defint")

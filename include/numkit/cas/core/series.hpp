@@ -5,6 +5,7 @@
 #include <numkit/cas/core/expr.hpp>
 
 #include <string>
+#include <vector>
 
 namespace numkit::cas {
 
@@ -97,5 +98,42 @@ struct SymSumResult
 //      for antidifference-backed sums.
 SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                     Budget *budget = nullptr);
+
+struct PadeResult
+{
+    enum class Status
+    {
+        Unevaluated,
+        ProvedSymbolic,
+    };
+
+    Status status = Status::Unevaluated;
+    Expr value;       // R_{m,n}(var) = numerator / denominator when proved
+    Expr numerator;   // P_m(var - x0) of degree <= m
+    Expr denominator; // Q_n(var - x0) of degree <= n with Q_n(x0) == 1
+    std::string reason;
+
+    bool proved() const { return status == Status::ProvedSymbolic; }
+};
+
+// [m/n] Pade rational approximant of `f` in `var` around `x0`:
+//   R_{m,n}(var) = P_m(var - x0) / Q_n(var - x0),
+// with deg(P_m) <= m, deg(Q_n) <= n, Q_n(x0) == 1, certified by exact Taylor
+// matching:
+//   taylor(c, R_{m,n} - f, var, x0, m + n, budget) == 0.
+PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n,
+                Budget *budget = nullptr);
+
+// Multivariate Taylor polynomial of `f` in `vars` around `x0s` up to total
+// degree `order` (inclusive):
+//   sum_{|alpha| <= order} (1 / alpha!) * D^alpha f(x0s) * (vars - x0s)^alpha.
+// Uses directional homogeneous scaling var_i <- x0_i + s * (var_i - x0_i)
+// expanded in s around 0 to degree `order` (canceling removable multivariate
+// singularities), falling back to exact iterated partial differentiation.
+// Returns a null Expr if `order < 0`, `vars.size() != x0s.size()`, or if `f`
+// is singular at `x0s`.
+Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
+             const std::vector<Expr> &x0s, int order,
+             Budget *budget = nullptr);
 
 } // namespace numkit::cas

@@ -642,6 +642,18 @@ bool Ctx::evalExact(
             if (!evalExact(child(e, 0), vals, nVal))
                 return false;
             const bool hasX = evalExact(child(e, 1), vals, xVal);
+            if (name == "ellipticF" || name == "ellipticEInc" ||
+                name == "ellipticE") {
+                if (nVal == zero) {
+                    out = zero;
+                    return true;
+                }
+                if (hasX && xVal == zero) {
+                    out = nVal;
+                    return true;
+                }
+                return false;
+            }
             if ((name == "besselj" || name == "besseli") && hasX &&
                 xVal == zero) {
                 if (nVal == zero) {
@@ -800,6 +812,10 @@ bool Ctx::evalExact(
         if ((name == "lgamma" || name == "loggamma") &&
             (a == one || a == Rational(std::int64_t{2}))) {
             out = zero;
+            return true;
+        }
+        if (name == "ellipticE" && a == one) {
+            out = one;
             return true;
         }
         return false;
@@ -1690,6 +1706,254 @@ bool evalOrthogonalPolyDouble(const std::string &fn, double nVal, double x,
     return false;
 }
 
+bool carlsonRF(double x, double y, double z, double &out)
+{
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+        x < 0.0 || y < 0.0 || z < 0.0)
+        return false;
+    int zeroCount = (x == 0.0 ? 1 : 0) + (y == 0.0 ? 1 : 0) + (z == 0.0 ? 1 : 0);
+    if (zeroCount > 1)
+        return false;
+
+    for (int iter = 0; iter < 36; ++iter) {
+        const double A = (x + y + z) / 3.0;
+        const double dx = std::abs(A - x);
+        const double dy = std::abs(A - y);
+        const double dz = std::abs(A - z);
+        if (std::max({dx, dy, dz}) <= 1e-6 * A)
+            break;
+        const double sx = std::sqrt(x);
+        const double sy = std::sqrt(y);
+        const double sz = std::sqrt(z);
+        const double lam = sx * sy + sy * sz + sz * sx;
+        x = 0.25 * (x + lam);
+        y = 0.25 * (y + lam);
+        z = 0.25 * (z + lam);
+    }
+    const double A = (x + y + z) / 3.0;
+    if (A <= 0.0)
+        return false;
+    const double X = (A - x) / A;
+    const double Y = (A - y) / A;
+    const double Z = -X - Y;
+    const double E2 = X * Y - Z * Z;
+    const double E3 = X * Y * Z;
+    out = (1.0 - (1.0 / 10.0) * E2 + (1.0 / 14.0) * E3 +
+           (1.0 / 24.0) * E2 * E2 - (3.0 / 44.0) * E2 * E3) /
+          std::sqrt(A);
+    return std::isfinite(out);
+}
+
+bool carlsonRD(double x, double y, double z, double &out)
+{
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+        x < 0.0 || y < 0.0 || z <= 0.0 || (x + y <= 0.0))
+        return false;
+
+    double sum = 0.0;
+    double fac = 1.0;
+    for (int iter = 0; iter < 36; ++iter) {
+        const double A = (x + y + 3.0 * z) / 5.0;
+        const double dx = std::abs(A - x);
+        const double dy = std::abs(A - y);
+        const double dz = std::abs(A - z);
+        if (std::max({dx, dy, dz}) <= 1e-6 * A)
+            break;
+        const double sx = std::sqrt(x);
+        const double sy = std::sqrt(y);
+        const double sz = std::sqrt(z);
+        const double lam = sx * sy + sy * sz + sz * sx;
+        sum += fac / (sz * (z + lam));
+        fac *= 0.25;
+        x = 0.25 * (x + lam);
+        y = 0.25 * (y + lam);
+        z = 0.25 * (z + lam);
+    }
+    const double A = (x + y + 3.0 * z) / 5.0;
+    if (A <= 0.0)
+        return false;
+    const double X = (A - x) / A;
+    const double Y = (A - y) / A;
+    const double Z = -(X + Y) / 3.0;
+    const double E2 = X * Y - 6.0 * Z * Z;
+    const double E3 = (3.0 * X * Y - 8.0 * Z * Z) * Z;
+    const double E4 = 3.0 * (X * Y - Z * Z) * Z * Z;
+    const double E5 = X * Y * Z * Z * Z;
+    const double poly =
+        1.0 - (3.0 / 14.0) * E2 + (1.0 / 6.0) * E3 +
+        (9.0 / 88.0) * E2 * E2 - (3.0 / 22.0) * E4 -
+        (9.0 / 52.0) * E2 * E3 + (3.0 / 26.0) * E5;
+    out = 3.0 * sum + fac * poly / (A * std::sqrt(A));
+    return std::isfinite(out);
+}
+
+bool carlsonRJ(double x, double y, double z, double p, double &out)
+{
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+        !std::isfinite(p) || x < 0.0 || y < 0.0 || z < 0.0 || p <= 0.0)
+        return false;
+    int zeroCount = (x == 0.0 ? 1 : 0) + (y == 0.0 ? 1 : 0) + (z == 0.0 ? 1 : 0);
+    if (zeroCount > 1)
+        return false;
+
+    double sum = 0.0;
+    double fac = 1.0;
+    for (int iter = 0; iter < 36; ++iter) {
+        const double A = (x + y + z + 2.0 * p) / 5.0;
+        const double dx = std::abs(A - x);
+        const double dy = std::abs(A - y);
+        const double dz = std::abs(A - z);
+        const double dp = std::abs(A - p);
+        if (std::max({dx, dy, dz, dp}) <= 1e-6 * A)
+            break;
+        const double sx = std::sqrt(x);
+        const double sy = std::sqrt(y);
+        const double sz = std::sqrt(z);
+        const double sp = std::sqrt(p);
+        const double lam = sx * sy + sy * sz + sz * sx;
+        const double d = (sp + sx) * (sp + sy) * (sp + sz);
+        if (d == 0.0)
+            return false;
+        const double e = ((p - x) * (p - y) * (p - z)) / (d * d);
+        if (e <= -1.0)
+            return false;
+        double rc = 1.0;
+        if (std::abs(e) <= 1e-8) {
+            rc = 1.0 - (1.0 / 3.0) * e + (1.0 / 5.0) * e * e -
+                 (1.0 / 7.0) * e * e * e;
+        } else if (e > 0.0) {
+            const double se = std::sqrt(e);
+            rc = std::atan(se) / se;
+        } else {
+            const double sme = std::sqrt(-e);
+            rc = std::atanh(sme) / sme;
+        }
+        sum += fac * rc / d;
+        fac *= 0.25;
+        x = 0.25 * (x + lam);
+        y = 0.25 * (y + lam);
+        z = 0.25 * (z + lam);
+        p = 0.25 * (p + lam);
+    }
+    const double A = (x + y + z + 2.0 * p) / 5.0;
+    if (A <= 0.0)
+        return false;
+    const double X = (A - x) / A;
+    const double Y = (A - y) / A;
+    const double Z = (A - z) / A;
+    const double P = -(X + Y + Z) / 2.0;
+    const double E2 = X * Y + X * Z + Y * Z - 3.0 * P * P;
+    const double E3 = X * Y * Z + 2.0 * E2 * P + 4.0 * P * P * P;
+    const double E4 = (2.0 * X * Y * Z + E2 * P + 3.0 * P * P * P) * P;
+    const double E5 = X * Y * Z * P * P;
+    const double poly =
+        1.0 - (3.0 / 14.0) * E2 + (1.0 / 6.0) * E3 +
+        (9.0 / 88.0) * E2 * E2 - (3.0 / 22.0) * E4 -
+        (9.0 / 52.0) * E2 * E3 + (3.0 / 26.0) * E5;
+    out = 6.0 * sum + fac * poly / (A * std::sqrt(A));
+    return std::isfinite(out);
+}
+
+bool evalElliptic1ArgDouble(const std::string &fn, double m, double &out)
+{
+    if (!std::isfinite(m) || m > 1.0)
+        return false;
+    if (fn == "ellipticK") {
+        if (m >= 1.0)
+            return false;
+        return carlsonRF(0.0, 1.0 - m, 1.0, out);
+    }
+    if (fn == "ellipticE") {
+        if (m == 1.0) {
+            out = 1.0;
+            return true;
+        }
+        double rf = 0.0, rd = 0.0;
+        if (!carlsonRF(0.0, 1.0 - m, 1.0, rf) ||
+            !carlsonRD(0.0, 1.0 - m, 1.0, rd))
+            return false;
+        out = rf - (m / 3.0) * rd;
+        return std::isfinite(out);
+    }
+    return false;
+}
+
+bool evalElliptic2ArgDouble(const std::string &fn, double a0, double a1,
+                            double &out)
+{
+    if (!std::isfinite(a0) || !std::isfinite(a1))
+        return false;
+    if (fn == "ellipticPi") {
+        const double n = a0;
+        const double m = a1;
+        if (m >= 1.0 || n >= 1.0)
+            return false;
+        double rf = 0.0;
+        if (!carlsonRF(0.0, 1.0 - m, 1.0, rf))
+            return false;
+        if (n == 0.0) {
+            out = rf;
+            return true;
+        }
+        double rj = 0.0;
+        if (!carlsonRJ(0.0, 1.0 - m, 1.0, 1.0 - n, rj))
+            return false;
+        out = rf + (n / 3.0) * rj;
+        return std::isfinite(out);
+    }
+    if (fn == "ellipticF" || fn == "ellipticEInc" || fn == "ellipticE") {
+        const double phi = a0;
+        const double m = a1;
+        if (phi == 0.0) {
+            out = 0.0;
+            return true;
+        }
+        const double k = std::floor(phi / kPiDouble + 0.5);
+        const double phi0 = phi - k * kPiDouble;
+        const double s = std::sin(phi0);
+        const double c = std::cos(phi0);
+        const double s2 = s * s;
+        const double c2 = c * c;
+        if (1.0 - m * s2 < 0.0)
+            return false;
+        double baseVal = 0.0;
+        if (s == 0.0) {
+            baseVal = 0.0;
+        } else if (fn == "ellipticF") {
+            if (1.0 - m * s2 == 0.0 && c2 == 0.0)
+                return false;
+            double rf = 0.0;
+            if (!carlsonRF(c2, 1.0 - m * s2, 1.0, rf))
+                return false;
+            baseVal = s * rf;
+        } else {
+            double rf = 0.0;
+            if (!carlsonRF(c2, 1.0 - m * s2, 1.0, rf))
+                return false;
+            double rdTerm = 0.0;
+            if (m != 0.0) {
+                double rd = 0.0;
+                if (!carlsonRD(c2, 1.0 - m * s2, 1.0, rd))
+                    return false;
+                rdTerm = (m / 3.0) * s * s2 * rd;
+            }
+            baseVal = s * rf - rdTerm;
+        }
+        if (k != 0.0) {
+            double compVal = 0.0;
+            const std::string compFn =
+                (fn == "ellipticF") ? "ellipticK" : "ellipticE";
+            if (!evalElliptic1ArgDouble(compFn, m, compVal))
+                return false;
+            out = 2.0 * k * compVal + baseVal;
+        } else {
+            out = baseVal;
+        }
+        return std::isfinite(out);
+    }
+    return false;
+}
+
 bool evalDoubleRec(
     const Ctx &c, Expr e,
     const std::vector<std::pair<std::string, double>> &vals,
@@ -1816,6 +2080,9 @@ bool evalDoubleRec(
                        fn == "chebyshevU" || fn == "hermiteH" ||
                        fn == "laguerreL") {
                 if (!evalOrthogonalPolyDouble(fn, a0, a1, res)) return false;
+            } else if (fn == "ellipticF" || fn == "ellipticEInc" ||
+                       fn == "ellipticE" || fn == "ellipticPi") {
+                if (!evalElliptic2ArgDouble(fn, a0, a1, res)) return false;
             } else {
                 return false;
             }
@@ -1946,6 +2213,8 @@ bool evalDoubleRec(
         } else if (fn == "airyAi" || fn == "airyBi" ||
                    fn == "airyAiPrime" || fn == "airyBiPrime") {
             if (!evalAiryDouble(fn, a, res)) return false;
+        } else if (fn == "ellipticK" || fn == "ellipticE") {
+            if (!evalElliptic1ArgDouble(fn, a, res)) return false;
         } else {
             return false;
         }

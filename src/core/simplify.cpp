@@ -612,6 +612,148 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 break;
             }
         }
+        if (changed)
+            continue;
+
+        // 7. Legendre's complete elliptic integral relation:
+        //    ellipticE(m)*ellipticK(1 - m) + ellipticE(1 - m)*ellipticK(m)
+        //      - ellipticK(m)*ellipticK(1 - m) -> 1/2*pi
+        //    (and for m = 1/2: 2*ellipticE(1/2)*ellipticK(1/2) - ellipticK(1/2)^2 -> 1/2*pi).
+        auto matchEllipticPair = [&](Expr t, Expr &coefOut, std::string &fn1Out,
+                                     Expr &arg1Out, std::string &fn2Out,
+                                     Expr &arg2Out) -> bool {
+            if (c.kind(t) == NodeKind::Pow &&
+                c.kind(c.child(t, 0)) == NodeKind::Func &&
+                c.childCount(c.child(t, 0)) == 1 &&
+                c.kind(c.child(t, 1)) == NodeKind::Number &&
+                c.numberValue(c.child(t, 1)) == Rational(std::int64_t{2})) {
+                const std::string &fn = c.funcName(c.child(t, 0));
+                if (fn == "ellipticK" || fn == "ellipticE") {
+                    coefOut = c.one();
+                    fn1Out = fn;
+                    arg1Out = c.child(c.child(t, 0), 0);
+                    fn2Out = fn;
+                    arg2Out = arg1Out;
+                    return true;
+                }
+            }
+            if (c.kind(t) == NodeKind::Mul) {
+                std::vector<std::pair<std::string, Expr>> ellFactors;
+                std::vector<Expr> others;
+                for (std::size_t i = 0; i < c.childCount(t); ++i) {
+                    const Expr ch = c.child(t, i);
+                    if (c.kind(ch) == NodeKind::Func && c.childCount(ch) == 1 &&
+                        (c.funcName(ch) == "ellipticK" ||
+                         c.funcName(ch) == "ellipticE")) {
+                        ellFactors.push_back({c.funcName(ch), c.child(ch, 0)});
+                    } else if (c.kind(ch) == NodeKind::Pow &&
+                               c.kind(c.child(ch, 0)) == NodeKind::Func &&
+                               c.childCount(c.child(ch, 0)) == 1 &&
+                               (c.funcName(c.child(ch, 0)) == "ellipticK" ||
+                                c.funcName(c.child(ch, 0)) == "ellipticE") &&
+                               c.kind(c.child(ch, 1)) == NodeKind::Number &&
+                               c.numberValue(c.child(ch, 1)) ==
+                                   Rational(std::int64_t{2})) {
+                        const std::string &fn = c.funcName(c.child(ch, 0));
+                        const Expr a0 = c.child(c.child(ch, 0), 0);
+                        ellFactors.push_back({fn, a0});
+                        ellFactors.push_back({fn, a0});
+                    } else {
+                        others.push_back(ch);
+                    }
+                }
+                if (ellFactors.size() == 2) {
+                    coefOut = others.empty()
+                                  ? c.one()
+                                  : (others.size() == 1 ? others[0] : c.mul(others));
+                    fn1Out = ellFactors[0].first;
+                    arg1Out = ellFactors[0].second;
+                    fn2Out = ellFactors[1].first;
+                    arg2Out = ellFactors[1].second;
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+            Expr cI, a1I, a2I;
+            std::string f1I, f2I;
+            if (!matchEllipticPair(terms[i], cI, f1I, a1I, f2I, a2I))
+                continue;
+            // Normalize so if one is E and one is K, f1I == "ellipticE" and f2I == "ellipticK".
+            if (f1I == "ellipticK" && f2I == "ellipticE") {
+                std::swap(f1I, f2I);
+                std::swap(a1I, a2I);
+            }
+            if (!(f1I == "ellipticE" && f2I == "ellipticK"))
+                continue;
+            const Expr sumArgs = simplifyRationalExpr(
+                c, c.add({a1I, a2I, c.number(std::int64_t{-1})}));
+            if (sumArgs.isNull() || !c.isZero(sumArgs))
+                continue;
+
+            const Expr halfPi = c.mul(
+                {c.number(Rational(std::int64_t{1}, BigInt(2))), c.symbol("pi")});
+            if (a1I == a2I) {
+                // Symmetric m = 1/2 case: look for -1/2 * cI * ellipticK(1/2)^2
+                for (std::size_t j = 0; j < terms.size(); ++j) {
+                    if (j == i)
+                        continue;
+                    Expr cJ, a1J, a2J;
+                    std::string f1J, f2J;
+                    if (!matchEllipticPair(terms[j], cJ, f1J, a1J, f2J, a2J))
+                        continue;
+                    if (f1J == "ellipticK" && f2J == "ellipticK" &&
+                        a1J == a1I && a2J == a1I &&
+                        c.isZero(simplifyRationalExpr(
+                            c, c.add({cI, c.mul({c.number(2), cJ})})))) {
+                        const Expr scale = c.neg(cJ);
+                        terms[i] = c.mul({scale, halfPi});
+                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                        changed = true;
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            // General m != 1 - m case: look for E(a2I)*K(a1I) with coef cI
+            // and K(a1I)*K(a2I) with coef -cI.
+            std::size_t idxEK2 = terms.size();
+            std::size_t idxKK = terms.size();
+            for (std::size_t j = 0; j < terms.size(); ++j) {
+                if (j == i)
+                    continue;
+                Expr cJ, a1J, a2J;
+                std::string f1J, f2J;
+                if (!matchEllipticPair(terms[j], cJ, f1J, a1J, f2J, a2J))
+                    continue;
+                if (f1J == "ellipticK" && f2J == "ellipticE") {
+                    std::swap(f1J, f2J);
+                    std::swap(a1J, a2J);
+                }
+                if (f1J == "ellipticE" && f2J == "ellipticK" && a1J == a2I &&
+                    a2J == a1I &&
+                    c.isZero(simplifyRationalExpr(c, c.add({cJ, c.neg(cI)})))) {
+                    idxEK2 = j;
+                } else if (f1J == "ellipticK" && f2J == "ellipticK" &&
+                           ((a1J == a1I && a2J == a2I) ||
+                            (a1J == a2I && a2J == a1I)) &&
+                           c.isZero(simplifyRationalExpr(c, c.add({cJ, cI})))) {
+                    idxKK = j;
+                }
+            }
+            if (idxEK2 < terms.size() && idxKK < terms.size()) {
+                terms[i] = c.mul({cI, halfPi});
+                const std::size_t hi = std::max(idxEK2, idxKK);
+                const std::size_t lo = std::min(idxEK2, idxKK);
+                terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(hi));
+                terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(lo));
+                changed = true;
+                break;
+            }
+        }
     }
 
     return terms.empty() ? c.zero() : c.add(terms);
@@ -1067,12 +1209,79 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             }
             return e;
         }
+
+        if (fn == "ellipticE") {
+            return simplifyFuncNode(c, c.func("ellipticEInc", nArg, xArg));
+        }
+
+        if (fn == "ellipticF" || fn == "ellipticEInc") {
+            if (c.isZero(nArg))
+                return c.zero();
+            if (c.isZero(xArg))
+                return nArg;
+            if (fn == "ellipticEInc" && xArg == c.one())
+                return simplifyFuncNode(c, c.func("sin", nArg));
+
+            Expr posPhi;
+            if (extractNegativeArg(c, nArg, posPhi))
+                return c.neg(simplifyFuncNode(c, c.func(fn, posPhi, xArg)));
+
+            // Half-integer multiples of pi: phi = (k/2)*pi -> k * ellipticK(m) / ellipticE(m)
+            const Expr piSym = c.symbol("pi");
+            Rational kPi;
+            bool isRatPi = false;
+            if (nArg == piSym) {
+                kPi = Rational(std::int64_t{1});
+                isRatPi = true;
+            } else if (c.kind(nArg) == NodeKind::Mul &&
+                       c.childCount(nArg) == 2 &&
+                       c.kind(c.child(nArg, 0)) == NodeKind::Number &&
+                       c.child(nArg, 1) == piSym) {
+                kPi = c.numberValue(c.child(nArg, 0));
+                isRatPi = true;
+            }
+            if (isRatPi) {
+                const Rational twoK = kPi * Rational(std::int64_t{2});
+                if (twoK.den() == BigInt(1)) {
+                    const std::string compFn =
+                        (fn == "ellipticF") ? "ellipticK" : "ellipticE";
+                    return c.mul({
+                        c.number(twoK),
+                        simplifyFuncNode(c, c.func(compFn, xArg))});
+                }
+            }
+            return e;
+        }
+
+        if (fn == "ellipticPi") {
+            if (c.isZero(nArg))
+                return simplifyFuncNode(c, c.func("ellipticK", xArg));
+            if (c.isZero(xArg)) {
+                return c.mul({
+                    c.number(Rational(std::int64_t{1}, BigInt(2))),
+                    c.symbol("pi"),
+                    c.pow(c.add({c.one(), c.neg(nArg)}),
+                          c.number(Rational(std::int64_t{-1}, BigInt(2))))});
+            }
+            if (nArg == xArg) {
+                return c.mul({
+                    c.pow(c.add({c.one(), c.neg(xArg)}),
+                          c.number(std::int64_t{-1})),
+                    simplifyFuncNode(c, c.func("ellipticE", xArg))});
+            }
+            return e;
+        }
         return e;
     }
 
     const Expr arg = c.child(e, 0);
 
     if (c.isZero(arg)) {
+        if (fn == "ellipticK" || fn == "ellipticE") {
+            return c.mul({
+                c.number(Rational(std::int64_t{1}, BigInt(2))),
+                c.symbol("pi")});
+        }
         if (fn == "airyAi") {
             return c.mul({
                 c.pow(c.number(3), c.number(Rational(-2, BigInt(3)))),

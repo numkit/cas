@@ -883,5 +883,45 @@ TEST(SeriesTest, GammaDigammaLaurentResidueAndPolygammaSymsum)
     EXPECT_TRUE(exprEq(c, tI0, parseExpr(c, "1 + 1/4*x^2 + 1/64*x^4")));
 }
 
+TEST(SeriesTest, EllipticIntegralMaclaurinSeries)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    const Expr tK = taylor(c, parseExpr(c, "ellipticK(x)"), x, c.zero(), 3);
+    ASSERT_FALSE(tK.isNull());
+    EXPECT_TRUE(exprEq(
+        c, tK,
+        parseExpr(c, "1/2*pi + 1/8*pi*x + 9/128*pi*x^2 + 25/512*pi*x^3")));
+
+    const Expr tE = taylor(c, parseExpr(c, "ellipticE(x)"), x, c.zero(), 3);
+    ASSERT_FALSE(tE.isNull());
+    EXPECT_TRUE(exprEq(
+        c, tE,
+        parseExpr(c, "1/2*pi - 1/8*pi*x - 3/128*pi*x^2 - 5/512*pi*x^3")));
+
+    const Expr tF =
+        taylor(c, parseExpr(c, "ellipticF(x, m)"), x, c.zero(), 5);
+    ASSERT_FALSE(tF.isNull());
+    EXPECT_TRUE(exprEq(
+        c, tF,
+        parseExpr(c, "x + 1/6*m*x^3 + (3/40*m^2 - 1/30*m)*x^5")));
+
+    const Expr tEInc =
+        taylor(c, parseExpr(c, "ellipticEInc(x, m)"), x, c.zero(), 5);
+    ASSERT_FALSE(tEInc.isNull());
+    EXPECT_TRUE(exprEq(
+        c, tEInc,
+        parseExpr(c, "x - 1/6*m*x^3 - (1/40*m^2 - 1/30*m)*x^5")));
+
+    const Expr tPi =
+        taylor(c, parseExpr(c, "ellipticPi(a*x, b*x)"), x, c.zero(), 2);
+    ASSERT_FALSE(tPi.isNull());
+    EXPECT_TRUE(exprEq(
+        c, tPi,
+        parseExpr(
+            c, "1/2*pi + (1/4*a + 1/8*b)*pi*x + (3/16*a^2 + 3/32*a*b + 9/128*b^2)*pi*x^2")));
+}
+
 } // namespace
 } // namespace numkit::cas

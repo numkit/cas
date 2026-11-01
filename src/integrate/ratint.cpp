@@ -2777,6 +2777,142 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 }
             }
         }
+
+        // 4e. Incomplete elliptic integrals of the 1st and 2nd kind:
+        //     int (1 - m*sin(a*x + b)^2)^(-1/2) dx = 1/a * ellipticF(a*x + b, m)
+        //     int (1 - m*sin(a*x + b)^2)^(1/2) dx  = 1/a * ellipticEInc(a*x + b, m)
+        //     More generally: (c0 + c1*sin(u)^2 + c2*cos(u)^2)^(+/-1/2)
+        //     = (A * (1 - m*sin(u)^2))^(+/-1/2) where A = c0 + c2, m = (c2 - c1)/(c0 + c2).
+        Expr radFac;
+        std::vector<Expr> radConstFacs;
+        bool radOnly = true;
+        for (const Expr &fac : factors) {
+            if (!mentionsVar(c, fac, var)) {
+                radConstFacs.push_back(fac);
+            } else if (radFac.isNull() && c.kind(fac) == NodeKind::Pow &&
+                       c.kind(c.child(fac, 1)) == NodeKind::Number) {
+                const Rational &re = c.numberValue(c.child(fac, 1));
+                if (re == Rational(std::int64_t{-1}, BigInt(2)) ||
+                    re == Rational(std::int64_t{1}, BigInt(2))) {
+                    radFac = fac;
+                } else {
+                    radOnly = false;
+                    break;
+                }
+            } else {
+                radOnly = false;
+                break;
+            }
+        }
+        if (radOnly && !radFac.isNull()) {
+            const Rational &re = c.numberValue(c.child(radFac, 1));
+            const bool isFirstKind =
+                (re == Rational(std::int64_t{-1}, BigInt(2)));
+            const Expr base = c.expand(c.child(radFac, 0));
+            std::vector<Expr> bTerms;
+            if (c.kind(base) == NodeKind::Add) {
+                for (std::size_t i = 0; i < c.childCount(base); ++i)
+                    bTerms.push_back(c.child(base, i));
+            } else {
+                bTerms.push_back(base);
+            }
+            Expr c0 = c.zero();
+            Expr c1 = c.zero();
+            Expr c2 = c.zero();
+            Expr uArg;
+            bool okTrigQuad = true;
+            for (const Expr &bt : bTerms) {
+                if (!mentionsVar(c, bt, var)) {
+                    c0 = c.add({c0, bt});
+                    continue;
+                }
+                std::vector<Expr> tFacs;
+                if (c.kind(bt) == NodeKind::Mul) {
+                    for (std::size_t i = 0; i < c.childCount(bt); ++i)
+                        tFacs.push_back(c.child(bt, i));
+                } else {
+                    tFacs.push_back(bt);
+                }
+                std::vector<Expr> coefFacs;
+                std::string trigFn;
+                Expr trigU;
+                bool matchedTerm = true;
+                for (const Expr &tf : tFacs) {
+                    if (!mentionsVar(c, tf, var)) {
+                        coefFacs.push_back(tf);
+                    } else if (trigFn.empty() && c.kind(tf) == NodeKind::Pow &&
+                               c.child(tf, 1) == c.number(std::int64_t{2}) &&
+                               c.kind(c.child(tf, 0)) == NodeKind::Func &&
+                               c.childCount(c.child(tf, 0)) == 1 &&
+                               (c.funcName(c.child(tf, 0)) == "sin" ||
+                                c.funcName(c.child(tf, 0)) == "cos")) {
+                        trigFn = c.funcName(c.child(tf, 0));
+                        trigU = c.child(c.child(tf, 0), 0);
+                    } else {
+                        matchedTerm = false;
+                        break;
+                    }
+                }
+                if (!matchedTerm || trigFn.empty()) {
+                    okTrigQuad = false;
+                    break;
+                }
+                if (!uArg.isNull() && !(uArg == trigU)) {
+                    okTrigQuad = false;
+                    break;
+                }
+                uArg = trigU;
+                const Expr termCoef =
+                    coefFacs.empty() ? c.one() : c.mul(coefFacs);
+                if (trigFn == "sin")
+                    c1 = c.add({c1, termCoef});
+                else
+                    c2 = c.add({c2, termCoef});
+            }
+            std::vector<Expr> uCoeffs;
+            if (okTrigQuad && !uArg.isNull() &&
+                extractPolyInVar(c, uArg, var, 1, uCoeffs) &&
+                uCoeffs.size() == 2 && !c.isZero(uCoeffs[1])) {
+                const Expr aCoeff = uCoeffs[1];
+                const Expr A = c.simplify(c.add({c0, c2}));
+                const Expr mParam = c.simplify(
+                    c.div(c.add({c2, c.neg(c1)}), A));
+                if (!c.isZero(A) && !c.isZero(mParam)) {
+                    Expr aScale;
+                    if (A == c.one()) {
+                        aScale = c.one();
+                    } else if (c.kind(A) == NodeKind::Number &&
+                               c.numberValue(A).signum() > 0) {
+                        const Expr sqA = sqrtExpr(c, c.numberValue(A));
+                        aScale = isFirstKind ? c.pow(sqA, c.number(-1)) : sqA;
+                    } else if (c.isAssumedPositive(A)) {
+                        aScale = c.pow(A, c.child(radFac, 1));
+                    }
+                    if (!aScale.isNull()) {
+                        const Expr cPart = radConstFacs.empty()
+                                               ? c.one()
+                                               : c.mul(radConstFacs);
+                        const Expr ellFn =
+                            c.func(isFirstKind ? "ellipticF" : "ellipticEInc",
+                                   uArg, mParam);
+                        const Expr F = c.simplify(c.mul({
+                            cPart, aScale, c.pow(aCoeff, c.number(-1)), ellFn}));
+                        const Expr sin2U =
+                            c.pow(c.func("sin", uArg), c.number(std::int64_t{2}));
+                        const Expr fCanon = c.mul({
+                            cPart, aScale,
+                            c.pow(c.add({c.one(), c.neg(c.mul({mParam, sin2U}))}),
+                                  c.child(radFac, 1))});
+                        if (certifySpecialIntegral(c, F, f, var) ||
+                            certifySpecialIntegral(c, F, fCanon, var)) {
+                            out.F = F;
+                            out.status = RationalIntegral::Status::ProvedSymbolic;
+                            return out;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // 5. Orthogonal polynomials with concrete integer degree: expand to polynomial and integrate.
@@ -3875,6 +4011,240 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     return false;
 }
 
+bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
+                             Expr &valOut)
+{
+    if (intervalKind != 1 && intervalKind != 3)
+        return false;
+
+    std::vector<Expr> rawFacs;
+    if (c.kind(term) == NodeKind::Mul) {
+        for (std::size_t i = 0; i < c.childCount(term); ++i)
+            rawFacs.push_back(c.child(term, i));
+    } else {
+        rawFacs.push_back(term);
+    }
+
+    std::vector<Expr> facs;
+    for (const Expr &rf : rawFacs) {
+        if (c.kind(rf) == NodeKind::Pow &&
+            c.kind(c.child(rf, 0)) == NodeKind::Mul &&
+            !mentionsVar(c, c.child(rf, 1), var)) {
+            const Expr baseMul = c.child(rf, 0);
+            const Expr expExpr = c.child(rf, 1);
+            for (std::size_t i = 0; i < c.childCount(baseMul); ++i)
+                facs.push_back(c.pow(c.child(baseMul, i), expExpr));
+            continue;
+        }
+        if (intervalKind == 1 && c.kind(rf) == NodeKind::Pow &&
+            !mentionsVar(c, c.child(rf, 1), var)) {
+            std::vector<Expr> qCoeffs;
+            if (extractPolyInVar(c, c.child(rf, 0), var, 4, qCoeffs) &&
+                qCoeffs.size() == 5 && qCoeffs[0] == c.one() &&
+                c.isZero(qCoeffs[1]) && c.isZero(qCoeffs[3])) {
+                const Expr mCand = qCoeffs[4];
+                const Expr sumCheck = c.simplify(
+                    c.add({qCoeffs[2], c.one(), mCand}));
+                if (c.isZero(sumCheck)) {
+                    const Expr x2 = c.pow(var, c.number(std::int64_t{2}));
+                    const Expr expExpr = c.child(rf, 1);
+                    facs.push_back(
+                        c.pow(c.add({c.one(), c.neg(x2)}), expExpr));
+                    facs.push_back(c.pow(
+                        c.add({c.one(), c.neg(c.mul({mCand, x2}))}), expExpr));
+                    continue;
+                }
+            }
+        }
+        facs.push_back(rf);
+    }
+
+    struct QuadBinom {
+        Expr param;
+        Rational exp;
+    };
+    std::vector<Expr> constFacs;
+    std::vector<QuadBinom> bins;
+
+    auto addBin = [&](Expr param, const Rational &re) {
+        const Expr sp = c.simplify(param);
+        for (QuadBinom &qb : bins) {
+            if (qb.param == sp) {
+                qb.exp = qb.exp + re;
+                return;
+            }
+        }
+        bins.push_back({sp, re});
+    };
+
+    for (const Expr &fac : facs) {
+        if (!mentionsVar(c, fac, var)) {
+            constFacs.push_back(fac);
+            continue;
+        }
+        Expr bBase = fac;
+        Rational bExp(1);
+        if (c.kind(fac) == NodeKind::Pow) {
+            if (c.kind(c.child(fac, 1)) != NodeKind::Number)
+                return false;
+            bBase = c.child(fac, 0);
+            bExp = c.numberValue(c.child(fac, 1));
+        }
+        if (intervalKind == 1) {
+            std::vector<Expr> pCoeffs;
+            if (!extractPolyInVar(c, bBase, var, 2, pCoeffs) ||
+                pCoeffs.size() != 3 || !(pCoeffs[0] == c.one()) ||
+                !c.isZero(pCoeffs[1]) || c.isZero(pCoeffs[2])) {
+                return false;
+            }
+            addBin(c.neg(pCoeffs[2]), bExp);
+        } else {
+            // intervalKind == 3: match 1 - param * sin(var)^2
+            const Expr expBase = c.expand(bBase);
+            if (c.kind(expBase) != NodeKind::Add || c.childCount(expBase) != 2)
+                return false;
+            Expr cTerm, sTerm;
+            for (std::size_t i = 0; i < 2; ++i) {
+                const Expr ch = c.child(expBase, i);
+                if (!mentionsVar(c, ch, var))
+                    cTerm = ch;
+                else
+                    sTerm = ch;
+            }
+            if (!(cTerm == c.one()) || sTerm.isNull())
+                return false;
+            std::vector<Expr> sFacs;
+            if (c.kind(sTerm) == NodeKind::Mul) {
+                for (std::size_t i = 0; i < c.childCount(sTerm); ++i)
+                    sFacs.push_back(c.child(sTerm, i));
+            } else {
+                sFacs.push_back(sTerm);
+            }
+            std::vector<Expr> pFacs;
+            bool hasSin2 = false;
+            for (const Expr &sf : sFacs) {
+                if (!mentionsVar(c, sf, var)) {
+                    pFacs.push_back(sf);
+                } else if (!hasSin2 && c.kind(sf) == NodeKind::Pow &&
+                           c.child(sf, 1) == c.number(std::int64_t{2}) &&
+                           c.kind(c.child(sf, 0)) == NodeKind::Func &&
+                           c.funcName(c.child(sf, 0)) == "sin" &&
+                           c.childCount(c.child(sf, 0)) == 1 &&
+                           c.child(c.child(sf, 0), 0) == var) {
+                    hasSin2 = true;
+                } else {
+                    return false;
+                }
+            }
+            if (!hasSin2)
+                return false;
+            const Expr coef = pFacs.empty() ? c.one() : c.mul(pFacs);
+            addBin(c.neg(coef), bExp);
+        }
+    }
+
+    auto validParamBelowOne = [&](Expr p, bool allowOne) -> bool {
+        double dVal = 0.0;
+        if (c.evalDouble(p, {}, dVal)) {
+            if (allowOne ? (dVal > 1.0 + 1e-12) : (dVal >= 1.0 - 1e-12))
+                return false;
+        }
+        return true;
+    };
+
+    const Expr constCoef = constFacs.empty() ? c.one() : c.mul(constFacs);
+    const Rational negHalf(std::int64_t{-1}, BigInt(2));
+    const Rational posHalf(std::int64_t{1}, BigInt(2));
+    const Rational negOne(std::int64_t{-1}, BigInt(1));
+
+    if (intervalKind == 1) {
+        int unitIdx = -1;
+        for (std::size_t i = 0; i < bins.size(); ++i) {
+            if (bins[i].param == c.one() && bins[i].exp == negHalf) {
+                unitIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        if (unitIdx < 0)
+            return false;
+        std::vector<QuadBinom> rem;
+        for (std::size_t i = 0; i < bins.size(); ++i) {
+            if (static_cast<int>(i) != unitIdx && !bins[i].exp.isZero())
+                rem.push_back(bins[i]);
+        }
+        if (rem.size() == 1) {
+            const Expr m = rem[0].param;
+            if (rem[0].exp == negHalf && validParamBelowOne(m, false)) {
+                valOut = c.simplify(c.mul({constCoef, c.func("ellipticK", m)}));
+                return true;
+            }
+            if (rem[0].exp == posHalf && validParamBelowOne(m, true)) {
+                valOut = c.simplify(c.mul({constCoef, c.func("ellipticE", m)}));
+                return true;
+            }
+        } else if (rem.size() == 2) {
+            int nIdx = -1, mIdx = -1;
+            for (int i = 0; i < 2; ++i) {
+                if (rem[static_cast<std::size_t>(i)].exp == negOne)
+                    nIdx = i;
+                else if (rem[static_cast<std::size_t>(i)].exp == negHalf)
+                    mIdx = i;
+            }
+            if (nIdx >= 0 && mIdx >= 0) {
+                const Expr n = rem[static_cast<std::size_t>(nIdx)].param;
+                const Expr m = rem[static_cast<std::size_t>(mIdx)].param;
+                if (validParamBelowOne(n, false) && validParamBelowOne(m, false)) {
+                    valOut = c.simplify(
+                        c.mul({constCoef, c.func("ellipticPi", n, m)}));
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // intervalKind == 3 ([0, pi/2]):
+    std::vector<QuadBinom> nz;
+    for (const QuadBinom &qb : bins) {
+        if (!qb.exp.isZero())
+            nz.push_back(qb);
+    }
+    if (nz.size() == 1) {
+        const Expr m = nz[0].param;
+        if (nz[0].exp == negHalf && validParamBelowOne(m, false)) {
+            valOut = c.simplify(c.mul({constCoef, c.func("ellipticK", m)}));
+            return true;
+        }
+        if (nz[0].exp == posHalf && validParamBelowOne(m, true)) {
+            valOut = c.simplify(c.mul({constCoef, c.func("ellipticE", m)}));
+            return true;
+        }
+        if (nz[0].exp == negOne && validParamBelowOne(m, false)) {
+            valOut = c.simplify(
+                c.mul({constCoef, c.func("ellipticPi", m, c.zero())}));
+            return true;
+        }
+    } else if (nz.size() == 2) {
+        int nIdx = -1, mIdx = -1;
+        for (int i = 0; i < 2; ++i) {
+            if (nz[static_cast<std::size_t>(i)].exp == negOne)
+                nIdx = i;
+            else if (nz[static_cast<std::size_t>(i)].exp == negHalf)
+                mIdx = i;
+        }
+        if (nIdx >= 0 && mIdx >= 0) {
+            const Expr n = nz[static_cast<std::size_t>(nIdx)].param;
+            const Expr m = nz[static_cast<std::size_t>(mIdx)].param;
+            if (validParamBelowOne(n, false) && validParamBelowOne(m, false)) {
+                valOut = c.simplify(
+                    c.mul({constCoef, c.func("ellipticPi", n, m)}));
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                                        bool aIsInf, int aInfDir, bool bIsInf,
                                        int bInfDir, DefiniteIntegral &out)
@@ -3924,6 +4294,14 @@ bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     if (intervalKind == 0)
         return false;
 
+    Expr ellDirect;
+    if (tryEllipticDefiniteTerm(c, f, var, intervalKind, ellDirect)) {
+        out.value = c.simplify(
+            orientSign > 0 ? ellDirect : c.neg(ellDirect));
+        out.status = DefiniteIntegral::Status::ProvedSymbolic;
+        return true;
+    }
+
     const Expr fWork = c.expand(f);
     const Expr fUse = fWork.isNull() ? f : fWork;
     std::vector<Expr> terms;
@@ -3939,7 +4317,8 @@ bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     for (const Expr &t : terms) {
         Expr val;
         bool isDiv = false;
-        if (!tryEulerGammaBetaTerm(c, t, var, intervalKind, val, isDiv)) {
+        if (!tryEulerGammaBetaTerm(c, t, var, intervalKind, val, isDiv) &&
+            !tryEllipticDefiniteTerm(c, t, var, intervalKind, val)) {
             if (isDiv && terms.size() == 1) {
                 out.status = DefiniteIntegral::Status::Divergent;
                 out.reason = "divergent Euler Gamma/Beta integral";

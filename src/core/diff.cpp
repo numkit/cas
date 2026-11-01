@@ -122,12 +122,88 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             const Expr u = child(e, 1);
             const Expr dn = diffRec(n, var, memo);
             const Expr du = diffRec(u, var, memo);
-            if (dn.isNull() || du.isNull() || !isZero(dn))
+            if (dn.isNull() || du.isNull())
                 break;
-            if (isZero(du)) {
+            if (isZero(dn) && isZero(du)) {
                 result = zero();
                 break;
             }
+            if (name == "ellipticF" || name == "ellipticEInc" ||
+                name == "ellipticE") {
+                const Expr half = number(Rational(std::int64_t{1}, BigInt(2)));
+                const Expr mHalf = number(Rational(std::int64_t{-1}, BigInt(2)));
+                const Expr sinPhi = func("sin", n);
+                const Expr cosPhi = func("cos", n);
+                const Expr radArg = add({
+                    one(),
+                    neg(mul({u, pow(sinPhi, number(std::int64_t{2}))}))});
+                const Expr fInc = func("ellipticF", n, u);
+                const Expr eInc = func("ellipticEInc", n, u);
+                std::vector<Expr> totalTerms;
+                if (!isZero(dn)) {
+                    const Expr dPhi =
+                        (name == "ellipticF") ? pow(radArg, mHalf)
+                                              : pow(radArg, half);
+                    totalTerms.push_back(mul({dPhi, dn}));
+                }
+                if (!isZero(du)) {
+                    const Expr oneMinusM = add({one(), neg(u)});
+                    Expr dM;
+                    if (name == "ellipticF") {
+                        const Expr t1 = mul({
+                            half,
+                            add({eInc, neg(mul({oneMinusM, fInc}))}),
+                            pow(u, number(std::int64_t{-1})),
+                            pow(oneMinusM, number(std::int64_t{-1}))});
+                        const Expr t2 = neg(mul({
+                            half, sinPhi, cosPhi,
+                            pow(oneMinusM, number(std::int64_t{-1})),
+                            pow(radArg, mHalf)}));
+                        dM = add({t1, t2});
+                    } else {
+                        dM = mul({
+                            half,
+                            add({eInc, neg(fInc)}),
+                            pow(u, number(std::int64_t{-1}))});
+                    }
+                    totalTerms.push_back(mul({dM, du}));
+                }
+                result = totalTerms.size() == 1 ? totalTerms[0] : add(totalTerms);
+                break;
+            }
+            if (name == "ellipticPi") {
+                const Expr half = number(Rational(std::int64_t{1}, BigInt(2)));
+                const Expr km = func("ellipticK", u);
+                const Expr em = func("ellipticE", u);
+                const Expr mMinusN = add({u, neg(n)});
+                const Expr nMinus1 = add({n, number(std::int64_t{-1})});
+                const Expr oneMinusM = add({one(), neg(u)});
+                std::vector<Expr> totalTerms;
+                if (!isZero(dn)) {
+                    const Expr numN = add({
+                        em,
+                        mul({mMinusN, pow(n, number(std::int64_t{-1})), km}),
+                        mul({add({pow(n, number(std::int64_t{2})), neg(u)}),
+                             pow(n, number(std::int64_t{-1})), e})});
+                    const Expr dN = mul({
+                        half, numN,
+                        pow(mMinusN, number(std::int64_t{-1})),
+                        pow(nMinus1, number(std::int64_t{-1}))});
+                    totalTerms.push_back(mul({dN, dn}));
+                }
+                if (!isZero(du)) {
+                    const Expr numM = add({em, neg(mul({oneMinusM, e}))});
+                    const Expr dM = mul({
+                        half, numM,
+                        pow(mMinusN, number(std::int64_t{-1})),
+                        pow(oneMinusM, number(std::int64_t{-1}))});
+                    totalTerms.push_back(mul({dM, du}));
+                }
+                result = totalTerms.size() == 1 ? totalTerms[0] : add(totalTerms);
+                break;
+            }
+            if (!isZero(dn))
+                break;
             if (name == "legendreP") {
                 if (isZero(n)) {
                     result = zero();
@@ -324,7 +400,25 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             result = mul({func("airyBiPrime", u), du});
         else if (name == "airyBiPrime")
             result = mul({u, func("airyBi", u), du});
-        else {
+        else if (name == "ellipticK") {
+            const Expr half = number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr oneMinusU = add({one(), neg(u)});
+            const Expr num = add({
+                func("ellipticE", u),
+                neg(mul({oneMinusU, e}))});
+            result = mul({
+                half, num,
+                pow(u, number(std::int64_t{-1})),
+                pow(oneMinusU, number(std::int64_t{-1})),
+                du});
+        } else if (name == "ellipticE") {
+            const Expr half = number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr num = add({e, neg(func("ellipticK", u))});
+            result = mul({
+                half, num,
+                pow(u, number(std::int64_t{-1})),
+                du});
+        } else {
             assert(!"diff: unsupported function");
             result = Expr();
         }

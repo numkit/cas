@@ -2057,4 +2057,82 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
     }
 }
 
+TEST_F(RatIntTest, EllipticIntegralsIndefiniteAndDefinite)
+{
+    // 1. Indefinite elliptic integrals of the 1st and 2nd kind
+    {
+        const auto r1 = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "(1 - m*sin(x)^2)^(-1/2)"), x);
+        ASSERT_TRUE(r1.proved()) << r1.reason;
+        EXPECT_EQ(c.simplify(r1.F),
+                  numkit::cas::parseExpr(c, "ellipticF(x, m)"));
+
+        const auto r2 = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "(1 - m*sin(2*x)^2)^(1/2)"), x);
+        ASSERT_TRUE(r2.proved()) << r2.reason;
+        EXPECT_EQ(c.simplify(r2.F),
+                  c.simplify(numkit::cas::parseExpr(c, "1/2*ellipticEInc(2*x, m)")));
+
+        // Ellipse arc-length integrand: sqrt(4*cos(x)^2 + sin(x)^2) = 2*sqrt(1 - 3/4*sin(x)^2)
+        const auto r3 = numkit::cas::integrate(
+            c, numkit::cas::parseExpr(c, "(4*cos(x)^2 + sin(x)^2)^(1/2)"), x);
+        ASSERT_TRUE(r3.proved()) << r3.reason;
+        EXPECT_EQ(c.simplify(r3.F),
+                  c.simplify(numkit::cas::parseExpr(c, "2*ellipticEInc(x, 3/4)")));
+    }
+
+    // 2. Definite trigonometric elliptic integrals on [0, pi/2] and [0, pi]
+    {
+        const Expr halfPi = numkit::cas::parseExpr(c, "1/2*pi");
+        const auto dK = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "(1 - 1/3*sin(x)^2)^(-1/2)"), x,
+            c.zero(), halfPi);
+        ASSERT_TRUE(dK.proved()) << dK.reason;
+        EXPECT_EQ(dK.value, numkit::cas::parseExpr(c, "ellipticK(1/3)"));
+
+        const auto dE = numkit::cas::definiteIntegrate(
+            c, numkit::cas::parseExpr(c, "(1 - 1/3*sin(x)^2)^(1/2)"), x,
+            c.zero(), c.symbol("pi"));
+        ASSERT_TRUE(dE.proved()) << dE.reason;
+        EXPECT_EQ(dE.value,
+                  c.simplify(numkit::cas::parseExpr(c, "2*ellipticE(1/3)")));
+
+        const auto dPi = numkit::cas::definiteIntegrate(
+            c,
+            numkit::cas::parseExpr(
+                c, "(1 - n*sin(x)^2)^(-1)*(1 - m*sin(x)^2)^(-1/2)"),
+            x, c.zero(), halfPi);
+        ASSERT_TRUE(dPi.proved()) << dPi.reason;
+        EXPECT_EQ(dPi.value, numkit::cas::parseExpr(c, "ellipticPi(n, m)"));
+    }
+
+    // 3. Jacobi algebraic complete elliptic integrals on [0, 1]
+    {
+        const auto jK = numkit::cas::definiteIntegrate(
+            c,
+            numkit::cas::parseExpr(
+                c, "(1 - x^2)^(-1/2)*(1 - m*x^2)^(-1/2)"),
+            x, c.zero(), c.one());
+        ASSERT_TRUE(jK.proved()) << jK.reason;
+        EXPECT_EQ(jK.value, numkit::cas::parseExpr(c, "ellipticK(m)"));
+
+        const auto jE = numkit::cas::definiteIntegrate(
+            c,
+            numkit::cas::parseExpr(
+                c, "(1 - x^2)^(-1/2)*(1 - m*x^2)^(1/2)"),
+            x, c.zero(), c.one());
+        ASSERT_TRUE(jE.proved()) << jE.reason;
+        EXPECT_EQ(jE.value, numkit::cas::parseExpr(c, "ellipticE(m)"));
+
+        const auto jPi = numkit::cas::definiteIntegrate(
+            c,
+            numkit::cas::parseExpr(
+                c, "(1 - n*x^2)^(-1)*(1 - x^2)^(-1/2)*(1 - m*x^2)^(-1/2)"),
+            x, c.zero(), c.one());
+        ASSERT_TRUE(jPi.proved()) << jPi.reason;
+        EXPECT_EQ(jPi.value, numkit::cas::parseExpr(c, "ellipticPi(n, m)"));
+    }
+}
+
+
 

@@ -480,5 +480,85 @@ TEST(SimplifyTest, OrthogonalPolynomialsBesselAndAiryIdentities)
     EXPECT_NEAR(aiAt0, 0.35502805388781724, 1e-14);
 }
 
+TEST(SimplifyTest, EllipticIntegralsAndLegendreIdentity)
+{
+    Ctx c;
+    const Expr m = c.symbol("m");
+    const Expr phi = c.symbol("phi");
+
+    // 1. Special values and reductions
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticK(0)")),
+              c.simplify(parseExpr(c, "1/2*pi")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticE(0)")),
+              c.simplify(parseExpr(c, "1/2*pi")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticE(1)")), c.one());
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticPi(0, m)")),
+              parseExpr(c, "ellipticK(m)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticPi(n, 0)")),
+              c.simplify(parseExpr(c, "1/2*pi*(1 - n)^(-1/2)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticPi(m, m)")),
+              c.simplify(parseExpr(c, "(1 - m)^(-1)*ellipticE(m)")));
+
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticF(0, m)")), c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticF(phi, 0)")), phi);
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticEInc(0, m)")), c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticEInc(phi, 0)")), phi);
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticF(1/2*pi, m)")),
+              parseExpr(c, "ellipticK(m)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticEInc(1/2*pi, m)")),
+              parseExpr(c, "ellipticE(m)"));
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticF(pi, m)")),
+              c.simplify(parseExpr(c, "2*ellipticK(m)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticEInc(pi, m)")),
+              c.simplify(parseExpr(c, "2*ellipticE(m)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "ellipticF(-phi, m) + ellipticF(phi, m)")),
+              c.zero());
+
+    // 2. Legendre's complete elliptic integral identity:
+    //    E(m)*K(1-m) + E(1-m)*K(m) - K(m)*K(1-m) = pi/2
+    EXPECT_EQ(c.simplify(parseExpr(
+                  c, "ellipticE(m)*ellipticK(1 - m) + ellipticE(1 - m)*ellipticK(m) - ellipticK(m)*ellipticK(1 - m)")),
+              c.simplify(parseExpr(c, "1/2*pi")));
+    EXPECT_EQ(c.simplify(parseExpr(
+                  c, "2*ellipticE(1/2)*ellipticK(1/2) - ellipticK(1/2)^2")),
+              c.simplify(parseExpr(c, "1/2*pi")));
+
+    // 3. Complete elliptic differential equations for K(m) and E(m):
+    //    m*(1-m)*K''(m) + (1-2*m)*K'(m) - 1/4*K(m) = 0
+    //    m*(1-m)*E''(m) + (1-m)*E'(m) + 1/4*E(m) = 0
+    const Expr km = parseExpr(c, "ellipticK(m)");
+    const Expr dkm = c.diff(km, m);
+    const Expr ddkm = c.diff(dkm, m);
+    EXPECT_EQ(c.simplify(c.add({
+                  c.mul({parseExpr(c, "m*(1 - m)"), ddkm}),
+                  c.mul({parseExpr(c, "1 - 2*m"), dkm}),
+                  c.mul({parseExpr(c, "-1/4"), km})})),
+              c.zero());
+
+    const Expr em = parseExpr(c, "ellipticE(m)");
+    const Expr dem = c.diff(em, m);
+    const Expr ddem = c.diff(dem, m);
+    EXPECT_EQ(c.simplify(c.add({
+                  c.mul({parseExpr(c, "m*(1 - m)"), ddem}),
+                  c.mul({parseExpr(c, "1 - m"), dem}),
+                  c.mul({parseExpr(c, "1/4"), em})})),
+              c.zero());
+
+    // 4. Carlson symmetric form IEEE-754 double evaluation
+    double kHalf = 0.0, eHalf = 0.0, piVal = 0.0, fInc = 0.0, eInc = 0.0;
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "ellipticK(1/2)"), {}, kHalf));
+    EXPECT_NEAR(kHalf, 1.8540746773013719, 1e-14);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "ellipticE(1/2)"), {}, eHalf));
+    EXPECT_NEAR(eHalf, 1.3506438810476755, 1e-14);
+    EXPECT_NEAR(2.0 * eHalf * kHalf - kHalf * kHalf,
+                3.14159265358979323846 / 2.0, 1e-14);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "ellipticPi(1/3, 1/2)"), {}, piVal));
+    EXPECT_NEAR(piVal, 2.3107949907542817, 1e-14);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "ellipticF(1/3*pi, 1/2)"), {}, fInc));
+    EXPECT_NEAR(fInc, 1.1424290580457772, 1e-14);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "ellipticEInc(1/3*pi, 1/2)"), {}, eInc));
+    EXPECT_NEAR(eInc, 0.9649514576429924, 1e-14);
+}
+
 } // namespace
 } // namespace numkit::cas

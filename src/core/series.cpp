@@ -1011,8 +1011,32 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
         }
     }
 
+    if (fn == "ellipticK" || fn == "ellipticE") {
+        if (isZeroCoeff(c, c0)) {
+            const Expr halfPi = c.mul(
+                {c.number(Rational(std::int64_t{1}, BigInt(2))), c.symbol("pi")});
+            Laurent sum = makeConstSeries(c, halfPi, L);
+            Laurent upow = u;
+            Rational dblFactRatio(1);
+            for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                dblFactRatio = dblFactRatio *
+                               Rational(BigInt(2 * k - 1), BigInt(2 * k));
+                Rational rCoef = dblFactRatio * dblFactRatio;
+                if (fn == "ellipticE") {
+                    rCoef = rCoef * Rational(BigInt(1), BigInt(1 - 2 * k));
+                }
+                const Expr coef = c.mul({c.number(rCoef), halfPi});
+                sum = addSeries(c, sum, scaleSeries(c, upow, coef));
+                if (k + 1 <= L)
+                    upow = mulSeries(c, upow, u);
+            }
+            out = sum;
+            return true;
+        }
+    }
+
     if (fn == "airyAi" || fn == "airyBi" || fn == "airyAiPrime" ||
-        fn == "airyBiPrime") {
+        fn == "airyBiPrime" || fn == "ellipticK" || fn == "ellipticE") {
         std::vector<Expr> mac(static_cast<std::size_t>(L + 1), c.zero());
         const Expr tSym = c.symbol("$t_series");
         Expr cur = c.func(fn, tSym);
@@ -1130,11 +1154,110 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
             const Expr ord = c.child(e, 0);
             const Expr uExpr = c.child(e, 1);
             if (fn == "legendreP" || fn == "chebyshevT" ||
-                fn == "chebyshevU" || fn == "hermiteH" || fn == "laguerreL") {
+                fn == "chebyshevU" || fn == "hermiteH" || fn == "laguerreL" ||
+                fn == "ellipticPi") {
                 const Expr expd = c.simplify(e);
                 if (!expd.isNull() && !(expd == e)) {
                     return computeLaurent(c, expd, var, x0, maxDeg, budget,
                                           out, positiveT);
+                }
+            }
+            if ((fn == "ellipticF" || fn == "ellipticEInc" ||
+                 fn == "ellipticE") &&
+                !mentionsSymbol(c, uExpr, var)) {
+                Laurent phiSeries;
+                if (!computeLaurent(c, ord, var, x0, maxDeg, budget, phiSeries,
+                                    positiveT) ||
+                    phiSeries.val < 0)
+                    return false;
+                const int L = maxDeg;
+                const Expr phi0 =
+                    (phiSeries.val == 0 && !phiSeries.coeffs.empty())
+                        ? phiSeries.coeffs[0]
+                        : c.zero();
+                Laurent sinPhi, factor, intPart;
+                if (!evalFuncSeries(c, "sin", phiSeries, sinPhi, positiveT))
+                    return false;
+                const Laurent sin2Phi = mulSeries(c, sinPhi, sinPhi);
+                const Laurent oneMinusMSin2 = addSeries(
+                    c, makeConstSeries(c, c.one(), L),
+                    scaleSeries(c, sin2Phi, c.neg(uExpr)));
+                const Rational expRat(
+                    fn == "ellipticF" ? std::int64_t{-1} : std::int64_t{1},
+                    BigInt(2));
+                if (!powRatSeries(c, oneMinusMSin2, expRat, L, factor))
+                    return false;
+                const Laurent dPhi = diffSeries(c, phiSeries);
+                if (!integrateSeriesZeroConst(c, mulSeries(c, dPhi, factor),
+                                              intPart))
+                    return false;
+                const std::string canonFn =
+                    (fn == "ellipticE") ? "ellipticEInc" : fn;
+                const Expr f0 =
+                    foldConst(c, c.simplify(c.func(canonFn, phi0, uExpr)));
+                out = addSeries(c, makeConstSeries(c, f0, L), intPart);
+                return true;
+            }
+            if (fn == "ellipticPi") {
+                Laurent nSeries, mSeries;
+                if (computeLaurent(c, ord, var, x0, maxDeg, budget, nSeries,
+                                   positiveT) &&
+                    computeLaurent(c, uExpr, var, x0, maxDeg, budget, mSeries,
+                                   positiveT) &&
+                    nSeries.val >= 0 && mSeries.val >= 0) {
+                    const Expr n0 =
+                        (nSeries.val == 0 && !nSeries.coeffs.empty())
+                            ? nSeries.coeffs[0]
+                            : c.zero();
+                    const Expr m0 =
+                        (mSeries.val == 0 && !mSeries.coeffs.empty())
+                            ? mSeries.coeffs[0]
+                            : c.zero();
+                    if (isZeroCoeff(c, n0) && isZeroCoeff(c, m0)) {
+                        const int L = maxDeg;
+                        std::vector<Rational> df(static_cast<std::size_t>(L + 1),
+                                                 Rational(1));
+                        for (int k = 1; k <= L; ++k) {
+                            df[static_cast<std::size_t>(k)] =
+                                df[static_cast<std::size_t>(k - 1)] *
+                                Rational(BigInt(2 * k - 1), BigInt(2 * k));
+                        }
+                        std::vector<Laurent> nPows(
+                            static_cast<std::size_t>(L + 1));
+                        std::vector<Laurent> mPows(
+                            static_cast<std::size_t>(L + 1));
+                        nPows[0] = makeConstSeries(c, c.one(), L);
+                        mPows[0] = makeConstSeries(c, c.one(), L);
+                        for (int k = 1; k <= L; ++k) {
+                            nPows[static_cast<std::size_t>(k)] = mulSeries(
+                                c, nPows[static_cast<std::size_t>(k - 1)],
+                                nSeries);
+                            mPows[static_cast<std::size_t>(k)] = mulSeries(
+                                c, mPows[static_cast<std::size_t>(k - 1)],
+                                mSeries);
+                        }
+                        const Expr halfPi = c.mul(
+                            {c.number(Rational(std::int64_t{1}, BigInt(2))),
+                             c.symbol("pi")});
+                        Laurent sum = makeConstSeries(c, c.zero(), L);
+                        for (int r = 0; r <= L; ++r) {
+                            for (int k = 0; k <= r; ++k) {
+                                const Rational rCoef =
+                                    df[static_cast<std::size_t>(r)] *
+                                    df[static_cast<std::size_t>(k)];
+                                const Expr coef =
+                                    c.mul({c.number(rCoef), halfPi});
+                                const Laurent term = mulSeries(
+                                    c,
+                                    nPows[static_cast<std::size_t>(r - k)],
+                                    mPows[static_cast<std::size_t>(k)]);
+                                sum = addSeries(c, sum,
+                                                scaleSeries(c, term, coef));
+                            }
+                        }
+                        out = sum;
+                        return true;
+                    }
                 }
             }
             Laurent argSeries;

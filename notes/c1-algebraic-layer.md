@@ -441,7 +441,7 @@
 69. ✅ (v0.9-пул, Эшелон 9) Полные и неполные эллиптические интегралы 1-го, 2-го и 3-го рода (`ellipticK`, `ellipticE`, `ellipticPi`, `ellipticF`, `ellipticEInc`) сквозь всё ядро (`diff`, `evalExact`/`evalDouble` через симметрические формы Карлсона $R_F, R_D, R_J$, `simplify` со специальными значениями и тождеством Лежандра, `taylor` и эллиптические неопределённые/определённые интегралы в `integrate`/`definiteIntegrate`).
 70. ✅ (v0.9-пул, Эшелон 9) Дзета-функция Римана $\zeta(s)$ (`zeta`), эта-функция Дирихле $\eta(s)$ (`dirichletEta`), полилогарифмы произвольного порядка $\operatorname{Li}_s(z)$ (`polylog(s, z)`) и числа/полиномы Бернулли и Эйлера (`bernoulliB`, `eulerE`) сквозь ядро (`diff`, `evalExact`/`evalDouble`, `expand`, `simplify`, `taylor`/`laurent`/`residue`), `symsum` и `integrate`/`definiteIntegrate`.
 71. ✅ (v0.9-пул, Эшелон 9) Поверхностные интегралы 1-го и 2-го рода (`surfaceIntegralScalar`, `surfaceIntegralVector`, `surfaceIntegral`) и символьная верификация классических интегральных теорем векторного анализа (`verifyGreenTheorem`, `verifyStokesTheorem`, `verifyGaussDivergenceTheorem` в `integrate/ratint`).
-72. ⬜ (v0.9-пул, Эшелон 9) Вариационное исчисление и аналитическая механика: уравнения Эйлера–Лагранжа `eulerLagrange` (включая функционалы с высшими производными и несколькими полевыми функциями), скобки Пуассона `poissonBracket`, преобразование Лежанжа к гамильтониану и канонические уравнения Гамильтона `hamiltonEquations` (`linalg/`, `ode/`).
+72. ✅ (v0.9-пул, Эшелон 9) Вариационное исчисление и аналитическая механика: уравнения Эйлера–Лагранжа и Эйлера–Пуассона `eulerLagrange` (включая функционалы с высшими производными, циклические координаты Нётер и первый интеграл энергии Бельтрами), канонические скобки Пуассона `poissonBracket`, преобразование Лежандра `legendreTransform` и уравнения Гамильтона `hamiltonEquations` (`linalg/symmatrix`).
 73. ⬜ Релизная отсечка `v0.9.0` (Эшелон 9 завершён).
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
@@ -2938,6 +2938,21 @@ MATLAB Symbolic Math Toolbox (три эшелона):
    - `verifyGreenTheorem`: проверяет тождество $\oint_{\partial D} (P\,dx + Q\,dy) \equiv \iint_D \left(\frac{\partial Q}{\partial x} - \frac{\partial P}{\partial y}\right)dA$ как для гладких замкнутых контуров (окружность, эллипс), так и для кусочно-гладких границ из нескольких сегментов `ParametricCurveSegment` (прямоугольники, многоугольники).
    - `verifyStokesTheorem`: проверяет теорему Кельвина–Стокса $\oint_{\partial S} \mathbf{F}\cdot d\mathbf{r} \equiv \iint_S (\nabla \times \mathbf{F})\cdot d\mathbf{S}$ в $\mathbb{R}^3$.
    - `verifyGaussDivergenceTheorem`: проверяет формулу Остроградского–Гаусса $\oiint_{\partial V} \mathbf{F}\cdot d\mathbf{S} \equiv \iiint_V (\nabla \cdot \mathbf{F})\,dV$ для замкнутых поверхностей и кусочно-гладких границ `ParametricSurfacePatch` (например, 6 граней куба), поддерживая как декартовы тройные интегралы, так и криволинейные замены объёмных координат `volumeMap` с автоматическим вычислением якобиана $|\det \frac{\partial(x,y,z)}{\partial(u,v,w)}|$.
+
+
+## 2026-11-01: Реализация пункта 72 — Вариационное исчисление и аналитическая механика (`eulerLagrange`, `poissonBracket`, `legendreTransform`, `hamiltonEquations`)
+
+Реализован четвёртый пакет Эшелона 9 (пул `v0.9.0`):
+
+1. **Уравнения Эйлера–Лагранжа и Эйлера–Пуассона `eulerLagrange` (`include/numkit/cas/linalg/symmatrix.hpp`, `src/linalg/symmatrix.cpp`)**:
+   - Формирует уравнения стационарности функционала $E_i(L) = \frac{\partial L}{\partial q_i} + \sum_{k \ge 1} (-1)^k \frac{d^k}{dt^k}\left(\frac{\partial L}{\partial q_i^{(k)}}\right) = 0$ для произвольного числа обобщённых координат / полевых функций $q_i(t)$ и производных произвольного порядка $q_i^{(k)}(t)$ (`VariationalField`).
+   - Вычисляет обобщённые импульсы $p_i = \frac{\partial L}{\partial \dot{q}_i}$, первый интеграл энергии Бельтрами $E = \sum_i \dot{q}_i \frac{\partial L}{\partial \dot{q}_i} - L$, проверяет автономность ($\frac{\partial L}{\partial t} = 0$) и автоматически выделяет циклические (игнорируемые) координаты Нётер ($\frac{\partial L}{\partial q_i} = 0$) и соответствующие сохраняющиеся импульсы.
+2. **Канонические скобки Пуассона `poissonBracket`**:
+   - Вычисляет $\{f, g\}_{\mathbf{q},\mathbf{p}} = \sum_{i=0}^{n-1} \left(\frac{\partial f}{\partial q_i}\frac{\partial g}{\partial p_i} - \frac{\partial f}{\partial p_i}\frac{\partial g}{\partial q_i}\right)$ в фазовом пространстве $(\mathbf{q}, \mathbf{p})$ (алгебра Ли углового момента $\mathfrak{so}(3)$, тождество Якоби).
+3. **Преобразование Лежандра `legendreTransform` и канонические уравнения Гамильтона `hamiltonEquations`**:
+   - `hamiltonEquations(c, H, q, p)` формирует систему $\dot{q}_i = \frac{\partial H}{\partial p_i}, \dot{p}_i = -\frac{\partial H}{\partial q_i}$ и сертифицирует её совпадение с эволюцией через скобки Пуассона $\{q_i, H\}, \{p_i, H\}$ и сохранение $\{H, H\} \equiv 0$.
+   - `legendreTransform(c, L, q, dq, p)` обращает отображение обобщённых импульсов $p_i = \frac{\partial L}{\partial \dot{q}_i}$ относительно скоростей $\dot{q}_i(\mathbf{q}, \mathbf{p})$ (через точный линейный решатель `linsolve` для натуральных и гироскопических систем с квадратичным лагранжианом по $\dot{\mathbf{q}}$, включая заряженную частицу в магнитном поле, и через `solveSystem` в общем алгебраическом случае), строит гамильтониан $H(t, \mathbf{q}, \mathbf{p}) = \sum_i p_i \dot{q}_i - L$ и сертифицирует инволютивность преобразования Лежандра $\frac{\partial H}{\partial p_i} \equiv \dot{q}_i(\mathbf{q}, \mathbf{p})$.
+
 
 
 

@@ -284,4 +284,90 @@ LagrangeExtremaResult lagrangeExtrema(
     const std::vector<Expr> &constraints = {},
     Budget *budget = nullptr);
 
+// Canonical Poisson bracket of two phase-space observables f(q, p) and g(q, p):
+//   {f, g}_{q, p} = sum_{i=0}^{n-1} (df/dq_i * dg/dp_i - df/dp_i * dg/dq_i)
+Expr poissonBracket(Ctx &c, Expr f, Expr g, const std::vector<Expr> &q,
+                    const std::vector<Expr> &p);
+
+inline Expr poissonBracket(Ctx &c, Expr f, Expr g, Expr q, Expr p)
+{
+    return poissonBracket(c, f, g, std::vector<Expr>{q}, std::vector<Expr>{p});
+}
+
+struct VariationalField
+{
+    Expr q;                        // generalized coordinate / field variable q_i(t)
+    std::vector<Expr> derivatives; // ordered time-derivative symbols [q'_i, q''_i, ..., q^{(k)}_i]
+};
+
+struct EulerLagrangeResult
+{
+    std::vector<Expr> equations;        // E_i(L) = dL/dq_i - d/dt(dL/dq'_i) + d^2/dt^2(dL/dq''_i) - ...
+    std::vector<Expr> momenta;          // canonical momenta p_i = dL/dq'_i
+    Expr energy;                        // Beltrami energy function E = sum_i q'_i * dL/dq'_i - L
+    std::vector<Expr> cyclicCoords;     // ignorable coordinates q_i with dL/dq_i == 0
+    std::vector<Expr> conservedMomenta; // conserved momenta p_i for each cyclic coordinate
+    bool autonomous = false;            // true when dL/dt == 0
+};
+
+// Calculus of variations: Euler-Lagrange (and higher-order Euler-Poisson)
+// equations for Lagrangian L(t, q_i, q'_i, q''_i, ...):
+//   E_i(L) = dL/dq_i + sum_{k>=1} (-1)^k d^k/dt^k (dL / dq_i^{(k)}) = 0.
+EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t,
+                                  const std::vector<VariationalField> &fields);
+
+EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t,
+                                  const std::vector<Expr> &q,
+                                  const std::vector<Expr> &dq,
+                                  const std::vector<Expr> &ddq = {});
+
+inline EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t, Expr q,
+                                         Expr dq, Expr ddq = Expr{})
+{
+    return eulerLagrange(c, L, t, std::vector<Expr>{q}, std::vector<Expr>{dq},
+                         ddq.isNull() ? std::vector<Expr>{}
+                                      : std::vector<Expr>{ddq});
+}
+
+struct HamiltonEquationsResult
+{
+    Expr H;                      // Hamiltonian H(t, q, p)
+    std::vector<Expr> dqdt;      // canonical coordinate rates q'_i =  dH/dp_i == {q_i, H}
+    std::vector<Expr> dpdt;      // canonical momentum rates   p'_i = -dH/dq_i == {p_i, H}
+    std::vector<Expr> qDotFromP; // inverse velocity map q'_i(q, p) (when obtained via Legendre transform)
+    bool certified = false;
+    std::string reason;
+};
+
+// Canonical Hamilton equations for Hamiltonian H(t, q, p):
+//   q'_i = dH/dp_i = {q_i, H},   p'_i = -dH/dq_i = {p_i, H}.
+HamiltonEquationsResult hamiltonEquations(Ctx &c, Expr H,
+                                          const std::vector<Expr> &q,
+                                          const std::vector<Expr> &p);
+
+inline HamiltonEquationsResult hamiltonEquations(Ctx &c, Expr H, Expr q, Expr p)
+{
+    return hamiltonEquations(c, H, std::vector<Expr>{q}, std::vector<Expr>{p});
+}
+
+// Legendre transformation from Lagrangian L(t, q, dq) to Hamiltonian H(t, q, p)
+// and canonical Hamilton equations:
+//   1. Solves p_i = dL/d(dq_i) for velocities dq_i(q, p).
+//   2. Evaluates H(t, q, p) = sum_i p_i * dq_i(q, p) - L(t, q, dq(q, p)).
+//   3. Computes canonical equations dqdt_i = dH/dp_i, dpdt_i = -dH/dq_i and
+//      certifies the Legendre involution dH/dp_i == dq_i(q, p).
+HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
+                                          const std::vector<Expr> &q,
+                                          const std::vector<Expr> &dq,
+                                          const std::vector<Expr> &p,
+                                          Budget *budget = nullptr);
+
+inline HamiltonEquationsResult legendreTransform(Ctx &c, Expr L, Expr q,
+                                                 Expr dq, Expr p,
+                                                 Budget *budget = nullptr)
+{
+    return legendreTransform(c, L, std::vector<Expr>{q}, std::vector<Expr>{dq},
+                             std::vector<Expr>{p}, budget);
+}
+
 } // namespace numkit::cas

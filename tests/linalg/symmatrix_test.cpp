@@ -878,5 +878,131 @@ TEST(SymMatrixTest, LagrangeExtremaUnconstrainedAndConstrained)
     }
 }
 
+TEST(SymMatrixTest, EulerLagrangePoissonBracketAndHamiltonEquations)
+{
+    Ctx c;
+    const Expr t = c.symbol("t");
+    const Expr q = c.symbol("q");
+    const Expr dq = c.symbol("dq");
+    const Expr ddq = c.symbol("ddq");
+    const Expr d3q = c.symbol("d3q");
+    const Expr d4q = c.symbol("d4q");
+    const Expr r = c.symbol("r");
+    const Expr dr = c.symbol("dr");
+    const Expr ddr = c.symbol("ddr");
+    const Expr phi = c.symbol("phi");
+    const Expr dphi = c.symbol("dphi");
+    const Expr ddphi = c.symbol("ddphi");
+
+    // 1. 1D harmonic oscillator L = 1/2*m*dq^2 - 1/2*k*q^2:
+    //    E(L) = -k*q - m*ddq == 0, E_beltrami = 1/2*m*dq^2 + 1/2*k*q^2
+    {
+        const Expr L = parseExpr(c, "1/2*m*dq^2 - 1/2*k*q^2");
+        const EulerLagrangeResult el = eulerLagrange(c, L, t, q, dq, ddq);
+        ASSERT_EQ(el.equations.size(), 1u);
+        EXPECT_TRUE(el.autonomous);
+        EXPECT_EQ(c.simplify(c.add({el.equations[0],
+                                    parseExpr(c, "m*ddq + k*q")})),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({el.energy,
+                                    c.neg(parseExpr(c, "1/2*m*dq^2 + 1/2*k*q^2"))})),
+                  c.zero());
+    }
+
+    // 2. Central-force Kepler problem in polar coordinates (r, phi):
+    //    L = 1/2*m*(dr^2 + r^2*dphi^2) + k/r
+    //    - phi is cyclic (dL/dphi == 0) with conserved angular momentum p_phi = m*r^2*dphi
+    //    - E_r(L) = m*r*dphi^2 - k/r^2 - m*ddr
+    //    - E_phi(L) = -(m*r^2*ddphi + 2*m*r*dr*dphi)
+    {
+        const Expr L =
+            parseExpr(c, "1/2*m*(dr^2 + r^2*dphi^2) + k*r^(-1)");
+        const EulerLagrangeResult el =
+            eulerLagrange(c, L, t, {r, phi}, {dr, dphi}, {ddr, ddphi});
+        ASSERT_EQ(el.equations.size(), 2u);
+        ASSERT_EQ(el.cyclicCoords.size(), 1u);
+        EXPECT_EQ(el.cyclicCoords[0], phi);
+        EXPECT_EQ(el.conservedMomenta[0],
+                  c.simplify(parseExpr(c, "m*r^2*dphi")));
+        EXPECT_EQ(c.simplify(c.add({
+                      el.equations[0],
+                      c.neg(parseExpr(c, "m*r*dphi^2 - k*r^(-2) - m*ddr"))})),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({
+                      el.equations[1],
+                      parseExpr(c, "m*r^2*ddphi + 2*m*r*dr*dphi")})),
+                  c.zero());
+    }
+
+    // 3. Higher-order Euler-Poisson equation (Euler-Bernoulli beam functional):
+    //    L = 1/2*EI*ddq^2 - f0*q -> E(L) = -f0 + EI*d4q == 0
+    {
+        const Expr L = parseExpr(c, "1/2*EI*ddq^2 - f0*q");
+        const EulerLagrangeResult el = eulerLagrange(
+            c, L, t, {VariationalField{q, {dq, ddq, d3q, d4q}}});
+        ASSERT_EQ(el.equations.size(), 1u);
+        EXPECT_EQ(c.simplify(c.add({el.equations[0],
+                                    c.neg(parseExpr(c, "EI*d4q - f0"))})),
+                  c.zero());
+    }
+
+    // 4. Canonical Poisson brackets: angular momentum SO(3) Lie algebra
+    //    {L_x, L_y} = L_z, {L_y, L_z} = L_x, {L_z, L_x} = L_y, and Jacobi identity
+    {
+        const Expr x = c.symbol("x");
+        const Expr y = c.symbol("y");
+        const Expr z = c.symbol("z");
+        const Expr px = c.symbol("px");
+        const Expr py = c.symbol("py");
+        const Expr pz = c.symbol("pz");
+        const std::vector<Expr> qVec{x, y, z};
+        const std::vector<Expr> pVec{px, py, pz};
+        const Expr Lx = parseExpr(c, "y*pz - z*py");
+        const Expr Ly = parseExpr(c, "z*px - x*pz");
+        const Expr Lz = parseExpr(c, "x*py - y*px");
+
+        EXPECT_EQ(poissonBracket(c, Lx, Ly, qVec, pVec), c.simplify(Lz));
+        EXPECT_EQ(poissonBracket(c, Ly, Lz, qVec, pVec), c.simplify(Lx));
+        EXPECT_EQ(poissonBracket(c, Lz, Lx, qVec, pVec), c.simplify(Ly));
+
+        // Jacobi identity: {{Lx, Ly}, r^2} + {{Ly, r^2}, Lx} + {{r^2, Lx}, Ly} == 0
+        const Expr r2 = parseExpr(c, "x^2 + y^2 + z^2");
+        const Expr jacobi = c.simplify(c.add({
+            poissonBracket(c, poissonBracket(c, Lx, Ly, qVec, pVec), r2, qVec, pVec),
+            poissonBracket(c, poissonBracket(c, Ly, r2, qVec, pVec), Lx, qVec, pVec),
+            poissonBracket(c, poissonBracket(c, r2, Lx, qVec, pVec), Ly, qVec, pVec)}));
+        EXPECT_EQ(jacobi, c.zero());
+    }
+
+    // 5. Legendre transformation & canonical Hamilton equations:
+    //    Charged particle in uniform magnetic field (symmetric gauge):
+    //    L = 1/2*m*(dx^2 + dy^2) + 1/2*B*(x*dy - y*dx) - 1/2*k*(x^2 + y^2)
+    {
+        const Expr x = c.symbol("x");
+        const Expr y = c.symbol("y");
+        const Expr dx = c.symbol("dx");
+        const Expr dy = c.symbol("dy");
+        const Expr px = c.symbol("px");
+        const Expr py = c.symbol("py");
+        const Expr L = parseExpr(
+            c, "1/2*m*(dx^2 + dy^2) + 1/2*B*(x*dy - y*dx) - 1/2*k*(x^2 + y^2)");
+        const HamiltonEquationsResult ham =
+            legendreTransform(c, L, {x, y}, {dx, dy}, {px, py});
+        ASSERT_TRUE(ham.certified) << ham.reason;
+        const Expr expectedH = parseExpr(
+            c, "1/2*m^(-1)*((px + 1/2*B*y)^2 + (py - 1/2*B*x)^2) + 1/2*k*(x^2 + y^2)");
+        EXPECT_EQ(c.simplify(c.expand(c.add({ham.H, c.neg(expectedH)}))),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({
+                      ham.dqdt[0],
+                      c.neg(parseExpr(c, "m^(-1)*(px + 1/2*B*y)"))})),
+                  c.zero());
+        EXPECT_EQ(c.simplify(c.add({
+                      ham.dqdt[1],
+                      c.neg(parseExpr(c, "m^(-1)*(py - 1/2*B*x)"))})),
+                  c.zero());
+    }
+}
+
 } // namespace
 } // namespace numkit::cas

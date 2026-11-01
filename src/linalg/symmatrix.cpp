@@ -2636,4 +2636,316 @@ LagrangeExtremaResult lagrangeExtrema(
     return out;
 }
 
+Expr poissonBracket(Ctx &c, Expr f, Expr g, const std::vector<Expr> &q,
+                    const std::vector<Expr> &p)
+{
+    if (f.isNull() || g.isNull() || q.empty() || q.size() != p.size())
+        return Expr{};
+    std::vector<Expr> terms;
+    terms.reserve(2 * q.size());
+    for (std::size_t i = 0; i < q.size(); ++i) {
+        if (q[i].isNull() || p[i].isNull() || c.kind(q[i]) != NodeKind::Symbol ||
+            c.kind(p[i]) != NodeKind::Symbol) {
+            return Expr{};
+        }
+        const Expr dfdq = c.diff(f, q[i]);
+        const Expr dgdp = c.diff(g, p[i]);
+        const Expr dfdp = c.diff(f, p[i]);
+        const Expr dgdq = c.diff(g, q[i]);
+        terms.push_back(c.mul({dfdq, dgdp}));
+        terms.push_back(c.neg(c.mul({dfdp, dgdq})));
+    }
+    return c.simplify(c.add(terms));
+}
+
+namespace {
+
+Expr synthesizeNextDerivSymbol(Ctx &c, Expr qSym,
+                               const std::vector<Expr> &existing,
+                               std::size_t nextOrder)
+{
+    const std::string &qName = c.symbolName(qSym);
+    if (!existing.empty() && c.kind(existing[0]) == NodeKind::Symbol) {
+        const std::string &d1 = c.symbolName(existing[0]);
+        if (d1 == "d" + qName) {
+            return c.symbol(std::string(nextOrder, 'd') + qName);
+        }
+        if (d1 == qName + "dot" && nextOrder == 2) {
+            return c.symbol(qName + "ddot");
+        }
+        if (d1 == qName + "_1") {
+            return c.symbol(qName + "_" + std::to_string(nextOrder));
+        }
+    }
+    if (nextOrder == 1)
+        return c.symbol("d" + qName);
+    if (nextOrder == 2)
+        return c.symbol("dd" + qName);
+    return c.symbol("d" + std::to_string(nextOrder) + qName);
+}
+
+Expr totalTimeDerivative(Ctx &c, Expr expr, Expr t,
+                         std::vector<VariationalField> &fields)
+{
+    if (expr.isNull())
+        return Expr{};
+    std::vector<Expr> terms;
+    if (!t.isNull() && c.kind(t) == NodeKind::Symbol) {
+        const Expr dt = c.diff(expr, t);
+        if (!c.isZero(dt))
+            terms.push_back(dt);
+    }
+    for (VariationalField &fld : fields) {
+        if (fld.q.isNull() || c.kind(fld.q) != NodeKind::Symbol)
+            continue;
+        if (fld.derivatives.empty()) {
+            fld.derivatives.push_back(
+                synthesizeNextDerivSymbol(c, fld.q, fld.derivatives, 1));
+        }
+        const Expr dq = c.diff(expr, fld.q);
+        if (!c.isZero(dq))
+            terms.push_back(c.mul({dq, fld.derivatives[0]}));
+
+        const std::size_t curLen = fld.derivatives.size();
+        for (std::size_t k = 0; k < curLen; ++k) {
+            const Expr dSym = fld.derivatives[k];
+            if (dSym.isNull() || c.kind(dSym) != NodeKind::Symbol)
+                continue;
+            const Expr ddk = c.diff(expr, dSym);
+            if (c.isZero(ddk))
+                continue;
+            if (k + 1 >= fld.derivatives.size()) {
+                fld.derivatives.push_back(synthesizeNextDerivSymbol(
+                    c, fld.q, fld.derivatives, k + 2));
+            }
+            terms.push_back(c.mul({ddk, fld.derivatives[k + 1]}));
+        }
+    }
+    return terms.empty() ? c.zero() : c.simplify(c.add(terms));
+}
+
+} // namespace
+
+EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t,
+                                  const std::vector<VariationalField> &fields)
+{
+    EulerLagrangeResult out;
+    if (L.isNull() || fields.empty())
+        return out;
+
+    std::vector<VariationalField> workFields = fields;
+    for (const VariationalField &fld : workFields) {
+        if (fld.q.isNull() || c.kind(fld.q) != NodeKind::Symbol)
+            return EulerLagrangeResult{};
+        for (Expr dSym : fld.derivatives) {
+            if (dSym.isNull() || c.kind(dSym) != NodeKind::Symbol)
+                return EulerLagrangeResult{};
+        }
+    }
+
+    if (t.isNull() || c.kind(t) != NodeKind::Symbol) {
+        out.autonomous = true;
+    } else {
+        out.autonomous = isZeroLinalg(c, c.diff(L, t), nullptr);
+    }
+
+    std::vector<Expr> energySumTerms;
+    out.equations.reserve(fields.size());
+    out.momenta.reserve(fields.size());
+
+    for (std::size_t i = 0; i < fields.size(); ++i) {
+        const VariationalField &origFld = fields[i];
+        const Expr dLdq = c.simplify(c.diff(L, origFld.q));
+        Expr p_i = c.zero();
+        if (!origFld.derivatives.empty()) {
+            p_i = c.simplify(c.diff(L, origFld.derivatives[0]));
+            energySumTerms.push_back(c.mul({origFld.derivatives[0], p_i}));
+        }
+        out.momenta.push_back(p_i);
+
+        bool dependsHigher = false;
+        for (std::size_t k = 1; k < origFld.derivatives.size(); ++k) {
+            if (!isZeroLinalg(c, c.diff(L, origFld.derivatives[k]), nullptr)) {
+                dependsHigher = true;
+                break;
+            }
+        }
+        if (isZeroLinalg(c, dLdq, nullptr) && !dependsHigher) {
+            out.cyclicCoords.push_back(origFld.q);
+            out.conservedMomenta.push_back(p_i);
+        }
+
+        std::vector<Expr> elTerms{dLdq};
+        for (std::size_t k = 0; k < origFld.derivatives.size(); ++k) {
+            Expr term = c.simplify(c.diff(L, origFld.derivatives[k]));
+            if (c.isZero(term))
+                continue;
+            for (std::size_t step = 0; step <= k; ++step)
+                term = totalTimeDerivative(c, term, t, workFields);
+            if ((k + 1) % 2 != 0)
+                term = c.neg(term);
+            elTerms.push_back(term);
+        }
+        out.equations.push_back(c.simplify(c.add(elTerms)));
+    }
+
+    energySumTerms.push_back(c.neg(L));
+    out.energy = c.simplify(c.add(energySumTerms));
+    return out;
+}
+
+EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t,
+                                  const std::vector<Expr> &q,
+                                  const std::vector<Expr> &dq,
+                                  const std::vector<Expr> &ddq)
+{
+    if (q.empty() || q.size() != dq.size() ||
+        (!ddq.empty() && ddq.size() != q.size())) {
+        return EulerLagrangeResult{};
+    }
+    std::vector<VariationalField> fields(q.size());
+    for (std::size_t i = 0; i < q.size(); ++i) {
+        fields[i].q = q[i];
+        fields[i].derivatives.push_back(dq[i]);
+        if (!ddq.empty() && !ddq[i].isNull())
+            fields[i].derivatives.push_back(ddq[i]);
+    }
+    return eulerLagrange(c, L, t, fields);
+}
+
+HamiltonEquationsResult hamiltonEquations(Ctx &c, Expr H,
+                                          const std::vector<Expr> &q,
+                                          const std::vector<Expr> &p)
+{
+    HamiltonEquationsResult out;
+    if (H.isNull() || q.empty() || q.size() != p.size()) {
+        out.reason = "invalid Hamiltonian or phase-space variables";
+        return out;
+    }
+    for (std::size_t i = 0; i < q.size(); ++i) {
+        if (q[i].isNull() || p[i].isNull() || c.kind(q[i]) != NodeKind::Symbol ||
+            c.kind(p[i]) != NodeKind::Symbol) {
+            out.reason = "phase-space coordinates and momenta must be symbols";
+            return out;
+        }
+    }
+
+    out.H = c.simplify(H);
+    out.dqdt.resize(q.size());
+    out.dpdt.resize(p.size());
+    bool allCert = true;
+    for (std::size_t i = 0; i < q.size(); ++i) {
+        out.dqdt[i] = c.simplify(c.diff(out.H, p[i]));
+        out.dpdt[i] = c.simplify(c.neg(c.diff(out.H, q[i])));
+        const Expr pbQ = poissonBracket(c, q[i], out.H, q, p);
+        const Expr pbP = poissonBracket(c, p[i], out.H, q, p);
+        if (!isZeroLinalg(c, c.add({out.dqdt[i], c.neg(pbQ)}), nullptr) ||
+            !isZeroLinalg(c, c.add({out.dpdt[i], c.neg(pbP)}), nullptr)) {
+            allCert = false;
+        }
+    }
+    const Expr pbHH = poissonBracket(c, out.H, out.H, q, p);
+    if (!isZeroLinalg(c, pbHH, nullptr))
+        allCert = false;
+    out.certified = allCert;
+    return out;
+}
+
+HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
+                                          const std::vector<Expr> &q,
+                                          const std::vector<Expr> &dq,
+                                          const std::vector<Expr> &p,
+                                          Budget *budget)
+{
+    HamiltonEquationsResult out;
+    const std::size_t n = q.size();
+    if (L.isNull() || n == 0 || dq.size() != n || p.size() != n) {
+        out.reason =
+            "legendreTransform requires non-empty matching q, dq, and p vectors";
+        return out;
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        if (q[i].isNull() || dq[i].isNull() || p[i].isNull() ||
+            c.kind(q[i]) != NodeKind::Symbol ||
+            c.kind(dq[i]) != NodeKind::Symbol ||
+            c.kind(p[i]) != NodeKind::Symbol) {
+            out.reason = "q, dq, and p entries must be symbols";
+            return out;
+        }
+    }
+
+    std::vector<Expr> pOfDq(n);
+    for (std::size_t i = 0; i < n; ++i)
+        pOfDq[i] = c.simplify(c.diff(L, dq[i]));
+
+    // 1. Fast path: affine momentum map P(q, dq) = M(q) * dq + b(q)
+    //    (covers all natural and gyroscopic mechanical systems quadratic in dq).
+    SymMatrix M = jacobian(c, pOfDq, dq);
+    bool isAffineInDq = true;
+    for (std::size_t i = 0; i < n && isAffineInDq; ++i) {
+        for (std::size_t j = 0; j < n; ++j) {
+            for (std::size_t k = 0; k < n; ++k) {
+                if (!isZeroLinalg(c, c.diff(M.at(i, j), dq[k]), budget)) {
+                    isAffineInDq = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    std::vector<Expr> dqSol;
+    if (isAffineInDq) {
+        std::vector<Expr> zeroDq(n, c.zero());
+        SymMatrix rhs(n, 1, c.zero());
+        for (std::size_t i = 0; i < n; ++i) {
+            const Expr b_i = subsSimultaneousLinalg(c, pOfDq[i], dq, zeroDq);
+            rhs.at(i, 0) = c.simplify(c.add({p[i], c.neg(b_i)}));
+        }
+        const SymMatrix solMat = linsolve(c, M, rhs, budget);
+        if (solMat.rows() == n && solMat.cols() == 1) {
+            dqSol.resize(n);
+            for (std::size_t i = 0; i < n; ++i)
+                dqSol[i] = c.simplify(solMat.at(i, 0));
+        }
+    }
+
+    // 2. Fallback: nonlinear algebraic system solveSystem(P_i(q, dq) - p_i == 0, dq).
+    if (dqSol.empty()) {
+        std::vector<Expr> eqs(n);
+        for (std::size_t i = 0; i < n; ++i)
+            eqs[i] = c.add({pOfDq[i], c.neg(p[i])});
+        const std::vector< std::vector<Expr> > sols =
+            solveSystem(c, eqs, dq, budget);
+        if (!sols.empty() && sols[0].size() == n)
+            dqSol = sols[0];
+    }
+
+    if (dqSol.size() != n) {
+        out.reason =
+            "failed to invert canonical momentum map p_i = dL/d(dq_i)";
+        return out;
+    }
+
+    std::vector<Expr> hTerms;
+    hTerms.reserve(n + 1);
+    for (std::size_t i = 0; i < n; ++i)
+        hTerms.push_back(c.mul({p[i], dqSol[i]}));
+    const Expr lSub = subsSimultaneousLinalg(c, L, dq, dqSol);
+    hTerms.push_back(c.neg(lSub));
+    const Expr H = c.simplify(c.add(hTerms));
+
+    out = hamiltonEquations(c, H, q, p);
+    out.qDotFromP = dqSol;
+
+    // Certify Legendre involution: dH/dp_i == dqSol[i].
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!isZeroLinalg(c, c.add({out.dqdt[i], c.neg(dqSol[i])}), budget)) {
+            out.certified = false;
+            out.reason = "Legendre involution certificate dH/dp_i == dq_i(q, p) failed";
+            break;
+        }
+    }
+    return out;
+}
+
 } // namespace numkit::cas

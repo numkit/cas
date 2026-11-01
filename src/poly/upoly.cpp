@@ -117,19 +117,21 @@ UPoly operator*(const Rational &k, const UPoly &a)
 void UPoly::divMod(const UPoly &a, const UPoly &b, UPoly &q, UPoly &r)
 {
     assert(!b.isZero() && "UPoly division by zero");
-    r = a;
+    const UPoly aCopy = a;
+    const UPoly bCopy = b;
+    r = aCopy;
     q = UPoly();
-    if (a.isZero() || a.deg() < b.deg())
+    if (aCopy.isZero() || aCopy.deg() < bCopy.deg())
         return;
-    q.c_.assign(static_cast<std::size_t>(a.deg() - b.deg()) + 1,
+    q.c_.assign(static_cast<std::size_t>(aCopy.deg() - bCopy.deg()) + 1,
                 Rational(std::int64_t{0}));
-    const Rational blcInv = Rational(std::int64_t{1}) / b.lc();
-    while (!r.isZero() && r.deg() >= b.deg()) {
-        const int shift = r.deg() - b.deg();
+    const Rational blcInv = Rational(std::int64_t{1}) / bCopy.lc();
+    while (!r.isZero() && r.deg() >= bCopy.deg()) {
+        const int shift = r.deg() - bCopy.deg();
         const Rational f = r.lc() * blcInv;
         q.c_[static_cast<std::size_t>(shift)] += f;
-        for (std::size_t j = 0; j < b.c_.size(); ++j)
-            r.c_[j + static_cast<std::size_t>(shift)] -= f * b.c_[j];
+        for (std::size_t j = 0; j < bCopy.c_.size(); ++j)
+            r.c_[j + static_cast<std::size_t>(shift)] -= f * bCopy.c_[j];
         r.trim();
     }
 }

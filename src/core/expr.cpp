@@ -896,6 +896,43 @@ bool Ctx::evalExact(
                 }
                 return false;
             }
+            if ((name == "stirlingS1" || name == "stirlingS2") && hasX &&
+                nVal.den() == BigInt(1) && xVal.den() == BigInt(1)) {
+                std::int64_t nInt = 0, kInt = 0;
+                if (nVal.num().fitsInt64(nInt) && xVal.num().fitsInt64(kInt) &&
+                    nInt >= 0 && nInt <= 50) {
+                    if (kInt < 0 || kInt > nInt) {
+                        out = zero;
+                        return true;
+                    }
+                    if (nInt == 0 && kInt == 0) {
+                        out = one;
+                        return true;
+                    }
+                    if (kInt == 0) {
+                        out = zero;
+                        return true;
+                    }
+                    std::vector<BigInt> row(static_cast<std::size_t>(kInt + 1),
+                                            BigInt(0));
+                    row[0] = BigInt(1);
+                    for (std::int64_t i = 1; i <= nInt; ++i) {
+                        const std::int64_t jMax = std::min(i, kInt);
+                        for (std::int64_t j = jMax; j >= 1; --j) {
+                            const auto ju = static_cast<std::size_t>(j);
+                            if (name == "stirlingS1") {
+                                row[ju] = row[ju - 1] - BigInt(i - 1) * row[ju];
+                            } else {
+                                row[ju] = BigInt(j) * row[ju] + row[ju - 1];
+                            }
+                        }
+                        row[0] = BigInt(0);
+                    }
+                    out = Rational(row[static_cast<std::size_t>(kInt)], BigInt(1));
+                    return true;
+                }
+                return false;
+            }
             if (name == "beta" && hasX && nVal.den() == BigInt(1) &&
                 xVal.den() == BigInt(1)) {
                 std::int64_t mInt = 0, kInt = 0;
@@ -2868,6 +2905,39 @@ bool evalDoubleRec(
                 if (!evalIncompleteGammaDouble(fn, a0, a1, res)) return false;
             } else if (fn == "hypergeom0F1") {
                 if (!evalHypergeom0F1Double(a0, a1, res)) return false;
+            } else if (fn == "stirlingS1" || fn == "stirlingS2") {
+                if (std::floor(a0) != a0 || std::floor(a1) != a1 ||
+                    a0 < 0.0 || a0 > 50.0)
+                    return false;
+                const auto nInt = static_cast<std::int64_t>(a0);
+                const auto kInt = static_cast<std::int64_t>(a1);
+                if (kInt < 0 || kInt > nInt) {
+                    res = 0.0;
+                } else if (nInt == 0 && kInt == 0) {
+                    res = 1.0;
+                } else if (kInt == 0) {
+                    res = 0.0;
+                } else {
+                    std::vector<BigInt> row(
+                        static_cast<std::size_t>(kInt + 1), BigInt(0));
+                    row[0] = BigInt(1);
+                    for (std::int64_t i = 1; i <= nInt; ++i) {
+                        const std::int64_t jMax = std::min(i, kInt);
+                        for (std::int64_t j = jMax; j >= 1; --j) {
+                            const auto ju = static_cast<std::size_t>(j);
+                            if (fn == "stirlingS1") {
+                                row[ju] =
+                                    row[ju - 1] - BigInt(i - 1) * row[ju];
+                            } else {
+                                row[ju] = BigInt(j) * row[ju] + row[ju - 1];
+                            }
+                        }
+                        row[0] = BigInt(0);
+                    }
+                    res = Rational(row[static_cast<std::size_t>(kInt)],
+                                   BigInt(1))
+                              .toDouble();
+                }
             } else {
                 return false;
             }

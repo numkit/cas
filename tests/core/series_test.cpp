@@ -977,5 +977,77 @@ TEST(SeriesTest, ZetaPolylogSeriesAndInfiniteSums)
     EXPECT_TRUE(exprEq(c, t2F1, parseExpr(c, "1 + 2/3*x + 1/2*x^2 + 2/5*x^3")));
 }
 
+TEST(SeriesTest, FiniteDiffStirlingAndEulerMaclaurin)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr k = c.symbol("k");
+    const Expr n = c.symbol("n");
+    const Expr h = c.symbol("h");
+
+    // 1. Forward finite differences Delta^m_h f(x) and Newton-Stirling identity:
+    //    Delta^m x^n |_{x=0} = m! * S(n, m)
+    EXPECT_EQ(c.expand(finiteDiff(c, parseExpr(c, "x^3"), x, 1)),
+              c.expand(parseExpr(c, "3*x^2 + 3*x + 1")));
+    EXPECT_EQ(c.expand(finiteDiff(c, parseExpr(c, "x^3"), x, 2)),
+              c.expand(parseExpr(c, "6*x + 6")));
+    EXPECT_EQ(c.expand(finiteDiff(c, parseExpr(c, "x^3"), x, 3)),
+              c.number(6));
+    EXPECT_EQ(c.expand(finiteDiff(c, parseExpr(c, "x^3"), x, 4)),
+              c.zero());
+    EXPECT_EQ(c.expand(finiteDiff(c, parseExpr(c, "x^2"), x, 1, h)),
+              c.expand(parseExpr(c, "2*h*x + h^2")));
+
+    for (int m = 0; m <= 5; ++m) {
+        const Expr dmAt0 = c.subs(
+            finiteDiff(c, parseExpr(c, "x^5"), x, static_cast<std::size_t>(m)),
+            x, c.zero());
+        std::int64_t factM = 1;
+        for (int j = 2; j <= m; ++j)
+            factM *= j;
+        const Expr s2 =
+            c.simplify(c.func("stirlingS2", {c.number(5), c.number(m)}));
+        EXPECT_EQ(c.simplify(dmAt0), c.simplify(c.mul({c.number(factM), s2})));
+    }
+
+    // 2. Euler-Maclaurin summation:
+    //    (a) Exact recovery of Faulhaber polynomial sums when order > deg(f)
+    const EulerMaclaurinResult emK2 =
+        eulerMaclaurin(c, parseExpr(c, "k^2"), k, c.one(), n, 4);
+    EXPECT_TRUE(emK2.exactForPoly);
+    EXPECT_EQ(c.simplify(c.add({emK2.approximation,
+                                c.neg(parseExpr(c, "1/6*n*(n + 1)*(2*n + 1)"))})),
+              c.zero());
+
+    const EulerMaclaurinResult emK3 =
+        eulerMaclaurin(c, parseExpr(c, "k^3"), k, c.one(), n, 4);
+    EXPECT_TRUE(emK3.exactForPoly);
+    EXPECT_EQ(c.simplify(c.add({emK3.approximation,
+                                c.neg(parseExpr(c, "1/4*n^2*(n + 1)^2"))})),
+              c.zero());
+
+    //    (b) Harmonic numbers H_n = sum_{k=1}^n 1/k asymptotic correction terms
+    const EulerMaclaurinResult emHarm =
+        eulerMaclaurin(c, parseExpr(c, "k^(-1)"), k, c.one(), n, 4);
+    EXPECT_FALSE(emHarm.exactForPoly);
+    EXPECT_EQ(c.simplify(emHarm.integralTerm), parseExpr(c, "log(n)"));
+    EXPECT_EQ(c.simplify(emHarm.endpointTerm),
+              c.simplify(parseExpr(c, "1/2 + 1/(2*n)")));
+    EXPECT_EQ(c.simplify(emHarm.bernoulliTerms),
+              c.simplify(parseExpr(c, "1/12*(1 - n^(-2)) - 1/120*(1 - n^(-4))")));
+
+    //    (c) Stirling's log-factorial expansion sum_{k=1}^n log(k)
+    const EulerMaclaurinResult emStirling =
+        eulerMaclaurin(c, parseExpr(c, "log(k)"), k, c.one(), n, 2);
+    EXPECT_FALSE(emStirling.exactForPoly);
+    EXPECT_EQ(c.simplify(c.add({emStirling.integralTerm,
+                                c.neg(parseExpr(c, "n*log(n) - n + 1"))})),
+              c.zero());
+    EXPECT_EQ(c.simplify(emStirling.endpointTerm),
+              c.simplify(parseExpr(c, "1/2*log(n)")));
+    EXPECT_EQ(c.simplify(emStirling.bernoulliTerms),
+              c.simplify(parseExpr(c, "1/12*(n^(-1) - 1)")));
+}
+
 } // namespace
 } // namespace numkit::cas

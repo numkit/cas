@@ -722,5 +722,101 @@ TEST(SimplifyTest, HypergeometricBetaPochhammerAndIncompleteGamma)
     EXPECT_NEAR(igVal, 2.0 * std::exp(-1.0), 1e-13);
 }
 
+TEST(SimplifyTest, StirlingNumbersAndMatlabScriptingUtilities)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr n = c.symbol("n");
+    c.assume(n, AssumeDomain::Positive);
+
+    // 1. Stirling numbers of the 1st and 2nd kind: exact values and symbolic identities
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS1(4, 2)")), c.number(11));
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS1(4, 3)")), c.number(-6));
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS1(5, 2)")), c.number(-50));
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS2(4, 2)")), c.number(7));
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS2(5, 3)")), c.number(25));
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS1(n, n)")), c.one());
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS2(n, n)")), c.one());
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS1(n, n - 1)")),
+              c.simplify(parseExpr(c, "-1/2*n*(n - 1)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS2(n, n - 1)")),
+              c.simplify(parseExpr(c, "1/2*n*(n - 1)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS2(n, 1)")), c.one());
+    EXPECT_EQ(c.simplify(parseExpr(c, "stirlingS2(n, 2)")),
+              c.simplify(parseExpr(c, "2^(n - 1) - 1")));
+
+    // Inversion identity: sum_{k=0}^4 s(4, k)*x^k == x*(x - 1)*(x - 2)*(x - 3)
+    Expr falling4 = c.zero();
+    for (int k = 0; k <= 4; ++k) {
+        falling4 = c.add({
+            falling4,
+            c.mul({c.func("stirlingS1", {c.number(4), c.number(k)}),
+                   c.pow(x, c.number(k))})});
+    }
+    EXPECT_EQ(c.expand(c.simplify(falling4)),
+              c.expand(parseExpr(c, "x*(x - 1)*(x - 2)*(x - 3)")));
+
+    // 2. numden: rational numerator/denominator extraction with GCD cancellation
+    const Expr rat1 = parseExpr(c, "1/x + 2/(x + 1)");
+    const NumDenResult nd1 = numden(c, rat1);
+    EXPECT_EQ(c.simplify(c.add({c.div(nd1.num, nd1.den), c.neg(rat1)})),
+              c.zero());
+    EXPECT_EQ(c.expand(nd1.num), c.expand(parseExpr(c, "3*x + 1")));
+    EXPECT_EQ(c.expand(nd1.den), c.expand(parseExpr(c, "x^2 + x")));
+
+    const NumDenResult ndCancel =
+        numden(c, parseExpr(c, "(x^2 - 1)/(x - 1)"));
+    EXPECT_EQ(c.expand(ndCancel.num), c.expand(parseExpr(c, "x + 1")));
+    EXPECT_EQ(ndCancel.den, c.one());
+
+    // 3. coeffs and collect in a chosen variable with symbolic coefficients
+    const Expr polyXY =
+        parseExpr(c, "(y + 1)*x^2 + 2*y*x^2 - 3*x + y*x + 5*y^2 - 1");
+    const PolyCoeffsResult cf = coeffs(c, polyXY, x);
+    ASSERT_EQ(cf.dense.size(), 3u);
+    EXPECT_EQ(c.expand(cf.dense[0]), c.expand(parseExpr(c, "5*y^2 - 1")));
+    EXPECT_EQ(c.expand(cf.dense[1]), c.expand(parseExpr(c, "y - 3")));
+    EXPECT_EQ(c.expand(cf.dense[2]), c.expand(parseExpr(c, "3*y + 1")));
+
+    const Expr col = collect(c, polyXY, x);
+    EXPECT_EQ(c.expand(c.add({col, c.neg(polyXY)})), c.zero());
+
+    // 4. partfrac: partial fraction decomposition with repeated and quadratic poles
+    const Expr pfIn1 = parseExpr(c, "(x^3 + 2*x + 1)/(x*(x - 1)^2)");
+    const Expr pfOut1 = partfrac(c, pfIn1, x);
+    EXPECT_EQ(c.simplify(c.add({pfOut1, c.neg(pfIn1)})), c.zero());
+    EXPECT_EQ(c.simplify(c.add({
+                  pfOut1,
+                  c.neg(parseExpr(
+                      c, "1 + 1/x + 1/(x - 1) + 4/(x - 1)^2"))})),
+              c.zero());
+
+    const Expr pfIn2 = parseExpr(c, "(2*x^2 + 3)/((x - 1)*(x^2 + 1))");
+    const Expr pfOut2 = partfrac(c, pfIn2, x);
+    EXPECT_EQ(c.simplify(c.add({pfOut2, c.neg(pfIn2)})), c.zero());
+    EXPECT_EQ(c.simplify(c.add({
+                  pfOut2,
+                  c.neg(parseExpr(
+                      c, "5/2/(x - 1) + (-1/2*x - 1/2)/(x^2 + 1)"))})),
+              c.zero());
+
+    // 5. LaTeX and C/C++ code generation
+    const Expr texExpr = parseExpr(c, "sin(pi*x)/x^(1/2) + 3/4*alpha^2");
+    const std::string tex = latex(c, texExpr);
+    EXPECT_NE(tex.find("\\frac"), std::string::npos);
+    EXPECT_NE(tex.find("\\sqrt{x}"), std::string::npos);
+    EXPECT_NE(tex.find("\\sin"), std::string::npos);
+    EXPECT_NE(tex.find("\\pi"), std::string::npos);
+    EXPECT_NE(tex.find("\\alpha"), std::string::npos);
+
+    const Expr cExpr = parseExpr(c, "exp(-x^2)*cos(pi*x) + x^(1/2)");
+    const std::string cc = ccode(c, cExpr);
+    EXPECT_NE(cc.find("std::exp"), std::string::npos);
+    EXPECT_NE(cc.find("std::cos"), std::string::npos);
+    EXPECT_NE(cc.find("std::sqrt"), std::string::npos);
+    EXPECT_NE(cc.find("M_PI"), std::string::npos);
+}
+
 } // namespace
 } // namespace numkit::cas

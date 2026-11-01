@@ -2,6 +2,7 @@
 
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/linalg/symmatrix.hpp>
+#include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -1807,6 +1808,32 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             }
             return e;
         }
+
+        if (fn == "stirlingS1" || fn == "stirlingS2") {
+            if (nArg == xArg)
+                return c.one();
+            const Expr diffNK = simplifyRationalExpr(
+                c, c.add({nArg, c.neg(xArg)}));
+            if (diffNK == c.one()) {
+                // s(n, n - 1) = -n*(n - 1)/2,  S(n, n - 1) = n*(n - 1)/2
+                const Expr coef = fn == "stirlingS1"
+                                      ? c.number(Rational(-1, 2))
+                                      : c.number(Rational(1, 2));
+                return c.mul({coef, nArg, c.add({nArg, c.number(-1)})});
+            }
+            if (fn == "stirlingS2" && xArg == c.one() &&
+                c.isAssumedPositive(nArg)) {
+                return c.one();
+            }
+            if (fn == "stirlingS2" && xArg == c.number(2) &&
+                c.isAssumedPositive(nArg)) {
+                // S(n, 2) = 2^(n - 1) - 1 for integer n >= 1
+                return c.add({
+                    c.pow(c.number(2), c.add({nArg, c.number(-1)})),
+                    c.number(-1)});
+            }
+            return e;
+        }
         return e;
     }
 
@@ -3036,6 +3063,635 @@ Expr simplify(Ctx &c, Expr e, Budget *budget)
 Expr Ctx::simplify(Expr e)
 {
     return numkit::cas::simplify(*this, e, nullptr);
+}
+
+// ============================================================================
+// MATLAB Symbolic Math Toolbox Scripting-Surface Utilities (Item 77)
+// ============================================================================
+
+namespace {
+
+BigInt lcmAdditiveTermDenominators(const Ctx &c, Expr e)
+{
+    if (e.isNull())
+        return BigInt(1);
+    auto termDen = [&](Expr t) -> BigInt {
+        if (c.kind(t) == NodeKind::Number)
+            return c.numberValue(t).den();
+        if (c.kind(t) == NodeKind::Mul && c.childCount(t) > 0 &&
+            c.kind(c.child(t, 0)) == NodeKind::Number) {
+            return c.numberValue(c.child(t, 0)).den();
+        }
+        return BigInt(1);
+    };
+    if (c.kind(e) == NodeKind::Add) {
+        BigInt L(1);
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const BigInt d = termDen(c.child(e, i));
+            if (d > BigInt(1)) {
+                const BigInt g = BigInt::gcd(L, d);
+                L = (L / g) * d;
+            }
+        }
+        return L;
+    }
+    return termDen(e);
+}
+
+bool hasNegativeLeadingRational(const Ctx &c, Expr e)
+{
+    if (e.isNull())
+        return false;
+    const Expr lead =
+        (c.kind(e) == NodeKind::Add && c.childCount(e) > 0)
+            ? c.child(e, c.childCount(e) - 1)
+            : e;
+    if (c.kind(lead) == NodeKind::Number)
+        return c.numberValue(lead).signum() < 0;
+    if (c.kind(lead) == NodeKind::Mul && c.childCount(lead) > 0 &&
+        c.kind(c.child(lead, 0)) == NodeKind::Number) {
+        return c.numberValue(c.child(lead, 0)).signum() < 0;
+    }
+    return false;
+}
+
+} // namespace
+
+NumDenResult numden(Ctx &c, Expr e, Budget *budget)
+{
+    if (e.isNull())
+        return {Expr(), Expr()};
+
+    Expr norm = simplifyRationalExpr(c, e);
+    if (norm.isNull())
+        norm = simplify(c, e, budget);
+
+    if (c.kind(norm) == NodeKind::Number) {
+        const Rational &rv = c.numberValue(norm);
+        return {c.number(Rational(rv.num(), BigInt(1))),
+                c.number(Rational(rv.den(), BigInt(1)))};
+    }
+
+    std::vector<Expr> numFactors;
+    std::vector<Expr> denFactors;
+
+    auto classifyFactor = [&](Expr f) {
+        if (c.kind(f) == NodeKind::Number) {
+            const Rational &rv = c.numberValue(f);
+            if (!(rv.num() == BigInt(1)))
+                numFactors.push_back(c.number(Rational(rv.num(), BigInt(1))));
+            if (rv.den() > BigInt(1))
+                denFactors.push_back(c.number(Rational(rv.den(), BigInt(1))));
+            return;
+        }
+        if (c.kind(f) == NodeKind::Pow &&
+            c.kind(c.child(f, 1)) == NodeKind::Number) {
+            const Rational &re = c.numberValue(c.child(f, 1));
+            if (re.signum() < 0) {
+                denFactors.push_back(c.pow(c.child(f, 0), c.number(-re)));
+                return;
+            }
+        }
+        numFactors.push_back(f);
+    };
+
+    if (c.kind(norm) == NodeKind::Mul) {
+        for (std::size_t i = 0; i < c.childCount(norm); ++i)
+            classifyFactor(c.child(norm, i));
+    } else {
+        classifyFactor(norm);
+    }
+
+    Expr num = numFactors.empty()
+                   ? c.one()
+                   : (numFactors.size() == 1 ? numFactors[0] : c.mul(numFactors));
+    Expr den = denFactors.empty()
+                   ? c.one()
+                   : (denFactors.size() == 1 ? denFactors[0] : c.mul(denFactors));
+
+    const Expr expNum = c.expand(num);
+    const Expr expDen = c.expand(den);
+    const BigInt lNum = lcmAdditiveTermDenominators(c, expNum);
+    const BigInt lDen = lcmAdditiveTermDenominators(c, expDen);
+    const BigInt gL = BigInt::gcd(lNum, lDen);
+    const BigInt lAll = (lNum / gL) * lDen;
+
+    if (lAll > BigInt(1)) {
+        const Expr scale = c.number(Rational(lAll, BigInt(1)));
+        num = c.expand(c.mul({scale, expNum}));
+        den = c.expand(c.mul({scale, expDen}));
+    }
+
+    if (hasNegativeLeadingRational(c, den)) {
+        num = c.expand(c.neg(num));
+        den = c.expand(c.neg(den));
+    }
+
+    return {num, den};
+}
+
+PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
+{
+    PolyCoeffsResult res;
+    if (e.isNull() || var.isNull())
+        return res;
+
+    const Expr expd = c.expand(e);
+    if (c.isZero(expd))
+        return res;
+
+    std::vector<Expr> terms;
+    if (c.kind(expd) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+            terms.push_back(c.child(expd, i));
+    } else {
+        terms.push_back(expd);
+    }
+
+    std::int64_t maxDeg = 0;
+    std::vector<std::pair<std::int64_t, Expr>> buckets;
+    buckets.reserve(terms.size());
+
+    for (const Expr &t : terms) {
+        if (c.isZero(t))
+            continue;
+        std::int64_t deg = 0;
+        std::vector<Expr> rest;
+        auto splitFactor = [&](Expr f) {
+            if (f == var) {
+                deg += 1;
+                return;
+            }
+            if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == var &&
+                c.kind(c.child(f, 1)) == NodeKind::Number) {
+                const Rational &rv = c.numberValue(c.child(f, 1));
+                std::int64_t k = 0;
+                if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 0 &&
+                    k <= 256) {
+                    deg += k;
+                    return;
+                }
+            }
+            rest.push_back(f);
+        };
+        if (c.kind(t) == NodeKind::Mul) {
+            for (std::size_t i = 0; i < c.childCount(t); ++i)
+                splitFactor(c.child(t, i));
+        } else {
+            splitFactor(t);
+        }
+        if (deg > maxDeg)
+            maxDeg = deg;
+        const Expr coef =
+            rest.empty() ? c.one() : (rest.size() == 1 ? rest[0] : c.mul(rest));
+        buckets.emplace_back(deg, coef);
+    }
+
+    res.dense.assign(static_cast<std::size_t>(maxDeg + 1), c.zero());
+    for (const auto &pr : buckets) {
+        const std::size_t idx = static_cast<std::size_t>(pr.first);
+        res.dense[idx] = c.add({res.dense[idx], pr.second});
+    }
+
+    for (std::size_t k = 0; k < res.dense.size(); ++k) {
+        res.dense[k] = simplify(c, res.dense[k]);
+        if (!c.isZero(res.dense[k])) {
+            res.coefficients.push_back(res.dense[k]);
+            const Expr monom =
+                (k == 0)
+                    ? c.one()
+                    : (k == 1
+                           ? var
+                           : c.pow(var, c.number(static_cast<std::int64_t>(k))));
+            res.terms.push_back(monom);
+        }
+    }
+
+    while (!res.dense.empty() && c.isZero(res.dense.back()))
+        res.dense.pop_back();
+
+    return res;
+}
+
+Expr collect(Ctx &c, Expr e, Expr var)
+{
+    if (e.isNull() || var.isNull())
+        return e;
+    const PolyCoeffsResult cr = coeffs(c, e, var);
+    if (cr.coefficients.empty())
+        return c.zero();
+
+    std::vector<Expr> addTerms;
+    addTerms.reserve(cr.coefficients.size());
+    for (std::size_t i = 0; i < cr.coefficients.size(); ++i) {
+        addTerms.push_back(c.mul({cr.coefficients[i], cr.terms[i]}));
+    }
+    return addTerms.size() == 1 ? addTerms[0] : c.add(addTerms);
+}
+
+Expr partfrac(Ctx &c, Expr e, Expr var, Budget *budget)
+{
+    if (e.isNull() || var.isNull())
+        return e;
+
+    UPoly N, D;
+    if (!toRational(c, e, var, N, D) || D.isZero())
+        return simplify(c, e, budget);
+
+    if (N.isZero())
+        return c.zero();
+
+    if (D.deg() <= 0)
+        return toExpr(c, N * (Rational(1) / D.lc()), var);
+
+    const Rational lcD = D.lc();
+    UPoly nNorm = N * (Rational(1) / lcD);
+    UPoly dMonic = D;
+    dMonic.makeMonic();
+
+    const UPoly g = UPoly::gcd(nNorm, dMonic);
+    if (g.deg() > 0) {
+        UPoly remG;
+        UPoly::divMod(nNorm, g, nNorm, remG);
+        UPoly::divMod(dMonic, g, dMonic, remG);
+        dMonic.makeMonic();
+    }
+
+    if (dMonic.deg() <= 0)
+        return toExpr(c, nNorm, var);
+
+    UPoly quot, rem;
+    UPoly::divMod(nNorm, dMonic, quot, rem);
+
+    std::vector<Expr> pfTerms;
+    if (!quot.isZero())
+        pfTerms.push_back(toExpr(c, quot, var));
+    if (rem.isZero())
+        return pfTerms.empty() ? c.zero() : pfTerms[0];
+
+    const std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+    if (irreds.empty()) {
+        pfTerms.push_back(
+            c.div(toExpr(c, rem, var), toExpr(c, dMonic, var)));
+        return pfTerms.size() == 1 ? pfTerms[0] : c.add(pfTerms);
+    }
+
+    struct IrredGroup {
+        UPoly P;
+        std::uint64_t mult = 0;
+        UPoly Pm;
+    };
+    std::vector<IrredGroup> groups;
+    for (const UPoly &f : irreds) {
+        if (!groups.empty() && groups.back().P == f) {
+            groups.back().mult += 1;
+            groups.back().Pm = groups.back().Pm * f;
+        } else {
+            groups.push_back({f, 1, f});
+        }
+    }
+
+    for (std::size_t i = 0; i < groups.size(); ++i) {
+        UPoly Qi(Rational(1));
+        for (std::size_t j = 0; j < groups.size(); ++j) {
+            if (j != i)
+                Qi = Qi * groups[j].Pm;
+        }
+        const UPoly Ui = (groups.size() == 1)
+                             ? UPoly(Rational(1))
+                             : UPoly::invMod(Qi, groups[i].Pm);
+        UPoly Ai = (rem * Ui) % groups[i].Pm;
+
+        std::vector<std::pair<std::uint64_t, UPoly>> padicNumerators;
+        for (std::uint64_t k = groups[i].mult; k >= 1; --k) {
+            UPoly qk, rk;
+            UPoly::divMod(Ai, groups[i].P, qk, rk);
+            if (!rk.isZero())
+                padicNumerators.emplace_back(k, rk);
+            Ai = qk;
+            if (Ai.isZero())
+                break;
+        }
+
+        const Expr baseExpr = toExpr(c, groups[i].P, var);
+        for (auto it = padicNumerators.rbegin(); it != padicNumerators.rend();
+             ++it) {
+            const Expr numExpr = toExpr(c, it->second, var);
+            const Expr denPow = c.pow(
+                baseExpr, c.number(-static_cast<std::int64_t>(it->first)));
+            pfTerms.push_back(c.mul({numExpr, denPow}));
+        }
+    }
+
+    if (pfTerms.empty())
+        return c.zero();
+    return pfTerms.size() == 1 ? pfTerms[0] : c.add(pfTerms);
+}
+
+namespace {
+
+std::string symbolToLatex(const std::string &name)
+{
+    static const std::pair<const char *, const char *> kGreek[] = {
+        {"pi", "\\pi"},         {"alpha", "\\alpha"},   {"beta", "\\beta"},
+        {"gamma", "\\gamma"},   {"delta", "\\delta"},   {"epsilon", "\\epsilon"},
+        {"zeta", "\\zeta"},     {"eta", "\\eta"},       {"theta", "\\theta"},
+        {"iota", "\\iota"},     {"kappa", "\\kappa"},   {"lambda", "\\lambda"},
+        {"mu", "\\mu"},         {"nu", "\\nu"},         {"xi", "\\xi"},
+        {"rho", "\\rho"},       {"sigma", "\\sigma"},   {"tau", "\\tau"},
+        {"upsilon", "\\upsilon"}, {"phi", "\\phi"},     {"chi", "\\chi"},
+        {"psi", "\\psi"},       {"omega", "\\omega"},   {"Gamma", "\\Gamma"},
+        {"Delta", "\\Delta"},   {"Theta", "\\Theta"},   {"Lambda", "\\Lambda"},
+        {"Xi", "\\Xi"},         {"Pi", "\\Pi"},         {"Sigma", "\\Sigma"},
+        {"Phi", "\\Phi"},       {"Psi", "\\Psi"},       {"Omega", "\\Omega"},
+        {"inf", "\\infty"},     {"oo", "\\infty"},      {"euler_gamma", "\\gamma"},
+    };
+    for (const auto &pr : kGreek) {
+        if (name == pr.first)
+            return pr.second;
+    }
+    return name;
+}
+
+bool needsLatexParensInPowBase(const Ctx &c, Expr b)
+{
+    const NodeKind k = c.kind(b);
+    if (k == NodeKind::Add || k == NodeKind::Mul || k == NodeKind::Pow)
+        return true;
+    if (k == NodeKind::Number) {
+        const Rational &rv = c.numberValue(b);
+        return rv.signum() < 0 || rv.den() > BigInt(1);
+    }
+    return false;
+}
+
+} // namespace
+
+std::string toLatex(const Ctx &c, Expr e)
+{
+    if (e.isNull())
+        return "";
+
+    switch (c.kind(e)) {
+    case NodeKind::Number: {
+        const Rational &rv = c.numberValue(e);
+        if (rv.den() == BigInt(1))
+            return rv.num().toString();
+        if (rv.signum() < 0) {
+            return "-\\frac{" + (-rv.num()).toString() + "}{" +
+                   rv.den().toString() + "}";
+        }
+        return "\\frac{" + rv.num().toString() + "}{" + rv.den().toString() +
+               "}";
+    }
+    case NodeKind::Symbol:
+        return symbolToLatex(c.symbolName(e));
+    case NodeKind::RootOf:
+        return "\\operatorname{RootOf}";
+    case NodeKind::Add: {
+        std::string out;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const std::string t = toLatex(c, c.child(e, i));
+            if (i == 0) {
+                out += t;
+            } else if (!t.empty() && t[0] == '-') {
+                out += " - " + t.substr(1);
+            } else {
+                out += " + " + t;
+            }
+        }
+        return out;
+    }
+    case NodeKind::Mul: {
+        int sign = 1;
+        std::vector<std::pair<std::string, bool>> numFacs;
+        std::vector<std::pair<std::string, bool>> denFacs;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const Expr f = c.child(e, i);
+            if (c.kind(f) == NodeKind::Number) {
+                const Rational &rv = c.numberValue(f);
+                if (rv.signum() < 0)
+                    sign = -sign;
+                const BigInt absNum = rv.num().abs();
+                if (absNum != BigInt(1))
+                    numFacs.emplace_back(absNum.toString(), false);
+                if (rv.den() > BigInt(1))
+                    denFacs.emplace_back(rv.den().toString(), false);
+                continue;
+            }
+            if (c.kind(f) == NodeKind::Pow &&
+                c.kind(c.child(f, 1)) == NodeKind::Number &&
+                c.numberValue(c.child(f, 1)).signum() < 0) {
+                const Expr b = c.child(f, 0);
+                const Rational posRe = -c.numberValue(c.child(f, 1));
+                std::string bStr = toLatex(c, b);
+                if (posRe == Rational(1, 2)) {
+                    denFacs.emplace_back("\\sqrt{" + bStr + "}", false);
+                } else if (posRe == Rational(1, 1)) {
+                    denFacs.emplace_back(bStr, c.kind(b) == NodeKind::Add);
+                } else {
+                    if (needsLatexParensInPowBase(c, b))
+                        bStr = "\\left(" + bStr + "\\right)";
+                    const std::string expStr =
+                        posRe.den() == BigInt(1)
+                            ? posRe.num().toString()
+                            : "\\frac{" + posRe.num().toString() + "}{" +
+                                  posRe.den().toString() + "}";
+                    denFacs.emplace_back(bStr + "^{" + expStr + "}", false);
+                }
+                continue;
+            }
+            numFacs.emplace_back(toLatex(c, f), c.kind(f) == NodeKind::Add);
+        }
+
+        auto joinFactors =
+            [&](const std::vector<std::pair<std::string, bool>> &facs)
+            -> std::string {
+            if (facs.empty())
+                return "1";
+            std::string s;
+            for (std::size_t i = 0; i < facs.size(); ++i) {
+                if (i > 0)
+                    s += " ";
+                if (facs.size() > 1 && facs[i].second) {
+                    s += "\\left(" + facs[i].first + "\\right)";
+                } else {
+                    s += facs[i].first;
+                }
+            }
+            return s;
+        };
+
+        const std::string numStr = joinFactors(numFacs);
+        if (!denFacs.empty()) {
+            const std::string denStr = joinFactors(denFacs);
+            return (sign < 0 ? std::string("-") : std::string("")) + "\\frac{" +
+                   numStr + "}{" + denStr + "}";
+        }
+        return (sign < 0 ? std::string("-") : std::string("")) + numStr;
+    }
+    case NodeKind::Pow: {
+        const Expr b = c.child(e, 0);
+        const Expr ex = c.child(e, 1);
+        if (c.kind(ex) == NodeKind::Number) {
+            const Rational &re = c.numberValue(ex);
+            if (re == Rational(1, 2))
+                return "\\sqrt{" + toLatex(c, b) + "}";
+            if (re == Rational(-1, 2))
+                return "\\frac{1}{\\sqrt{" + toLatex(c, b) + "}}";
+            if (re.signum() < 0) {
+                const Rational posRe = -re;
+                std::string bStr = toLatex(c, b);
+                if (posRe == Rational(1, 1))
+                    return "\\frac{1}{" + bStr + "}";
+                if (needsLatexParensInPowBase(c, b))
+                    bStr = "\\left(" + bStr + "\\right)";
+                const std::string expStr =
+                    posRe.den() == BigInt(1)
+                        ? posRe.num().toString()
+                        : "\\frac{" + posRe.num().toString() + "}{" +
+                              posRe.den().toString() + "}";
+                return "\\frac{1}{" + bStr + "^{" + expStr + "}}";
+            }
+        }
+        std::string bStr = toLatex(c, b);
+        if (needsLatexParensInPowBase(c, b))
+            bStr = "\\left(" + bStr + "\\right)";
+        return bStr + "^{" + toLatex(c, ex) + "}";
+    }
+    case NodeKind::Func: {
+        const std::string &fn = c.funcName(e);
+        if (c.childCount(e) == 1) {
+            const std::string a0 = toLatex(c, c.child(e, 0));
+            if (fn == "sqrt")
+                return "\\sqrt{" + a0 + "}";
+            if (fn == "abs")
+                return "\\left|" + a0 + "\\right|";
+            if (fn == "gamma")
+                return "\\Gamma\\left(" + a0 + "\\right)";
+            if (fn == "zeta")
+                return "\\zeta\\left(" + a0 + "\\right)";
+            if (fn == "asin")
+                return "\\arcsin\\left(" + a0 + "\\right)";
+            if (fn == "acos")
+                return "\\arccos\\left(" + a0 + "\\right)";
+            if (fn == "atan")
+                return "\\arctan\\left(" + a0 + "\\right)";
+            if (fn == "sin" || fn == "cos" || fn == "tan" || fn == "cot" ||
+                fn == "sec" || fn == "csc" || fn == "sinh" || fn == "cosh" ||
+                fn == "tanh" || fn == "coth" || fn == "log" || fn == "ln" ||
+                fn == "exp") {
+                return "\\" + fn + "\\left(" + a0 + "\\right)";
+            }
+        }
+        std::string args;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            if (i > 0)
+                args += ", ";
+            args += toLatex(c, c.child(e, i));
+        }
+        return "\\operatorname{" + fn + "}\\left(" + args + "\\right)";
+    }
+    }
+    return "";
+}
+
+namespace {
+
+std::string toCCodeRec(const Ctx &c, Expr e, int parentPrec)
+{
+    if (e.isNull())
+        return "0.0";
+
+    switch (c.kind(e)) {
+    case NodeKind::Number: {
+        const Rational &rv = c.numberValue(e);
+        if (rv.den() == BigInt(1)) {
+            const std::string s = rv.num().toString() + ".0";
+            return (rv.signum() < 0 && parentPrec > 1) ? "(" + s + ")" : s;
+        }
+        return "(" + rv.num().toString() + ".0 / " + rv.den().toString() + ".0)";
+    }
+    case NodeKind::Symbol: {
+        const std::string &name = c.symbolName(e);
+        if (name == "pi")
+            return "M_PI";
+        if (name == "e")
+            return "M_E";
+        return name;
+    }
+    case NodeKind::RootOf:
+        return "0.0";
+    case NodeKind::Add: {
+        std::string out;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const std::string t = toCCodeRec(c, c.child(e, i), 1);
+            if (i == 0) {
+                out += t;
+            } else if (!t.empty() && t[0] == '-') {
+                out += " - " + t.substr(1);
+            } else {
+                out += " + " + t;
+            }
+        }
+        return parentPrec > 1 ? "(" + out + ")" : out;
+    }
+    case NodeKind::Mul: {
+        std::string out;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            if (i > 0)
+                out += " * ";
+            out += toCCodeRec(c, c.child(e, i), 2);
+        }
+        return parentPrec > 2 ? "(" + out + ")" : out;
+    }
+    case NodeKind::Pow: {
+        const Expr b = c.child(e, 0);
+        const Expr ex = c.child(e, 1);
+        if (c.kind(ex) == NodeKind::Number) {
+            const Rational &re = c.numberValue(ex);
+            if (re == Rational(1, 2))
+                return "std::sqrt(" + toCCodeRec(c, b, 0) + ")";
+            if (re == Rational(-1, 2))
+                return "(1.0 / std::sqrt(" + toCCodeRec(c, b, 0) + "))";
+            if (re == Rational(-1, 1))
+                return "(1.0 / " + toCCodeRec(c, b, 3) + ")";
+        }
+        return "std::pow(" + toCCodeRec(c, b, 0) + ", " +
+               toCCodeRec(c, ex, 0) + ")";
+    }
+    case NodeKind::Func: {
+        const std::string &fn = c.funcName(e);
+        std::string args;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            if (i > 0)
+                args += ", ";
+            args += toCCodeRec(c, c.child(e, i), 0);
+        }
+        if (fn == "sin" || fn == "cos" || fn == "tan" || fn == "asin" ||
+            fn == "acos" || fn == "atan" || fn == "sinh" || fn == "cosh" ||
+            fn == "tanh" || fn == "asinh" || fn == "acosh" || fn == "atanh" ||
+            fn == "exp" || fn == "log" || fn == "sqrt" || fn == "erf" ||
+            fn == "erfc" || fn == "tgamma" || fn == "lgamma") {
+            return "std::" + fn + "(" + args + ")";
+        }
+        if (fn == "abs")
+            return "std::fabs(" + args + ")";
+        if (fn == "gamma")
+            return "std::tgamma(" + args + ")";
+        if (fn == "loggamma")
+            return "std::lgamma(" + args + ")";
+        return fn + "(" + args + ")";
+    }
+    }
+    return "0.0";
+}
+
+} // namespace
+
+std::string toCCode(const Ctx &c, Expr e)
+{
+    return toCCodeRec(c, e, 0);
 }
 
 } // namespace numkit::cas

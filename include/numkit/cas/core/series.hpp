@@ -136,4 +136,27 @@ Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
              const std::vector<Expr> &x0s, int order,
              Budget *budget = nullptr);
 
+// Forward finite difference operator of order `order` (>= 0) with step `step`
+// (defaulting to 1):
+//   Delta_h^m f(var) = sum_{j=0}^m (-1)^(m - j) * binom(m, j) * f(var + j * h).
+Expr finiteDiff(Ctx &c, Expr f, Expr var, int order = 1,
+                Expr step = Expr{});
+
+struct EulerMaclaurinResult
+{
+    Expr integralTerm;      // int_a^b f(x) dx
+    Expr endpointTerm;      // 1/2 * (f(a) + f(b))
+    Expr bernoulliTerms;    // sum_{k=1}^{order/2} (B_{2k}/(2k)!) * (f^{(2k-1)}(b) - f^{(2k-1)}(a))
+    Expr approximation;     // integralTerm + endpointTerm + bernoulliTerms
+    bool exactForPoly = false; // true when f^{(order)}(var) == 0 identically (so approximation == exact sum)
+};
+
+// Symbolic Euler-Maclaurin summation formula for sum_{var = a}^{b} f(var) up
+// to derivative order `order`:
+//   int_a^b f(x) dx + 1/2*(f(a) + f(b))
+//     + sum_{k=1}^{order/2} (B_{2k} / (2k)!) * (f^{(2k-1)}(b) - f^{(2k-1)}(a)).
+EulerMaclaurinResult eulerMaclaurin(Ctx &c, Expr f, Expr var, Expr a, Expr b,
+                                    int order = 4,
+                                    Budget *budget = nullptr);
+
 } // namespace numkit::cas

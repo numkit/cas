@@ -521,14 +521,20 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
     if (pureRat && syms.size() == 1) {
         UPoly upN, upD;
         const Expr combined = c.div(f.num, f.den);
-        if (!combined.isNull() && toRational(c, combined, syms[0], upN, upD)) {
-            const Expr rN = upolyToExpr(c, upN, syms[0]);
-            if (upD.isConst()) {
-                // toRational makes upD monic, so constant upD == 1.
-                return c.expand(
-                    c.mul({c.number(Rational(std::int64_t{1}) / upD.coeff(0)),
-                           rN}));
+        if (!combined.isNull() && toRational(c, combined, syms[0], upN, upD) &&
+            !upD.isZero()) {
+            const UPoly g = UPoly::gcd(upN, upD);
+            if (!g.isConst()) {
+                UPoly remG;
+                UPoly::divMod(upN, g, upN, remG);
+                UPoly::divMod(upD, g, upD, remG);
             }
+            const Rational lcD = upD.lc();
+            upN = upN * (Rational(std::int64_t{1}) / lcD);
+            upD.makeMonic();
+            const Expr rN = upolyToExpr(c, upN, syms[0]);
+            if (upD.isConst())
+                return rN;
             const Expr rD = upolyToExpr(c, upD, syms[0]);
             return c.div(rN, rD);
         }

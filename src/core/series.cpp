@@ -4064,4 +4064,105 @@ Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
     return fallbackTerms.empty() ? c.zero() : c.add(fallbackTerms);
 }
 
+Expr finiteDiff(Ctx &c, Expr f, Expr var, int order, Expr step)
+{
+    if (f.isNull() || var.isNull() || c.kind(var) != NodeKind::Symbol ||
+        order < 0) {
+        return Expr{};
+    }
+    if (order == 0)
+        return c.simplify(f);
+
+    const Expr h = step.isNull() ? c.one() : step;
+    std::vector<Expr> terms;
+    terms.reserve(static_cast<std::size_t>(order + 1));
+    for (int j = 0; j <= order; ++j) {
+        Rational bin = binomRational(order, j);
+        if ((order - j) % 2 != 0)
+            bin = -bin;
+        const Expr shiftedVar =
+            (j == 0) ? var
+                     : c.add({var, c.mul({c.number(static_cast<std::int64_t>(j)), h})});
+        const Expr fShifted = c.subs(f, var, shiftedVar);
+        terms.push_back(c.mul({c.number(bin), fShifted}));
+    }
+    return c.simplify(c.add(terms));
+}
+
+EulerMaclaurinResult eulerMaclaurin(Ctx &c, Expr f, Expr var, Expr a, Expr b,
+                                    int order, Budget *budget)
+{
+    EulerMaclaurinResult out;
+    if (f.isNull() || var.isNull() || a.isNull() || b.isNull() ||
+        c.kind(var) != NodeKind::Symbol || order < 0) {
+        return out;
+    }
+    if (!checkSeriesBudget(c, budget))
+        return out;
+
+    // 1. Integral term int_a^b f(x) dx
+    const RationalIntegral ir = integrate(c, f, var, budget);
+    if (ir.proved() && !ir.F.isNull()) {
+        const Expr fb = c.subs(ir.F, var, b);
+        const Expr fa = c.subs(ir.F, var, a);
+        out.integralTerm = c.simplify(c.add({fb, c.neg(fa)}));
+    } else {
+        const DefiniteIntegral defIr = definiteIntegrate(c, f, var, a, b, budget);
+        if (defIr.proved() && !defIr.value.isNull())
+            out.integralTerm = c.simplify(defIr.value);
+        else
+            return out;
+    }
+
+    // 2. Endpoint trapezoidal term 1/2 * (f(a) + f(b))
+    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr fAtA = c.subs(f, var, a);
+    const Expr fAtB = c.subs(f, var, b);
+    out.endpointTerm = c.simplify(c.mul({half, c.add({fAtA, fAtB})}));
+
+    // 3. Bernoulli derivative correction terms:
+    //    sum_{k=1}^{order/2} (B_{2k} / (2k)!) * (f^{(2k-1)}(b) - f^{(2k-1)}(a))
+    const int maxK = order / 2;
+    const std::vector<Rational> B = bernoulliNumbers(2 * maxK);
+    std::vector<Expr> bTerms;
+    Expr curDeriv = f;
+    BigInt fact(1);
+    for (int k = 1; k <= maxK; ++k) {
+        // Advance curDeriv from f^{(2k-2)} to f^{(2k-1)}
+        if (k == 1) {
+            curDeriv = c.simplify(c.diff(curDeriv, var));
+            fact = BigInt(2); // (2*1)!
+        } else {
+            curDeriv = c.simplify(c.diff(curDeriv, var)); // 2k - 2
+            curDeriv = c.simplify(c.diff(curDeriv, var)); // 2k - 1
+            fact = fact * BigInt(2 * k - 1) * BigInt(2 * k);
+        }
+        if (curDeriv.isNull() || c.isZero(curDeriv))
+            break;
+        const Rational b2k = B[static_cast<std::size_t>(2 * k)];
+        const Rational coef = b2k / Rational(fact, BigInt(1));
+        const Expr dAtB = c.subs(curDeriv, var, b);
+        const Expr dAtA = c.subs(curDeriv, var, a);
+        const Expr diffBA = c.simplify(c.add({dAtB, c.neg(dAtA)}));
+        if (!c.isZero(diffBA))
+            bTerms.push_back(c.mul({c.number(coef), diffBA}));
+    }
+
+    // Check if the next derivative vanishes identically (polynomial exactness)
+    Expr nextDeriv = curDeriv;
+    for (int step = (maxK == 0 ? 0 : 2 * maxK - 1); step <= order; ++step) {
+        nextDeriv = c.simplify(c.diff(nextDeriv, var));
+        if (nextDeriv.isNull() || c.isZero(nextDeriv)) {
+            out.exactForPoly = true;
+            break;
+        }
+    }
+
+    out.bernoulliTerms =
+        bTerms.empty() ? c.zero() : c.simplify(c.add(bTerms));
+    out.approximation = c.simplify(
+        c.add({out.integralTerm, out.endpointTerm, out.bernoulliTerms}));
+    return out;
+}
+
 } // namespace numkit::cas

@@ -14,6 +14,7 @@ add_library(numkit_cas STATIC
     poly/modcpoly.cpp
     poly/fppoly.cpp
     poly/zassenhaus.cpp
+    poly/groebner.cpp
     integrate/ratint.cpp
     integrate/verify.cpp
     linalg/symmatrix.cpp

@@ -3,6 +3,7 @@
 #include <numkit/cas/core/simplify.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/linalg/symmatrix.hpp>
+#include <numkit/cas/poly/groebner.hpp>
 #include <numkit/cas/poly/sturm.hpp>
 #include <numkit/cas/poly/upoly.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
@@ -760,6 +761,263 @@ std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
                 if (!dup)
                     solutions.emplace_back(xVal, yVal);
             }
+        }
+    }
+
+    return solutions;
+}
+
+namespace {
+
+Expr extractNumeratorExpr(Ctx &c, Expr e)
+{
+    const Expr rat = simplifyRationalExpr(c, e);
+    const Expr src = rat.isNull() ? e : rat;
+    if (c.kind(src) != NodeKind::Mul)
+        return src;
+    std::vector<Expr> numFactors;
+    for (std::size_t i = 0; i < c.childCount(src); ++i) {
+        const Expr ch = c.child(src, i);
+        if (c.kind(ch) == NodeKind::Pow &&
+            c.kind(c.child(ch, 1)) == NodeKind::Number &&
+            c.numberValue(c.child(ch, 1)).signum() < 0)
+            continue;
+        numFactors.push_back(ch);
+    }
+    return numFactors.empty() ? c.one() : c.mul(numFactors);
+}
+
+bool certifySystemTuple(Ctx &c, const std::vector<Expr> &eqs,
+                        const std::vector<Expr> &vars,
+                        const std::vector<Expr> &sol)
+{
+    if (sol.size() != vars.size())
+        return false;
+    for (const Expr &eq : eqs) {
+        Expr cur = eq;
+        for (std::size_t i = 0; i < vars.size(); ++i) {
+            if (hasPoleAt(c, cur, vars[i], sol[i]))
+                return false;
+            cur = c.subs(cur, vars[i], sol[i]);
+        }
+        if (!isZeroAfterSimplify(c, cur))
+            return false;
+    }
+    return true;
+}
+
+void addUniqueSystemTuple(Ctx &c, std::vector<std::vector<Expr>> &out,
+                          const std::vector<Expr> &cand)
+{
+    for (const auto &existing : out) {
+        if (existing.size() != cand.size())
+            continue;
+        bool same = true;
+        for (std::size_t i = 0; i < cand.size(); ++i) {
+            if (!isZeroAfterSimplify(c, c.add({existing[i], c.neg(cand[i])}))) {
+                same = false;
+                break;
+            }
+        }
+        if (same)
+            return;
+    }
+    out.push_back(cand);
+}
+
+// Recursive triangular back-substitution over a Lex Groebner basis `basis`
+// from `idx = k - 1` down to `0`.
+void backSubstituteLexBasis(Ctx &c, const std::vector<Expr> &basis,
+                            const std::vector<Expr> &origEqs,
+                            const std::vector<Expr> &vars, int idx,
+                            std::vector<Expr> &partial, Budget *budget,
+                            std::vector<std::vector<Expr>> &out)
+{
+    if (!checkSolveBudget(c, budget))
+        return;
+    if (idx < 0) {
+        if (certifySystemTuple(c, origEqs, vars, partial))
+            addUniqueSystemTuple(c, out, partial);
+        return;
+    }
+
+    const std::size_t uIdx = static_cast<std::size_t>(idx);
+    const Expr curVar = vars[uIdx];
+
+    // Specialize all basis polynomials at already-bound variables vars[idx + 1 .. k - 1],
+    // and collect those that depend on `curVar` and on NO earlier variables vars[0 .. idx - 1].
+    std::vector<Expr> uniPolys;
+    for (const Expr &g : basis) {
+        Expr spec = g;
+        for (std::size_t j = uIdx + 1; j < vars.size(); ++j)
+            spec = c.subs(spec, vars[j], partial[j]);
+        spec = c.simplify(spec);
+        if (c.isZero(spec))
+            continue;
+        bool hasEarlier = false;
+        for (int j = 0; j < idx; ++j) {
+            if (mentionsVar(c, spec, vars[static_cast<std::size_t>(j)])) {
+                hasEarlier = true;
+                break;
+            }
+        }
+        if (hasEarlier)
+            continue;
+        if (!mentionsVar(c, spec, curVar)) {
+            // Non-zero constant residual at this specialization branch -> dead branch
+            if (!isZeroAfterSimplify(c, spec))
+                return;
+            continue;
+        }
+        uniPolys.push_back(spec);
+    }
+
+    if (uniPolys.empty())
+        return; // positive-dimensional component in curVar
+
+    // Pick the lowest-cost univariate polynomial in `curVar` to solve first.
+    auto bestIt = std::min_element(
+        uniPolys.begin(), uniPolys.end(),
+        [&](Expr a, Expr b) { return c.exprCost(a) < c.exprCost(b); });
+    const std::vector<Expr> roots = solveSymbolic(c, *bestIt, curVar, budget);
+    for (const Expr &r : roots) {
+        bool allVanish = true;
+        for (const Expr &up : uniPolys) {
+            if (!isZeroAfterSimplify(c, c.subs(up, curVar, r))) {
+                allVanish = false;
+                break;
+            }
+        }
+        if (!allVanish)
+            continue;
+        partial[uIdx] = r;
+        backSubstituteLexBasis(c, basis, origEqs, vars, idx - 1, partial,
+                               budget, out);
+    }
+}
+
+} // namespace
+
+std::vector<std::vector<Expr>> solveSystem(Ctx &c,
+                                           const std::vector<Expr> &eqs,
+                                           const std::vector<Expr> &vars,
+                                           Budget *budget)
+{
+    std::vector<std::vector<Expr>> solutions;
+    if (eqs.empty() || vars.empty() || !checkSolveBudget(c, budget))
+        return solutions;
+    for (const Expr &eq : eqs) {
+        if (eq.isNull())
+            return solutions;
+    }
+    for (std::size_t i = 0; i < vars.size(); ++i) {
+        if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol)
+            return solutions;
+        for (std::size_t j = i + 1; j < vars.size(); ++j) {
+            if (vars[i] == vars[j])
+                return solutions;
+        }
+    }
+
+    // 1. Single-variable case
+    if (vars.size() == 1) {
+        const std::vector<Expr> roots =
+            solveSymbolic(c, eqs[0], vars[0], budget);
+        for (const Expr &r : roots) {
+            const std::vector<Expr> tup = {r};
+            if (certifySystemTuple(c, eqs, vars, tup))
+                addUniqueSystemTuple(c, solutions, tup);
+        }
+        return solutions;
+    }
+
+    // 2. Lexicographic Groebner basis triangular elimination over Q[vars]
+    std::vector<Expr> numEqs;
+    numEqs.reserve(eqs.size());
+    for (const Expr &eq : eqs)
+        numEqs.push_back(extractNumeratorExpr(c, eq));
+
+    const GroebnerResult gb =
+        groebnerBasis(c, numEqs, vars, MonomialOrder::Lex, budget);
+    if (gb.proved()) {
+        if (gb.basis.size() == 1 && gb.basis[0] == c.one())
+            return solutions; // inconsistent system (<1> unit ideal)
+        std::vector<Expr> partial(vars.size());
+        backSubstituteLexBasis(c, gb.basis, eqs, vars,
+                               static_cast<int>(vars.size()) - 1, partial,
+                               budget, solutions);
+        if (!solutions.empty())
+            return solutions;
+    }
+
+    // 3. Parametric linear variable peel: if any equation is linear in some
+    //    variable `vars[j]` with non-zero coefficient independent of `vars`,
+    //    eliminate `vars[j]` and recurse on the remaining N - 1 variables.
+    for (std::size_t eqIdx = 0; eqIdx < numEqs.size(); ++eqIdx) {
+        for (std::size_t vIdx = 0; vIdx < vars.size(); ++vIdx) {
+            std::vector<Expr> lCoeffs;
+            if (!extractPolyCoeffsInVar(c, numEqs[eqIdx], vars[vIdx], 1,
+                                        lCoeffs) ||
+                lCoeffs.size() != 2) {
+                continue;
+            }
+            const Expr a1 = lCoeffs[1];
+            bool a1DependsOnVars = false;
+            for (const Expr &v : vars) {
+                if (mentionsVar(c, a1, v)) {
+                    a1DependsOnVars = true;
+                    break;
+                }
+            }
+            if (a1DependsOnVars || isZeroAfterSimplify(c, a1))
+                continue;
+
+            const Expr exprForVj = c.simplify(c.div(c.neg(lCoeffs[0]), a1));
+            std::vector<Expr> subEqs;
+            for (std::size_t i = 0; i < eqs.size(); ++i) {
+                if (i == eqIdx)
+                    continue;
+                subEqs.push_back(
+                    c.simplify(c.subs(eqs[i], vars[vIdx], exprForVj)));
+            }
+            std::vector<Expr> remVars;
+            for (std::size_t i = 0; i < vars.size(); ++i) {
+                if (i != vIdx)
+                    remVars.push_back(vars[i]);
+            }
+            if (subEqs.empty())
+                break;
+            const auto subSols = solveSystem(c, subEqs, remVars, budget);
+            for (const auto &subTup : subSols) {
+                Expr valVj = exprForVj;
+                for (std::size_t i = 0; i < remVars.size(); ++i)
+                    valVj = c.subs(valVj, remVars[i], subTup[i]);
+                valVj = c.simplify(valVj);
+                std::vector<Expr> fullTup;
+                fullTup.reserve(vars.size());
+                std::size_t remCursor = 0;
+                for (std::size_t i = 0; i < vars.size(); ++i) {
+                    if (i == vIdx)
+                        fullTup.push_back(valVj);
+                    else
+                        fullTup.push_back(subTup[remCursor++]);
+                }
+                if (certifySystemTuple(c, eqs, vars, fullTup))
+                    addUniqueSystemTuple(c, solutions, fullTup);
+            }
+            if (!solutions.empty())
+                return solutions;
+        }
+    }
+
+    // 4. 2-variable Sylvester resultant fallback (handles nonlinear systems with symbolic parameters)
+    if (vars.size() == 2 && eqs.size() >= 2) {
+        const auto pairs =
+            solveSystem2(c, eqs[0], eqs[1], vars[0], vars[1], budget);
+        for (const auto &pr : pairs) {
+            const std::vector<Expr> tup = {pr.first, pr.second};
+            if (certifySystemTuple(c, eqs, vars, tup))
+                addUniqueSystemTuple(c, solutions, tup);
         }
     }
 

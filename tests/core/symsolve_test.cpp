@@ -206,6 +206,54 @@ TEST(SymSolveTest, NonlinearSystemsSylvesterResultant)
     }
 }
 
+TEST(SymSolveTest, SolveSystemNVariableGroebner)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+    const Expr y = c.symbol("y");
+    const Expr z = c.symbol("z");
+
+    // 3x3 linear system: x + y + z = 6, x - y + z = 2, 2*x + y - z = 1 => (1, 2, 3)
+    {
+        const std::vector<Expr> eqs = {
+            parseExpr(c, "x + y + z - 6"),
+            parseExpr(c, "x - y + z - 2"),
+            parseExpr(c, "2*x + y - z - 1")
+        };
+        const auto sols = solveSystem(c, eqs, {x, y, z});
+        ASSERT_EQ(sols.size(), 1u);
+        ASSERT_EQ(sols[0].size(), 3u);
+        EXPECT_EQ(sols[0][0], c.number(1));
+        EXPECT_EQ(sols[0][1], c.number(2));
+        EXPECT_EQ(sols[0][2], c.number(3));
+    }
+
+    // 3-variable nonlinear system: x + y - 3 = 0, y + z - 5 = 0, x*z - 3 = 0
+    // Solutions: (1, 2, 3) and (-3, 6, -1)
+    {
+        const std::vector<Expr> eqs = {
+            parseExpr(c, "x + y - 3"),
+            parseExpr(c, "y + z - 5"),
+            parseExpr(c, "x*z - 3")
+        };
+        const auto sols = solveSystem(c, eqs, {x, y, z});
+        ASSERT_EQ(sols.size(), 2u);
+        bool has123 = false;
+        bool hasM3_6_M1 = false;
+        for (const auto& s : sols) {
+            ASSERT_EQ(s.size(), 3u);
+            if (s[0] == c.number(1) && s[1] == c.number(2) && s[2] == c.number(3)) {
+                has123 = true;
+            }
+            if (s[0] == c.number(-3) && s[1] == c.number(6) && s[2] == c.number(-1)) {
+                hasM3_6_M1 = true;
+            }
+        }
+        EXPECT_TRUE(has123);
+        EXPECT_TRUE(hasM3_6_M1);
+    }
+}
+
 // ============================================================================
 // Layer 2: Property Tests
 // ============================================================================

@@ -29,6 +29,7 @@ add_executable(nkcas_gtest
     poly/modcpoly_test.cpp
     poly/fppoly_test.cpp
     poly/zassenhaus_test.cpp
+    poly/groebner_test.cpp
     integrate/ratint_test.cpp
     linalg/symmatrix_test.cpp
     ode/dsolve_test.cpp

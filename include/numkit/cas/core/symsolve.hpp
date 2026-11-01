@@ -30,4 +30,18 @@ std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
                                                 Expr x, Expr y,
                                                 Budget *budget = nullptr);
 
+// Solve a system of nonlinear polynomial/rational equations `eqs[i] == 0`
+// for `vars = {x_0, ..., x_{k-1}}`, returning all distinct certified solution
+// tuples `{r_0, ..., r_{k-1}}`:
+//   1. Lexicographic Groebner basis triangular elimination over Q[x_0, ..., x_{k-1}]
+//      followed by recursive back-substitution via `solveSymbolic`.
+//   2. Parametric linear/substitution peel and 2-variable Sylvester resultant
+//      fallback when symbolic parameters outside `vars` are present.
+// Every returned tuple is certified by verifying `simplify(subs(eqs[i])) == 0`
+// and absence of denominator poles for all equations.
+std::vector<std::vector<Expr>> solveSystem(Ctx &c,
+                                           const std::vector<Expr> &eqs,
+                                           const std::vector<Expr> &vars,
+                                           Budget *budget = nullptr);
+
 } // namespace numkit::cas

@@ -431,7 +431,7 @@
 59. ✅ (v0.7-пул, Эшелон 7) Гамма-, лог-гамма-, дигамма- и тригамма-функции (`gamma`, `lgamma`, `digamma` / `psi`, `trigamma`), постоянная Эйлера–Маскерони `euler_gamma` сквозь всё ядро (`diff`, `evalExact`/`evalDouble`, `simplify`, `taylor`/`laurent`/`residue`), замкнутые суммы рациональных дробей через $\psi$ и $\psi_1$ в `symsum` и интегралы Эйлера 1-го и 2-го рода (Бета, Валлиса, обобщённые Гамма и логарифмически-степенные) в `definiteIntegrate`.
 60. ✅ (v0.7-пул, Эшелон 7) Двустороннее преобразование Фурье `fourier` / `ifourier` с круговым сертификатом (`transform/fourier` + CLI `nkcas fourier` / `nkcas ifourier`).
 61. ✅ (v0.7-пул, Эшелон 7) Векторный анализ (`divergence`, `curl`, `laplacian`, `wronskian`, `scalarPotential` с сертификатом $\operatorname{gradient}(\varphi) \equiv \mathbf{F}$ в `linalg/symmatrix`) и уравнения Риккати, Клеро и нелинейные ОДУ 2-го порядка с понижением порядка (`dsolve2Nonlinear` в `ode/dsolve`).
-62. ⬜ (v0.7-пул, Эшелон 7) Базисы Грёбнера (алгоритм Бухбергера в $\mathbb{Q}[x_1, \dots, x_k]$ с порядками `Lex` и `GrevLex`, редукция `polyReduceMulti`) и решатель нелинейных полиномиальных систем от $N$ переменных (`poly/groebner`, `solveSystem` в `core/symsolve`).
+62. ✅ (v0.7-пул, Эшелон 7) Базисы Грёбнера (алгоритм Бухбергера в $\mathbb{Q}[x_1, \dots, x_k]$ с порядками `Lex` и `GrevLex`, редукция `polyReduceMulti`) и решатель нелинейных полиномиальных систем от $N$ переменных (`poly/groebner`, `solveSystem` в `core/symsolve`).
 63. ⬜ Релизная отсечка `v0.7.0` (Эшелон 7 завершён).
 
 ## Веха I1: MVP для вендоринга в Numkit (зафиксирована 2026-09-20)
@@ -2778,5 +2778,16 @@ MATLAB Symbolic Math Toolbox (три эшелона):
    - `dsolve2Nonlinear` и `dsolve2NonlinearIVP`: понижение порядка для $y'' = F(x, y')$ ($p(x) = y'(x)$) и автономных $y'' = F(y, y')$ ($y' = p(y), y'' = p\,dp/dy$) с двухэтапным разрешением начальных условий $p(y_0) = y'(x_0)$ и правилом $(u^{4k})^{m/2} \to u^{2km}$ в `simplify`.
 
 
+## 2026-11-01: Реализация пункта 62 — Базисы Грёбнера (`poly/groebner`) и решатель нелинейных полиномиальных систем `solveSystem` в `core/symsolve`
 
+Реализован четвёртый пакет Эшелона 7 (пул `v0.7.0`):
+
+1. **Канонические редуцированные базисы Грёбнера в $\mathbb{Q}[x_1, \dots, x_k]$ (`include/numkit/cas/poly/groebner.hpp`, `src/poly/groebner.cpp`)**:
+   - Реализовано разреженное представление полиномов от $k$ переменных над $\mathbb{Q}$ с порядками мономов `MonomialOrder::Lex` и `MonomialOrder::GrevLex`.
+   - Алгоритм Бухбергера `groebnerBasis(c, generators, vars, order, budget)` включает первый критерий Бухбергера ($\gcd(\operatorname{LM}(f), \operatorname{LM}(g)) = 1 \implies S(f, g) \to_G 0$), сортировку пар по степени $\operatorname{lcm}(\operatorname{LM}(f), \operatorname{LM}(g))$, удаление избыточных старших мономов и полную взаимную редукцию хвостов к единственному моническому редуцированному базису Грёбнера.
+   - Встроенный двойной сертификат (`certified = true`): все попарные $S$-полиномы редуцируются к $0$ по $G$, и каждый исходный генератор $f_i$ редуцируется к $0$ по $G$.
+   - Функция `polyReduceMulti(c, f, divisors, vars, order)` вычисляет канонический нормальный остаток многомерного деления.
+2. **Решатель $N$-мерных нелинейных полиномиальных систем `solveSystem` (`include/numkit/cas/core/symsolve.hpp`, `src/core/symsolve.cpp`)**:
+   - Триангуляция идеала через лексикографический базис Грёбнера (`MonomialOrder::Lex`) с рекурсивной обратной подстановкой корней от $x_N$ к $x_1$ через `solveSymbolic` (плюс линейное исключение переменных для параметрических систем с символьными коэффициентами).
+   - Каждое решение $(v_1, \dots, v_N)$ проходит прямую проверку обнуления всех уравнений системы ($f_i(\mathbf{v}) \equiv 0$).
 

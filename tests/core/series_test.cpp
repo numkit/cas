@@ -867,6 +867,20 @@ TEST(SeriesTest, GammaDigammaLaurentResidueAndPolygammaSymsum)
     EXPECT_TRUE(exprEq(
         c, sOdd.value,
         parseExpr(c, "1/2*digamma(n + 1/2) + 1/2*euler_gamma + log(2)")));
+
+    // 3. Maclaurin series of Bessel J_0, J_1, I_0 and Airy Ai
+    const Expr tJ0 = taylor(c, parseExpr(c, "besselj(0, x)"), x, c.zero(), 4);
+    ASSERT_FALSE(tJ0.isNull());
+    EXPECT_TRUE(exprEq(c, tJ0, parseExpr(c, "1 - 1/4*x^2 + 1/64*x^4")));
+
+    const Expr tJ1 = taylor(c, parseExpr(c, "besselj(1, x)"), x, c.zero(), 5);
+    ASSERT_FALSE(tJ1.isNull());
+    EXPECT_TRUE(
+        exprEq(c, tJ1, parseExpr(c, "1/2*x - 1/16*x^3 + 1/384*x^5")));
+
+    const Expr tI0 = taylor(c, parseExpr(c, "besseli(0, x)"), x, c.zero(), 4);
+    ASSERT_FALSE(tI0.isNull());
+    EXPECT_TRUE(exprEq(c, tI0, parseExpr(c, "1 + 1/4*x^2 + 1/64*x^4")));
 }
 
 } // namespace

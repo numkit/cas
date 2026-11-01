@@ -116,6 +116,96 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         result = zero();
         break;
     case NodeKind::Func: {
+        const std::string &name = funcName(e);
+        if (childCount(e) == 2) {
+            const Expr n = child(e, 0);
+            const Expr u = child(e, 1);
+            const Expr dn = diffRec(n, var, memo);
+            const Expr du = diffRec(u, var, memo);
+            if (dn.isNull() || du.isNull() || !isZero(dn))
+                break;
+            if (isZero(du)) {
+                result = zero();
+                break;
+            }
+            if (name == "legendreP") {
+                if (isZero(n)) {
+                    result = zero();
+                } else {
+                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    const Expr num = mul({
+                        n,
+                        add({mul({u, e}), neg(func("legendreP", nm1, u))})});
+                    const Expr den =
+                        add({pow(u, number(std::int64_t{2})),
+                             number(std::int64_t{-1})});
+                    result = mul({num, pow(den, number(std::int64_t{-1})), du});
+                }
+            } else if (name == "chebyshevT") {
+                if (isZero(n)) {
+                    result = zero();
+                } else {
+                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    result = mul({n, func("chebyshevU", nm1, u), du});
+                }
+            } else if (name == "chebyshevU") {
+                if (isZero(n)) {
+                    result = zero();
+                } else {
+                    const Expr np1 = add({n, one()});
+                    const Expr num = add({
+                        mul({np1, func("chebyshevT", np1, u)}),
+                        neg(mul({u, e}))});
+                    const Expr den =
+                        add({pow(u, number(std::int64_t{2})),
+                             number(std::int64_t{-1})});
+                    result = mul({num, pow(den, number(std::int64_t{-1})), du});
+                }
+            } else if (name == "hermiteH") {
+                if (isZero(n)) {
+                    result = zero();
+                } else {
+                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    result = mul({number(std::int64_t{2}), n,
+                                  func("hermiteH", nm1, u), du});
+                }
+            } else if (name == "laguerreL") {
+                if (isZero(n)) {
+                    result = zero();
+                } else {
+                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    const Expr num =
+                        mul({n, add({e, neg(func("laguerreL", nm1, u))})});
+                    result = mul({num, pow(u, number(std::int64_t{-1})), du});
+                }
+            } else if (name == "besselj" || name == "bessely" ||
+                       name == "besselk") {
+                const Expr np1 = add({n, one()});
+                const Expr nextF = func(name, np1, u);
+                if (isZero(n)) {
+                    result = mul({neg(nextF), du});
+                } else {
+                    result = mul({
+                        add({mul({n, pow(u, number(std::int64_t{-1})), e}),
+                             neg(nextF)}),
+                        du});
+                }
+            } else if (name == "besseli") {
+                const Expr np1 = add({n, one()});
+                const Expr nextF = func(name, np1, u);
+                if (isZero(n)) {
+                    result = mul({nextF, du});
+                } else {
+                    result = mul({
+                        add({mul({n, pow(u, number(std::int64_t{-1})), e}),
+                             nextF}),
+                        du});
+                }
+            } else {
+                result = Expr();
+            }
+            break;
+        }
         const Expr u = child(e, 0);
         const Expr du = diffRec(u, var, memo);
         if (du.isNull())
@@ -124,7 +214,6 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             result = zero();
             break;
         }
-        const std::string &name = funcName(e);
         if (name == "sqrt")
             result = mul({number(Rational(std::int64_t{1}, BigInt(2))),
                           pow(u, number(Rational(std::int64_t{-1}, BigInt(2)))),
@@ -229,6 +318,14 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             result = mul({func("digamma", u), du});
         else if (name == "digamma" || name == "psi")
             result = mul({func("trigamma", u), du});
+        else if (name == "airyAi")
+            result = mul({func("airyAiPrime", u), du});
+        else if (name == "airyAiPrime")
+            result = mul({u, func("airyAi", u), du});
+        else if (name == "airyBi")
+            result = mul({func("airyBiPrime", u), du});
+        else if (name == "airyBiPrime")
+            result = mul({u, func("airyBi", u), du});
         else {
             assert(!"diff: unsupported function");
             result = Expr();

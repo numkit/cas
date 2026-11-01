@@ -15,6 +15,7 @@ enum class Tok : std::uint8_t {
     Caret,
     LParen,
     RParen,
+    Comma,
 };
 
 struct Token {
@@ -82,6 +83,7 @@ Token lex(const std::string &src, std::size_t &pos)
     case '^': t.kind = Tok::Caret; break;
     case '(': t.kind = Tok::LParen; break;
     case ')': t.kind = Tok::RParen; break;
+    case ',': t.kind = Tok::Comma; break;
     default: throw ParseError(t.pos, std::string("unexpected character '") + ch + "'");
     }
     return t;
@@ -235,9 +237,14 @@ private:
         advance();
         if (cur_.kind == Tok::LParen) {
             advance();
-            const Expr arg = parseExpr(0);
+            std::vector<Expr> args;
+            args.push_back(parseExpr(0));
+            while (cur_.kind == Tok::Comma) {
+                advance();
+                args.push_back(parseExpr(0));
+            }
             expect(Tok::RParen, "')' expected");
-            return c_.func(t.text, arg);
+            return c_.func(t.text, args);
         }
         return c_.symbol(t.text);
     }

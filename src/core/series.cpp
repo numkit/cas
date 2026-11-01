@@ -47,14 +47,22 @@ Expr foldConst(Ctx &c, Expr e)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        const Expr arg = foldConst(c, c.child(e, 0));
-        if (arg.isNull())
-            return Expr();
-        const Expr fn = c.func(c.funcName(e), arg);
+        std::vector<Expr> args;
+        args.reserve(c.childCount(e));
+        bool allConst = true;
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const Expr arg = foldConst(c, c.child(e, i));
+            if (arg.isNull())
+                return Expr();
+            double dVal = 0.0;
+            if (!c.evalDouble(arg, {}, dVal))
+                allConst = false;
+            args.push_back(arg);
+        }
+        const Expr fn = c.func(c.funcName(e), args);
         if (c.evalExact(fn, {}, r))
             return c.number(r);
-        double dVal = 0.0;
-        if (c.evalDouble(arg, {}, dVal))
+        if (allConst)
             return c.simplify(fn);
         return fn;
     }
@@ -119,10 +127,24 @@ Expr safeSubsAndFold(Ctx &c, Expr e, Expr from, Expr to)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
+        const std::string &fn = c.funcName(e);
+        if (c.childCount(e) != 1) {
+            std::vector<Expr> args;
+            args.reserve(c.childCount(e));
+            for (std::size_t i = 0; i < c.childCount(e); ++i) {
+                const Expr ai = safeSubsAndFold(c, c.child(e, i), from, to);
+                if (ai.isNull())
+                    return Expr();
+                args.push_back(ai);
+            }
+            if ((fn == "bessely" || fn == "besselk") &&
+                isZeroCoeff(c, args[1]))
+                return Expr();
+            return foldConst(c, c.func(fn, args));
+        }
         const Expr a = safeSubsAndFold(c, c.child(e, 0), from, to);
         if (a.isNull())
             return Expr();
-        const std::string &fn = c.funcName(e);
         if ((fn == "log" || fn == "Ei" || fn == "Ci") && isZeroCoeff(c, a))
             return Expr();
         if (fn == "li" &&
@@ -988,6 +1010,40 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
             return true;
         }
     }
+
+    if (fn == "airyAi" || fn == "airyBi" || fn == "airyAiPrime" ||
+        fn == "airyBiPrime") {
+        std::vector<Expr> mac(static_cast<std::size_t>(L + 1), c.zero());
+        const Expr tSym = c.symbol("$t_series");
+        Expr cur = c.func(fn, tSym);
+        BigInt fact(1);
+        for (int k = 0; k <= L; ++k) {
+            if (k > 0) {
+                cur = c.diff(cur, tSym);
+                if (cur.isNull())
+                    return false;
+                fact = fact * BigInt(static_cast<std::int64_t>(k));
+            }
+            const Expr valAtC0 = foldConst(c, c.subs(cur, tSym, c0));
+            if (valAtC0.isNull())
+                return false;
+            mac[static_cast<std::size_t>(k)] = foldConst(
+                c, c.mul({valAtC0, c.number(Rational(BigInt(1), fact))}));
+        }
+        Laurent sum = makeConstSeries(c, mac[0], L);
+        Laurent upow = u;
+        for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+            if (!c.isZero(mac[static_cast<std::size_t>(k)])) {
+                sum = addSeries(
+                    c, sum, scaleSeries(c, upow, mac[static_cast<std::size_t>(k)]));
+            }
+            if (k + 1 <= L)
+                upow = mulSeries(c, upow, u);
+        }
+        out = sum;
+        return true;
+    }
+
     return false;
 }
 
@@ -1069,6 +1125,122 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                               positiveT);
     }
     case NodeKind::Func: {
+        if (c.childCount(e) == 2) {
+            const std::string &fn = c.funcName(e);
+            const Expr ord = c.child(e, 0);
+            const Expr uExpr = c.child(e, 1);
+            if (fn == "legendreP" || fn == "chebyshevT" ||
+                fn == "chebyshevU" || fn == "hermiteH" || fn == "laguerreL") {
+                const Expr expd = c.simplify(e);
+                if (!expd.isNull() && !(expd == e)) {
+                    return computeLaurent(c, expd, var, x0, maxDeg, budget,
+                                          out, positiveT);
+                }
+            }
+            Laurent argSeries;
+            if (!computeLaurent(c, uExpr, var, x0, maxDeg, budget, argSeries,
+                                positiveT))
+                return false;
+            if (argSeries.val < 0)
+                return false;
+            const Expr c0 =
+                (argSeries.val == 0 && !argSeries.coeffs.empty())
+                    ? argSeries.coeffs[0]
+                    : c.zero();
+            if ((fn == "besselj" || fn == "besseli") && isZeroCoeff(c, c0) &&
+                c.kind(ord) == NodeKind::Number) {
+                const Rational &rn = c.numberValue(ord);
+                std::int64_t n = 0;
+                if (rn.den() == BigInt(1) && rn.num().fitsInt64(n) &&
+                    std::abs(n) <= 32) {
+                    Expr signMul = c.one();
+                    if (n < 0) {
+                        n = -n;
+                        if (fn == "besselj" && (n % 2 != 0))
+                            signMul = c.number(std::int64_t{-1});
+                    }
+                    const int L =
+                        static_cast<int>(argSeries.coeffs.size()) - 1;
+                    Laurent u = argSeries;
+                    if (u.val == 0 && !u.coeffs.empty())
+                        u.coeffs[0] = c.zero();
+                    std::vector<Expr> mac(static_cast<std::size_t>(L + 1),
+                                          c.zero());
+                    for (std::int64_t k = 0; 2 * k + n <= L; ++k) {
+                        const std::size_t deg =
+                            static_cast<std::size_t>(2 * k + n);
+                        BigInt kFact(1);
+                        for (std::int64_t j = 2; j <= k; ++j)
+                            kFact = kFact * BigInt(j);
+                        BigInt nkFact(1);
+                        for (std::int64_t j = 2; j <= n + k; ++j)
+                            nkFact = nkFact * BigInt(j);
+                        const BigInt twoPow =
+                            BigInt::powUInt(BigInt(2), deg);
+                        BigInt num(1);
+                        if (fn == "besselj" && (k % 2 != 0))
+                            num = BigInt(-1);
+                        mac[deg] = c.mul({
+                            signMul,
+                            c.number(Rational(num, kFact * nkFact * twoPow))});
+                    }
+                    Laurent sum = makeConstSeries(c, mac[0], L);
+                    Laurent upow = u;
+                    for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                        if (!c.isZero(mac[static_cast<std::size_t>(k)])) {
+                            sum = addSeries(
+                                c, sum,
+                                scaleSeries(c, upow,
+                                            mac[static_cast<std::size_t>(k)]));
+                        }
+                        if (k + 1 <= L)
+                            upow = mulSeries(c, upow, u);
+                    }
+                    out = sum;
+                    return true;
+                }
+            }
+            if (!isZeroCoeff(c, c0)) {
+                const int L = static_cast<int>(argSeries.coeffs.size()) - 1;
+                Laurent u = argSeries;
+                if (u.val == 0 && !u.coeffs.empty())
+                    u.coeffs[0] = c.zero();
+                std::vector<Expr> mac(static_cast<std::size_t>(L + 1),
+                                      c.zero());
+                const Expr tSym = c.symbol("$t_series");
+                Expr cur = c.func(fn, ord, tSym);
+                BigInt fact(1);
+                for (int k = 0; k <= L; ++k) {
+                    if (k > 0) {
+                        cur = c.diff(cur, tSym);
+                        if (cur.isNull())
+                            return false;
+                        fact = fact * BigInt(static_cast<std::int64_t>(k));
+                    }
+                    const Expr valAtC0 = foldConst(c, c.subs(cur, tSym, c0));
+                    if (valAtC0.isNull())
+                        return false;
+                    mac[static_cast<std::size_t>(k)] = foldConst(
+                        c, c.mul({valAtC0,
+                                  c.number(Rational(BigInt(1), fact))}));
+                }
+                Laurent sum = makeConstSeries(c, mac[0], L);
+                Laurent upow = u;
+                for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                    if (!c.isZero(mac[static_cast<std::size_t>(k)])) {
+                        sum = addSeries(
+                            c, sum,
+                            scaleSeries(c, upow,
+                                        mac[static_cast<std::size_t>(k)]));
+                    }
+                    if (k + 1 <= L)
+                        upow = mulSeries(c, upow, u);
+                }
+                out = sum;
+                return true;
+            }
+            return false;
+        }
         Laurent argSeries;
         if (!computeLaurent(c, c.child(e, 0), var, x0, maxDeg, budget, argSeries,
                             positiveT))
@@ -1186,8 +1358,13 @@ Expr combineLogsForLimit(Ctx &c, Expr e)
     case NodeKind::Symbol:
     case NodeKind::RootOf:
         return e;
-    case NodeKind::Func:
-        return c.func(c.funcName(e), combineLogsForLimit(c, c.child(e, 0)));
+    case NodeKind::Func: {
+        std::vector<Expr> args;
+        args.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            args.push_back(combineLogsForLimit(c, c.child(e, i)));
+        return c.func(c.funcName(e), args);
+    }
     case NodeKind::Pow:
         return c.pow(combineLogsForLimit(c, c.child(e, 0)),
                      combineLogsForLimit(c, c.child(e, 1)));
@@ -1602,6 +1779,15 @@ Expr expandAsymptoticLogsAndDilog(Ctx &c, Expr e, Expr tSym, Budget *budget,
     }
     case NodeKind::Func: {
         const std::string &fn = c.funcName(e);
+        if (c.childCount(e) != 1) {
+            std::vector<Expr> args;
+            args.reserve(c.childCount(e));
+            for (std::size_t i = 0; i < c.childCount(e); ++i) {
+                args.push_back(expandAsymptoticLogsAndDilog(
+                    c, c.child(e, i), tSym, budget, changedOut));
+            }
+            return c.func(fn, args);
+        }
         const Expr arg = expandAsymptoticLogsAndDilog(c, c.child(e, 0), tSym,
                                                       budget, changedOut);
         if (fn == "dilog" || fn == "Li2" || fn == "polylog2") {
@@ -3115,10 +3301,21 @@ Expr safeSubsMultiAndFold(Ctx &c, Expr e, const std::vector<Expr> &vars,
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
+        const std::string &fn = c.funcName(e);
+        if (c.childCount(e) != 1) {
+            std::vector<Expr> args;
+            args.reserve(c.childCount(e));
+            for (std::size_t i = 0; i < c.childCount(e); ++i) {
+                const Expr ai = safeSubsMultiAndFold(c, c.child(e, i), vars, x0s);
+                if (ai.isNull())
+                    return Expr();
+                args.push_back(ai);
+            }
+            return foldConst(c, c.func(fn, args));
+        }
         const Expr a = safeSubsMultiAndFold(c, c.child(e, 0), vars, x0s);
         if (a.isNull())
             return Expr();
-        const std::string &fn = c.funcName(e);
         if ((fn == "log" || fn == "Ei" || fn == "Ci") && isZeroCoeff(c, a))
             return Expr();
         if (fn == "li" &&

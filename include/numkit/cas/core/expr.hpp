@@ -115,6 +115,8 @@ public:
     Expr mul(const std::vector<Expr> &children) { return makeMul(children); }
     Expr pow(Expr base, Expr exp);
     Expr func(const std::string &name, Expr arg);
+    Expr func(const std::string &name, Expr arg0, Expr arg1);
+    Expr func(const std::string &name, const std::vector<Expr> &args);
 
     Expr neg(Expr a);             // (-1) * a
     Expr div(Expr a, Expr b);     // a * b^(-1); b must be non-zero Number

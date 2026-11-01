@@ -2690,6 +2690,98 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 }
             }
         }
+
+        // 4d. Bessel function antiderivatives:
+        //     int x^(nu+1) * besselj(nu, a*x) dx = x^(nu+1)/a * besselj(nu+1, a*x)
+        //     int x^(1-nu) * besselj(nu, a*x) dx = -x^(1-nu)/a * besselj(nu-1, a*x)
+        //     int besselj(1, a*x) dx = -1/a * besselj(0, a*x)
+        //     (and analogous formulas for bessely, besseli, besselk).
+        Expr besselFac;
+        std::vector<Expr> otherFacs;
+        for (const Expr &fac : factors) {
+            if (besselFac.isNull() && c.kind(fac) == NodeKind::Func &&
+                c.childCount(fac) == 2 &&
+                (c.funcName(fac) == "besselj" || c.funcName(fac) == "bessely" ||
+                 c.funcName(fac) == "besseli" || c.funcName(fac) == "besselk")) {
+                besselFac = fac;
+            } else {
+                otherFacs.push_back(fac);
+            }
+        }
+        if (!besselFac.isNull()) {
+            const std::string &bfn = c.funcName(besselFac);
+            const Expr nu = c.child(besselFac, 0);
+            const Expr bArg = c.child(besselFac, 1);
+            std::vector<Expr> bCoeffs;
+            if (!mentionsVar(c, nu, var) &&
+                extractPolyInVar(c, bArg, var, 1, bCoeffs) &&
+                bCoeffs.size() == 2 && c.isZero(bCoeffs[0]) &&
+                !c.isZero(bCoeffs[1])) {
+                const Expr aCoeff = bCoeffs[1];
+                Expr xPowExp = c.zero();
+                std::vector<Expr> cFacs;
+                bool okOther = true;
+                for (const Expr &of : otherFacs) {
+                    if (!mentionsVar(c, of, var)) {
+                        cFacs.push_back(of);
+                    } else if (of == var) {
+                        xPowExp = c.add({xPowExp, c.one()});
+                    } else if (c.kind(of) == NodeKind::Pow &&
+                               c.child(of, 0) == var &&
+                               !mentionsVar(c, c.child(of, 1), var)) {
+                        xPowExp = c.add({xPowExp, c.child(of, 1)});
+                    } else {
+                        okOther = false;
+                        break;
+                    }
+                }
+                if (okOther) {
+                    const Expr cPart = cFacs.empty() ? c.one() : c.mul(cFacs);
+                    const Expr diffUp =
+                        c.simplify(c.add({xPowExp, c.neg(c.add({nu, c.one()}))}));
+                    const Expr diffDown =
+                        c.simplify(c.add({xPowExp, c.neg(c.add({c.one(), c.neg(nu)}))}));
+                    if (c.isZero(diffUp)) {
+                        const Expr nuP1 = c.simplify(c.add({nu, c.one()}));
+                        Expr core = c.mul({
+                            c.pow(aCoeff, c.number(-1)),
+                            c.pow(var, nuP1),
+                            c.func(bfn, nuP1, bArg)});
+                        if (bfn == "besselk")
+                            core = c.neg(core);
+                        const Expr F = c.mul({cPart, core});
+                        if (certifySpecialIntegral(c, F, f, var)) {
+                            out.F = F;
+                            out.status = RationalIntegral::Status::ProvedSymbolic;
+                            return out;
+                        }
+                    } else if (c.isZero(diffDown)) {
+                        const Expr nuM1 = c.simplify(c.add({nu, c.number(-1)}));
+                        const Expr oneMinusNu =
+                            c.simplify(c.add({c.one(), c.neg(nu)}));
+                        Expr core = c.mul({
+                            c.pow(aCoeff, c.number(-1)),
+                            c.pow(var, oneMinusNu),
+                            c.func(bfn, nuM1, bArg)});
+                        if (bfn == "besselj" || bfn == "bessely" ||
+                            bfn == "besselk")
+                            core = c.neg(core);
+                        const Expr F = c.mul({cPart, core});
+                        if (certifySpecialIntegral(c, F, f, var)) {
+                            out.F = F;
+                            out.status = RationalIntegral::Status::ProvedSymbolic;
+                            return out;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Orthogonal polynomials with concrete integer degree: expand to polynomial and integrate.
+    const Expr fExpanded = c.expand(f);
+    if (!fExpanded.isNull() && !(fExpanded == f)) {
+        return integrate(c, fExpanded, var, budget);
     }
 
     return out;
@@ -2912,6 +3004,14 @@ Expr realizeLogAbsAtEndpoint(Ctx &c, Expr e, Expr var, Expr pt)
         return c.pow(realizeLogAbsAtEndpoint(c, c.child(e, 0), var, pt),
                      realizeLogAbsAtEndpoint(c, c.child(e, 1), var, pt));
     case NodeKind::Func: {
+        if (c.childCount(e) != 1) {
+            std::vector<Expr> args;
+            args.reserve(c.childCount(e));
+            for (std::size_t i = 0; i < c.childCount(e); ++i)
+                args.push_back(
+                    realizeLogAbsAtEndpoint(c, c.child(e, i), var, pt));
+            return c.func(c.funcName(e), args);
+        }
         const Expr u = realizeLogAbsAtEndpoint(c, c.child(e, 0), var, pt);
         if (c.funcName(e) == "log") {
             const Expr uAtPt = c.subs(u, var, pt);
@@ -2966,6 +3066,13 @@ Expr expandMultipleAngleTrig(Ctx &c, Expr e, Expr var)
         return e;
     case NodeKind::Func: {
         const std::string &fn = c.funcName(e);
+        if (c.childCount(e) != 1) {
+            std::vector<Expr> args;
+            args.reserve(c.childCount(e));
+            for (std::size_t i = 0; i < c.childCount(e); ++i)
+                args.push_back(expandMultipleAngleTrig(c, c.child(e, i), var));
+            return c.func(fn, args);
+        }
         const Expr arg = expandMultipleAngleTrig(c, c.child(e, 0), var);
         if ((fn == "sin" || fn == "cos") && c.kind(arg) == NodeKind::Mul &&
             c.childCount(arg) == 2 &&
@@ -3521,7 +3628,7 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
                 }
             }
         }
-        if (intervalKind == 1 || intervalKind == 2) {
+        if (intervalKind == 1 || intervalKind == 2 || intervalKind == 4) {
             Expr bBase = fac;
             Expr bPow = c.one();
             if (c.kind(fac) == NodeKind::Pow &&
@@ -3694,6 +3801,76 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         return true;
     }
 
+    // Interval 4: [-1, 1] — symmetric Jacobi / Chebyshev / Gegenbauer integral
+    // int_{-1}^{1} x^k * (1 - x^2)^beta dx.
+    if (intervalKind == 4) {
+        if (!expArgs.empty() || hasTrig || logPow != 0)
+            return false;
+        const Expr kExpr = c.simplify(xExp);
+        std::int64_t kInt = 0;
+        if (c.kind(kExpr) != NodeKind::Number ||
+            c.numberValue(kExpr).den() != BigInt(1) ||
+            !c.numberValue(kExpr).num().fitsInt64(kInt) || kInt < 0)
+            return false;
+        Expr beta = c.zero();
+        if (binomCount == 1) {
+            if (binC0 != c.one() || binC1 != c.number(std::int64_t{-1}) ||
+                binM != c.number(std::int64_t{2}))
+                return false;
+            beta = c.simplify(binExp);
+        }
+        const Expr q = c.simplify(c.add({beta, c.one()}));
+        if (c.isAssumedNonNegative(c.neg(q))) {
+            isDivergent = true;
+            return false;
+        }
+        if (!c.isAssumedPositive(q))
+            return false;
+        if (kInt % 2 != 0) {
+            valOut = c.zero();
+            return true;
+        }
+        const Expr p =
+            c.number(Rational(kInt + 1, BigInt(2)));
+        const Expr pq = c.simplify(c.add({p, q}));
+        const Expr betaVal = c.div(
+            c.mul({c.func("gamma", p), c.func("gamma", q)}),
+            c.func("gamma", pq));
+        valOut = c.simplify(c.mul({constCoef, betaVal}));
+        return true;
+    }
+
+    // Interval 5: (-inf, +inf) — bilateral Gaussian moment / Hermite integral
+    // int_{-inf}^{+inf} x^k * exp(-a * x^2) dx.
+    if (intervalKind == 5) {
+        if (expArgs.empty() || binomCount != 0 || hasTrig || logPow != 0)
+            return false;
+        const Expr kExpr = c.simplify(xExp);
+        std::int64_t kInt = 0;
+        if (c.kind(kExpr) != NodeKind::Number ||
+            c.numberValue(kExpr).den() != BigInt(1) ||
+            !c.numberValue(kExpr).num().fitsInt64(kInt) || kInt < 0)
+            return false;
+        const Expr sumExp =
+            expArgs.size() == 1 ? expArgs[0] : c.simplify(c.add(expArgs));
+        Expr negA, qExp;
+        if (!matchMonomialInVar(c, sumExp, var, negA, qExp) ||
+            qExp != c.number(std::int64_t{2}))
+            return false;
+        const Expr aCoeff = c.simplify(c.neg(negA));
+        if (!c.isAssumedPositive(aCoeff))
+            return false;
+        if (kInt % 2 != 0) {
+            valOut = c.zero();
+            return true;
+        }
+        const Expr s = c.number(Rational(kInt + 1, BigInt(2)));
+        const Expr gaussVal =
+            c.div(c.func("gamma", s), c.pow(aCoeff, s));
+        valOut = c.simplify(c.mul({constCoef, gaussVal}));
+        return true;
+    }
+
     return false;
 }
 
@@ -3709,6 +3886,12 @@ bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
             orientSign = +1;
         } else if (a == c.one() && c.isZero(b)) {
             intervalKind = 1;
+            orientSign = -1;
+        } else if (a == c.number(std::int64_t{-1}) && b == c.one()) {
+            intervalKind = 4;
+            orientSign = +1;
+        } else if (a == c.one() && b == c.number(std::int64_t{-1})) {
+            intervalKind = 4;
             orientSign = -1;
         } else {
             Rational aPi, bPi;
@@ -3730,16 +3913,24 @@ bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     } else if (aIsInf && aInfDir > 0 && c.isZero(b)) {
         intervalKind = 2;
         orientSign = -1;
+    } else if (aIsInf && aInfDir < 0 && bIsInf && bInfDir > 0) {
+        intervalKind = 5;
+        orientSign = +1;
+    } else if (aIsInf && aInfDir > 0 && bIsInf && bInfDir < 0) {
+        intervalKind = 5;
+        orientSign = -1;
     }
     if (intervalKind == 0)
         return false;
 
+    const Expr fWork = c.expand(f);
+    const Expr fUse = fWork.isNull() ? f : fWork;
     std::vector<Expr> terms;
-    if (c.kind(f) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(f); ++i)
-            terms.push_back(c.child(f, i));
+    if (c.kind(fUse) == NodeKind::Add) {
+        for (std::size_t i = 0; i < c.childCount(fUse); ++i)
+            terms.push_back(c.child(fUse, i));
     } else {
-        terms.push_back(f);
+        terms.push_back(fUse);
     }
 
     std::vector<Expr> pieceVals;

@@ -96,10 +96,15 @@ FormalFrac toFormalFrac(Ctx &c, Expr e)
     case NodeKind::RootOf:
         return {e, c.one()};
     case NodeKind::Func: {
-        const Expr arg = simplifyRationalExpr(c, c.child(e, 0));
-        if (arg.isNull())
-            return {Expr(), Expr()};
-        const Expr fn = c.func(c.funcName(e), arg);
+        std::vector<Expr> args;
+        args.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            const Expr arg = simplifyRationalExpr(c, c.child(e, i));
+            if (arg.isNull())
+                return {Expr(), Expr()};
+            args.push_back(arg);
+        }
+        const Expr fn = c.func(c.funcName(e), args);
         Rational r;
         if (c.evalExact(fn, {}, r))
             return {c.number(r), c.one()};

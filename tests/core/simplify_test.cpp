@@ -414,5 +414,71 @@ TEST(SimplifyTest, GammaDigammaTrigammaIdentitiesAndEvaluation)
                 1e-14);
 }
 
+TEST(SimplifyTest, OrthogonalPolynomialsBesselAndAiryIdentities)
+{
+    Ctx c;
+    const Expr x = c.symbol("x");
+
+    // 1. Explicit expansion of classical orthogonal polynomials
+    EXPECT_EQ(c.simplify(parseExpr(c, "legendreP(3, x)")),
+              c.simplify(parseExpr(c, "5/2*x^3 - 3/2*x")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "chebyshevT(4, x)")),
+              c.simplify(parseExpr(c, "8*x^4 - 8*x^2 + 1")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "chebyshevU(3, x)")),
+              c.simplify(parseExpr(c, "8*x^3 - 4*x")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "hermiteH(3, x)")),
+              c.simplify(parseExpr(c, "8*x^3 - 12*x")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "laguerreL(2, x)")),
+              c.simplify(parseExpr(c, "1/2*x^2 - 2*x + 1")));
+
+    // 2. Symbolic-degree identities and three-term recurrences
+    EXPECT_EQ(c.simplify(parseExpr(c, "chebyshevT(n, cos(x))")),
+              parseExpr(c, "cos(n*x)"));
+    EXPECT_EQ(c.simplify(parseExpr(
+                  c, "(n + 1)*legendreP(n + 1, x) - (2*n + 1)*x*legendreP(n, x) + n*legendreP(n - 1, x)")),
+              c.zero());
+    EXPECT_EQ(c.simplify(parseExpr(
+                  c, "hermiteH(n + 1, x) - 2*x*hermiteH(n, x) + 2*n*hermiteH(n - 1, x)")),
+              c.zero());
+
+    // 3. Half-integer Bessel functions and 3-term recurrence / ODE verification
+    EXPECT_EQ(c.simplify(parseExpr(c, "besselj(1/2, x)")),
+              c.simplify(parseExpr(c, "2^(1/2)*pi^(-1/2)*x^(-1/2)*sin(x)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "besselj(-1/2, x)")),
+              c.simplify(parseExpr(c, "2^(1/2)*pi^(-1/2)*x^(-1/2)*cos(x)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "besseli(1/2, x)")),
+              c.simplify(parseExpr(c, "2^(1/2)*pi^(-1/2)*x^(-1/2)*sinh(x)")));
+    EXPECT_EQ(c.simplify(parseExpr(c, "besselk(1/2, x)")),
+              c.simplify(parseExpr(c, "2^(-1/2)*pi^(1/2)*x^(-1/2)*exp(-x)")));
+
+    EXPECT_EQ(c.simplify(parseExpr(
+                  c, "besselj(nu - 1, x) + besselj(nu + 1, x) - 2*nu/x*besselj(nu, x)")),
+              c.zero());
+
+    // Bessel's differential equation: x^2*y'' + x*y' + (x^2 - nu^2)*y = 0
+    const Expr jNu = parseExpr(c, "besselj(nu, x)");
+    const Expr djNu = c.diff(jNu, x);
+    const Expr ddjNu = c.diff(djNu, x);
+    const Expr besselOdeRes = c.simplify(c.add({
+        c.mul({c.pow(x, c.number(2)), ddjNu}),
+        c.mul({x, djNu}),
+        c.mul({parseExpr(c, "x^2 - nu^2"), jNu})}));
+    EXPECT_EQ(besselOdeRes, c.zero());
+
+    // Airy's differential equation: y'' - x*y = 0
+    const Expr ai = parseExpr(c, "airyAi(x)");
+    EXPECT_EQ(c.simplify(c.add({c.diff(c.diff(ai, x), x), c.neg(c.mul({x, ai}))})),
+              c.zero());
+
+    // 4. IEEE-754 double evaluation
+    double j0At0 = 0.0, j0At1 = 0.0, aiAt0 = 0.0;
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "besselj(0, 0)"), {}, j0At0));
+    EXPECT_DOUBLE_EQ(j0At0, 1.0);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "besselj(0, 1)"), {}, j0At1));
+    EXPECT_NEAR(j0At1, 0.76519768655796655, 1e-14);
+    ASSERT_TRUE(c.evalDouble(parseExpr(c, "airyAi(0)"), {}, aiAt0));
+    EXPECT_NEAR(aiAt0, 0.35502805388781724, 1e-14);
+}
+
 } // namespace
 } // namespace numkit::cas

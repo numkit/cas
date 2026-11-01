@@ -2004,6 +2004,13 @@ Expr rewriteTrigToSinCos(Ctx &c, Expr e)
         return c.pow(rewriteTrigToSinCos(c, c.child(e, 0)),
                      rewriteTrigToSinCos(c, c.child(e, 1)));
     case NodeKind::Func: {
+        if (c.childCount(e) != 1) {
+            std::vector<Expr> args;
+            args.reserve(c.childCount(e));
+            for (std::size_t i = 0; i < c.childCount(e); ++i)
+                args.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
+            return c.func(c.funcName(e), args);
+        }
         const Expr u = rewriteTrigToSinCos(c, c.child(e, 0));
         const std::string &fn = c.funcName(e);
         if (fn == "tan")
@@ -2101,8 +2108,13 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
         }
         return c.pow(b, p);
     }
-    case NodeKind::Func:
-        return c.func(c.funcName(e), clearNestedDenominators(c, c.child(e, 0)));
+    case NodeKind::Func: {
+        std::vector<Expr> args;
+        args.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            args.push_back(clearNestedDenominators(c, c.child(e, i)));
+        return c.func(c.funcName(e), args);
+    }
     }
     return e;
 }

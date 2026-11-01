@@ -1893,5 +1893,39 @@ TEST_F(RatIntTest, EulerGammaBetaAndWallisDefiniteIntegrals)
                        c, "gamma(p)*gamma(q)/gamma(p + q)"))})),
               c.zero());
     c.clearAssumptions();
+
+    // 5. Classical orthogonal polynomial orthogonality integrals & Bessel antiderivatives
+    const EulerCase orthoCases[] = {
+        {"legendreP(2, x)^2", "-1", "1", "2/5"},
+        {"legendreP(2, x)*legendreP(3, x)", "-1", "1", "0"},
+        {"chebyshevT(2, x)^2*(1 - x^2)^(-1/2)", "-1", "1", "1/2*pi"},
+        {"chebyshevT(2, x)*chebyshevT(3, x)*(1 - x^2)^(-1/2)", "-1", "1", "0"},
+        {"chebyshevU(2, x)^2*(1 - x^2)^(1/2)", "-1", "1", "1/2*pi"},
+        {"hermiteH(2, x)^2*exp(-x^2)", "-inf", "inf", "8*pi^(1/2)"},
+        {"hermiteH(1, x)*hermiteH(2, x)*exp(-x^2)", "-inf", "inf", "0"},
+        {"laguerreL(2, x)^2*exp(-x)", "0", "inf", "1"},
+        {"laguerreL(1, x)*laguerreL(2, x)*exp(-x)", "0", "inf", "0"},
+    };
+    for (const auto &tc : orthoCases) {
+        const Expr f = numkit::cas::parseExpr(c, tc.f);
+        const Expr a = numkit::cas::parseExpr(c, tc.a);
+        const Expr b = numkit::cas::parseExpr(c, tc.b);
+        const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
+        const numkit::cas::DefiniteIntegral r =
+            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        ASSERT_TRUE(r.proved())
+            << "Orthogonality definiteIntegrate failed for " << tc.f << ": "
+            << r.reason;
+        EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
+            << "for " << tc.f << ": got " << c.toString(r.value);
+    }
+
+    const auto intBessel = numkit::cas::integrate(
+        c, numkit::cas::parseExpr(c, "x^2*besselj(1, x)"), x);
+    ASSERT_TRUE(intBessel.proved()) << intBessel.reason;
+    EXPECT_EQ(c.simplify(c.add(
+                  {intBessel.F,
+                   c.neg(numkit::cas::parseExpr(c, "x^2*besselj(2, x)"))})),
+              c.zero());
 }
 

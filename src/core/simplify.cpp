@@ -911,11 +911,193 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     if (c.kind(e) != NodeKind::Func)
         return e;
     const std::string &fn = c.funcName(e);
-    const Expr arg = c.child(e, 0);
 
     Rational r;
     if (c.evalExact(e, {}, r))
         return c.number(r);
+
+    if (c.childCount(e) == 2) {
+        const Expr nArg = c.child(e, 0);
+        const Expr xArg = c.child(e, 1);
+
+        if (fn == "legendreP" || fn == "chebyshevT" || fn == "chebyshevU" ||
+            fn == "hermiteH" || fn == "laguerreL") {
+            if (c.kind(nArg) == NodeKind::Number) {
+                const Expr expd = c.expand(e);
+                if (!expd.isNull() && !(expd == e))
+                    return expd;
+            }
+            if (fn == "legendreP" && xArg == c.one())
+                return c.one();
+            if (fn == "chebyshevT") {
+                if (xArg == c.one())
+                    return c.one();
+                if (c.kind(xArg) == NodeKind::Func && c.childCount(xArg) == 1) {
+                    const std::string &innerFn = c.funcName(xArg);
+                    const Expr innerU = c.child(xArg, 0);
+                    if (innerFn == "cos")
+                        return simplifyFuncNode(
+                            c, c.func("cos", c.mul({nArg, innerU})));
+                    if (innerFn == "cosh")
+                        return simplifyFuncNode(
+                            c, c.func("cosh", c.mul({nArg, innerU})));
+                }
+            }
+            if (fn == "chebyshevU" && xArg == c.one())
+                return c.add({nArg, c.one()});
+            if (fn == "laguerreL" && c.isZero(xArg))
+                return c.one();
+            return e;
+        }
+
+        if (fn == "besselj" || fn == "bessely" || fn == "besseli" ||
+            fn == "besselk") {
+            if (c.isZero(xArg) && (fn == "besselj" || fn == "besseli")) {
+                if (c.isZero(nArg))
+                    return c.one();
+                if (c.isAssumedPositive(nArg))
+                    return c.zero();
+            }
+            if (fn == "besselk") {
+                if (c.isAssumedNegative(nArg))
+                    return c.func("besselk", c.neg(nArg), xArg);
+            }
+            if (c.kind(nArg) == NodeKind::Number) {
+                const Rational &rn = c.numberValue(nArg);
+                std::int64_t k = 0;
+                if (rn.den() == BigInt(1) && rn.num().fitsInt64(k) && k < 0) {
+                    const std::int64_t absK = -k;
+                    if (fn == "besselj" || fn == "bessely") {
+                        const Expr posF = c.func(fn, c.number(absK), xArg);
+                        return (absK % 2 == 0) ? posF : c.neg(posF);
+                    }
+                    if (fn == "besseli" || fn == "besselk") {
+                        return c.func(fn, c.number(absK), xArg);
+                    }
+                }
+                std::int64_t p = 0;
+                if (rn.den() == BigInt(2) && rn.num().fitsInt64(p) &&
+                    std::abs(p) <= 9) {
+                    // Half-integer order nu = p/2 (odd p = 2*m + 1)
+                    const Expr half =
+                        c.number(Rational(std::int64_t{1}, BigInt(2)));
+                    const Expr mHalf =
+                        c.number(Rational(std::int64_t{-1}, BigInt(2)));
+                    const Expr pref = c.mul({
+                        c.pow(c.number(2), half),
+                        c.pow(c.symbol("pi"), mHalf),
+                        c.pow(xArg, mHalf)});
+                    const Expr invX = c.pow(xArg, c.number(-1));
+                    if (fn == "besselj" || fn == "bessely") {
+                        Expr fm1 = (fn == "besselj")
+                                       ? c.mul({pref, c.func("cos", xArg)})
+                                       : c.mul({pref, c.func("sin", xArg)});
+                        Expr f1 = (fn == "besselj")
+                                      ? c.mul({pref, c.func("sin", xArg)})
+                                      : c.neg(c.mul({pref, c.func("cos", xArg)}));
+                        if (p == -1) return fm1;
+                        if (p == 1) return f1;
+                        if (p > 1) {
+                            Expr prev = fm1, cur = f1;
+                            for (std::int64_t odd = 1; odd < p; odd += 2) {
+                                const Expr next = c.expand(c.add({
+                                    c.mul({c.number(odd), invX, cur}),
+                                    c.neg(prev)}));
+                                prev = cur;
+                                cur = next;
+                            }
+                            return cur;
+                        }
+                        Expr prev = f1, cur = fm1;
+                        for (std::int64_t odd = -1; odd > p; odd -= 2) {
+                            const Expr next = c.expand(c.add({
+                                c.mul({c.number(odd), invX, cur}),
+                                c.neg(prev)}));
+                            prev = cur;
+                            cur = next;
+                        }
+                        return cur;
+                    }
+                    if (fn == "besseli") {
+                        Expr fm1 = c.mul({pref, c.func("cosh", xArg)});
+                        Expr f1 = c.mul({pref, c.func("sinh", xArg)});
+                        if (p == -1) return fm1;
+                        if (p == 1) return f1;
+                        if (p > 1) {
+                            Expr prev = fm1, cur = f1;
+                            for (std::int64_t odd = 1; odd < p; odd += 2) {
+                                const Expr next = c.expand(c.add({
+                                    prev,
+                                    c.neg(c.mul({c.number(odd), invX, cur}))}));
+                                prev = cur;
+                                cur = next;
+                            }
+                            return cur;
+                        }
+                        Expr prev = f1, cur = fm1;
+                        for (std::int64_t odd = -1; odd > p; odd -= 2) {
+                            const Expr next = c.expand(c.add({
+                                prev,
+                                c.mul({c.number(-odd), invX, cur})}));
+                            prev = cur;
+                            cur = next;
+                        }
+                        return cur;
+                    }
+                    if (fn == "besselk") {
+                        const std::int64_t absP = std::abs(p);
+                        const Expr kPref = c.mul({
+                            c.pow(c.symbol("pi"), half),
+                            c.pow(c.number(2), mHalf),
+                            c.pow(xArg, mHalf),
+                            c.func("exp", c.neg(xArg))});
+                        if (absP == 1)
+                            return kPref;
+                        Expr prev = kPref, cur = kPref;
+                        for (std::int64_t odd = 1; odd < absP; odd += 2) {
+                            const Expr next = c.expand(c.add({
+                                prev,
+                                c.mul({c.number(odd), invX, cur})}));
+                            prev = cur;
+                            cur = next;
+                        }
+                        return cur;
+                    }
+                }
+            }
+            return e;
+        }
+        return e;
+    }
+
+    const Expr arg = c.child(e, 0);
+
+    if (c.isZero(arg)) {
+        if (fn == "airyAi") {
+            return c.mul({
+                c.pow(c.number(3), c.number(Rational(-2, BigInt(3)))),
+                c.pow(c.func("gamma", c.number(Rational(2, BigInt(3)))),
+                      c.number(-1))});
+        }
+        if (fn == "airyBi") {
+            return c.mul({
+                c.pow(c.number(3), c.number(Rational(-1, BigInt(6)))),
+                c.pow(c.func("gamma", c.number(Rational(2, BigInt(3)))),
+                      c.number(-1))});
+        }
+        if (fn == "airyAiPrime") {
+            return c.neg(c.mul({
+                c.pow(c.number(3), c.number(Rational(-1, BigInt(3)))),
+                c.pow(c.func("gamma", c.number(Rational(1, BigInt(3)))),
+                      c.number(-1))}));
+        }
+        if (fn == "airyBiPrime") {
+            return c.mul({
+                c.pow(c.number(3), c.number(Rational(1, BigInt(6)))),
+                c.pow(c.func("gamma", c.number(Rational(1, BigInt(3)))),
+                      c.number(-1))});
+        }
+    }
 
     // Canonicalize sqrt(u) -> u^(1/2)
     if (fn == "sqrt") {
@@ -1398,8 +1580,11 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        const Expr arg = rewriteBottomUp(c, c.child(e, 0));
-        return simplifyFuncNode(c, c.func(c.funcName(e), arg));
+        std::vector<Expr> args;
+        args.reserve(c.childCount(e));
+        for (std::size_t i = 0; i < c.childCount(e); ++i)
+            args.push_back(rewriteBottomUp(c, c.child(e, i)));
+        return simplifyFuncNode(c, c.func(c.funcName(e), args));
     }
     case NodeKind::Pow: {
         const Expr b = rewriteBottomUp(c, c.child(e, 0));
@@ -1626,6 +1811,14 @@ Expr toSinCosRec(Ctx &c, Expr e, bool expandDoubleAngle,
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
+        if (c.childCount(e) != 1) {
+            std::vector<Expr> args;
+            args.reserve(c.childCount(e));
+            for (std::size_t i = 0; i < c.childCount(e); ++i)
+                args.push_back(
+                    toSinCosRec(c, c.child(e, i), expandDoubleAngle, trigArgs));
+            return c.func(c.funcName(e), args);
+        }
         const Expr u = toSinCosRec(c, c.child(e, 0), expandDoubleAngle, trigArgs);
         const std::string &fn = c.funcName(e);
 
@@ -1731,6 +1924,160 @@ void collectSymbols(const Ctx &c, Expr e, std::vector<Expr> &syms)
         collectSymbols(c, c.child(e, i), syms);
 }
 
+bool isThreeTermRecurrenceFunc(const std::string &fn)
+{
+    return fn == "besselj" || fn == "bessely" || fn == "besseli" ||
+           fn == "besselk" || fn == "legendreP" || fn == "chebyshevT" ||
+           fn == "chebyshevU" || fn == "hermiteH" || fn == "laguerreL";
+}
+
+void collectRecurrenceFuncNodes(const Ctx &c, Expr e, std::vector<Expr> &nodes)
+{
+    if (e.isNull())
+        return;
+    if (c.kind(e) == NodeKind::Func && c.childCount(e) == 2 &&
+        isThreeTermRecurrenceFunc(c.funcName(e))) {
+        if (std::find(nodes.begin(), nodes.end(), e) == nodes.end())
+            nodes.push_back(e);
+    }
+    for (std::size_t i = 0; i < c.childCount(e); ++i)
+        collectRecurrenceFuncNodes(c, c.child(e, i), nodes);
+}
+
+// Reduce Z-coset shifted orders nu_min + k (k >= 2) of 3-term recurrence
+// families (Bessel J/Y/I/K and orthogonal polynomials P_n, T_n, U_n, H_n, L_n)
+// to the 2-term basis {F(nu_min, u), F(nu_min + 1, u)}.
+Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
+{
+    std::vector<Expr> nodes;
+    collectRecurrenceFuncNodes(c, e, nodes);
+    if (nodes.size() < 2)
+        return e;
+
+    std::vector<bool> used(nodes.size(), false);
+    Expr curExpr = e;
+    bool anyReduced = false;
+
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        if (used[i])
+            continue;
+        used[i] = true;
+        const std::string fn = c.funcName(nodes[i]);
+        const Expr ordI = c.child(nodes[i], 0);
+        const Expr uArg = c.child(nodes[i], 1);
+        if (c.isZero(uArg))
+            continue;
+
+        struct ShiftNode {
+            Expr node;
+            Expr ord;
+            std::int64_t off;
+        };
+        std::vector<ShiftNode> group;
+        group.push_back({nodes[i], ordI, 0});
+        std::int64_t minOff = 0, maxOff = 0;
+        Expr minOrd = ordI;
+
+        for (std::size_t j = i + 1; j < nodes.size(); ++j) {
+            if (used[j])
+                continue;
+            if (c.funcName(nodes[j]) != fn || !(c.child(nodes[j], 1) == uArg))
+                continue;
+            const Expr ordJ = c.child(nodes[j], 0);
+            const Expr diffJI =
+                simplifyRationalExpr(c, c.add({ordJ, c.neg(ordI)}));
+            std::int64_t m = 0;
+            if (!diffJI.isNull() && c.kind(diffJI) == NodeKind::Number &&
+                c.numberValue(diffJI).den() == BigInt(1) &&
+                c.numberValue(diffJI).num().fitsInt64(m) &&
+                std::abs(m) <= 8) {
+                used[j] = true;
+                group.push_back({nodes[j], ordJ, m});
+                if (m < minOff) {
+                    minOff = m;
+                    minOrd = ordJ;
+                }
+                if (m > maxOff)
+                    maxOff = m;
+            }
+        }
+
+        const std::int64_t span = maxOff - minOff;
+        if (group.size() < 2 || span < 2 || span > 8)
+            continue;
+
+        std::vector<Expr> seq(static_cast<std::size_t>(span + 1));
+        seq[0] = c.func(fn, minOrd, uArg);
+        const Expr ord1 =
+            simplifyRationalExpr(c, c.add({minOrd, c.one()}));
+        seq[1] = c.func(fn, ord1.isNull() ? c.add({minOrd, c.one()}) : ord1, uArg);
+
+        bool ok = true;
+        for (std::int64_t r = 1; r < span; ++r) {
+            const Expr mu = simplifyRationalExpr(
+                c, c.add({minOrd, c.number(r)}));
+            const Expr muExpr = mu.isNull() ? c.add({minOrd, c.number(r)}) : mu;
+            const Expr fPrev = seq[static_cast<std::size_t>(r - 1)];
+            const Expr fCur = seq[static_cast<std::size_t>(r)];
+            Expr fNext;
+            if (fn == "besselj" || fn == "bessely") {
+                fNext = c.add({
+                    c.mul({c.number(2), muExpr, c.pow(uArg, c.number(-1)), fCur}),
+                    c.neg(fPrev)});
+            } else if (fn == "besseli") {
+                fNext = c.add({
+                    fPrev,
+                    c.neg(c.mul({c.number(2), muExpr, c.pow(uArg, c.number(-1)), fCur}))});
+            } else if (fn == "besselk") {
+                fNext = c.add({
+                    fPrev,
+                    c.mul({c.number(2), muExpr, c.pow(uArg, c.number(-1)), fCur})});
+            } else if (fn == "chebyshevT" || fn == "chebyshevU") {
+                fNext = c.add({c.mul({c.number(2), uArg, fCur}), c.neg(fPrev)});
+            } else if (fn == "hermiteH") {
+                fNext = c.add({
+                    c.mul({c.number(2), uArg, fCur}),
+                    c.neg(c.mul({c.number(2), muExpr, fPrev}))});
+            } else if (fn == "legendreP") {
+                const Expr den = c.add({muExpr, c.one()});
+                if (c.isZero(den)) { ok = false; break; }
+                const Expr twoMuP1 =
+                    c.add({c.mul({c.number(2), muExpr}), c.one()});
+                fNext = c.mul({
+                    c.pow(den, c.number(-1)),
+                    c.add({c.mul({twoMuP1, uArg, fCur}),
+                           c.neg(c.mul({muExpr, fPrev}))})});
+            } else if (fn == "laguerreL") {
+                const Expr den = c.add({muExpr, c.one()});
+                if (c.isZero(den)) { ok = false; break; }
+                const Expr twoMuP1MinusU = c.add({
+                    c.mul({c.number(2), muExpr}), c.one(), c.neg(uArg)});
+                fNext = c.mul({
+                    c.pow(den, c.number(-1)),
+                    c.add({c.mul({twoMuP1MinusU, fCur}),
+                           c.neg(c.mul({muExpr, fPrev}))})});
+            } else {
+                ok = false;
+                break;
+            }
+            seq[static_cast<std::size_t>(r + 1)] = fNext;
+        }
+        if (!ok)
+            continue;
+
+        for (const auto &sn : group) {
+            const std::int64_t k = sn.off - minOff;
+            if (k >= 2) {
+                curExpr = c.subs(curExpr, sn.node,
+                                 seq[static_cast<std::size_t>(k)]);
+                anyReduced = true;
+            }
+        }
+    }
+
+    return anyReduced ? curExpr : e;
+}
+
 Expr singleSimplifyPass(Ctx &c, Expr e, Budget *budget)
 {
     if (e.isNull() || !checkSimplifyBudget(c, budget))
@@ -1746,6 +2093,15 @@ Expr singleSimplifyPass(Ctx &c, Expr e, Budget *budget)
             const Expr ratRw = rewriteBottomUp(c, rat);
             best = pickBest(c, best, rat);
             best = pickBest(c, best, ratRw);
+        }
+        const Expr recReduced = reduceThreeTermRecurrences(c, rw);
+        if (!recReduced.isNull() && !(recReduced == rw)) {
+            const Expr recRat = simplifyRationalExpr(c, recReduced);
+            if (!recRat.isNull()) {
+                const Expr recRw = rewriteBottomUp(c, recRat);
+                best = pickBest(c, best, recRat);
+                best = pickBest(c, best, recRw);
+            }
         }
     }
 

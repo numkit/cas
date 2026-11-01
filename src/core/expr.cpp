@@ -91,6 +91,18 @@ Expr Ctx::func(const std::string &name, Expr arg)
     return makeNode(NodeKind::Func, id, {arg}, Rational(std::int64_t{0}));
 }
 
+Expr Ctx::func(const std::string &name, Expr arg0, Expr arg1)
+{
+    const std::uint32_t id = internName(name, funcIds_, funcNames_);
+    return makeNode(NodeKind::Func, id, {arg0, arg1}, Rational(std::int64_t{0}));
+}
+
+Expr Ctx::func(const std::string &name, const std::vector<Expr> &args)
+{
+    const std::uint32_t id = internName(name, funcIds_, funcNames_);
+    return makeNode(NodeKind::Func, id, args, Rational(std::int64_t{0}));
+}
+
 Expr Ctx::rootOf(std::vector<Rational> poly, int index)
 {
     while (poly.size() > 1 && poly.back().isZero())
@@ -451,7 +463,14 @@ int Ctx::compare(Expr a, Expr b) const
         const int byName = funcNames_[na.aux].compare(funcNames_[nb.aux]);
         if (byName != 0)
             return signOf(byName);
-        return compare(child(a, 0), child(b, 0));
+        const std::size_t n = std::min(na.childCount, nb.childCount);
+        for (std::size_t i = 0; i < n; ++i) {
+            const int c = compare(child(a, i), child(b, i));
+            if (c != 0)
+                return c;
+        }
+        return na.childCount < nb.childCount ? -1
+               : na.childCount > nb.childCount ? 1 : 0;
     }
     case NodeKind::Pow: {
         const int byBase = compare(child(a, 0), child(b, 0));
@@ -525,7 +544,11 @@ void Ctx::printPrec(Expr e, std::string &out, int parentPrec) const
             out += '(';
         out += funcNames_[n.aux];
         out += '(';
-        printPrec(child(e, 0), out, 0);
+        for (std::size_t i = 0; i < n.childCount; ++i) {
+            if (i > 0)
+                out += ", ";
+            printPrec(child(e, i), out, 0);
+        }
         out += ')';
         if (prec < parentPrec)
             out += ')';
@@ -612,11 +635,125 @@ bool Ctx::evalExact(
         return false; // algebraic, not rational (interval refinement
                       // is the future numeric layer's business)
     case NodeKind::Func: {
+        const std::string &name = funcName(e);
+        const Rational zero(0), one(1);
+        if (childCount(e) == 2) {
+            Rational nVal, xVal;
+            if (!evalExact(child(e, 0), vals, nVal))
+                return false;
+            const bool hasX = evalExact(child(e, 1), vals, xVal);
+            if ((name == "besselj" || name == "besseli") && hasX &&
+                xVal == zero) {
+                if (nVal == zero) {
+                    out = one;
+                    return true;
+                }
+                if (nVal > zero) {
+                    out = zero;
+                    return true;
+                }
+                return false;
+            }
+            if (!hasX)
+                return false;
+            std::int64_t n = 0;
+            if (!(nVal.den() == BigInt(1)) || !nVal.num().fitsInt64(n))
+                return false;
+            if (name == "legendreP") {
+                if (n < 0)
+                    n = -n - 1;
+                if (n > 64)
+                    return false;
+                if (n == 0) { out = one; return true; }
+                if (n == 1) { out = xVal; return true; }
+                Rational pPrev = one, pCur = xVal;
+                for (std::int64_t k = 1; k < n; ++k) {
+                    const Rational pNext =
+                        (Rational(2 * k + 1) * xVal * pCur -
+                         Rational(k) * pPrev) /
+                        Rational(k + 1);
+                    pPrev = pCur;
+                    pCur = pNext;
+                }
+                out = pCur;
+                return true;
+            }
+            if (name == "chebyshevT") {
+                if (n < 0)
+                    n = -n;
+                if (n > 64)
+                    return false;
+                if (n == 0) { out = one; return true; }
+                if (n == 1) { out = xVal; return true; }
+                Rational tPrev = one, tCur = xVal;
+                for (std::int64_t k = 1; k < n; ++k) {
+                    const Rational tNext =
+                        Rational(2) * xVal * tCur - tPrev;
+                    tPrev = tCur;
+                    tCur = tNext;
+                }
+                out = tCur;
+                return true;
+            }
+            if (name == "chebyshevU") {
+                Rational sgn = one;
+                if (n == -1) { out = zero; return true; }
+                if (n < -1) {
+                    n = -n - 2;
+                    sgn = Rational(-1);
+                }
+                if (n > 64)
+                    return false;
+                if (n == 0) { out = sgn; return true; }
+                if (n == 1) { out = sgn * Rational(2) * xVal; return true; }
+                Rational uPrev = one, uCur = Rational(2) * xVal;
+                for (std::int64_t k = 1; k < n; ++k) {
+                    const Rational uNext =
+                        Rational(2) * xVal * uCur - uPrev;
+                    uPrev = uCur;
+                    uCur = uNext;
+                }
+                out = sgn * uCur;
+                return true;
+            }
+            if (name == "hermiteH") {
+                if (n < 0 || n > 64)
+                    return false;
+                if (n == 0) { out = one; return true; }
+                if (n == 1) { out = Rational(2) * xVal; return true; }
+                Rational hPrev = one, hCur = Rational(2) * xVal;
+                for (std::int64_t k = 1; k < n; ++k) {
+                    const Rational hNext =
+                        Rational(2) * xVal * hCur -
+                        Rational(2 * k) * hPrev;
+                    hPrev = hCur;
+                    hCur = hNext;
+                }
+                out = hCur;
+                return true;
+            }
+            if (name == "laguerreL") {
+                if (n < 0 || n > 64)
+                    return false;
+                if (n == 0) { out = one; return true; }
+                if (n == 1) { out = one - xVal; return true; }
+                Rational lPrev = one, lCur = one - xVal;
+                for (std::int64_t k = 1; k < n; ++k) {
+                    const Rational lNext =
+                        ((Rational(2 * k + 1) - xVal) * lCur -
+                         Rational(k) * lPrev) /
+                        Rational(k + 1);
+                    lPrev = lCur;
+                    lCur = lNext;
+                }
+                out = lCur;
+                return true;
+            }
+            return false;
+        }
         Rational a;
         if (!evalExact(child(e, 0), vals, a))
             return false;
-        const std::string &name = funcName(e);
-        const Rational zero(0), one(1);
         if (name == "sqrt" && (a == zero || a == one)) { out = a; return true; }
         if (name == "exp" && a == zero) { out = one; return true; }
         if (name == "log" && a == one) { out = zero; return true; }
@@ -1090,6 +1227,469 @@ bool evalTrigammaDouble(double x, double &out)
     return std::isfinite(out);
 }
 
+bool evalBesselJDouble(double nu, double x, double &out)
+{
+    if (!std::isfinite(nu) || !std::isfinite(x))
+        return false;
+    const bool isIntNu = (std::floor(nu) == nu);
+    if (x == 0.0) {
+        if (nu == 0.0) { out = 1.0; return true; }
+        if (nu > 0.0) { out = 0.0; return true; }
+        return false;
+    }
+    double signFactor = 1.0;
+    if (isIntNu && nu < 0.0) {
+        const long long nInt = static_cast<long long>(-nu);
+        if (nInt % 2 != 0)
+            signFactor = -signFactor;
+        nu = -nu;
+    }
+    if (x < 0.0) {
+        if (!isIntNu)
+            return false;
+        const long long nInt = static_cast<long long>( std::abs(nu) );
+        if (nInt % 2 != 0)
+            signFactor = -signFactor;
+        x = -x;
+    }
+    if (x <= 12.0 + 0.5 * std::abs(nu)) {
+        const double halfX = 0.5 * x;
+        const double halfX2 = halfX * halfX;
+        double sum = 0.0;
+        if (nu >= 0.0) {
+            double term = std::exp(nu * std::log(halfX) - std::lgamma(nu + 1.0));
+            sum = term;
+            for (int k = 1; k <= 160; ++k) {
+                term *= -halfX2 / (static_cast<double>(k) * (nu + static_cast<double>(k)));
+                sum += term;
+                if (std::abs(term) <= std::abs(sum) * 1e-16 && k > halfX)
+                    break;
+            }
+        } else {
+            for (int k = 0; k <= 160; ++k) {
+                const double gArg = nu + static_cast<double>(k) + 1.0;
+                const double gam = std::tgamma(gArg);
+                if (!std::isfinite(gam) || gam == 0.0)
+                    continue;
+                double kFact = std::tgamma(static_cast<double>(k) + 1.0);
+                double term = ((k % 2 == 0) ? 1.0 : -1.0) *
+                              std::pow(halfX, 2.0 * k + nu) / (kFact * gam);
+                sum += term;
+                if (k > 10 && std::abs(term) <= std::abs(sum) * 1e-16 && k > halfX)
+                    break;
+            }
+        }
+        out = signFactor * sum;
+        return std::isfinite(out);
+    }
+    // Hankel asymptotic expansion for x > 12 + 0.5*|nu|
+    const double mu = 4.0 * nu * nu;
+    const double chi = x - (0.5 * nu + 0.25) * kPiDouble;
+    double P = 1.0, Q = 0.0;
+    double aTerm = 1.0;
+    for (int m = 1; m <= 24; ++m) {
+        const double num = mu - static_cast<double>((2 * m - 1) * (2 * m - 1));
+        const double nextA = aTerm * num / (static_cast<double>(m) * 8.0 * x);
+        if (m > 4 && std::abs(nextA) > std::abs(aTerm))
+            break;
+        aTerm = nextA;
+        if (m % 2 == 1) {
+            const double sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
+            Q += sgn * aTerm;
+        } else {
+            const double sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
+            P += sgn * aTerm;
+        }
+        if (std::abs(aTerm) < 1e-16)
+            break;
+    }
+    out = signFactor * std::sqrt(2.0 / (kPiDouble * x)) *
+          (P * std::cos(chi) - Q * std::sin(chi));
+    return std::isfinite(out);
+}
+
+bool evalBesselYDouble(double nu, double x, double &out)
+{
+    if (!std::isfinite(nu) || !std::isfinite(x) || x <= 0.0)
+        return false;
+    if (x > 12.0 + 0.5 * std::abs(nu)) {
+        const double mu = 4.0 * nu * nu;
+        const double chi = x - (0.5 * nu + 0.25) * kPiDouble;
+        double P = 1.0, Q = 0.0;
+        double aTerm = 1.0;
+        for (int m = 1; m <= 24; ++m) {
+            const double num = mu - static_cast<double>((2 * m - 1) * (2 * m - 1));
+            const double nextA = aTerm * num / (static_cast<double>(m) * 8.0 * x);
+            if (m > 4 && std::abs(nextA) > std::abs(aTerm))
+                break;
+            aTerm = nextA;
+            if (m % 2 == 1) {
+                const double sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
+                Q += sgn * aTerm;
+            } else {
+                const double sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
+                P += sgn * aTerm;
+            }
+            if (std::abs(aTerm) < 1e-16)
+                break;
+        }
+        out = std::sqrt(2.0 / (kPiDouble * x)) *
+              (P * std::sin(chi) + Q * std::cos(chi));
+        return std::isfinite(out);
+    }
+    if (std::floor(nu) != nu) {
+        double jPos = 0.0, jNeg = 0.0;
+        if (!evalBesselJDouble(nu, x, jPos) || !evalBesselJDouble(-nu, x, jNeg))
+            return false;
+        out = (jPos * std::cos(nu * kPiDouble) - jNeg) / std::sin(nu * kPiDouble);
+        return std::isfinite(out);
+    }
+    double signFactor = 1.0;
+    int n = static_cast<int>(nu);
+    if (n < 0) {
+        n = -n;
+        if (n % 2 != 0)
+            signFactor = -1.0;
+    }
+    if (n > 30)
+        return false;
+    double jn = 0.0;
+    if (!evalBesselJDouble(static_cast<double>(n), x, jn))
+        return false;
+    const double halfX = 0.5 * x;
+    const double halfX2 = halfX * halfX;
+    double poleSum = 0.0;
+    for (int k = 0; k < n; ++k) {
+        const double numFact = std::tgamma(static_cast<double>(n - k));
+        const double denFact = std::tgamma(static_cast<double>(k + 1));
+        poleSum += (numFact / denFact) * std::pow(halfX, 2 * k - n);
+    }
+    double hN = 0.0;
+    for (int j = 1; j <= n; ++j)
+        hN += 1.0 / static_cast<double>(j);
+    double hK = 0.0;
+    double powTerm = std::pow(halfX, n) / std::tgamma(static_cast<double>(n + 1));
+    double regSum = (hK + hN) * powTerm;
+    for (int k = 1; k <= 120; ++k) {
+        hK += 1.0 / static_cast<double>(k);
+        hN += 1.0 / static_cast<double>(n + k);
+        powTerm *= -halfX2 / (static_cast<double>(k) * static_cast<double>(n + k));
+        const double contrib = (hK + hN) * powTerm;
+        regSum += contrib;
+        if (std::abs(contrib) <= std::abs(regSum) * 1e-16 && k > halfX)
+            break;
+    }
+    out = signFactor *
+          ((2.0 / kPiDouble) * (std::log(halfX) + kEulerGamma) * jn -
+           (poleSum + regSum) / kPiDouble);
+    return std::isfinite(out);
+}
+
+bool evalBesselIDouble(double nu, double x, double &out)
+{
+    if (!std::isfinite(nu) || !std::isfinite(x))
+        return false;
+    const bool isIntNu = (std::floor(nu) == nu);
+    if (x == 0.0) {
+        if (nu == 0.0) { out = 1.0; return true; }
+        if (nu > 0.0) { out = 0.0; return true; }
+        return false;
+    }
+    if (isIntNu && nu < 0.0)
+        nu = -nu;
+    double signFactor = 1.0;
+    if (x < 0.0) {
+        if (!isIntNu)
+            return false;
+        const long long nInt = static_cast<long long>(std::abs(nu));
+        if (nInt % 2 != 0)
+            signFactor = -1.0;
+        x = -x;
+    }
+    if (x <= 14.0 + 0.5 * std::abs(nu)) {
+        const double halfX = 0.5 * x;
+        const double halfX2 = halfX * halfX;
+        double sum = 0.0;
+        if (nu >= 0.0) {
+            double term = std::exp(nu * std::log(halfX) - std::lgamma(nu + 1.0));
+            sum = term;
+            for (int k = 1; k <= 160; ++k) {
+                term *= halfX2 / (static_cast<double>(k) * (nu + static_cast<double>(k)));
+                sum += term;
+                if (std::abs(term) <= std::abs(sum) * 1e-16 && k > halfX)
+                    break;
+            }
+        } else {
+            for (int k = 0; k <= 160; ++k) {
+                const double gArg = nu + static_cast<double>(k) + 1.0;
+                const double gam = std::tgamma(gArg);
+                if (!std::isfinite(gam) || gam == 0.0)
+                    continue;
+                const double kFact = std::tgamma(static_cast<double>(k) + 1.0);
+                const double term = std::pow(halfX, 2.0 * k + nu) / (kFact * gam);
+                sum += term;
+                if (k > 10 && std::abs(term) <= std::abs(sum) * 1e-16 && k > halfX)
+                    break;
+            }
+        }
+        out = signFactor * sum;
+        return std::isfinite(out);
+    }
+    const double mu = 4.0 * nu * nu;
+    double sum = 1.0, term = 1.0;
+    for (int k = 1; k <= 24; ++k) {
+        const double num = mu - static_cast<double>((2 * k - 1) * (2 * k - 1));
+        const double next = -term * num / (static_cast<double>(k) * 8.0 * x);
+        if (k > 4 && std::abs(next) > std::abs(term))
+            break;
+        term = next;
+        sum += term;
+        if (std::abs(term) < 1e-16)
+            break;
+    }
+    out = signFactor * (std::exp(x) / std::sqrt(2.0 * kPiDouble * x)) * sum;
+    return std::isfinite(out);
+}
+
+bool evalBesselKDouble(double nu, double x, double &out)
+{
+    if (!std::isfinite(nu) || !std::isfinite(x) || x <= 0.0)
+        return false;
+    nu = std::abs(nu);
+    if (x > 9.0 + 0.5 * nu) {
+        const double mu = 4.0 * nu * nu;
+        double sum = 1.0, term = 1.0;
+        for (int k = 1; k <= 24; ++k) {
+            const double num = mu - static_cast<double>((2 * k - 1) * (2 * k - 1));
+            const double next = term * num / (static_cast<double>(k) * 8.0 * x);
+            if (k > 4 && std::abs(next) > std::abs(term))
+                break;
+            term = next;
+            sum += term;
+            if (std::abs(term) < 1e-16)
+                break;
+        }
+        out = std::sqrt(kPiDouble / (2.0 * x)) * std::exp(-x) * sum;
+        return std::isfinite(out);
+    }
+    if (std::floor(nu) != nu) {
+        double iPos = 0.0, iNeg = 0.0;
+        if (!evalBesselIDouble(nu, x, iPos) || !evalBesselIDouble(-nu, x, iNeg))
+            return false;
+        out = (0.5 * kPiDouble) * (iNeg - iPos) / std::sin(nu * kPiDouble);
+        return std::isfinite(out);
+    }
+    const int n = static_cast<int>(nu);
+    if (n > 30)
+        return false;
+    double inVal = 0.0;
+    if (!evalBesselIDouble(static_cast<double>(n), x, inVal))
+        return false;
+    const double halfX = 0.5 * x;
+    const double halfX2 = halfX * halfX;
+    double poleSum = 0.0;
+    for (int k = 0; k < n; ++k) {
+        const double sgn = (k % 2 == 0) ? 1.0 : -1.0;
+        const double numFact = std::tgamma(static_cast<double>(n - k));
+        const double denFact = std::tgamma(static_cast<double>(k + 1));
+        poleSum += sgn * (numFact / denFact) * std::pow(halfX, 2 * k - n);
+    }
+    double hN = 0.0;
+    for (int j = 1; j <= n; ++j)
+        hN += 1.0 / static_cast<double>(j);
+    double hK = 0.0;
+    double powTerm = std::pow(halfX, n) / std::tgamma(static_cast<double>(n + 1));
+    double regSum = (hK + hN) * powTerm;
+    for (int k = 1; k <= 120; ++k) {
+        hK += 1.0 / static_cast<double>(k);
+        hN += 1.0 / static_cast<double>(n + k);
+        powTerm *= halfX2 / (static_cast<double>(k) * static_cast<double>(n + k));
+        const double contrib = (hK + hN) * powTerm;
+        regSum += contrib;
+        if (std::abs(contrib) <= std::abs(regSum) * 1e-16 && k > halfX)
+            break;
+    }
+    const double sgnN = (n % 2 == 0) ? 1.0 : -1.0;
+    out = -sgnN * (std::log(halfX) + kEulerGamma) * inVal + 0.5 * poleSum +
+          0.5 * sgnN * regSum;
+    return std::isfinite(out);
+}
+
+bool evalAiryDouble(const std::string &fn, double x, double &out)
+{
+    if (!std::isfinite(x))
+        return false;
+    static constexpr double kAi0 = 0.35502805388781723926;
+    static constexpr double kAiP0 = 0.25881940379280679840;
+    const double sqrt3 = std::sqrt(3.0);
+    if (std::abs(x) <= 5.5) {
+        const double x2 = x * x;
+        const double x3 = x2 * x;
+        double f = 1.0, fp = 0.0, cTerm = 1.0;
+        double g = x, gp = 1.0, dTerm = 1.0;
+        for (int k = 1; k <= 60; ++k) {
+            cTerm *= x3 / static_cast<double>((3 * k - 1) * (3 * k));
+            f += cTerm;
+            fp += static_cast<double>(3 * k) * (cTerm / x);
+            dTerm *= x3 / static_cast<double>((3 * k) * (3 * k + 1));
+            g += dTerm * x;
+            gp += static_cast<double>(3 * k + 1) * dTerm;
+            if (std::abs(cTerm) <= 1e-16 && std::abs(dTerm) <= 1e-16)
+                break;
+        }
+        if (x == 0.0) {
+            fp = 0.0;
+            gp = 1.0;
+        }
+        if (fn == "airyAi")
+            out = kAi0 * f - kAiP0 * g;
+        else if (fn == "airyBi")
+            out = sqrt3 * (kAi0 * f + kAiP0 * g);
+        else if (fn == "airyAiPrime")
+            out = kAi0 * fp - kAiP0 * gp;
+        else if (fn == "airyBiPrime")
+            out = sqrt3 * (kAi0 * fp + kAiP0 * gp);
+        else
+            return false;
+        return std::isfinite(out);
+    }
+    const double ax = std::abs(x);
+    const double zeta = (2.0 / 3.0) * ax * std::sqrt(ax);
+    if (x > 0.0) {
+        if (fn == "airyAi") {
+            double kVal = 0.0;
+            if (!evalBesselKDouble(1.0 / 3.0, zeta, kVal))
+                return false;
+            out = (1.0 / kPiDouble) * std::sqrt(x / 3.0) * kVal;
+            return std::isfinite(out);
+        }
+        if (fn == "airyAiPrime") {
+            double kVal = 0.0;
+            if (!evalBesselKDouble(2.0 / 3.0, zeta, kVal))
+                return false;
+            out = -(x / (kPiDouble * sqrt3)) * kVal;
+            return std::isfinite(out);
+        }
+        if (fn == "airyBi") {
+            double iPos = 0.0, iNeg = 0.0;
+            if (!evalBesselIDouble(1.0 / 3.0, zeta, iPos) ||
+                !evalBesselIDouble(-1.0 / 3.0, zeta, iNeg))
+                return false;
+            out = std::sqrt(x / 3.0) * (iNeg + iPos);
+            return std::isfinite(out);
+        }
+        if (fn == "airyBiPrime") {
+            double iPos = 0.0, iNeg = 0.0;
+            if (!evalBesselIDouble(2.0 / 3.0, zeta, iPos) ||
+                !evalBesselIDouble(-2.0 / 3.0, zeta, iNeg))
+                return false;
+            out = (x / sqrt3) * (iNeg + iPos);
+            return std::isfinite(out);
+        }
+        return false;
+    }
+    // x < -5.5
+    double j13 = 0.0, jm13 = 0.0, j23 = 0.0, jm23 = 0.0;
+    if (fn == "airyAi" || fn == "airyBi") {
+        if (!evalBesselJDouble(1.0 / 3.0, zeta, j13) ||
+            !evalBesselJDouble(-1.0 / 3.0, zeta, jm13))
+            return false;
+        out = (fn == "airyAi") ? (std::sqrt(ax) / 3.0) * (j13 + jm13)
+                               : std::sqrt(ax / 3.0) * (jm13 - j13);
+        return std::isfinite(out);
+    }
+    if (fn == "airyAiPrime" || fn == "airyBiPrime") {
+        if (!evalBesselJDouble(2.0 / 3.0, zeta, j23) ||
+            !evalBesselJDouble(-2.0 / 3.0, zeta, jm23))
+            return false;
+        out = (fn == "airyAiPrime") ? -(ax / 3.0) * (j23 - jm23)
+                                    : (ax / sqrt3) * (j23 + jm23);
+        return std::isfinite(out);
+    }
+    return false;
+}
+
+bool evalOrthogonalPolyDouble(const std::string &fn, double nVal, double x,
+                              double &out)
+{
+    if (!std::isfinite(nVal) || !std::isfinite(x) || std::floor(nVal) != nVal)
+        return false;
+    int n = static_cast<int>(nVal);
+    if (fn == "legendreP") {
+        if (n < 0) n = -n - 1;
+        if (n > 200) return false;
+        if (n == 0) { out = 1.0; return true; }
+        if (n == 1) { out = x; return true; }
+        double pPrev = 1.0, pCur = x;
+        for (int k = 1; k < n; ++k) {
+            const double pNext =
+                ((2.0 * k + 1.0) * x * pCur - k * pPrev) / (k + 1.0);
+            pPrev = pCur;
+            pCur = pNext;
+        }
+        out = pCur;
+        return std::isfinite(out);
+    }
+    if (fn == "chebyshevT") {
+        if (n < 0) n = -n;
+        if (n > 200) return false;
+        if (n == 0) { out = 1.0; return true; }
+        if (n == 1) { out = x; return true; }
+        double tPrev = 1.0, tCur = x;
+        for (int k = 1; k < n; ++k) {
+            const double tNext = 2.0 * x * tCur - tPrev;
+            tPrev = tCur;
+            tCur = tNext;
+        }
+        out = tCur;
+        return std::isfinite(out);
+    }
+    if (fn == "chebyshevU") {
+        double sgn = 1.0;
+        if (n == -1) { out = 0.0; return true; }
+        if (n < -1) { n = -n - 2; sgn = -1.0; }
+        if (n > 200) return false;
+        if (n == 0) { out = sgn; return true; }
+        if (n == 1) { out = sgn * 2.0 * x; return true; }
+        double uPrev = 1.0, uCur = 2.0 * x;
+        for (int k = 1; k < n; ++k) {
+            const double uNext = 2.0 * x * uCur - uPrev;
+            uPrev = uCur;
+            uCur = uNext;
+        }
+        out = sgn * uCur;
+        return std::isfinite(out);
+    }
+    if (fn == "hermiteH") {
+        if (n < 0 || n > 200) return false;
+        if (n == 0) { out = 1.0; return true; }
+        if (n == 1) { out = 2.0 * x; return true; }
+        double hPrev = 1.0, hCur = 2.0 * x;
+        for (int k = 1; k < n; ++k) {
+            const double hNext = 2.0 * x * hCur - 2.0 * k * hPrev;
+            hPrev = hCur;
+            hCur = hNext;
+        }
+        out = hCur;
+        return std::isfinite(out);
+    }
+    if (fn == "laguerreL") {
+        if (n < 0 || n > 200) return false;
+        if (n == 0) { out = 1.0; return true; }
+        if (n == 1) { out = 1.0 - x; return true; }
+        double lPrev = 1.0, lCur = 1.0 - x;
+        for (int k = 1; k < n; ++k) {
+            const double lNext =
+                ((2.0 * k + 1.0 - x) * lCur - k * lPrev) / (k + 1.0);
+            lPrev = lCur;
+            lCur = lNext;
+        }
+        out = lCur;
+        return std::isfinite(out);
+    }
+    return false;
+}
+
 bool evalDoubleRec(
     const Ctx &c, Expr e,
     const std::vector<std::pair<std::string, double>> &vals,
@@ -1198,10 +1798,34 @@ bool evalDoubleRec(
         break;
     }
     case NodeKind::Func: {
+        const std::string &fn = c.funcName(e);
+        if (c.childCount(e) == 2) {
+            double a0 = 0.0, a1 = 0.0;
+            if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a0) ||
+                !evalDoubleRec(c, c.child(e, 1), vals, memo, a1))
+                return false;
+            if (fn == "besselj") {
+                if (!evalBesselJDouble(a0, a1, res)) return false;
+            } else if (fn == "bessely") {
+                if (!evalBesselYDouble(a0, a1, res)) return false;
+            } else if (fn == "besseli") {
+                if (!evalBesselIDouble(a0, a1, res)) return false;
+            } else if (fn == "besselk") {
+                if (!evalBesselKDouble(a0, a1, res)) return false;
+            } else if (fn == "legendreP" || fn == "chebyshevT" ||
+                       fn == "chebyshevU" || fn == "hermiteH" ||
+                       fn == "laguerreL") {
+                if (!evalOrthogonalPolyDouble(fn, a0, a1, res)) return false;
+            } else {
+                return false;
+            }
+            if (!std::isfinite(res))
+                return false;
+            break;
+        }
         double a = 0.0;
         if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a))
             return false;
-        const std::string &fn = c.funcName(e);
         if (fn == "exp") {
             res = std::exp(a);
         } else if (fn == "log") {
@@ -1319,6 +1943,9 @@ bool evalDoubleRec(
             if (!evalDigammaDouble(a, res)) return false;
         } else if (fn == "trigamma") {
             if (!evalTrigammaDouble(a, res)) return false;
+        } else if (fn == "airyAi" || fn == "airyBi" ||
+                   fn == "airyAiPrime" || fn == "airyBiPrime") {
+            if (!evalAiryDouble(fn, a, res)) return false;
         } else {
             return false;
         }
@@ -1380,8 +2007,97 @@ Expr Ctx::expand(Expr e)
     case NodeKind::Symbol:
     case NodeKind::RootOf:
         return e;
-    case NodeKind::Func:
-        return func(funcName(e), expand(child(e, 0)));
+    case NodeKind::Func: {
+        std::vector<Expr> args;
+        args.reserve(childCount(e));
+        for (std::size_t i = 0; i < childCount(e); ++i)
+            args.push_back(expand(child(e, i)));
+        const std::string &fn = funcName(e);
+        if (args.size() == 2 && kind(args[0]) == NodeKind::Number) {
+            const Rational &rn = numberValue(args[0]);
+            std::int64_t n = 0;
+            if (rn.den() == BigInt(1) && rn.num().fitsInt64(n)) {
+                const Expr xArg = args[1];
+                if (fn == "legendreP") {
+                    if (n < 0) n = -n - 1;
+                    if (n >= 0 && n <= 64) {
+                        if (n == 0) return one();
+                        if (n == 1) return xArg;
+                        Expr pPrev = one(), pCur = xArg;
+                        for (std::int64_t k = 1; k < n; ++k) {
+                            const Expr pNext = expand(mul({
+                                number(Rational(1, BigInt(k + 1))),
+                                add({mul({number(2 * k + 1), xArg, pCur}),
+                                     neg(mul({number(k), pPrev}))})}));
+                            pPrev = pCur;
+                            pCur = pNext;
+                        }
+                        return pCur;
+                    }
+                } else if (fn == "chebyshevT") {
+                    if (n < 0) n = -n;
+                    if (n >= 0 && n <= 64) {
+                        if (n == 0) return one();
+                        if (n == 1) return xArg;
+                        Expr tPrev = one(), tCur = xArg;
+                        for (std::int64_t k = 1; k < n; ++k) {
+                            const Expr tNext = expand(
+                                add({mul({number(2), xArg, tCur}), neg(tPrev)}));
+                            tPrev = tCur;
+                            tCur = tNext;
+                        }
+                        return tCur;
+                    }
+                } else if (fn == "chebyshevU") {
+                    Expr sgn = one();
+                    if (n == -1) return zero();
+                    if (n < -1) { n = -n - 2; sgn = number(-1); }
+                    if (n >= 0 && n <= 64) {
+                        if (n == 0) return sgn;
+                        if (n == 1) return expand(mul({sgn, number(2), xArg}));
+                        Expr uPrev = one(), uCur = expand(mul({number(2), xArg}));
+                        for (std::int64_t k = 1; k < n; ++k) {
+                            const Expr uNext = expand(
+                                add({mul({number(2), xArg, uCur}), neg(uPrev)}));
+                            uPrev = uCur;
+                            uCur = uNext;
+                        }
+                        return expand(mul({sgn, uCur}));
+                    }
+                } else if (fn == "hermiteH") {
+                    if (n >= 0 && n <= 64) {
+                        if (n == 0) return one();
+                        if (n == 1) return expand(mul({number(2), xArg}));
+                        Expr hPrev = one(), hCur = expand(mul({number(2), xArg}));
+                        for (std::int64_t k = 1; k < n; ++k) {
+                            const Expr hNext = expand(add({
+                                mul({number(2), xArg, hCur}),
+                                neg(mul({number(2 * k), hPrev}))}));
+                            hPrev = hCur;
+                            hCur = hNext;
+                        }
+                        return hCur;
+                    }
+                } else if (fn == "laguerreL") {
+                    if (n >= 0 && n <= 64) {
+                        if (n == 0) return one();
+                        if (n == 1) return expand(add({one(), neg(xArg)}));
+                        Expr lPrev = one(), lCur = expand(add({one(), neg(xArg)}));
+                        for (std::int64_t k = 1; k < n; ++k) {
+                            const Expr lNext = expand(mul({
+                                number(Rational(1, BigInt(k + 1))),
+                                add({mul({add({number(2 * k + 1), neg(xArg)}), lCur}),
+                                     neg(mul({number(k), lPrev}))})}));
+                            lPrev = lCur;
+                            lCur = lNext;
+                        }
+                        return lCur;
+                    }
+                }
+            }
+        }
+        return func(fn, args);
+    }
     case NodeKind::Pow: {
         const Expr base = expand(child(e, 0));
         const Expr exp = child(e, 1);
@@ -1474,8 +2190,13 @@ Expr Ctx::subs(Expr e, Expr from, Expr to)
     case NodeKind::Symbol:
     case NodeKind::RootOf:
         return e; // atoms: no children to descend into
-    case NodeKind::Func:
-        return func(funcName(e), subs(child(e, 0), from, to));
+    case NodeKind::Func: {
+        std::vector<Expr> kids;
+        kids.reserve(childCount(e));
+        for (std::size_t i = 0; i < childCount(e); ++i)
+            kids.push_back(subs(child(e, i), from, to));
+        return func(funcName(e), kids);
+    }
     case NodeKind::Pow:
         return pow(subs(child(e, 0), from, to),
                    subs(child(e, 1), from, to));

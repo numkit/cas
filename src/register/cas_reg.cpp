@@ -33,7 +33,7 @@ void syms_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, Call
         }
     }
     if (!outs.empty()) {
-        outs[0] = Value::Empty;
+        outs[0] = Value();
     }
 }
 

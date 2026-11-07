@@ -84,6 +84,15 @@ bool isValidIdentifier(const std::string &s)
     return true;
 }
 
+Rational doubleToRational(double v);
+
+Expr doubleToSymExpr(Ctx &c, double v)
+{
+    if (std::isinf(v))
+        return (v > 0.0) ? c.symbol("oo") : c.neg(c.symbol("oo"));
+    return c.number(doubleToRational(v));
+}
+
 Rational doubleToRational(double v)
 {
     if (!std::isfinite(v))
@@ -300,13 +309,13 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
     }
     if (v.isNumeric() || v.isLogical()) {
         if (v.isScalar()) {
-            Expr in = c.number(doubleToRational(v.toScalar()));
+            Expr in = doubleToSymExpr(c, (v.toScalar()));
             return fromSymExpr(ctxPtr, fn(in), mr);
         }
         const std::size_t n = v.numel();
         std::vector<std::shared_ptr<ObjectState>> states(n);
         for (std::size_t i = 0; i < n; ++i) {
-            Expr in = c.number(doubleToRational(v.elemAt(i).toScalar()));
+            Expr in = doubleToSymExpr(c, (v.elemAt(i).toScalar()));
             auto nst = std::make_shared<ObjectState>(mr);
             nst->native = std::make_shared<SymPayload>(ctxPtr, fn(in));
             states[i] = std::move(nst);
@@ -392,7 +401,7 @@ double SymPayload::asDouble() const
 std::shared_ptr<numkit::NativePayload> SymPayload::fromScalarDouble(double v) const
 {
     auto c = ctx ? ctx : defaultCtx();
-    return std::make_shared<SymPayload>(c, c->number(doubleToRational(v)));
+    return std::make_shared<SymPayload>(c, doubleToSymExpr(*c, v));
 }
 
 bool isSymValue(const numkit::Value &v) noexcept
@@ -417,7 +426,7 @@ Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName)
             casFail(std::string("nk:") + fnName + ":expectedScalar",
                         std::string(fnName) + ": expected scalar argument");
         }
-        return c.number(doubleToRational(v.toScalar()));
+        return doubleToSymExpr(c, (v.toScalar()));
     }
     if (v.isChar() || v.isString()) {
         return parseExprFlexible(c, v.toString(), fnName);
@@ -449,7 +458,7 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
         SymMatrix M(rows, cols, c.zero());
         for (std::size_t col = 0; col < cols; ++col) {
             for (std::size_t r = 0; r < rows; ++r) {
-                M(r, col) = c.number(doubleToRational(v.elemAt(col * rows + r).toScalar()));
+                M(r, col) = doubleToSymExpr(c, (v.elemAt(col * rows + r).toScalar()));
             }
         }
         return M;
@@ -817,7 +826,7 @@ numkit::Value symCreate(numkit::Span<const numkit::Value> args,
     }
     if (a0.isNumeric() || a0.isLogical()) {
         if (a0.isScalar()) {
-            return fromSymExpr(ctxPtr, c.number(doubleToRational(a0.toScalar())), mr);
+            return fromSymExpr(ctxPtr, doubleToSymExpr(c, (a0.toScalar())), mr);
         }
         return fromSymMatrix(ctxPtr, toSymMatrix(a0, c, "sym"), mr);
     }

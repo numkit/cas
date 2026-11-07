@@ -1,12 +1,13 @@
-include(FetchContent)
-
-FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG v1.14.0
-)
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+if(NOT TARGET GTest::gtest_main)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+    )
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+endif()
 
 add_executable(nkcas_gtest
     num/bigint_test.cpp
@@ -44,5 +45,35 @@ add_executable(nkcas_gtest
 target_include_directories(nkcas_gtest PRIVATE ${PROJECT_SOURCE_DIR}/apps)
 target_link_libraries(nkcas_gtest PRIVATE numkit::cas GTest::gtest_main)
 
-include(GoogleTest)
-gtest_discover_tests(nkcas_gtest)
+if(MSVC)
+    target_compile_options(nkcas_gtest PRIVATE /MP /bigobj)
+endif()
+
+add_test(NAME nkcas_gtest COMMAND nkcas_gtest)
+
+if(TARGET numkit AND TARGET numkit_cas_core)
+    add_executable(numkit_cas_test
+        cas_plugin_test.cpp
+    )
+    target_include_directories(numkit_cas_test PRIVATE
+        ${PROJECT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_SOURCE_DIR}/tests
+    )
+    target_link_libraries(numkit_cas_test PRIVATE
+        numkit_cas_core
+        numkit
+        GTest::gtest_main
+    )
+    if(TARGET hwy AND TARGET hwy_contrib)
+        target_link_libraries(numkit_cas_test PRIVATE hwy hwy_contrib)
+    endif()
+    if(TARGET numkit_cas)
+        add_dependencies(numkit_cas_test numkit_cas)
+    endif()
+    if(MSVC)
+        target_compile_options(numkit_cas_test PRIVATE /W3 /MP /bigobj)
+    endif()
+    add_test(NAME numkit_cas_test COMMAND numkit_cas_test)
+endif()

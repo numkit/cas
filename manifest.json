@@ -1,0 +1,38 @@
+{
+  "name": "cas",
+  "version": "0.10.0",
+  "description": "Symbolic Math Toolbox for NumKit",
+  "author": "NumKit",
+  "license": "0BSD",
+  "library": "numkit_cas",
+  "exports": [
+    "sym", "syms", "assume", "assumptions", "vpa", "poly2sym", "sym2poly", "symvar",
+    "simplify", "expand", "factor", "collect", "coeffs", "numden", "partfrac", "subs",
+    "int", "defint", "limit", "taylor", "laurent", "mtaylor", "pade", "symsum", "finitediff", "eulermaclaurin",
+    "solve", "groebner", "polyreduce",
+    "dsolve", "pdsolve",
+    "laplace", "ilaplace", "fourier", "ifourier", "ztrans", "iztrans", "rsolve",
+    "latex", "ccode",
+    "charpoly", "adjugate", "jordan",
+    "jacobian", "gradient", "hessian", "divergence", "curl", "laplacian", "wronskian", "potential",
+    "eulerlagrange", "hamiltonian", "legendretransform", "poissonbracket", "lagrangeextrema",
+    "frenetserret", "surfacecurvature", "christoffel", "riemann", "ricci", "scalarcurvature", "geodesic",
+    "lineintegral", "surfaceintegral",
+    "airyAi", "airyBi", "legendreP", "chebyshevT", "chebyshevU", "hermiteH", "laguerreL", "heaviside", "dirac", "zeta"
+  ],
+  "functions": [
+    "sym", "syms", "assume", "assumptions", "vpa", "poly2sym", "sym2poly", "symvar",
+    "simplify", "expand", "factor", "collect", "coeffs", "numden", "partfrac", "subs",
+    "int", "defint", "limit", "taylor", "laurent", "mtaylor", "pade", "symsum", "finitediff", "eulermaclaurin",
+    "solve", "groebner", "polyreduce",
+    "dsolve", "pdsolve",
+    "laplace", "ilaplace", "fourier", "ifourier", "ztrans", "iztrans", "rsolve",
+    "latex", "ccode",
+    "charpoly", "adjugate", "jordan",
+    "jacobian", "gradient", "hessian", "divergence", "curl", "laplacian", "wronskian", "potential",
+    "eulerlagrange", "hamiltonian", "legendretransform", "poissonbracket", "lagrangeextrema",
+    "frenetserret", "surfacecurvature", "christoffel", "riemann", "ricci", "scalarcurvature", "geodesic",
+    "lineintegral", "surfaceintegral",
+    "airyAi", "airyBi", "legendreP", "chebyshevT", "chebyshevU", "hermiteH", "laguerreL", "heaviside", "dirac", "zeta"
+  ]
+}

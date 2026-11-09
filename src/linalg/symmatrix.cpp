@@ -1502,7 +1502,7 @@ std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
         for (std::size_t i = 0; i < n; ++i)
             addEigenvalue(A.at(i, i), 1);
     } else {
-        const Expr lamSym = c.symbol("_nk_eigen_lambda");
+        const Expr lamSym = c.symbol("_numkit_eigen_lambda");
         const Expr cp = charpoly(c, A, lamSym, budget);
         if (cp.isNull())
             return {};
@@ -1638,7 +1638,7 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
     // Jordan blocks, complex-conjugate pairs alpha +- i*w -> exp*cos/sin, and
     // quadratic real radicals).
     {
-        const Expr s = c.symbol("_nk_mat_exp_s");
+        const Expr s = c.symbol("_numkit_mat_exp_s");
         const SymMatrix sI = SymMatrix::eye(c, n).scale(c, s);
         const SymMatrix resolvent = inv(c, sI.sub(c, A), budget);
         if (!resolvent.empty()) {

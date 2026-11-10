@@ -46,18 +46,31 @@ if(TARGET numkit_value AND TARGET numkit_sys)
         target_compile_options(numkit_cas_core PRIVATE -fPIC)
     endif()
 
-    # Shared plugin module
+    # Shared plugin module + self-contained C-ABI
     add_library(numkit_cas SHARED
         register/cas_reg.cpp
         module.cpp
+        c_api.cpp
     )
     target_compile_definitions(numkit_cas PRIVATE NUMKIT_PLUGIN_BUILD=1)
     target_include_directories(numkit_cas
         PUBLIC ${PROJECT_SOURCE_DIR}/include
         PRIVATE ${PROJECT_SOURCE_DIR}/src
     )
-    target_link_libraries(numkit_cas PUBLIC numkit_cas_core numkit_value numkit_sys)
+    target_link_libraries(numkit_cas PUBLIC numkit_cas_core numkit_value numkit_sys numkit_value_c)
     target_compile_features(numkit_cas PUBLIC cxx_std_17)
+
+    if(APPLE)
+        set_target_properties(numkit_cas PROPERTIES
+            BUILD_RPATH "@loader_path;@loader_path/..;@loader_path/../../lib;@loader_path/../../../lib"
+            INSTALL_RPATH "@loader_path;@loader_path/../lib"
+        )
+    elseif(UNIX)
+        set_target_properties(numkit_cas PROPERTIES
+            BUILD_RPATH "$ORIGIN;$ORIGIN/..;$ORIGIN/../../lib;$ORIGIN/../../../lib"
+            INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib"
+        )
+    endif()
 
     if(MSVC)
         target_compile_options(numkit_cas PRIVATE /MP /bigobj)

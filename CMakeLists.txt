@@ -8,20 +8,41 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(NKCAS_BUILD_TESTS "Build the numkit-cas test suite" ON)
 option(NUMKIT_BUILD_TESTS "Build GoogleTest suite" OFF)
+option(NUMKIT_BUILD_C_TESTS "Build standalone C-ABI GoogleTest suite" OFF)
 
-# When built standalone inside a multi-module checkout, pull in local value & sys if available.
-if(NOT TARGET numkit_value AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../value/CMakeLists.txt")
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../value" _deps/numkit_value)
+include(FetchContent)
+
+if(NOT TARGET numkit_value)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../value/CMakeLists.txt")
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../value" _deps/numkit_value)
+    else()
+        FetchContent_Declare(
+            numkit_value
+            GIT_REPOSITORY https://github.com/numkit/value.git
+            GIT_TAG main
+        )
+        FetchContent_MakeAvailable(numkit_value)
+    endif()
 endif()
-if(NOT TARGET numkit_sys AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../sys/CMakeLists.txt")
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../sys" _deps/numkit_sys)
+
+if(NOT TARGET numkit_sys)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../sys/CMakeLists.txt")
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../sys" _deps/numkit_sys)
+    else()
+        FetchContent_Declare(
+            numkit_sys
+            GIT_REPOSITORY https://github.com/numkit/sys.git
+            GIT_TAG main
+        )
+        FetchContent_MakeAvailable(numkit_sys)
+    endif()
 endif()
 
 add_subdirectory(src)
 add_subdirectory(apps)
 add_subdirectory(examples)
 
-if(NKCAS_BUILD_TESTS OR NUMKIT_BUILD_TESTS)
+if(NKCAS_BUILD_TESTS OR NUMKIT_BUILD_TESTS OR NUMKIT_BUILD_C_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()

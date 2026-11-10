@@ -77,3 +77,11 @@ if(TARGET numkit AND TARGET numkit_cas_core)
     endif()
     add_test(NAME numkit_cas_test COMMAND numkit_cas_test)
 endif()
+
+if(TARGET numkit_cas)
+    add_executable(numkit_cas_c_test
+        c_api/cas_c_api.cpp
+    )
+    target_link_libraries(numkit_cas_c_test PRIVATE numkit_cas GTest::gtest_main)
+    add_test(NAME numkit_cas_c_test COMMAND numkit_cas_c_test)
+endif()

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -29,7 +30,16 @@ public:
     BigInt() noexcept = default;
     BigInt(std::int64_t v) noexcept;
     BigInt(std::uint64_t v) noexcept; // non-negative
-    BigInt(int v) noexcept : BigInt(static_cast<std::int64_t>(v)) {}
+
+    template <typename T>
+        requires(std::is_integral_v<T> && !std::is_same_v<T, bool> &&
+                 std::is_signed_v<T> && !std::is_same_v<T, std::int64_t>)
+    BigInt(T v) noexcept : BigInt(static_cast<std::int64_t>(v)) {}
+
+    template <typename T>
+        requires(std::is_integral_v<T> && !std::is_same_v<T, bool> &&
+                 std::is_unsigned_v<T> && !std::is_same_v<T, std::uint64_t>)
+    BigInt(T v) noexcept : BigInt(static_cast<std::uint64_t>(v)) {}
 
     // Strict decimal parse: optional sign, one or more digits, no whitespace.
     static bool tryParse(BigInt &out, const std::string &s);

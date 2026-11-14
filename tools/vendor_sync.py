@@ -85,7 +85,7 @@ add_library(numkit_cas STATIC
 )
 add_library(numkit::cas ALIAS numkit_cas)
 target_include_directories(numkit_cas PUBLIC ${{CMAKE_CURRENT_SOURCE_DIR}}/include)
-target_compile_features(numkit_cas PUBLIC cxx_std_17)
+target_compile_features(numkit_cas PUBLIC cxx_std_20)
 """
 
 

@@ -1,4 +1,6 @@
 // src/transform/fourier.cpp — symbolic bilateral Fourier and inverse Fourier transforms.
+#include <keel/core.h>
+#include <keel/math.h>
 #include <numkit/cas/transform/fourier.hpp>
 
 #include <numkit/cas/integrate/ratint.hpp>
@@ -30,7 +32,7 @@ bool dependsOn(const Ctx &c, Expr e, Expr var)
         return false;
     if (e == var)
         return true;
-    for (std::size_t i = 0; i < c.childCount(e); ++i) {
+    for (keel::usize i = 0; i < c.childCount(e); ++i) {
         if (dependsOn(c, c.child(e, i), var))
             return true;
     }
@@ -43,7 +45,7 @@ bool mentionsSymbolName(const Ctx &c, Expr e, const std::string &name)
         return false;
     if (c.kind(e) == NodeKind::Symbol && c.symbolName(e) == name)
         return true;
-    for (std::size_t i = 0; i < c.childCount(e); ++i) {
+    for (keel::usize i = 0; i < c.childCount(e); ++i) {
         if (mentionsSymbolName(c, c.child(e, i), name))
             return true;
     }
@@ -78,7 +80,7 @@ bool splitComplexI(Ctx &c, Expr e, Expr &reOut, Expr &imOut)
         return true;
     case NodeKind::Add: {
         std::vector<Expr> reTerms, imTerms;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             Expr r, m;
             if (!splitComplexI(c, c.child(e, i), r, m))
                 return false;
@@ -94,7 +96,7 @@ bool splitComplexI(Ctx &c, Expr e, Expr &reOut, Expr &imOut)
     case NodeKind::Mul: {
         Expr curRe = c.one();
         Expr curIm = c.zero();
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             Expr r, m;
             if (!splitComplexI(c, c.child(e, i), r, m))
                 return false;
@@ -114,16 +116,16 @@ bool splitComplexI(Ctx &c, Expr e, Expr &reOut, Expr &imOut)
         if (c.kind(expNode) != NodeKind::Number ||
             !(c.numberValue(expNode).den() == BigInt(1)))
             return false;
-        std::int64_t k = 0;
-        if (!c.numberValue(expNode).num().fitsInt64(k) || std::abs(k) > 12)
+        keel::i64 k = 0;
+        if (!c.numberValue(expNode).num().fitsInt64(k) || keel::abs(k) > 12)
             return false;
         Expr bRe, bIm;
         if (!splitComplexI(c, base, bRe, bIm))
             return false;
-        const std::int64_t absK = std::abs(k);
+        const keel::i64 absK = keel::abs(k);
         Expr pRe = c.one();
         Expr pIm = c.zero();
-        for (std::int64_t i = 0; i < absK; ++i) {
+        for (keel::i64 i = 0; i < absK; ++i) {
             const Expr nextRe =
                 c.add({c.mul({pRe, bRe}), c.neg(c.mul({pIm, bIm}))});
             const Expr nextIm = c.add({c.mul({pRe, bIm}), c.mul({pIm, bRe})});
@@ -202,7 +204,7 @@ bool matchNegQuadInVar(Ctx &c, Expr e, Expr u, Expr &aOut)
     if (dependsOn(c, d2, u))
         return false;
     const Expr a = c.simplify(
-        c.mul({c.number(Rational(std::int64_t{-1}, BigInt(2))), d2}));
+        c.mul({c.number(Rational(keel::i64{-1}, BigInt(2))), d2}));
     if (!c.isAssumedPositive(a))
         return false;
     aOut = a;
@@ -215,7 +217,7 @@ bool matchNegAbsInVar(Ctx &c, Expr e, Expr u, Expr &aOut)
     if (c.kind(e) == NodeKind::Mul) {
         std::vector<Expr> cFacs;
         bool hasAbsU = false;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr ch = c.child(e, i);
             if (!hasAbsU && c.kind(ch) == NodeKind::Func &&
                 c.funcName(ch) == "abs" &&
@@ -255,7 +257,7 @@ bool fourierRealSum(Ctx &c, Expr f, Expr u, Expr v, int expSign, Budget *budget,
     const Expr expd = c.expand(f);
     if (c.kind(expd) == NodeKind::Add) {
         std::vector<Expr> reTerms, imTerms;
-        for (std::size_t i = 0; i < c.childCount(expd); ++i) {
+        for (keel::usize i = 0; i < c.childCount(expd); ++i) {
             Expr r, m;
             if (!fourierRealTerm(c, c.child(expd, i), u, v, expSign, budget, r,
                                  m, reason))
@@ -291,7 +293,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
 
     std::vector<Expr> facs;
     if (c.kind(term) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(term); ++i)
+        for (keel::usize i = 0; i < c.childCount(term); ++i)
             facs.push_back(c.child(term, i));
     } else {
         facs.push_back(term);
@@ -314,7 +316,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
     };
 
     // 2. Dirac impulse: g(u) * dirac(a*u + b) -> (1/|a|) * g(-b/a) * exp(sigma*i*v*(-b/a)).
-    for (std::size_t i = 0; i < varFacs.size(); ++i) {
+    for (keel::usize i = 0; i < varFacs.size(); ++i) {
         if (c.kind(varFacs[i]) == NodeKind::Func &&
             c.funcName(varFacs[i]) == "dirac") {
             Expr aLin, bLin;
@@ -326,7 +328,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
                     absA = c.func("abs", aLin);
                 const Expr u0 = c.simplify(c.neg(c.div(bLin, aLin)));
                 std::vector<Expr> restFacs;
-                for (std::size_t j = 0; j < varFacs.size(); ++j) {
+                for (keel::usize j = 0; j < varFacs.size(); ++j) {
                     if (j != i)
                         restFacs.push_back(varFacs[j]);
                 }
@@ -355,7 +357,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
     if (varFacs.size() == 2) {
         int uInvIdx = -1, uInv2Idx = -1, sinIdx = -1, oneMinusCosIdx = -1;
         for (int i = 0; i < 2; ++i) {
-            const Expr &f = varFacs[static_cast<std::size_t>(i)];
+            const Expr &f = varFacs[static_cast<keel::usize>(i)];
             if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == u &&
                 c.child(f, 1) == c.number(-1)) {
                 uInvIdx = i;
@@ -371,7 +373,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
         if (uInvIdx >= 0 && sinIdx >= 0) {
             Expr aLin, bLin;
             if (matchLinearInVar(
-                    c, c.child(varFacs[static_cast<std::size_t>(sinIdx)], 0), u,
+                    c, c.child(varFacs[static_cast<keel::usize>(sinIdx)], 0), u,
                     aLin, bLin) &&
                 c.isZero(bLin) && c.isAssumedPositive(aLin)) {
                 const Expr box = c.mul(
@@ -384,7 +386,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
         }
         if (uInv2Idx >= 0 && oneMinusCosIdx >= 0) {
             const Expr addNode =
-                varFacs[static_cast<std::size_t>(oneMinusCosIdx)];
+                varFacs[static_cast<keel::usize>(oneMinusCosIdx)];
             const Expr diffFromOne = c.simplify(c.add({c.one(), c.neg(addNode)}));
             if (c.kind(diffFromOne) == NodeKind::Func &&
                 c.funcName(diffFromOne) == "cos") {
@@ -451,7 +453,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
     }
 
     // 5. Trigonometric modulation: g(u) * cos(w0*u) or g(u) * sin(w0*u).
-    for (std::size_t i = 0; i < varFacs.size(); ++i) {
+    for (keel::usize i = 0; i < varFacs.size(); ++i) {
         if (c.kind(varFacs[i]) == NodeKind::Func &&
             (c.funcName(varFacs[i]) == "cos" ||
              c.funcName(varFacs[i]) == "sin")) {
@@ -460,7 +462,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
             if (matchLinearInVar(c, c.child(varFacs[i], 0), u, w0, b0) &&
                 c.isZero(b0)) {
                 std::vector<Expr> restFacs;
-                for (std::size_t j = 0; j < varFacs.size(); ++j) {
+                for (keel::usize j = 0; j < varFacs.size(); ++j) {
                     if (j != i)
                         restFacs.push_back(varFacs[j]);
                 }
@@ -504,7 +506,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
             hPow = 1;
             if (c.kind(f) == NodeKind::Pow &&
                 c.kind(c.child(f, 1)) == NodeKind::Number) {
-                std::int64_t p = 0;
+                keel::i64 p = 0;
                 if (c.numberValue(c.child(f, 1)).den() == BigInt(1) &&
                     c.numberValue(c.child(f, 1)).num().fitsInt64(p)) {
                     inner = c.child(f, 0);
@@ -566,7 +568,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
         if (varFacs.size() == 2) {
             int uIdx = (varFacs[0] == u) ? 0 : ((varFacs[1] == u) ? 1 : -1);
             if (uIdx >= 0 &&
-                matchHypKernel(varFacs[static_cast<std::size_t>(1 - uIdx)],
+                matchHypKernel(varFacs[static_cast<keel::usize>(1 - uIdx)],
                                hFn, aVal, hPow) &&
                 hFn == "csch" && hPow == 1) {
                 const Expr dualArg =
@@ -583,7 +585,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
     // 7. Frequency differentiation for u^n * g(u) (n >= 1) when g(u) contains
     //    an exponential decay factor (Gaussian, two-sided exp, or causal exp).
     {
-        std::int64_t uPow = 0;
+        keel::i64 uPow = 0;
         std::vector<Expr> gFacs;
         bool hasExpDecay = false;
         for (const Expr &fac : varFacs) {
@@ -594,7 +596,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
             if (c.kind(fac) == NodeKind::Pow && c.child(fac, 0) == u &&
                 c.kind(c.child(fac, 1)) == NodeKind::Number) {
                 const Rational &re = c.numberValue(c.child(fac, 1));
-                std::int64_t k = 0;
+                keel::i64 k = 0;
                 if (re.den() == BigInt(1) && re.num().fitsInt64(k) && k >= 1 &&
                     k <= 8) {
                     uPow += k;
@@ -609,7 +611,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
             Expr rG, mG;
             if (fourierRealTerm(c, c.mul(gFacs), u, v, expSign, budget, rG, mG,
                                 reason)) {
-                for (std::int64_t k = 0; k < uPow; ++k) {
+                for (keel::i64 k = 0; k < uPow; ++k) {
                     const Expr dr = c.diff(rG, v);
                     const Expr dm = c.diff(mG, v);
                     rG = c.simplify(c.mul({c.number(expSign), dm}));
@@ -627,7 +629,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
     //    c) Causal / anti-causal exponential exp(-a*u)*heaviside(u), exp(a*u)*heaviside(-u)
     {
         std::vector<Expr> expArgs;
-        std::int64_t absPow = 0;
+        keel::i64 absPow = 0;
         bool hasSignU = false;
         int heavisideDir = 0; // +1 for heaviside(u), -1 for heaviside(-u)
         bool okExpShape = true;
@@ -644,7 +646,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
                        (c.child(c.child(fac, 0), 0) == u ||
                         c.child(c.child(fac, 0), 0) == c.neg(u)) &&
                        c.kind(c.child(fac, 1)) == NodeKind::Number) {
-                std::int64_t k = 0;
+                keel::i64 k = 0;
                 if (c.numberValue(c.child(fac, 1)).den() == BigInt(1) &&
                     c.numberValue(c.child(fac, 1)).num().fitsInt64(k) &&
                     k >= 1 && k <= 6) {
@@ -858,7 +860,7 @@ Expr canonicalizeHeavisideExp(Ctx &c, Expr e, Expr t)
             return false;
         std::vector<Expr> others;
         bool found = false;
-        for (std::size_t i = 0; i < c.childCount(term); ++i) {
+        for (keel::usize i = 0; i < c.childCount(term); ++i) {
             const Expr ch = c.child(term, i);
             if (!found && c.kind(ch) == NodeKind::Func &&
                 c.funcName(ch) == "sign" && c.child(ch, 0) == t) {
@@ -878,19 +880,19 @@ Expr canonicalizeHeavisideExp(Ctx &c, Expr e, Expr t)
         return e;
 
     std::vector<Expr> terms;
-    for (std::size_t i = 0; i < c.childCount(expd); ++i)
+    for (keel::usize i = 0; i < c.childCount(expd); ++i)
         terms.push_back(c.child(expd, i));
 
     const Expr absT = c.func("abs", t);
     bool changed = true;
     while (changed) {
         changed = false;
-        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+        for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
             Expr K;
             if (!stripSignT(terms[i], K))
                 continue;
             const Expr negK = c.simplify(c.neg(K));
-            for (std::size_t j = 0; j < terms.size() && !changed; ++j) {
+            for (keel::usize j = 0; j < terms.size() && !changed; ++j) {
                 if (i == j)
                     continue;
                 if (terms[j] == K) {
@@ -898,14 +900,14 @@ Expr canonicalizeHeavisideExp(Ctx &c, Expr e, Expr t)
                     terms[std::min(i, j)] = c.simplify(
                         c.mul({c.number(2), kPos, c.func("heaviside", t)}));
                     terms.erase(terms.begin() +
-                                static_cast<std::ptrdiff_t>(std::max(i, j)));
+                                static_cast<keel::isize>(std::max(i, j)));
                     changed = true;
                 } else if (terms[j] == negK) {
                     const Expr kNeg = c.subs(negK, absT, c.neg(t));
                     terms[std::min(i, j)] = c.simplify(c.mul(
                         {c.number(2), kNeg, c.func("heaviside", c.neg(t))}));
                     terms.erase(terms.begin() +
-                                static_cast<std::ptrdiff_t>(std::max(i, j)));
+                                static_cast<keel::isize>(std::max(i, j)));
                     changed = true;
                 }
             }
@@ -946,7 +948,7 @@ Expr normalizeBoxcarForCert(Ctx &c, Expr e, Expr w)
     case NodeKind::Mul: {
         std::vector<Expr> ch;
         ch.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(normalizeBoxcarForCert(c, c.child(e, i), w));
         return c.kind(e) == NodeKind::Add ? c.add(ch) : c.mul(ch);
     }
@@ -1007,21 +1009,21 @@ FourierResult ifourier(Ctx &c, Expr F, Expr w, Expr t, Budget *budget)
     {
         std::vector<Expr> facs;
         if (c.kind(F) == NodeKind::Mul) {
-            for (std::size_t i = 0; i < c.childCount(F); ++i)
+            for (keel::usize i = 0; i < c.childCount(F); ++i)
                 facs.push_back(c.child(F, i));
         } else {
             facs.push_back(F);
         }
         std::vector<Expr> constFacs;
         Expr poleBase;
-        std::int64_t poleOrder = 0;
+        keel::i64 poleOrder = 0;
         bool okPole = true;
         for (const Expr &fac : facs) {
             if (!dependsOn(c, fac, w) && !mentionsSymbolName(c, fac, "I")) {
                 constFacs.push_back(fac);
             } else if (poleOrder == 0 && c.kind(fac) == NodeKind::Pow &&
                        c.kind(c.child(fac, 1)) == NodeKind::Number) {
-                std::int64_t k = 0;
+                keel::i64 k = 0;
                 if (c.numberValue(c.child(fac, 1)).den() == BigInt(1) &&
                     c.numberValue(c.child(fac, 1)).num().fitsInt64(k) &&
                     k <= -1 && k >= -8) {
@@ -1041,7 +1043,7 @@ FourierResult ifourier(Ctx &c, Expr F, Expr w, Expr t, Budget *budget)
             if (splitComplexI(c, poleBase, bRe, bIm) && !dependsOn(c, bRe, w) &&
                 c.isAssumedPositive(bRe) && bIm == w) {
                 BigInt fact(1);
-                for (std::int64_t i = 2; i < poleOrder; ++i)
+                for (keel::i64 i = 2; i < poleOrder; ++i)
                     fact = fact * BigInt(i);
                 const Expr cCoef =
                     constFacs.empty() ? c.one() : c.mul(constFacs);

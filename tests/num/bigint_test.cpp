@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/num/bigint.hpp>
 
 #include <limits>
@@ -82,12 +83,12 @@ const BinCase kCases[] = {
 TEST(BigIntConstruction, Basics)
 {
     EXPECT_EQ(BigInt().toString(), "0");
-    EXPECT_EQ(BigInt(std::int64_t{0}).toString(), "0");
-    EXPECT_EQ(BigInt(std::int64_t{1}).toString(), "1");
-    EXPECT_EQ(BigInt(std::int64_t{-1}).toString(), "-1");
-    EXPECT_EQ(BigInt(std::int64_t{9223372036854775807LL}).toString(), "9223372036854775807");
-    EXPECT_EQ(BigInt(std::int64_t{-9223372036854775807LL - 1}).toString(), "-9223372036854775808");
-    EXPECT_EQ(BigInt(std::uint64_t{18446744073709551615ULL}).toString(), "18446744073709551615");
+    EXPECT_EQ(BigInt(keel::i64{0}).toString(), "0");
+    EXPECT_EQ(BigInt(keel::i64{1}).toString(), "1");
+    EXPECT_EQ(BigInt(keel::i64{-1}).toString(), "-1");
+    EXPECT_EQ(BigInt(keel::i64{9223372036854775807LL}).toString(), "9223372036854775807");
+    EXPECT_EQ(BigInt(keel::i64{-9223372036854775807LL - 1}).toString(), "-9223372036854775808");
+    EXPECT_EQ(BigInt(keel::u64{18446744073709551615ULL}).toString(), "18446744073709551615");
     EXPECT_TRUE(BigInt().isZero());
     EXPECT_EQ(BigInt().signum(), 0);
     EXPECT_EQ(BigInt(-5).signum(), -1);
@@ -113,7 +114,7 @@ TEST(BigIntParse, ValidAndInvalid)
     EXPECT_TRUE(BigInt::tryParse(v, "+7"));
     EXPECT_EQ(v.toString(), "7");
     EXPECT_TRUE(BigInt::tryParse(v, "-9223372036854775808"));
-    EXPECT_EQ(v, BigInt(std::numeric_limits<std::int64_t>::min()));
+    EXPECT_EQ(v, BigInt(std::numeric_limits<keel::i64>::min()));
     EXPECT_FALSE(BigInt::tryParse(v, ""));
     EXPECT_FALSE(BigInt::tryParse(v, "-"));
     EXPECT_FALSE(BigInt::tryParse(v, "12a"));
@@ -136,7 +137,7 @@ TEST(BigIntFixed, PythonOracleVectors)
 
 TEST(BigIntProperty, AlgebraInvariants)
 {
-    std::uint64_t state = 0x9E3779B97F4A7C15ULL;
+    keel::u64 state = 0x9E3779B97F4A7C15ULL;
     for (int iter = 0; iter < 50000; ++iter) {
         const BigInt a = randomBig(state, 4);
         const BigInt b = randomBig(state, 4);
@@ -157,7 +158,7 @@ TEST(BigIntProperty, AlgebraInvariants)
 
 TEST(BigIntProperty, TruncDivisionInvariants)
 {
-    std::uint64_t state = 0xC0FFEE123456789ULL;
+    keel::u64 state = 0xC0FFEE123456789ULL;
     for (int iter = 0; iter < 50000; ++iter) {
         const BigInt a = randomBig(state, 4);
         BigInt b = randomBig(state, 3);
@@ -178,10 +179,10 @@ TEST(BigIntProperty, TruncDivisionInvariants)
 
 TEST(BigIntProperty, SmallRangeAgainstInt64)
 {
-    std::uint64_t state = 0xDEADBEEFCAFEBABEULL;
+    keel::u64 state = 0xDEADBEEFCAFEBABEULL;
     for (int iter = 0; iter < 50000; ++iter) {
-        const std::int64_t av = static_cast<std::int64_t>(nextU64(state) % (1 << 24)) - (1 << 23);
-        const std::int64_t bv = static_cast<std::int64_t>(nextU64(state) % (1 << 24)) - (1 << 23);
+        const keel::i64 av = static_cast<keel::i64>(nextU64(state) % (1 << 24)) - (1 << 23);
+        const keel::i64 bv = static_cast<keel::i64>(nextU64(state) % (1 << 24)) - (1 << 23);
         const BigInt a(av);
         const BigInt b(bv);
 
@@ -199,7 +200,7 @@ TEST(BigIntProperty, SmallRangeAgainstInt64)
 
 TEST(BigIntProperty, StringRoundTrip)
 {
-    std::uint64_t state = 0x1234567890ABCDEFULL;
+    keel::u64 state = 0x1234567890ABCDEFULL;
     for (int iter = 0; iter < 50000; ++iter) {
         const BigInt a = randomBig(state, 5);
         BigInt back;
@@ -221,10 +222,10 @@ TEST(BigIntShift, BasicsAndFloorSemantics)
     EXPECT_EQ(BigInt(3) >> 1, BigInt(1));
     EXPECT_EQ(BigInt(0) >> 7, BigInt(0));
 
-    std::uint64_t state = 0xFEEDFACEULL;
+    keel::u64 state = 0xFEEDFACEULL;
     for (int iter = 0; iter < 50000; ++iter) {
         const BigInt a = randomBig(state, 3).abs();
-        const std::size_t sh = static_cast<std::size_t>(nextU64(state) % 200);
+        const keel::usize sh = static_cast<keel::usize>(nextU64(state) % 200);
         EXPECT_EQ((a << sh) >> sh, a);
     }
 }
@@ -240,7 +241,7 @@ TEST(BigIntGcd, FixedAndProperties)
     EXPECT_EQ(BigInt::gcd(parse("123456789012345678901234567890"), parse("987654321098765432109876543210")),
               parse("9000000000900000000090"));
 
-    std::uint64_t state = 0xABCDEF01ULL;
+    keel::u64 state = 0xABCDEF01ULL;
     for (int iter = 0; iter < 5000; ++iter) {
         const BigInt a = randomBig(state, 3);
         const BigInt b = randomBig(state, 3);
@@ -255,20 +256,20 @@ TEST(BigIntGcd, FixedAndProperties)
 
 TEST(BigIntFits, Int64Uint64Boundaries)
 {
-    std::int64_t i64 = 0;
-    std::uint64_t u64 = 0;
+    keel::i64 i64 = 0;
+    keel::u64 u64 = 0;
 
     EXPECT_TRUE(BigInt(0).fitsInt64(i64));
     EXPECT_EQ(i64, 0);
-    EXPECT_TRUE(BigInt(std::numeric_limits<std::int64_t>::min()).fitsInt64(i64));
-    EXPECT_EQ(i64, std::numeric_limits<std::int64_t>::min());
-    EXPECT_TRUE(BigInt(std::numeric_limits<std::int64_t>::max()).fitsInt64(i64));
-    EXPECT_EQ(i64, std::numeric_limits<std::int64_t>::max());
+    EXPECT_TRUE(BigInt(std::numeric_limits<keel::i64>::min()).fitsInt64(i64));
+    EXPECT_EQ(i64, std::numeric_limits<keel::i64>::min());
+    EXPECT_TRUE(BigInt(std::numeric_limits<keel::i64>::max()).fitsInt64(i64));
+    EXPECT_EQ(i64, std::numeric_limits<keel::i64>::max());
     EXPECT_FALSE(parse("9223372036854775808").fitsInt64(i64));  // 2^63 positive
     EXPECT_FALSE(parse("-9223372036854775809").fitsInt64(i64));
 
-    EXPECT_TRUE(BigInt(std::numeric_limits<std::uint64_t>::max()).fitsUint64(u64));
-    EXPECT_EQ(u64, std::numeric_limits<std::uint64_t>::max());
+    EXPECT_TRUE(BigInt(std::numeric_limits<keel::u64>::max()).fitsUint64(u64));
+    EXPECT_EQ(u64, std::numeric_limits<keel::u64>::max());
     EXPECT_FALSE(parse("18446744073709551616").fitsUint64(u64)); // 2^64
     EXPECT_FALSE(BigInt(-1).fitsUint64(u64));
 }
@@ -278,7 +279,7 @@ TEST(BigIntSBO, InlineForUpTo128BitsAndSpillsCleanly)
     const BigInt zero(0);
     EXPECT_TRUE(zero.isInline());
 
-    const BigInt oneLimb(std::numeric_limits<std::uint64_t>::max());
+    const BigInt oneLimb(std::numeric_limits<keel::u64>::max());
     EXPECT_TRUE(oneLimb.isInline());
 
     // Product of two 64-bit max values is 128 bits (2 limbs) -> still inline!

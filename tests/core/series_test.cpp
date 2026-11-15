@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/core/series.hpp>
 
@@ -113,7 +114,7 @@ TEST(SeriesTest, TaylorNonZeroAndSymbolicPoints)
     // 1/x around x0 = 2
     {
         const Expr f = parseExpr(c, "1/x");
-        const Expr got = taylor(c, f, x, c.number(std::int64_t{2}), 3);
+        const Expr got = taylor(c, f, x, c.number(keel::i64{2}), 3);
         const Expr want =
             parseExpr(c, "1/2 - 1/4*(x - 2) + 1/8*(x - 2)^2 - 1/16*(x - 2)^3");
         ASSERT_FALSE(got.isNull());
@@ -153,7 +154,7 @@ TEST(SeriesTest, LaurentPolesAndMeromorphicCancellation)
         const Expr got = laurent(c, f, x, x0, 1);
         const Expr want = parseExpr(c, "1/x^2 + 1/2*1/x + 1/6 + 1/24*x");
         ASSERT_FALSE(got.isNull());
-        const Expr x2 = c.pow(x, c.number(std::int64_t{2}));
+        const Expr x2 = c.pow(x, c.number(keel::i64{2}));
         EXPECT_TRUE(exprEq(c, c.mul({got, x2}), c.mul({want, x2})))
             << "got: " << c.toString(got);
     }
@@ -301,12 +302,12 @@ TEST(SeriesTest, PropertyPolynomialExactRecovery)
         for (int d = 0; d <= 5; ++d) {
             const int k = coeffDist(rng);
             if (k != 0) {
-                terms.push_back(c.mul({c.number(static_cast<std::int64_t>(k)),
-                                       c.pow(x, c.number(static_cast<std::int64_t>(d)))}));
+                terms.push_back(c.mul({c.number(static_cast<keel::i64>(k)),
+                                       c.pow(x, c.number(static_cast<keel::i64>(d)))}));
             }
         }
         const Expr poly = terms.empty() ? c.zero() : c.add(terms);
-        const Expr x0 = c.number(static_cast<std::int64_t>(ptDist(rng)));
+        const Expr x0 = c.number(static_cast<keel::i64>(ptDist(rng)));
         const Expr t = taylor(c, poly, x, x0, 5);
         ASSERT_FALSE(t.isNull());
         EXPECT_TRUE(exprEq(c, t, poly))
@@ -435,17 +436,17 @@ TEST(SeriesTest, SpecialFunctionsTaylorAndLimits)
         c, tCi,
         parseExpr(c, "Ci(1) + cos(1)*(x - 1) - 1/2*(cos(1) + sin(1))*(x - 1)^2")));
 
-    const Expr tLi = taylor(c, parseExpr(c, "li(x)"), x, c.number(std::int64_t{2}), 1);
+    const Expr tLi = taylor(c, parseExpr(c, "li(x)"), x, c.number(keel::i64{2}), 1);
     ASSERT_FALSE(tLi.isNull());
     EXPECT_TRUE(exprEq(c, tLi, parseExpr(c, "li(2) + (x - 2)/log(2)")));
 
     // 3. Asymptotic limits at +/- infinity
     EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erf(x)"), x, +1).value, c.one());
     EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erf(x)"), x, -1).value,
-              c.number(std::int64_t{-1}));
+              c.number(keel::i64{-1}));
     EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erfc(x)"), x, +1).value, c.zero());
     EXPECT_EQ(limitAtInfinity(c, parseExpr(c, "erfc(x)"), x, -1).value,
-              c.number(std::int64_t{2}));
+              c.number(keel::i64{2}));
     EXPECT_TRUE(exprEq(c, limitAtInfinity(c, parseExpr(c, "Si(x)"), x, +1).value,
                        parseExpr(c, "1/2*pi")));
     EXPECT_TRUE(exprEq(c, limitAtInfinity(c, parseExpr(c, "Si(x)"), x, -1).value,
@@ -493,7 +494,7 @@ TEST(SeriesTest, SymbolicResiduesAndResidueSumTheorem)
     EXPECT_EQ(residue(c, parseExpr(c, "cot(x)/x^2"), x, c.zero()),
               parseExpr(c, "-1/3"));
     EXPECT_EQ(residue(c, parseExpr(c, "1/(x*(x - 1)^2)"), x, c.one()),
-              c.number(std::int64_t{-1}));
+              c.number(keel::i64{-1}));
     EXPECT_EQ(residue(c, parseExpr(c, "(2*x + 3)/((x - 1)*(x + 2))"), x,
                       c.one()),
               parseExpr(c, "5/3"));
@@ -510,14 +511,14 @@ TEST(SeriesTest, SymbolicResiduesAndResidueSumTheorem)
     //    Res(f, 1) + Res(f, -2) + Res(f, 3) + Res(f, inf) == 0.
     const Expr fRat = parseExpr(c, "(3*x^2 + 2*x + 1)/((x - 1)*(x + 2)*(x - 3))");
     const Expr r1 = residue(c, fRat, x, c.one());
-    const Expr r2 = residue(c, fRat, x, c.number(std::int64_t{-2}));
-    const Expr r3 = residue(c, fRat, x, c.number(std::int64_t{3}));
+    const Expr r2 = residue(c, fRat, x, c.number(keel::i64{-2}));
+    const Expr r3 = residue(c, fRat, x, c.number(keel::i64{3}));
     const Expr rInf = residue(c, fRat, x, c.symbol("inf"));
     ASSERT_FALSE(r1.isNull());
     ASSERT_FALSE(r2.isNull());
     ASSERT_FALSE(r3.isNull());
     ASSERT_FALSE(rInf.isNull());
-    EXPECT_EQ(rInf, c.number(std::int64_t{-3}));
+    EXPECT_EQ(rInf, c.number(keel::i64{-3}));
     EXPECT_EQ(c.simplify(c.add({r1, r2, r3, rInf})), c.zero());
 }
 
@@ -598,9 +599,9 @@ TEST(SeriesTest, SymbolicSummationFiniteAndInfinite)
 
         // When upper bound is symbolic `n`, verify S(5) - S(4) == f(5).
         if (b == n) {
-            const Expr s5 = c.subs(r.value, n, c.number(std::int64_t{5}));
-            const Expr s4 = c.subs(r.value, n, c.number(std::int64_t{4}));
-            const Expr f5 = c.subs(f, k, c.number(std::int64_t{5}));
+            const Expr s5 = c.subs(r.value, n, c.number(keel::i64{5}));
+            const Expr s4 = c.subs(r.value, n, c.number(keel::i64{4}));
+            const Expr f5 = c.subs(f, k, c.number(keel::i64{5}));
             EXPECT_EQ(c.simplify(c.add({s5, c.neg(s4), c.neg(f5)})), c.zero())
                 << "backward difference S(5) - S(4) != f(5) for " << tc.f;
         }
@@ -728,7 +729,7 @@ TEST(SeriesTest, MultivariateTaylorExpansion)
 
     // 2. Non-zero expansion point (x0, y0) = (1, 2)
     const Expr mtShift = mtaylor(c, parseExpr(c, "x^2*y + y^2"), {x, y},
-                                 {c.one(), c.number(std::int64_t{2})}, 2);
+                                 {c.one(), c.number(keel::i64{2})}, 2);
     ASSERT_FALSE(mtShift.isNull());
     EXPECT_TRUE(exprEq(
         c, mtShift,
@@ -760,7 +761,7 @@ TEST(SeriesTest, MultivariateTaylorExpansion)
 TEST(SeriesTest, PropertyPadeAndMultivariateTaylor)
 {
     std::mt19937_64 rng(0x5A17E55EEDULL);
-    std::uniform_int_distribution<std::int64_t> coefDist(-4, 4);
+    std::uniform_int_distribution<keel::i64> coefDist(-4, 4);
 
     // 1. Pade [2/2] exactly recovers any rational function P(x)/Q(x) with
     //    deg(P) <= 2, deg(Q) <= 2, Q(0) = 1.
@@ -773,10 +774,10 @@ TEST(SeriesTest, PropertyPadeAndMultivariateTaylor)
         const Expr q1 = c.number(coefDist(rng));
         const Expr q2 = c.number(coefDist(rng));
         const Expr P = c.add(
-            {p0, c.mul({p1, x}), c.mul({p2, c.pow(x, c.number(std::int64_t{2}))})});
+            {p0, c.mul({p1, x}), c.mul({p2, c.pow(x, c.number(keel::i64{2}))})});
         const Expr Q = c.add(
             {c.one(), c.mul({q1, x}),
-             c.mul({q2, c.pow(x, c.number(std::int64_t{2}))})});
+             c.mul({q2, c.pow(x, c.number(keel::i64{2}))})});
         const Expr rat = c.div(P, Q);
         const PadeResult r = pade(c, rat, x, c.zero(), 2, 2);
         ASSERT_TRUE(r.proved()) << "iter " << iter << ": " << r.reason;
@@ -1000,9 +1001,9 @@ TEST(SeriesTest, FiniteDiffStirlingAndEulerMaclaurin)
 
     for (int m = 0; m <= 5; ++m) {
         const Expr dmAt0 = c.subs(
-            finiteDiff(c, parseExpr(c, "x^5"), x, static_cast<std::size_t>(m)),
+            finiteDiff(c, parseExpr(c, "x^5"), x, static_cast<keel::usize>(m)),
             x, c.zero());
-        std::int64_t factM = 1;
+        keel::i64 factM = 1;
         for (int j = 2; j <= m; ++j)
             factM *= j;
         const Expr s2 =

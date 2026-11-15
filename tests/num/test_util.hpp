@@ -2,6 +2,7 @@
 // seeded PRNG generators for property tests.
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/num/bigint.hpp>
 #include <numkit/cas/num/rational.hpp>
 
@@ -28,7 +29,7 @@ namespace cas_test {
 using numkit::cas::BigInt;
 using numkit::cas::Rational;
 
-inline std::uint64_t nextU64(std::uint64_t &state)
+inline keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -52,7 +53,7 @@ inline Rational parseR(const std::string &s)
     return v;
 }
 
-inline BigInt randomBig(std::uint64_t &state, int maxLimbs)
+inline BigInt randomBig(keel::u64 &state, int maxLimbs)
 {
     static const char *nasty[] = {
         "0", "1", "-1", "2", "-2", "18446744073709551615",
@@ -66,7 +67,7 @@ inline BigInt randomBig(std::uint64_t &state, int maxLimbs)
     const int limbs = static_cast<int>(nextU64(state) % (maxLimbs + 1));
     BigInt out;
     for (int i = 0; i < limbs; ++i) {
-        const std::uint64_t limb = nextU64(state) | (i + 1 == limbs ? 1 : 0);
+        const keel::u64 limb = nextU64(state) | (i + 1 == limbs ? 1 : 0);
         out = (out << 64) + BigInt(limb);
     }
     if (!out.isZero() && nextU64(state) & 1)
@@ -74,7 +75,7 @@ inline BigInt randomBig(std::uint64_t &state, int maxLimbs)
     return out;
 }
 
-inline Rational randomRational(std::uint64_t &state, int maxLimbs)
+inline Rational randomRational(keel::u64 &state, int maxLimbs)
 {
     BigInt den = randomBig(state, maxLimbs).abs();
     if (den.isZero())

@@ -1,6 +1,7 @@
 // core/parser.hpp — pratt parser from source text directly into a Ctx.
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/core/expr.hpp>
 
 #include <cstddef>
@@ -13,14 +14,14 @@ namespace numkit::cas {
 // of the offending character (or src.size() for unexpected end).
 class ParseError : public std::runtime_error {
 public:
-    ParseError(std::size_t pos, const std::string &msg)
+    ParseError(keel::usize pos, const std::string &msg)
         : std::runtime_error(msg), pos_(pos)
     {
     }
-    std::size_t pos() const { return pos_; }
+    keel::usize pos() const { return pos_; }
 
 private:
-    std::size_t pos_;
+    keel::usize pos_;
 };
 
 // Grammar (MATLAB-style precedence; see notes/c1-algebraic-layer.md

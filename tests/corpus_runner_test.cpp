@@ -8,6 +8,7 @@
 //      parse -> integrate -> certificate path, fixed seed);
 //   3. boundary: blank/comment-only corpora, malformed lines, empty
 //      fields, division-free edge expressions.
+#include <keel/core.h>
 #include "corpus_runner.hpp"
 
 #include <numkit/cas/core/parser.hpp>
@@ -97,8 +98,8 @@ TEST(CorpusStats, PercentileNearestRank)
     EXPECT_EQ(percentileOf({}, 0.95), 0u);
     EXPECT_EQ(percentileOf({42}, 0.95), 42u);
     EXPECT_EQ(percentileOf({1}, 1.0), 1u);
-    std::vector<std::uint64_t> v;
-    for (std::uint64_t i = 1; i <= 20; ++i)
+    std::vector<keel::u64> v;
+    for (keel::u64 i = 1; i <= 20; ++i)
         v.push_back(i);
     EXPECT_EQ(percentileOf(v, 0.95), 19u); // ceil(0.95*20)=19th smallest
     EXPECT_EQ(percentileOf(v, 1.0), 20u);
@@ -164,7 +165,7 @@ TEST(CorpusReport, DegenerateRatesAreZeroNotNaN)
 
 // ── layer 2: property — text tasks through the whole pipeline ──
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -178,39 +179,39 @@ TEST(CorpusProperty, RandomRationalTextAllProved)
     // quadratics and cubics; the task text is the PRINTED form of the
     // fraction, so this exercises parse -> toRational -> Hermite ->
     // Trager -> gate end to end.
-    std::uint64_t st = 0x5EEDC0DEBA5EULL;
-    std::size_t proved = 0, total = 0;
+    keel::u64 st = 0x5EEDC0DEBA5EULL;
+    keel::usize proved = 0, total = 0;
     for (int iter = 0; iter < 150; ++iter) {
         using numkit::cas::Rational;
         using numkit::cas::UPoly;
         auto rr = [&](int lim) {
-            const std::int64_t q = 1 + static_cast<std::int64_t>(nextU64(st) % 3);
-            const std::int64_t p =
-                static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            const keel::i64 q = 1 + static_cast<keel::i64>(nextU64(st) % 3);
+            const keel::i64 p =
+                static_cast<keel::i64>(nextU64(st) % (2 * lim + 1)) - lim;
             return Rational(numkit::cas::BigInt(p), numkit::cas::BigInt(q));
         };
-        UPoly den(Rational(std::int64_t{1}));
+        UPoly den(Rational(keel::i64{1}));
         const int nLin = static_cast<int>(nextU64(st) % 3);
         const int nQuad = static_cast<int>(nextU64(st) % 2);
         const int nCub = static_cast<int>(nextU64(st) % 2);
         for (int i = 0; i < nLin; ++i) {
             Rational r = rr(5);
             if (r.isZero())
-                r = Rational(std::int64_t{1});
+                r = Rational(keel::i64{1});
             const int m = 1 + static_cast<int>(nextU64(st) % 3);
             den = den * UPoly(std::vector<Rational>{Rational(-r),
-                Rational(std::int64_t{1})}).powUInt(m);
+                Rational(keel::i64{1})}).powUInt(m);
         }
         for (int i = 0; i < nQuad; ++i) {
             while (true) {
                 const Rational b = rr(4), c = rr(4);
                 bool red = false;
-                for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+                for (keel::i64 r0 = -8; r0 <= 8; ++r0)
                     if (c + b * Rational(r0) + Rational(r0 * r0) == 0)
                         red = true;
                 if (!red) {
                     den = den * UPoly(std::vector<Rational>{c, b,
-                        Rational(std::int64_t{1})});
+                        Rational(keel::i64{1})});
                     break;
                 }
             }
@@ -219,13 +220,13 @@ TEST(CorpusProperty, RandomRationalTextAllProved)
             while (true) {
                 const Rational b = rr(3), c = rr(3);
                 bool red = false;
-                for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+                for (keel::i64 r0 = -8; r0 <= 8; ++r0)
                     if (c + b * Rational(r0) +
                             Rational(r0 * r0 * r0) == 0)
                         red = true;
                 if (!red) {
                     den = den * UPoly(std::vector<Rational>{c, b,
-                        Rational(std::int64_t{0}), Rational(std::int64_t{1})});
+                        Rational(keel::i64{0}), Rational(keel::i64{1})});
                     break;
                 }
             }
@@ -353,8 +354,8 @@ TEST(CorpusProperty, RubiSliceShapesCoverage)
     // The shapes of the committed slices: all certify through the
     // rule engine; anything the slice cannot serve declines
     // honestly (Sum-based rules are outside step 3 by design).
-    std::uint64_t st = 0x5EED202610ULL;
-    std::size_t proved = 0, total = 0;
+    keel::u64 st = 0x5EED202610ULL;
+    keel::usize proved = 0, total = 0;
     for (int iter = 0; iter < 300; ++iter) {
         const int a = 1 + static_cast<int>(nextU64(st) % 6);
         const int b = 1 + static_cast<int>(nextU64(st) % 6);

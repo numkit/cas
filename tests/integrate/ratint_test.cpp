@@ -1,3 +1,5 @@
+#include <keel/core.h>
+#include <keel/math.h>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/integrate/verify.hpp>
 #include <numkit/cas/core/parser.hpp>
@@ -18,7 +20,7 @@ using numkit::cas::NodeKind;
 using numkit::cas::Rational;
 using numkit::cas::UPoly;
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -26,11 +28,11 @@ std::uint64_t nextU64(std::uint64_t &state)
     return state * 0x2545F4914F6CDD1DULL;
 }
 
-Rational rr(std::uint64_t &state, int range)
+Rational rr(keel::u64 &state, int range)
 {
-    const std::int64_t n = static_cast<std::int64_t>(nextU64(state) % (2 * range + 1)) - range;
-    const std::int64_t d =
-        nextU64(state) % 3 == 0 ? static_cast<std::int64_t>(nextU64(state) % 4 + 1) : 1;
+    const keel::i64 n = static_cast<keel::i64>(nextU64(state) % (2 * range + 1)) - range;
+    const keel::i64 d =
+        nextU64(state) % 3 == 0 ? static_cast<keel::i64>(nextU64(state) % 4 + 1) : 1;
     return Rational(BigInt(n), BigInt(d));
 }
 
@@ -44,9 +46,9 @@ struct RatIntTest : public ::testing::Test
     UPoly P(const std::string &csv)
     {
         std::vector<Rational> cs;
-        std::size_t pos = 0;
+        keel::usize pos = 0;
         while (pos <= csv.size()) {
-            const std::size_t comma = csv.find(',', pos);
+            const keel::usize comma = csv.find(',', pos);
             const std::string tok =
                 csv.substr(pos, comma == std::string::npos ? std::string::npos
                                                            : comma - pos);
@@ -63,11 +65,11 @@ struct RatIntTest : public ::testing::Test
 
     Expr build(const UPoly &num, const UPoly &den)
     {
-        if (den.isConst() && den.coeff(0) == Rational(std::int64_t{1}))
+        if (den.isConst() && den.coeff(0) == Rational(keel::i64{1}))
             return numkit::cas::toExpr(c, num, x);
         return c.mul({numkit::cas::toExpr(c, num, x),
                       c.pow(numkit::cas::toExpr(c, den, x),
-                            c.number(std::int64_t{-1}))});
+                            c.number(keel::i64{-1}))});
     }
 
     // d(Rn/Rd) + g/S == N/D in Q(x):
@@ -90,9 +92,9 @@ TEST_F(RatIntTest, ToRationalExtraction)
     EXPECT_EQ(n, P("0,1"));
     EXPECT_EQ(d, P("1"));
 
-    const Expr e = c.mul({c.number(std::int64_t{3}),
-                          c.pow(c.add({x, c.number(std::int64_t{1})}),
-                                c.number(std::int64_t{-2}))});
+    const Expr e = c.mul({c.number(keel::i64{3}),
+                          c.pow(c.add({x, c.number(keel::i64{1})}),
+                                c.number(keel::i64{-2}))});
     EXPECT_TRUE(numkit::cas::toRational(c, e, x, n, d));
     // 3/(x+1)^2: num = 3, den = (x+1)^2 = 1,2,1
     EXPECT_EQ(n * d, P("3") * P("1,2,1"));
@@ -100,16 +102,16 @@ TEST_F(RatIntTest, ToRationalExtraction)
     EXPECT_FALSE(numkit::cas::toRational(c, c.func("sin", x), x, n, d));
     EXPECT_FALSE(numkit::cas::toRational(c, c.symbol("y"), x, n, d));
     EXPECT_FALSE(numkit::cas::toRational(
-        c, c.pow(x, c.number(Rational(std::int64_t{1}, BigInt(2)))), x, n, d));
+        c, c.pow(x, c.number(Rational(keel::i64{1}, BigInt(2)))), x, n, d));
 }
 
 TEST_F(RatIntTest, ToRationalRoundTrip)
 {
-    std::uint64_t state = 0x51ED270B4C9E1DBFULL;
+    keel::u64 state = 0x51ED270B4C9E1DBFULL;
     for (int iter = 0; iter < 3000; ++iter) {
         const int dn = static_cast<int>(nextU64(state) % 4);
         const int dd = static_cast<int>(nextU64(state) % 3);
-        std::vector<Rational> nc, dc{Rational(std::int64_t{1})};
+        std::vector<Rational> nc, dc{Rational(keel::i64{1})};
         for (int i = 0; i <= dn; ++i)
             nc.push_back(rr(state, 6));
         for (int i = 1; i <= dd; ++i)
@@ -130,7 +132,7 @@ TEST_F(RatIntTest, ToRationalRoundTrip)
 
 TEST_F(RatIntTest, HermiteProperty)
 {
-    std::uint64_t state = 0x0BADC0DE5AFE1234ULL;
+    keel::u64 state = 0x0BADC0DE5AFE1234ULL;
     for (int iter = 0; iter < 3000; ++iter) {
         const int dn = static_cast<int>(nextU64(state) % 4);
         const int dd = 1 + static_cast<int>(nextU64(state) % 5);
@@ -159,15 +161,15 @@ namespace {
 // Random denominator factored into linear factors (rational roots) and
 // irreducible quadratics with square 4c-b^2, with multiplicities —
 // the M0 full-integration scope.
-UPoly randomDenominator(std::uint64_t &state)
+UPoly randomDenominator(keel::u64 &state)
 {
-    UPoly d(Rational(std::int64_t{1}));
+    UPoly d(Rational(keel::i64{1}));
     const int lin = static_cast<int>(nextU64(state) % 3);
     const int quad = static_cast<int>(nextU64(state) % 2);
     for (int i = 0; i < lin; ++i) {
         const Rational r = rr(state, 6);
         const int m = 1 + static_cast<int>(nextU64(state) % 3);
-        d = d * UPoly(std::vector<Rational>{Rational(-r), Rational(std::int64_t{1})}).powUInt(m);
+        d = d * UPoly(std::vector<Rational>{Rational(-r), Rational(keel::i64{1})}).powUInt(m);
     }
     for (int i = 0; i < quad; ++i) {
         const Rational b = rr(state, 4);
@@ -175,9 +177,9 @@ UPoly randomDenominator(std::uint64_t &state)
         if (s.isZero())
             continue;
         // x^2 + b x + (b^2 + s^2)/4 has 4c - b^2 = s^2.
-        const Rational c0 = (b * b + s * s) / Rational(std::int64_t{4});
+        const Rational c0 = (b * b + s * s) / Rational(keel::i64{4});
         const int m = 1 + static_cast<int>(nextU64(state) % 3);
-        d = d * UPoly(std::vector<Rational>{c0, b, Rational(std::int64_t{1})}).powUInt(m);
+        d = d * UPoly(std::vector<Rational>{c0, b, Rational(keel::i64{1})}).powUInt(m);
     }
     return d;
 }
@@ -186,7 +188,7 @@ UPoly randomDenominator(std::uint64_t &state)
 
 TEST_F(RatIntTest, FullIntegrationDoD)
 {
-    std::uint64_t state = 0xFEEDFACE0DDBEAULL;
+    keel::u64 state = 0xFEEDFACE0DDBEAULL;
     for (int iter = 0; iter < 2000; ++iter) {
         UPoly den = randomDenominator(state);
         if (den.isConst() || den.isZero())
@@ -257,7 +259,7 @@ TEST_F(RatIntTest, GroupedLogsByResidue)
 
 TEST_F(RatIntTest, ResultantTEvaluationAndResidues)
 {
-    std::uint64_t state = 0x7EA15EEDBEEFCAULL;
+    keel::u64 state = 0x7EA15EEDBEEFCAULL;
     for (int iter = 0; iter < 2000; ++iter) {
         // Build S with distinct rational roots and chosen residues c_i:
         // A = sum c_i * S/(x - r_i) has residue c_i at r_i, so
@@ -265,12 +267,12 @@ TEST_F(RatIntTest, ResultantTEvaluationAndResidues)
         // DISTINCT residues, up to a scalar.
         const int k = 1 + static_cast<int>(nextU64(state) % 3);
         std::vector<Rational> roots, res;
-        UPoly S(Rational(std::int64_t{1}));
+        UPoly S(Rational(keel::i64{1}));
         for (int i = 0; i < k; ++i) {
             Rational r = rr(state, 6);
             Rational m = rr(state, 4);
             if (r.isZero())
-                r = Rational(std::int64_t{1});
+                r = Rational(keel::i64{1});
             bool dup = false;
             for (const Rational &w : roots)
                 if (w == r)
@@ -279,16 +281,16 @@ TEST_F(RatIntTest, ResultantTEvaluationAndResidues)
                 continue;
             roots.push_back(r);
             res.push_back(m);
-            S = S * UPoly(std::vector<Rational>{Rational(-r), Rational(std::int64_t{1})});
+            S = S * UPoly(std::vector<Rational>{Rational(-r), Rational(keel::i64{1})});
         }
         if (roots.empty())
             continue;
 
         UPoly A;
-        for (std::size_t i = 0; i < roots.size(); ++i) {
+        for (keel::usize i = 0; i < roots.size(); ++i) {
             UPoly q, r2;
             UPoly::divMod(S, UPoly(std::vector<Rational>{Rational(-roots[i]),
-                                                Rational(std::int64_t{1})}),
+                                                Rational(keel::i64{1})}),
                           q, r2);
             A = A + res[i] * q;
         }
@@ -303,16 +305,16 @@ TEST_F(RatIntTest, ResultantTEvaluationAndResidues)
         }
 
         // Residue oracle: expected = prod over distinct residues (t - c).
-        UPoly expected(Rational(std::int64_t{1}));
-        for (std::size_t i = 0; i < roots.size(); ++i) {
+        UPoly expected(Rational(keel::i64{1}));
+        for (keel::usize i = 0; i < roots.size(); ++i) {
             bool seen = false;
-            for (std::size_t j = 0; j < i; ++j)
+            for (keel::usize j = 0; j < i; ++j)
                 if (res[j] == res[i])
                     seen = true;
             if (seen)
                 continue;
             expected = expected * UPoly(std::vector<Rational>{
-                Rational(-res[i]), Rational(std::int64_t{1})});
+                Rational(-res[i]), Rational(keel::i64{1})});
         }
         const UPoly Rsq = R.squarefreePart();
         if (expected.isConst()) {
@@ -353,19 +355,19 @@ TEST_F(RatIntTest, QuadraticResidueDoD)
 {
     // Any quadratic denominator factor — any discriminant — must now
     // integrate with a certificate.
-    std::uint64_t state = 0x5AFED00DCAFEULL;
+    keel::u64 state = 0x5AFED00DCAFEULL;
     for (int iter = 0; iter < 2000; ++iter) {
         const Rational b = rr(state, 5);
         Rational cc = rr(state, 5);
-        if (b * b - Rational(std::int64_t{4}) * cc == Rational(std::int64_t{0}))
-            cc = cc + Rational(std::int64_t{1}); // keep squarefree
-        std::vector<Rational> dcs{cc, b, Rational(std::int64_t{1})};
+        if (b * b - Rational(keel::i64{4}) * cc == Rational(keel::i64{0}))
+            cc = cc + Rational(keel::i64{1}); // keep squarefree
+        std::vector<Rational> dcs{cc, b, Rational(keel::i64{1})};
         if (nextU64(state) % 2 == 0) {
             const Rational r = rr(state, 5);
             // (x - r) coprime to the quadratic with high probability;
             // skip the rare collision by moving r off the roots.
             dcs = std::vector<Rational>{
-                -r * cc, cc - r * b, b - r, Rational(std::int64_t{1})};
+                -r * cc, cc - r * b, b - r, Rational(keel::i64{1})};
         }
         const UPoly den(dcs);
         if (den.isZero() || den.isConst())
@@ -402,17 +404,17 @@ TEST_F(RatIntTest, MultipleQuadraticResidueFactors) // guard for the closed bug
     // quadratic residue pairs on BOTH factors.
     EXPECT_NE(integrate("1", "6,0,5,0,1").find("atan"), std::string::npos);
     // DoD-style: linear x two different quadratics with multiplicities.
-    std::uint64_t state = 0x51CE0FFEE42ULL;
+    keel::u64 state = 0x51CE0FFEE42ULL;
     for (int iter = 0; iter < 500; ++iter) {
         const Rational b1 = rr(state, 4), c1v = rr(state, 4);
         const Rational b2 = rr(state, 4), c2v = rr(state, 4);
         // require irreducible quadratics with negative discriminants
         if (b1 * b1 - 4 * c1v >= 0 || b2 * b2 - 4 * c2v >= 0)
             continue;
-        const UPoly q1(std::vector<Rational>{c1v, b1, Rational(std::int64_t{1})});
-        const UPoly q2(std::vector<Rational>{c2v, b2, Rational(std::int64_t{1})});
+        const UPoly q1(std::vector<Rational>{c1v, b1, Rational(keel::i64{1})});
+        const UPoly q2(std::vector<Rational>{c2v, b2, Rational(keel::i64{1})});
         const Rational r = rr(state, 4);
-        const UPoly lin(std::vector<Rational>{Rational(-r), Rational(std::int64_t{1})});
+        const UPoly lin(std::vector<Rational>{Rational(-r), Rational(keel::i64{1})});
         UPoly den = q1 * q2;
         if (nextU64(state) % 2 == 0)
             den = den * lin;
@@ -435,7 +437,7 @@ TEST_F(RatIntTest, CubicResidueRootOfForms)
 {
     // Degree >= 3 irreducible denominators now integrate with RootOf
     // atoms; property over random irreducible cubics times linear powers.
-    std::uint64_t state = 0xC0FFEEBADFACEULL;
+    keel::u64 state = 0xC0FFEEBADFACEULL;
     int provedCount = 0, total = 0;
     std::string lastReason;
     while (total < 40) {
@@ -443,12 +445,12 @@ TEST_F(RatIntTest, CubicResidueRootOfForms)
         Rational cc = rr(state, 4);
         // keep the cubic irreducible (no rational root)
         bool red = false;
-        for (std::int64_t r0 = -12; r0 <= 12; ++r0)
+        for (keel::i64 r0 = -12; r0 <= 12; ++r0)
             if (((cc + b * r0 + r0 * r0 * r0) == 0)) { red = true; break; }
         if (red)
             continue;
-        const UPoly den(std::vector<Rational>{cc, b, Rational(std::int64_t{0}),
-                                              Rational(std::int64_t{1})}); // x^3 + b x + cc
+        const UPoly den(std::vector<Rational>{cc, b, Rational(keel::i64{0}),
+                                              Rational(keel::i64{1})}); // x^3 + b x + cc
         if (den.isZero())
             continue;
         const int nn = static_cast<int>(nextU64(state) % 3);
@@ -488,7 +490,7 @@ TEST_F(RatIntTest, TwoCubicResidueFactors)
     // degree-3 extensions.
     EXPECT_NE(integrate("1", "6,0,0,5,0,0,1").find("RootOf"), std::string::npos);
     // Property: random pairs of irreducible cubics with random numerators.
-    std::uint64_t state = 0xB16C0FFEE5A11ULL;
+    keel::u64 state = 0xB16C0FFEE5A11ULL;
     int proved = 0, total = 0;
     while (total < 15) {
         auto irred = [&]() {
@@ -496,12 +498,12 @@ TEST_F(RatIntTest, TwoCubicResidueFactors)
                 const Rational b = rr(state, 3);
                 const Rational cc = rr(state, 3);
                 bool red = false;
-                for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+                for (keel::i64 r0 = -8; r0 <= 8; ++r0)
                     if (cc + b * r0 + r0 * r0 * r0 == 0)
                         red = true;
                 if (!red)
                     return UPoly(std::vector<Rational>{cc, b,
-                        Rational(std::int64_t{0}), Rational(std::int64_t{1})});
+                        Rational(keel::i64{0}), Rational(keel::i64{1})});
             }
         };
         const UPoly q1 = irred(), q2 = irred();
@@ -530,19 +532,19 @@ TEST_F(RatIntTest, C1CompletenessDoD)
     // quadratic (any discriminant) and irreducible cubic factors with
     // multiplicities — every integration must return PROVED_SYMBOLIC.
     // Covers all three residue classes in one denominator.
-    std::uint64_t state = 0xC1C0FFEE5EE0DULL;
+    keel::u64 state = 0xC1C0FFEE5EE0DULL;
     for (int iter = 0; iter < 200; ++iter) {
-        UPoly den(Rational(std::int64_t{1}));
+        UPoly den(Rational(keel::i64{1}));
         const int nLin = static_cast<int>(nextU64(state) % 3);
         const int nQuad = static_cast<int>(nextU64(state) % 2);
         const int nCub = static_cast<int>(nextU64(state) % 2);
         for (int i = 0; i < nLin; ++i) {
             Rational r = rr(state, 5);
             if (r.isZero())
-                r = Rational(std::int64_t{1});
+                r = Rational(keel::i64{1});
             const int m = 1 + static_cast<int>(nextU64(state) % 3);
             den = den * UPoly(std::vector<Rational>{Rational(-r),
-                Rational(std::int64_t{1})}).powUInt(m);
+                Rational(keel::i64{1})}).powUInt(m);
         }
         for (int i = 0; i < nQuad; ++i) {
             // random monic quadratic, no rational root
@@ -550,13 +552,13 @@ TEST_F(RatIntTest, C1CompletenessDoD)
                 const Rational b = rr(state, 4);
                 const Rational cc = rr(state, 4);
                 bool red = false;
-                for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+                for (keel::i64 r0 = -8; r0 <= 8; ++r0)
                     if (cc + b * r0 + r0 * r0 == 0)
                         red = true;
                 if (!red) {
                     const int m = 1 + static_cast<int>(nextU64(state) % 2);
                     den = den * UPoly(std::vector<Rational>{cc, b,
-                        Rational(std::int64_t{1})}).powUInt(m);
+                        Rational(keel::i64{1})}).powUInt(m);
                     break;
                 }
             }
@@ -566,12 +568,12 @@ TEST_F(RatIntTest, C1CompletenessDoD)
                 const Rational b = rr(state, 3);
                 const Rational cc = rr(state, 3);
                 bool red = false;
-                for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+                for (keel::i64 r0 = -8; r0 <= 8; ++r0)
                     if (cc + b * r0 + r0 * r0 * r0 == 0)
                         red = true;
                 if (!red) {
                     den = den * UPoly(std::vector<Rational>{cc, b,
-                        Rational(std::int64_t{0}), Rational(std::int64_t{1})});
+                        Rational(keel::i64{0}), Rational(keel::i64{1})});
                     break;
                 }
             }
@@ -686,12 +688,12 @@ TEST_F(RatIntTest, ExpRationalProperty)
     // Random rational R(t) -> R(e^x) integrates PROVED: the whole
     // rational kernel (Hermite/Trager/certificates) is exercised in
     // the t-world and the gate is the polynomial identity.
-    std::uint64_t st = 0xE9AC5EEDC0DEULL;
+    keel::u64 st = 0xE9AC5EEDC0DEULL;
     for (int iter = 0; iter < 120; ++iter) {
         auto rr = [&](int lim) {
-            const std::int64_t q = 1 + static_cast<std::int64_t>(nextU64(st) % 3);
-            const std::int64_t p =
-                static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            const keel::i64 q = 1 + static_cast<keel::i64>(nextU64(st) % 3);
+            const keel::i64 p =
+                static_cast<keel::i64>(nextU64(st) % (2 * lim + 1)) - lim;
             return Rational(BigInt(p), BigInt(q));
         };
         const int dn = 1 + static_cast<int>(nextU64(st) % 3);
@@ -699,7 +701,7 @@ TEST_F(RatIntTest, ExpRationalProperty)
         for (int i = 0; i <= dn; ++i)
             dcs.push_back(rr(4));
         if (dcs.back().isZero())
-            dcs.back() = Rational(std::int64_t{1});
+            dcs.back() = Rational(keel::i64{1});
         const int nn = static_cast<int>(nextU64(st) % (dn + 1));
         std::vector<Rational> ncs;
         for (int i = 0; i <= nn; ++i)
@@ -722,7 +724,7 @@ TEST_F(RatIntTest, ExpRationalProperty)
                 return c.pow(sub(c.child(e, 0)), sub(c.child(e, 1)));
             default: {
                 std::vector<Expr> kids;
-                for (std::size_t i = 0; i < c.childCount(e); ++i)
+                for (keel::usize i = 0; i < c.childCount(e); ++i)
                     kids.push_back(sub(c.child(e, i)));
                 return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
             }
@@ -791,12 +793,12 @@ TEST_F(RatIntTest, LogRationalProperty)
 {
     // Random rational R(t); f = R(log x)/x must integrate PROVED via
     // the t = log x storey (kernel certificate + round-trip gate).
-    std::uint64_t st = 0x10CC0DE5EEDULL;
+    keel::u64 st = 0x10CC0DE5EEDULL;
     for (int iter = 0; iter < 120; ++iter) {
         auto rr = [&](int lim) {
-            const std::int64_t q = 1 + static_cast<std::int64_t>(nextU64(st) % 3);
-            const std::int64_t p =
-                static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            const keel::i64 q = 1 + static_cast<keel::i64>(nextU64(st) % 3);
+            const keel::i64 p =
+                static_cast<keel::i64>(nextU64(st) % (2 * lim + 1)) - lim;
             return Rational(BigInt(p), BigInt(q));
         };
         const int dn = 1 + static_cast<int>(nextU64(st) % 3);
@@ -804,7 +806,7 @@ TEST_F(RatIntTest, LogRationalProperty)
         for (int i = 0; i <= dn; ++i)
             dcs.push_back(rr(4));
         if (dcs.back().isZero())
-            dcs.back() = Rational(std::int64_t{1});
+            dcs.back() = Rational(keel::i64{1});
         const int nn = static_cast<int>(nextU64(st) % (dn + 1));
         std::vector<Rational> ncs;
         for (int i = 0; i <= nn; ++i)
@@ -825,7 +827,7 @@ TEST_F(RatIntTest, LogRationalProperty)
                 return c.pow(sub(c.child(e, 0)), sub(c.child(e, 1)));
             default: {
                 std::vector<Expr> kids;
-                for (std::size_t i = 0; i < c.childCount(e); ++i)
+                for (keel::usize i = 0; i < c.childCount(e); ++i)
                     kids.push_back(sub(c.child(e, i)));
                 return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
             }
@@ -888,14 +890,14 @@ TEST_F(RatIntTest, TanRationalProperty)
 {
     // Random rational R(sin x, cos x): build as polynomials in two
     // atoms, substitute into the integrand, expect PROVED.
-    std::uint64_t st = 0x7A0C5EEDULL;
+    keel::u64 st = 0x7A0C5EEDULL;
     const Expr s = c.func("sin", x);
     const Expr co = c.func("cos", x);
     for (int iter = 0; iter < 100; ++iter) {
         auto rr = [&](int lim) {
-            const std::int64_t q = 1 + static_cast<std::int64_t>(nextU64(st) % 3);
-            const std::int64_t p =
-                static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            const keel::i64 q = 1 + static_cast<keel::i64>(nextU64(st) % 3);
+            const keel::i64 p =
+                static_cast<keel::i64>(nextU64(st) % (2 * lim + 1)) - lim;
             return Rational(BigInt(p), BigInt(q));
         };
         // num and den as polys in sin (outer) of poly in cos (inner),
@@ -906,12 +908,12 @@ TEST_F(RatIntTest, TanRationalProperty)
             for (int i = 0; i <= d; ++i)
                 terms.push_back(c.mul({c.number(rr(3)),
                                        c.pow(atom, c.number(
-                                           static_cast<std::int64_t>(i)))}));
+                                           static_cast<keel::i64>(i)))}));
             return c.add(terms);
         };
         const Expr num = c.mul({smallPoly(s), smallPoly(co)});
         const Expr den = c.add({smallPoly(s), smallPoly(co),
-                                c.number(std::int64_t{2})});
+                                c.number(keel::i64{2})});
         const Expr f = c.div(num, den);
         const numkit::cas::RationalIntegral r =
             numkit::cas::integrateRational(c, f, x);
@@ -954,18 +956,18 @@ TEST_F(RatIntTest, FactorExprRoundTripProperty)
     // Factoring a product of random irreducible-ish factors and
     // multiplying the result back must equal the input EXACTLY
     // (node identity through the canonical constructors).
-    std::uint64_t st = 0xFADEC0DE42ULL;
+    keel::u64 st = 0xFADEC0DE42ULL;
     for (int iter = 0; iter < 300; ++iter) {
         const int nf = 1 + static_cast<int>(nextU64(st) % 3);
         Expr e = c.number(Rational(
-            BigInt(static_cast<std::int64_t>(nextU64(st) % 5) + 1),
+            BigInt(static_cast<keel::i64>(nextU64(st) % 5) + 1),
             BigInt(1)));
         for (int i = 0; i < nf; ++i) {
-            const std::int64_t a =
-                static_cast<std::int64_t>(nextU64(st) % 11) - 5;
-            const std::int64_t b =
-                static_cast<std::int64_t>(nextU64(st) % 11) - 5;
-            e = c.mul({e, c.add({c.pow(x, c.number(std::int64_t{2})),
+            const keel::i64 a =
+                static_cast<keel::i64>(nextU64(st) % 11) - 5;
+            const keel::i64 b =
+                static_cast<keel::i64>(nextU64(st) % 11) - 5;
+            e = c.mul({e, c.add({c.pow(x, c.number(keel::i64{2})),
                                  c.mul({c.number(a), x}),
                                  c.number(b)})});
         }
@@ -973,8 +975,8 @@ TEST_F(RatIntTest, FactorExprRoundTripProperty)
         ASSERT_TRUE(numkit::cas::factorExpr(c, e, x, out)) << c.toString(e);
         // Value identity: factor(e) evaluates to the same number.
         const Rational q(
-            BigInt(static_cast<std::int64_t>(nextU64(st) % 9) - 4),
-            BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 4)));
+            BigInt(static_cast<keel::i64>(nextU64(st) % 9) - 4),
+            BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
         Rational v1, v2;
         ASSERT_TRUE(c.evalExact(e, {{"x", q}}, v1));
         ASSERT_TRUE(c.evalExact(out, {{"x", q}}, v2));
@@ -1027,34 +1029,34 @@ TEST_F(RatIntTest, RadicalProperty)
 {
     // Random rational R(t) with small degrees; f = R(x^(1/q)) for a
     // random q in {2,3,4,6} must integrate PROVED via t = x^(1/q).
-    std::uint64_t st = 0xAD1CA1BEEF5ULL;
+    keel::u64 st = 0xAD1CA1BEEF5ULL;
     for (int iter = 0; iter < 60; ++iter) {
         const int q = 2 + static_cast<int>(nextU64(st) % 4); // 2..5
         const Expr t = c.pow(x, c.number(
                                     Rational(BigInt(1),
-                                             BigInt(static_cast<std::int64_t>(q)))));
+                                             BigInt(static_cast<keel::i64>(q)))));
         auto rr = [&](int lim) {
-            int64_t p = static_cast<std::int64_t>(nextU64(st) % (2 * lim + 1)) - lim;
+            keel::i64 p = static_cast<keel::i64>(nextU64(st) % (2 * lim + 1)) - lim;
             if (p == 0)
                 p = 1; // non-zero numerators: a zero leading term would
                        // degenerate the test fraction
             return Rational(
                 BigInt(p),
-                BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 3)));
+                BigInt(1 + static_cast<keel::i64>(nextU64(st) % 3)));
         };
         const int dd = 1 + static_cast<int>(nextU64(st) % 2);
         std::vector<Expr> den;
         for (int i = 0; i <= dd; ++i)
             den.push_back(c.mul({c.number(rr(3)),
                                  c.pow(t, c.number(
-                                              static_cast<std::int64_t>(i)))}));
-        den.push_back(c.number(std::int64_t{1}));
+                                              static_cast<keel::i64>(i)))}));
+        den.push_back(c.number(keel::i64{1}));
         const int nn = static_cast<int>(nextU64(st) % (dd + 1));
         std::vector<Expr> num;
         for (int i = 0; i <= nn; ++i)
             num.push_back(c.mul({c.number(rr(3)),
                                  c.pow(t, c.number(
-                                              static_cast<std::int64_t>(i)))}));
+                                              static_cast<keel::i64>(i)))}));
         const Expr f = c.div(c.add(num), c.add(den));
         const numkit::cas::RationalIntegral r =
             numkit::cas::integrateRational(c, f, x);
@@ -1084,7 +1086,7 @@ double evalDouble(const Ctx &c, Expr e, double x)
         const auto &poly = c.rootOfPoly(e);
         auto pv = [&](double z) {
             double acc = 0, pw = 1;
-            for (std::size_t i = 0; i < poly.size(); ++i) {
+            for (keel::usize i = 0; i < poly.size(); ++i) {
                 acc += std::stod(poly[i].num().toString()) /
                        std::stod(poly[i].den().toString()) * pw;
                 pw *= z;
@@ -1096,7 +1098,7 @@ double evalDouble(const Ctx &c, Expr e, double x)
             lo *= 2;
         while (pv(hi) < 0)
             hi *= 2;
-        while (hi - lo > 1e-14 * std::max(1.0, std::abs(lo))) {
+        while (hi - lo > 1e-14 * std::max(1.0, keel::abs(lo))) {
             const double mid = (lo + hi) / 2;
             (pv(mid) < 0 ? lo : hi) = mid;
         }
@@ -1128,7 +1130,7 @@ double evalDouble(const Ctx &c, Expr e, double x)
     case NodeKind::Add:
     case NodeKind::Mul: {
         double acc = c.kind(e) == NodeKind::Add ? 0.0 : 1.0;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const double v = evalDouble(c, c.child(e, i), x);
             acc = c.kind(e) == NodeKind::Add ? acc + v : acc * v;
         }
@@ -1148,7 +1150,7 @@ void expectFormDerivativeMatches(const Ctx &c, Expr F, Expr f, double x0)
     const double dF = (evalDouble(c, F, x0 + h) - evalDouble(c, F, x0 - h)) /
                       (2 * h);
     const double fv = evalDouble(c, f, x0);
-    EXPECT_NEAR(dF, fv, 1e-4 * std::max(1.0, std::abs(fv)))
+    EXPECT_NEAR(dF, fv, 1e-4 * std::max(1.0, keel::abs(fv)))
         << "x0=" << x0;
 }
 
@@ -1219,13 +1221,13 @@ TEST_F(RatIntTest, Tier2aTinyBaseFractionalPower)
     const auto build = [](Ctx &cx, int k) {
         const Expr v = cx.symbol("x");
         const Expr f =
-            cx.mul({cx.pow(v, cx.number(std::int64_t{k - 1})),
-                    cx.pow(cx.pow(v, cx.number(std::int64_t{k})),
-                           cx.number(Rational(std::int64_t{-1}, BigInt(2))))});
+            cx.mul({cx.pow(v, cx.number(keel::i64{k - 1})),
+                    cx.pow(cx.pow(v, cx.number(keel::i64{k})),
+                           cx.number(Rational(keel::i64{-1}, BigInt(2))))});
         const Expr F =
-            cx.mul({cx.number(Rational(std::int64_t{2}, BigInt(k))),
-                    cx.pow(cx.pow(v, cx.number(std::int64_t{k})),
-                           cx.number(Rational(std::int64_t{1}, BigInt(2))))});
+            cx.mul({cx.number(Rational(keel::i64{2}, BigInt(k))),
+                    cx.pow(cx.pow(v, cx.number(keel::i64{k})),
+                           cx.number(Rational(keel::i64{1}, BigInt(2))))});
         return std::make_pair(f, F);
     };
     // k = 30: every sample point's base has its root reachable
@@ -1256,19 +1258,19 @@ TEST_F(RatIntTest, Tier2aStatuses)
     const Expr v2 = c2.symbol("x");
     // Match: F = atan(x), F' = 1/(1+x^2) == f.
     {
-        const Expr f = c2.div(c2.number(std::int64_t{1}),
-                              c2.add({c2.pow(v2, c2.number(std::int64_t{2})),
-                                      c2.number(std::int64_t{1})}));
+        const Expr f = c2.div(c2.number(keel::i64{1}),
+                              c2.add({c2.pow(v2, c2.number(keel::i64{2})),
+                                      c2.number(keel::i64{1})}));
         const Expr F = c2.func("atan", v2);
         EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2),
                   numkit::cas::Tier2aStatus::Match);
     }
     // Mismatch: F' = 1/(2(1+x^2)) against 2/(1+x^2) - factor 4.
     {
-        const Expr f = c2.div(c2.number(std::int64_t{2}),
-                              c2.add({c2.pow(v2, c2.number(std::int64_t{2})),
-                                      c2.number(std::int64_t{1})}));
-        const Expr F = c2.mul({c2.number(Rational(std::int64_t{1}, BigInt(2))),
+        const Expr f = c2.div(c2.number(keel::i64{2}),
+                              c2.add({c2.pow(v2, c2.number(keel::i64{2})),
+                                      c2.number(keel::i64{1})}));
+        const Expr F = c2.mul({c2.number(Rational(keel::i64{1}, BigInt(2))),
                                c2.func("atan", v2)});
         EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2),
                   numkit::cas::Tier2aStatus::Mismatch);
@@ -1281,9 +1283,9 @@ TEST_F(RatIntTest, Tier2aStatuses)
     }
     // Algebraic fragment with sqrt: F = sqrt(x) vs f = 1/(2 sqrt(x)).
     {
-        const Expr F = c2.pow(v2, c2.number(Rational(std::int64_t{1}, BigInt(2))));
-        const Expr f = c2.mul({c2.number(Rational(std::int64_t{1}, BigInt(2))),
-                               c2.pow(v2, c2.number(Rational(std::int64_t{-1},
+        const Expr F = c2.pow(v2, c2.number(Rational(keel::i64{1}, BigInt(2))));
+        const Expr f = c2.mul({c2.number(Rational(keel::i64{1}, BigInt(2))),
+                               c2.pow(v2, c2.number(Rational(keel::i64{-1},
                                                              BigInt(2))))});
         EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2), numkit::cas::Tier2aStatus::Match);
     }
@@ -1295,19 +1297,19 @@ TEST_F(RatIntTest, Tier2aRealFormsProperty)
     // runtime gate already refuses Mismatch (an honest Unevaluated),
     // so proved() here implies the audit passed; this property makes
     // the implication explicit over random cubics.
-    std::uint64_t st = 0x7192A5EEDULL;
+    keel::u64 st = 0x7192A5EEDULL;
     for (int iter = 0; iter < 100; ++iter) {
         const Rational b = rr(st, 4);
         const Rational cc = rr(st, 4);
         // irreducible (no rational root among small candidates)
         bool red = false;
-        for (std::int64_t r0 = -8; r0 <= 8; ++r0)
+        for (keel::i64 r0 = -8; r0 <= 8; ++r0)
             if (cc + b * Rational(r0) + Rational(r0 * r0 * r0) == 0)
                 red = true;
         if (red)
             continue;
-        const UPoly den({cc, b, Rational(std::int64_t{0}),
-                         Rational(std::int64_t{1})});
+        const UPoly den({cc, b, Rational(keel::i64{0}),
+                         Rational(keel::i64{1})});
         const Expr f = build(P("1"), den);
         const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << r.reason;
@@ -1486,12 +1488,12 @@ TEST_F(RatIntTest, DefiniteIntegrateDivergentAndHonestFailures)
 
 TEST_F(RatIntTest, DefiniteIntegrateAdditivityAndOrientationProperty)
 {
-    std::uint64_t st = 0xDEF147E01ULL;
+    keel::u64 st = 0xDEF147E01ULL;
     for (int iter = 0; iter < 60; ++iter) {
         std::vector<Expr> terms;
         for (int d = 0; d <= 3; ++d) {
             terms.push_back(c.mul({c.number(rr(st, 5)),
-                                   c.pow(x, c.number(static_cast<std::int64_t>(d)))}));
+                                   c.pow(x, c.number(static_cast<keel::i64>(d)))}));
         }
         const Expr f = c.add(terms);
         const Expr a = c.number(rr(st, 4));

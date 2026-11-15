@@ -14,6 +14,7 @@
 // step 3) come later.
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 
@@ -24,7 +25,7 @@
 namespace numkit::cas::rubi {
 
 // Term tags - mirror tools/rubi_codegen.py.
-enum Tag : std::uint8_t {
+enum Tag : keel::u8 {
     kTagAny = 0,  // pattern variable (wildcard)
     kTagOp = 1,   // arithmetic/logic operator by string id
     kTagHead = 2, // function head by string id
@@ -37,40 +38,40 @@ enum Tag : std::uint8_t {
 struct RuleTables
 {
     const char *const *strings = nullptr;
-    const std::int32_t *stringCount = nullptr;
+    const keel::i32 *stringCount = nullptr;
     // nodes: tag, valId, firstEdge, nEdges, ruleId (-1 = inner)
-    const std::int32_t *nodes = nullptr;
+    const keel::i32 *nodes = nullptr;
     // edges: tag, valId, next, arity, optional - arity is the
     // pattern-term child count (exact-arity matching), optional=1
     // marks an `_.` blank eligible for default synthesis
-    const std::int32_t *edges = nullptr;
+    const keel::i32 *edges = nullptr;
     // terms: tag, valId, childOff, childCount
-    const std::int32_t *repTerms = nullptr;
-    const std::int32_t *condTerms = nullptr;
+    const keel::i32 *repTerms = nullptr;
+    const keel::i32 *condTerms = nullptr;
     // rules: repTermOff, condTermOff (-1 = none), patternLeafNode,
     // nextRuleWithSamePattern (-1 = end of chain) - Rubi's identical-
     // pattern sign variants try in chain (file) order
-    const std::int32_t *rules = nullptr;
-    const std::int32_t *ruleCount = nullptr;
+    const keel::i32 *rules = nullptr;
+    const keel::i32 *ruleCount = nullptr;
 
-    const char *str(std::int32_t id) const
+    const char *str(keel::i32 id) const
     {
         return strings[id];
     }
-    std::int32_t nodeRow(std::int32_t n, int col) const
+    keel::i32 nodeRow(keel::i32 n, int col) const
     {
         return nodes[n * 5 + col];
     }
-    std::int32_t edgeRow(std::int32_t e, int col) const
+    keel::i32 edgeRow(keel::i32 e, int col) const
     {
         return edges[e * 5 + col];
     }
-    std::int32_t termRow(const std::int32_t *table, std::int32_t t,
+    keel::i32 termRow(const keel::i32 *table, keel::i32 t,
                          int col) const
     {
         return table[t * 4 + col];
     }
-    std::int32_t ruleRow(std::int32_t r, int col) const
+    keel::i32 ruleRow(keel::i32 r, int col) const
     {
         return rules[r * 4 + col];
     }

@@ -1,6 +1,7 @@
 // num/bigint.hpp — arbitrary-precision integer, exact arithmetic layer.
 #pragma once
 
+#include <keel/core.h>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -28,18 +29,18 @@ class BigInt
 {
 public:
     BigInt() noexcept = default;
-    BigInt(std::int64_t v) noexcept;
-    BigInt(std::uint64_t v) noexcept; // non-negative
+    BigInt(keel::i64 v) noexcept;
+    BigInt(keel::u64 v) noexcept; // non-negative
 
     template <typename T>
         requires(std::is_integral_v<T> && !std::is_same_v<T, bool> &&
-                 std::is_signed_v<T> && !std::is_same_v<T, std::int64_t>)
-    BigInt(T v) noexcept : BigInt(static_cast<std::int64_t>(v)) {}
+                 std::is_signed_v<T> && !std::is_same_v<T, keel::i64>)
+    BigInt(T v) noexcept : BigInt(static_cast<keel::i64>(v)) {}
 
     template <typename T>
         requires(std::is_integral_v<T> && !std::is_same_v<T, bool> &&
-                 std::is_unsigned_v<T> && !std::is_same_v<T, std::uint64_t>)
-    BigInt(T v) noexcept : BigInt(static_cast<std::uint64_t>(v)) {}
+                 std::is_unsigned_v<T> && !std::is_same_v<T, keel::u64>)
+    BigInt(T v) noexcept : BigInt(static_cast<keel::u64>(v)) {}
 
     // Strict decimal parse: optional sign, one or more digits, no whitespace.
     static bool tryParse(BigInt &out, const std::string &s);
@@ -48,19 +49,19 @@ public:
     bool isInline() const noexcept { return limbs_.isInline(); }
     int signum() const noexcept;
     bool isNegative() const noexcept { return negative_; }
-    std::size_t bitLength() const noexcept;
+    keel::usize bitLength() const noexcept;
 
     // Undefined on zero magnitude access to the low limb.
-    std::uint64_t lowLimb() const noexcept
+    keel::u64 lowLimb() const noexcept
     {
         return limbs_.empty() ? 0 : limbs_[0];
     }
 
-    bool fitsInt64(std::int64_t &out) const noexcept;
-    bool fitsUint64(std::uint64_t &out) const noexcept;
+    bool fitsInt64(keel::i64 &out) const noexcept;
+    bool fitsUint64(keel::u64 &out) const noexcept;
 
     // Nearest IEEE-754 double (+/-INFINITY on overflow past 2^1024).
-    double toDouble() const noexcept;
+    keel::f64 toDouble() const noexcept;
 
     std::string toString() const;
 
@@ -84,12 +85,12 @@ public:
     friend bool operator>(const BigInt &a, const BigInt &b);
     friend bool operator>=(const BigInt &a, const BigInt &b);
 
-    BigInt operator<<(std::size_t bits) const;
-    BigInt operator>>(std::size_t bits) const; // floor semantics for negatives
+    BigInt operator<<(keel::usize bits) const;
+    BigInt operator>>(keel::usize bits) const; // floor semantics for negatives
 
     static void divMod(const BigInt &a, const BigInt &b, BigInt &q, BigInt &r);
     static BigInt gcd(const BigInt &a, const BigInt &b); // non-negative result
-    static BigInt powUInt(const BigInt &base, std::uint64_t exp); // 0^0 == 1
+    static BigInt powUInt(const BigInt &base, keel::u64 exp); // 0^0 == 1
     static BigInt lcm(const BigInt &a, const BigInt &b);          // non-negative
 
     // Primality by Miller-Rabin. Deterministic for n < 2^64 (the
@@ -109,14 +110,14 @@ public:
     bool sqrtExact(BigInt &out) const;
 
     // Order-insensitive content hash for hash-consing (collisions are fine).
-    std::uint64_t hashBits() const;
+    keel::u64 hashBits() const;
 
 private:
     // 2-limb (128-bit) Small Buffer Optimization container for base-2^64 limbs.
     class LimbVec
     {
     public:
-        static constexpr std::size_t kInlineCap = 2;
+        static constexpr keel::usize kInlineCap = 2;
 
         LimbVec() noexcept = default;
 
@@ -129,13 +130,13 @@ private:
         LimbVec(const LimbVec &o) : size_(o.size_)
         {
             if (o.size_ <= kInlineCap) {
-                cap_ = static_cast<std::uint32_t>(kInlineCap);
-                for (std::uint32_t i = 0; i < o.size_; ++i)
+                cap_ = static_cast<keel::u32>(kInlineCap);
+                for (keel::u32 i = 0; i < o.size_; ++i)
                     inline_[i] = o.data()[i];
             } else {
                 cap_ = o.size_;
-                heap_ = new std::uint64_t[cap_];
-                for (std::uint32_t i = 0; i < o.size_; ++i)
+                heap_ = new keel::u64[cap_];
+                for (keel::u32 i = 0; i < o.size_; ++i)
                     heap_[i] = o.heap_[i];
             }
         }
@@ -143,12 +144,12 @@ private:
         LimbVec(LimbVec &&o) noexcept : size_(o.size_), cap_(o.cap_)
         {
             if (o.isInline()) {
-                for (std::uint32_t i = 0; i < o.size_; ++i)
+                for (keel::u32 i = 0; i < o.size_; ++i)
                     inline_[i] = o.inline_[i];
             } else {
                 heap_ = o.heap_;
                 o.heap_ = nullptr;
-                o.cap_ = static_cast<std::uint32_t>(kInlineCap);
+                o.cap_ = static_cast<keel::u32>(kInlineCap);
             }
             o.size_ = 0;
         }
@@ -158,16 +159,16 @@ private:
             if (this == &o)
                 return *this;
             if (o.size_ <= cap_) {
-                std::uint64_t *dst = data();
-                const std::uint64_t *src = o.data();
-                for (std::uint32_t i = 0; i < o.size_; ++i)
+                keel::u64 *dst = data();
+                const keel::u64 *src = o.data();
+                for (keel::u32 i = 0; i < o.size_; ++i)
                     dst[i] = src[i];
                 size_ = o.size_;
                 return *this;
             }
-            std::uint64_t *fresh = new std::uint64_t[o.size_];
-            const std::uint64_t *src = o.data();
-            for (std::uint32_t i = 0; i < o.size_; ++i)
+            keel::u64 *fresh = new keel::u64[o.size_];
+            const keel::u64 *src = o.data();
+            for (keel::u32 i = 0; i < o.size_; ++i)
                 fresh[i] = src[i];
             if (!isInline())
                 delete[] heap_;
@@ -187,12 +188,12 @@ private:
             cap_ = o.cap_;
             heap_ = nullptr;
             if (o.isInline()) {
-                for (std::uint32_t i = 0; i < o.size_; ++i)
+                for (keel::u32 i = 0; i < o.size_; ++i)
                     inline_[i] = o.inline_[i];
             } else {
                 heap_ = o.heap_;
                 o.heap_ = nullptr;
-                o.cap_ = static_cast<std::uint32_t>(kInlineCap);
+                o.cap_ = static_cast<keel::u32>(kInlineCap);
             }
             o.size_ = 0;
             return *this;
@@ -200,41 +201,41 @@ private:
 
         bool isInline() const noexcept { return cap_ <= kInlineCap; }
         bool empty() const noexcept { return size_ == 0; }
-        std::size_t size() const noexcept { return size_; }
+        keel::usize size() const noexcept { return size_; }
 
-        std::uint64_t *data() noexcept
+        keel::u64 *data() noexcept
         {
             return isInline() ? inline_ : heap_;
         }
-        const std::uint64_t *data() const noexcept
+        const keel::u64 *data() const noexcept
         {
             return isInline() ? inline_ : heap_;
         }
 
-        std::uint64_t &operator[](std::size_t i) noexcept
+        keel::u64 &operator[](keel::usize i) noexcept
         {
             assert(i < size_);
             return data()[i];
         }
-        const std::uint64_t &operator[](std::size_t i) const noexcept
+        const keel::u64 &operator[](keel::usize i) const noexcept
         {
             assert(i < size_);
             return data()[i];
         }
 
-        std::uint64_t &back() noexcept
+        keel::u64 &back() noexcept
         {
             assert(size_ > 0);
             return data()[size_ - 1];
         }
-        const std::uint64_t &back() const noexcept
+        const keel::u64 &back() const noexcept
         {
             assert(size_ > 0);
             return data()[size_ - 1];
         }
 
-        const std::uint64_t *begin() const noexcept { return data(); }
-        const std::uint64_t *end() const noexcept { return data() + size_; }
+        const keel::u64 *begin() const noexcept { return data(); }
+        const keel::u64 *end() const noexcept { return data() + size_; }
 
         void clear() noexcept { size_ = 0; }
 
@@ -244,15 +245,15 @@ private:
             --size_;
         }
 
-        void reserve(std::size_t newCap)
+        void reserve(keel::usize newCap)
         {
             if (newCap <= cap_)
                 return;
-            const std::uint32_t target = static_cast<std::uint32_t>(
-                std::max<std::size_t>(newCap, static_cast<std::size_t>(cap_) * 2));
-            std::uint64_t *fresh = new std::uint64_t[target];
-            const std::uint64_t *src = data();
-            for (std::uint32_t i = 0; i < size_; ++i)
+            const keel::u32 target = static_cast<keel::u32>(
+                std::max<keel::usize>(newCap, static_cast<keel::usize>(cap_) * 2));
+            keel::u64 *fresh = new keel::u64[target];
+            const keel::u64 *src = data();
+            for (keel::u32 i = 0; i < size_; ++i)
                 fresh[i] = src[i];
             if (!isInline())
                 delete[] heap_;
@@ -260,40 +261,40 @@ private:
             cap_ = target;
         }
 
-        void push_back(std::uint64_t v)
+        void push_back(keel::u64 v)
         {
             if (size_ == cap_)
-                reserve(static_cast<std::size_t>(cap_) * 2);
+                reserve(static_cast<keel::usize>(cap_) * 2);
             data()[size_++] = v;
         }
 
-        void assign(std::size_t count, std::uint64_t v)
+        void assign(keel::usize count, keel::u64 v)
         {
             if (count > cap_)
                 reserve(count);
-            std::uint64_t *dst = data();
-            for (std::size_t i = 0; i < count; ++i)
+            keel::u64 *dst = data();
+            for (keel::usize i = 0; i < count; ++i)
                 dst[i] = v;
-            size_ = static_cast<std::uint32_t>(count);
+            size_ = static_cast<keel::u32>(count);
         }
 
         bool operator==(const LimbVec &o) const noexcept
         {
             if (size_ != o.size_)
                 return false;
-            const std::uint64_t *a = data();
-            const std::uint64_t *b = o.data();
-            for (std::uint32_t i = 0; i < size_; ++i)
+            const keel::u64 *a = data();
+            const keel::u64 *b = o.data();
+            for (keel::u32 i = 0; i < size_; ++i)
                 if (a[i] != b[i])
                     return false;
             return true;
         }
 
     private:
-        std::uint64_t inline_[kInlineCap] = {0, 0};
-        std::uint64_t *heap_ = nullptr;
-        std::uint32_t size_ = 0;
-        std::uint32_t cap_ = static_cast<std::uint32_t>(kInlineCap);
+        keel::u64 inline_[kInlineCap] = {0, 0};
+        keel::u64 *heap_ = nullptr;
+        keel::u32 size_ = 0;
+        keel::u32 cap_ = static_cast<keel::u32>(kInlineCap);
     };
 
     void normalize() noexcept;

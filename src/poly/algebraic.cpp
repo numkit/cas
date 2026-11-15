@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/algebraic.hpp>
 
 #include <cassert>
@@ -9,12 +10,12 @@ namespace {
 
 const Rational R0()
 {
-    return Rational(std::int64_t{0});
+    return Rational(keel::i64{0});
 }
 
 const Rational R1()
 {
-    return Rational(std::int64_t{1});
+    return Rational(keel::i64{1});
 }
 
 UPoly linearOf(const Rational &r)
@@ -89,7 +90,7 @@ bool Algebraic::containsRoot(const UPoly &g, const std::vector<UPoly> &sturmG,
 {
     if (a.isRational())
         return g.eval(a.rationalValue()).isZero();
-    std::size_t n = countRealRoots(sturmG, a.iv_.lo, a.iv_.hi); // (lo, hi]
+    keel::usize n = countRealRoots(sturmG, a.iv_.lo, a.iv_.hi); // (lo, hi]
     if (g.eval(a.iv_.hi).isZero())
         --n; // a root at hi is not the number (open interval)
     return n > 0;
@@ -122,7 +123,7 @@ void Algebraic::refineStep()
 {
     if (iv_.exact())
         return;
-    const Rational width = (iv_.hi - iv_.lo) * Rational(std::int64_t{1}, BigInt(2));
+    const Rational width = (iv_.hi - iv_.lo) * Rational(keel::i64{1}, BigInt(2));
     const RootInterval next = refineRoot(poly_, iv_, width);
     if (next.exact()) {
         // Bisection landed on the root exactly: it is rational.
@@ -200,7 +201,7 @@ int Algebraic::compare(const Algebraic &a, const Algebraic &b)
             // strictly inside the intersection means it is both numbers.
             const Rational lo = x.iv_.lo > y.iv_.lo ? x.iv_.lo : y.iv_.lo;
             const Rational hi = x.iv_.hi < y.iv_.hi ? x.iv_.hi : y.iv_.hi;
-            std::size_t n = countRealRoots(sturmW, lo, hi); // (lo, hi]
+            keel::usize n = countRealRoots(sturmW, lo, hi); // (lo, hi]
             if (g.eval(hi).isZero())
                 --n;
             if (n == 1)
@@ -234,7 +235,7 @@ double Algebraic::approx() const
         return std::stod(iv_.lo.num().toString()) /
                std::stod(iv_.lo.den().toString());
     const_cast<Algebraic *>(this)->refineTo(
-        Rational(std::int64_t{1}, BigInt(1000000)));
+        Rational(keel::i64{1}, BigInt(1000000)));
     const double lo = std::stod(iv_.lo.num().toString()) /
                       std::stod(iv_.lo.den().toString());
     const double hi = std::stod(iv_.hi.num().toString()) /

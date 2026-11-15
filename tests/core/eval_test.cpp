@@ -2,6 +2,7 @@
 // groundwork of I1 item 20: Rational::fromDoubleBits (exact IEEE
 // double -> Q) and Ctx::evalExact (exact rational evaluation of an
 // expression, honest decline outside Q).
+#include <keel/core.h>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
@@ -90,45 +91,45 @@ TEST(EvalExact, FixedVectors)
 {
     Ctx c;
     const Expr x = c.symbol("x");
-    const std::vector<std::pair<std::string, Rational>> env{{"x", Rational(std::int64_t{3})}};
+    const std::vector<std::pair<std::string, Rational>> env{{"x", Rational(keel::i64{3})}};
     Rational out;
 
-    ASSERT_TRUE(c.evalExact(c.add({c.pow(x, c.number(std::int64_t{2})),
-                                   c.mul({c.number(std::int64_t{2}), x}),
-                                   c.number(std::int64_t{1})}),
+    ASSERT_TRUE(c.evalExact(c.add({c.pow(x, c.number(keel::i64{2})),
+                                   c.mul({c.number(keel::i64{2}), x}),
+                                   c.number(keel::i64{1})}),
                             env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{16})); // 9 + 6 + 1
+    EXPECT_EQ(out, Rational(keel::i64{16})); // 9 + 6 + 1
 
     // Negative power with a non-zero base.
-    ASSERT_TRUE(c.evalExact(c.pow(x, c.number(std::int64_t{-2})), env, out));
+    ASSERT_TRUE(c.evalExact(c.pow(x, c.number(keel::i64{-2})), env, out));
     EXPECT_EQ(out, Rational(BigInt(1), BigInt(9)));
 
     // Trivial function points.
     ASSERT_TRUE(c.evalExact(c.func("exp", c.zero()), env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{1}));
+    EXPECT_EQ(out, Rational(keel::i64{1}));
     ASSERT_TRUE(c.evalExact(c.func("sin", c.zero()), env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    EXPECT_EQ(out, Rational(keel::i64{0}));
     ASSERT_TRUE(c.evalExact(c.func("asin", c.zero()), env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    EXPECT_EQ(out, Rational(keel::i64{0}));
     ASSERT_TRUE(c.evalExact(c.func("asinh", c.zero()), env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    EXPECT_EQ(out, Rational(keel::i64{0}));
     ASSERT_TRUE(c.evalExact(c.func("atanh", c.zero()), env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    EXPECT_EQ(out, Rational(keel::i64{0}));
     ASSERT_TRUE(c.evalExact(c.func("cosh", c.zero()), env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{1}));
+    EXPECT_EQ(out, Rational(keel::i64{1}));
     ASSERT_TRUE(c.evalExact(c.func("acos", c.one()), env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    EXPECT_EQ(out, Rational(keel::i64{0}));
     ASSERT_TRUE(c.evalExact(c.func("acosh", c.one()), env, out));
-    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    EXPECT_EQ(out, Rational(keel::i64{0}));
 
     // Honest declines.
     EXPECT_FALSE(c.evalExact(c.func("sin", x), env, out));      // sin(3)
-    EXPECT_FALSE(c.evalExact(c.pow(c.number(std::int64_t{2}),
+    EXPECT_FALSE(c.evalExact(c.pow(c.number(keel::i64{2}),
                                    c.number(Rational(BigInt(1), BigInt(2)))),
                              env, out));                         // 2^(1/2)
     EXPECT_FALSE(c.evalExact(c.symbol("y"), env, out));         // unresolved
     EXPECT_FALSE(c.evalExact(
-        c.rootOf({Rational(std::int64_t{-2}), Rational(), Rational(std::int64_t{1})}, 0),
+        c.rootOf({Rational(keel::i64{-2}), Rational(), Rational(keel::i64{1})}, 0),
         env, out));                                              // RootOf
 }
 
@@ -141,13 +142,13 @@ TEST(EvalExact, ZeroNegativePowerDeclines)
     Rational out;
     const Expr y = c.symbol("y");
     const std::vector<std::pair<std::string, Rational>> env{
-        {"y", Rational(std::int64_t{-1})}};
+        {"y", Rational(keel::i64{-1})}};
     EXPECT_FALSE(c.evalExact(c.pow(c.zero(), y), env, out));
 }
 
 // ── layer 2: property — agreement with UPoly::eval ────────────
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -159,18 +160,18 @@ TEST(EvalExact, MatchesUpolyEval)
 {
     Ctx c;
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0xE9A1C0DE5EEDULL;
+    keel::u64 st = 0xE9A1C0DE5EEDULL;
     for (int iter = 0; iter < 3000; ++iter) {
         std::vector<Rational> cs;
         const int deg = static_cast<int>(nextU64(st) % 5);
         for (int i = 0; i <= deg; ++i)
             cs.emplace_back(
-                BigInt(static_cast<std::int64_t>(nextU64(st) % 17) - 8),
-                BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 4)));
+                BigInt(static_cast<keel::i64>(nextU64(st) % 17) - 8),
+                BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
         const UPoly p(cs);
         const Rational q(
-            BigInt(static_cast<std::int64_t>(nextU64(st) % 13) - 6),
-            BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 4)));
+            BigInt(static_cast<keel::i64>(nextU64(st) % 13) - 6),
+            BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
         Rational out;
         ASSERT_TRUE(c.evalExact(numkit::cas::toExpr(c, p, x),
                                 {{"x", q}}, out))
@@ -191,8 +192,8 @@ TEST(EvalExact, Boundary)
     EXPECT_EQ(out, Rational(BigInt(1), BigInt(3)));
     // A zero polynomial through many zeros.
     const Expr x = c.symbol("x");
-    ASSERT_TRUE(c.evalExact(c.mul({x, c.zero()}), {{"x", Rational(std::int64_t{5})}}, out));
-    EXPECT_EQ(out, Rational(std::int64_t{0}));
+    ASSERT_TRUE(c.evalExact(c.mul({x, c.zero()}), {{"x", Rational(keel::i64{5})}}, out));
+    EXPECT_EQ(out, Rational(keel::i64{0}));
 }
 
 // ── Item 35: Rational::toDouble and Ctx::evalDouble (vpa bridge) ──
@@ -247,7 +248,7 @@ TEST(EvalDouble, TranscendentalRootOfAndOddRoots)
 
     // RootOf: unique real root of z^3 - 2 = 0 is 2^(1/3).
     const Expr cbrt2 = c.rootOf(
-        {Rational(std::int64_t{-2}), Rational(0), Rational(0), Rational(1)}, 0);
+        {Rational(keel::i64{-2}), Rational(0), Rational(0), Rational(1)}, 0);
     ASSERT_TRUE(c.evalDouble(cbrt2, {}, out));
     EXPECT_NEAR(out, std::cbrt(2.0), 1e-15);
 
@@ -271,7 +272,7 @@ TEST(EvalDouble, TranscendentalRootOfAndOddRoots)
     EXPECT_FALSE(c.evalDouble(numkit::cas::parseExpr(c, "atanh(x)"),
                               {{"x", 1.0}}, out));
     const Expr complexIdx = c.rootOf(
-        {Rational(std::int64_t{-2}), Rational(0), Rational(0), Rational(1)}, 1);
+        {Rational(keel::i64{-2}), Rational(0), Rational(0), Rational(1)}, 1);
     EXPECT_FALSE(c.evalDouble(complexIdx, {}, out));
     EXPECT_FALSE(c.evalDouble(c.symbol("unresolved_z"), {}, out));
 }
@@ -280,18 +281,18 @@ TEST(EvalDouble, PropertyAgreesWithEvalExact)
 {
     Ctx c;
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0xD00B1EC0DEULL;
+    keel::u64 st = 0xD00B1EC0DEULL;
     for (int iter = 0; iter < 1000; ++iter) {
         std::vector<Rational> cs;
         const int deg = static_cast<int>(nextU64(st) % 5);
         for (int i = 0; i <= deg; ++i)
             cs.emplace_back(
-                BigInt(static_cast<std::int64_t>(nextU64(st) % 17) - 8),
-                BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 4)));
+                BigInt(static_cast<keel::i64>(nextU64(st) % 17) - 8),
+                BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
         const UPoly p(cs);
         const Rational q(
-            BigInt(static_cast<std::int64_t>(nextU64(st) % 13) - 6),
-            BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 4)));
+            BigInt(static_cast<keel::i64>(nextU64(st) % 13) - 6),
+            BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
         const Expr pe = numkit::cas::toExpr(c, p, x);
         Rational exactOut;
         double dblOut = 0.0;

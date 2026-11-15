@@ -1,3 +1,5 @@
+#include <keel/core.h>
+#include <keel/math.h>
 #include <numkit/cas/core/symsolve.hpp>
 
 #include <numkit/cas/core/simplify.hpp>
@@ -31,20 +33,20 @@ bool mentionsVar(const Ctx &c, Expr e, Expr var)
         return false;
     if (e == var)
         return true;
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         if (mentionsVar(c, c.child(e, i), var))
             return true;
     return false;
 }
 
-std::size_t countVarOccurrences(const Ctx &c, Expr e, Expr var)
+keel::usize countVarOccurrences(const Ctx &c, Expr e, Expr var)
 {
     if (e.isNull())
         return 0;
     if (e == var)
         return 1;
-    std::size_t count = 0;
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    keel::usize count = 0;
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         count += countVarOccurrences(c, c.child(e, i), var);
     return count;
 }
@@ -63,7 +65,7 @@ bool isZeroAfterSimplify(Ctx &c, Expr e)
 //   - Simplifies (u^n)^(1/n) -> u
 //   - Simplifies rational square roots (n == 2) by pulling out square factors
 //     sqrt(a/b) = (s / b) * sqrt(rem), where a*b = s^2 * rem.
-Expr nthRootSymbolic(Ctx &c, Expr rhs, std::int64_t n)
+Expr nthRootSymbolic(Ctx &c, Expr rhs, keel::i64 n)
 {
     rhs = c.simplify(rhs);
     if (rhs.isNull() || n <= 1)
@@ -85,7 +87,7 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, std::int64_t n)
                     oneSym = false;
                 return;
             }
-            for (std::size_t i = 0; i < c.childCount(cur); ++i)
+            for (keel::usize i = 0; i < c.childCount(cur); ++i)
                 self(self, c.child(cur, i));
         };
         findSym(findSym, rhs);
@@ -102,7 +104,7 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, std::int64_t n)
     }
     if (c.kind(rhs) == NodeKind::Mul) {
         bool hasExactPowerChild = false;
-        for (std::size_t i = 0; i < c.childCount(rhs); ++i) {
+        for (keel::usize i = 0; i < c.childCount(rhs); ++i) {
             const Expr ch = c.child(rhs, i);
             if (c.kind(ch) == NodeKind::Pow &&
                 c.kind(c.child(ch, 1)) == NodeKind::Number &&
@@ -113,7 +115,7 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, std::int64_t n)
         }
         if (hasExactPowerChild) {
             std::vector<Expr> parts;
-            for (std::size_t i = 0; i < c.childCount(rhs); ++i)
+            for (keel::usize i = 0; i < c.childCount(rhs); ++i)
                 parts.push_back(nthRootSymbolic(c, c.child(rhs, i), n));
             return c.simplify(c.mul(parts));
         }
@@ -131,16 +133,16 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, std::int64_t n)
                 const int half = pe.second / 2;
                 const int odd = pe.second % 2;
                 if (half > 0)
-                    sqOut *= BigInt::powUInt(pe.first, static_cast<std::uint64_t>(half));
+                    sqOut *= BigInt::powUInt(pe.first, static_cast<keel::u64>(half));
                 if (odd > 0)
                     rem *= pe.first;
             }
             return c.mul({c.number(Rational(sqOut, d.den())),
                           c.pow(c.number(Rational(rem, BigInt(1))),
-                                c.number(Rational(std::int64_t{1}, BigInt(2))))});
+                                c.number(Rational(keel::i64{1}, BigInt(2))))});
         }
     }
-    return c.simplify(c.pow(rhs, c.number(Rational(std::int64_t{1}, BigInt(n)))));
+    return c.simplify(c.pow(rhs, c.number(Rational(keel::i64{1}, BigInt(n)))));
 }
 
 void addUniqueRoot(Ctx &c, std::vector<Expr> &roots, Expr cand)
@@ -195,7 +197,7 @@ bool hasPoleAt(Ctx &c, Expr e, Expr var, Expr root)
     }
     case NodeKind::Add:
     case NodeKind::Mul:
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             if (hasPoleAt(c, c.child(e, i), var, root))
                 return true;
         return false;
@@ -218,7 +220,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
         return true;
     }
 
-    std::vector<std::vector<Expr>> buckets(static_cast<std::size_t>(maxDeg + 1));
+    std::vector<std::vector<Expr>> buckets(static_cast<keel::usize>(maxDeg + 1));
 
     auto processTerm = [&](Expr term) -> bool {
         if (!mentionsVar(c, term, var)) {
@@ -234,18 +236,18 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
         if (c.kind(term) == NodeKind::Pow && c.child(term, 0) == var &&
             c.kind(c.child(term, 1)) == NodeKind::Number) {
             const Rational &rv = c.numberValue(c.child(term, 1));
-            std::int64_t k = 0;
+            keel::i64 k = 0;
             if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 0 &&
                 k <= maxDeg) {
-                buckets[static_cast<std::size_t>(k)].push_back(c.one());
+                buckets[static_cast<keel::usize>(k)].push_back(c.one());
                 return true;
             }
             return false;
         }
         if (c.kind(term) == NodeKind::Mul) {
-            std::int64_t deg = 0;
+            keel::i64 deg = 0;
             std::vector<Expr> cofactors;
-            for (std::size_t i = 0; i < c.childCount(term); ++i) {
+            for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr f = c.child(term, i);
                 if (!mentionsVar(c, f, var)) {
                     cofactors.push_back(f);
@@ -254,7 +256,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
                 } else if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == var &&
                            c.kind(c.child(f, 1)) == NodeKind::Number) {
                     const Rational &rv = c.numberValue(c.child(f, 1));
-                    std::int64_t k = 0;
+                    keel::i64 k = 0;
                     if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) &&
                         k >= 0) {
                         deg += k;
@@ -267,7 +269,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
             }
             if (deg < 0 || deg > maxDeg)
                 return false;
-            buckets[static_cast<std::size_t>(deg)].push_back(
+            buckets[static_cast<keel::usize>(deg)].push_back(
                 cofactors.empty() ? c.one() : c.mul(cofactors));
             return true;
         }
@@ -275,7 +277,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
     };
 
     if (c.kind(expd) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+        for (keel::usize i = 0; i < c.childCount(expd); ++i)
             if (!processTerm(c.child(expd, i)))
                 return false;
     } else {
@@ -283,11 +285,11 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
             return false;
     }
 
-    coeffs.assign(static_cast<std::size_t>(maxDeg + 1), c.zero());
+    coeffs.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
     for (int d = 0; d <= maxDeg; ++d) {
-        const auto &b = buckets[static_cast<std::size_t>(d)];
+        const auto &b = buckets[static_cast<keel::usize>(d)];
         if (!b.empty())
-            coeffs[static_cast<std::size_t>(d)] = c.simplify(c.add(b));
+            coeffs[static_cast<keel::usize>(d)] = c.simplify(c.add(b));
     }
     while (coeffs.size() > 1 && isZeroAfterSimplify(c, coeffs.back()))
         coeffs.pop_back();
@@ -305,9 +307,9 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
     }
     switch (c.kind(lhs)) {
     case NodeKind::Add: {
-        std::size_t varIdx = c.childCount(lhs);
+        keel::usize varIdx = c.childCount(lhs);
         std::vector<Expr> rest;
-        for (std::size_t i = 0; i < c.childCount(lhs); ++i) {
+        for (keel::usize i = 0; i < c.childCount(lhs); ++i) {
             const Expr ch = c.child(lhs, i);
             if (mentionsVar(c, ch, var)) {
                 if (varIdx != c.childCount(lhs))
@@ -324,9 +326,9 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
         return solveSingleOccurrence(c, c.child(lhs, varIdx), newRhs, var, out);
     }
     case NodeKind::Mul: {
-        std::size_t varIdx = c.childCount(lhs);
+        keel::usize varIdx = c.childCount(lhs);
         std::vector<Expr> rest;
-        for (std::size_t i = 0; i < c.childCount(lhs); ++i) {
+        for (keel::usize i = 0; i < c.childCount(lhs); ++i) {
             const Expr ch = c.child(lhs, i);
             if (mentionsVar(c, ch, var)) {
                 if (varIdx != c.childCount(lhs))
@@ -350,7 +352,7 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
         if (mentionsVar(c, base, var) && !mentionsVar(c, exp, var)) {
             if (c.kind(exp) == NodeKind::Number) {
                 const Rational &re = c.numberValue(exp);
-                std::int64_t p = 0, q = 0;
+                keel::i64 p = 0, q = 0;
                 if (!re.num().fitsInt64(p) || !re.den().fitsInt64(q) || p == 0)
                     return false;
                 if (isZeroAfterSimplify(c, rhs)) {
@@ -358,8 +360,8 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
                         return true; // no solution for u^(-k) = 0
                     return solveSingleOccurrence(c, base, c.zero(), var, out);
                 }
-                const Rational invExp = Rational(std::int64_t{1}) / re;
-                if (std::abs(p) % 2 == 0) {
+                const Rational invExp = Rational(keel::i64{1}) / re;
+                if (keel::abs(p) % 2 == 0) {
                     if (c.kind(rhs) == NodeKind::Number &&
                         c.numberValue(rhs).signum() < 0) {
                         return true; // no real root of u^(2m) = negative
@@ -417,7 +419,7 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
                 c.numberValue(rhs).signum() < 0)
                 return true;
             return solveSingleOccurrence(
-                c, arg, c.simplify(c.pow(rhs, c.number(std::int64_t{2}))), var,
+                c, arg, c.simplify(c.pow(rhs, c.number(keel::i64{2}))), var,
                 out);
         }
         if (fn == "sin")
@@ -470,8 +472,8 @@ void solveQuadraticCoeffs(Ctx &c, Expr c0, Expr c1, Expr c2,
                           std::vector<Expr> &out)
 {
     // c2 * x^2 + c1 * x + c0 = 0
-    const Expr four = c.number(std::int64_t{4});
-    const Expr two = c.number(std::int64_t{2});
+    const Expr four = c.number(keel::i64{4});
+    const Expr two = c.number(keel::i64{2});
     const Expr disc = c.simplify(
         c.add({c.pow(c1, two), c.neg(c.mul({four, c2, c0}))}));
     if (c.kind(disc) == NodeKind::Number && c.numberValue(disc).signum() < 0)
@@ -495,18 +497,18 @@ void solvePolyCoeffs(Ctx &c, std::vector<Expr> coeffs,
         return;
 
     // Strip common factor x^m when coeffs[0] == 0.
-    std::size_t low = 0;
+    keel::usize low = 0;
     while (low < coeffs.size() && isZeroAfterSimplify(c, coeffs[low]))
         ++low;
     if (low > 0) {
         addUniqueRoot(c, out, c.zero());
         coeffs.erase(coeffs.begin(),
-                     coeffs.begin() + static_cast<std::ptrdiff_t>(low));
+                     coeffs.begin() + static_cast<keel::isize>(low));
     }
     if (coeffs.size() <= 1)
         return;
 
-    const std::size_t deg = coeffs.size() - 1;
+    const keel::usize deg = coeffs.size() - 1;
     if (deg == 1) {
         // c1 * x + c0 = 0
         addUniqueRoot(c, out, c.div(c.neg(coeffs[0]), coeffs[1]));
@@ -519,7 +521,7 @@ void solvePolyCoeffs(Ctx &c, std::vector<Expr> coeffs,
 
     // Check pure binomial c_d * x^d + c_0 = 0 (all intermediate coefficients 0).
     bool pureBinomial = true;
-    for (std::size_t i = 1; i < deg; ++i) {
+    for (keel::usize i = 1; i < deg; ++i) {
         if (!isZeroAfterSimplify(c, coeffs[i])) {
             pureBinomial = false;
             break;
@@ -527,7 +529,7 @@ void solvePolyCoeffs(Ctx &c, std::vector<Expr> coeffs,
     }
     if (pureBinomial) {
         const Expr rhs = c.simplify(c.div(c.neg(coeffs[0]), coeffs[deg]));
-        const Rational invD(std::int64_t{1}, BigInt(static_cast<std::int64_t>(deg)));
+        const Rational invD(keel::i64{1}, BigInt(static_cast<keel::i64>(deg)));
         if (deg % 2 == 0) {
             if (c.kind(rhs) == NodeKind::Number &&
                 c.numberValue(rhs).signum() < 0)
@@ -553,7 +555,7 @@ void solvePolyCoeffs(Ctx &c, std::vector<Expr> coeffs,
         isZeroAfterSimplify(c, coeffs[3])) {
         std::vector<Expr> uRoots;
         solveQuadraticCoeffs(c, coeffs[0], coeffs[2], coeffs[4], uRoots);
-        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+        const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
         for (const Expr &u : uRoots) {
             if (c.kind(u) == NodeKind::Number && c.numberValue(u).signum() < 0)
                 continue;
@@ -577,7 +579,7 @@ void collectAllSymbols(const Ctx &c, Expr e, std::vector<Expr> &syms)
             syms.push_back(e);
         return;
     }
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         collectAllSymbols(c, c.child(e, i), syms);
 }
 
@@ -592,7 +594,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
     // 1. Product of factors: solve each factor independently.
     if (c.kind(e) == NodeKind::Mul) {
         bool solvedAllFactors = true;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr ch = c.child(e, i);
             if (!mentionsVar(c, ch, var))
                 continue;
@@ -604,7 +606,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
             }
         }
         if (solvedAllFactors && c.childCount(e) >= 2) {
-            for (std::size_t i = 0; i < c.childCount(e); ++i) {
+            for (keel::usize i = 0; i < c.childCount(e); ++i) {
                 const Expr ch = c.child(e, i);
                 if (mentionsVar(c, ch, var))
                     solveRaw(c, ch, var, budget, candidates);
@@ -627,7 +629,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
     Expr numExpr = rat.isNull() ? e : rat;
     if (c.kind(numExpr) == NodeKind::Mul) {
         std::vector<Expr> numFactors;
-        for (std::size_t i = 0; i < c.childCount(numExpr); ++i) {
+        for (keel::usize i = 0; i < c.childCount(numExpr); ++i) {
             const Expr ch = c.child(numExpr, i);
             if (c.kind(ch) == NodeKind::Pow &&
                 c.kind(c.child(ch, 1)) == NodeKind::Number &&
@@ -666,7 +668,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
                                     candidates);
                 } else if (f.deg() >= 3) {
                     const std::vector<RootInterval> ivs = isolateRealRoots(f);
-                    for (std::size_t idx = 0; idx < ivs.size(); ++idx) {
+                    for (keel::usize idx = 0; idx < ivs.size(); ++idx) {
                         addUniqueRoot(c, candidates,
                                       c.rootOf(f.coeffs(), static_cast<int>(idx)));
                     }
@@ -717,7 +719,7 @@ std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
         if (c.kind(src) != NodeKind::Mul)
             return src;
         std::vector<Expr> numFactors;
-        for (std::size_t i = 0; i < c.childCount(src); ++i) {
+        for (keel::usize i = 0; i < c.childCount(src); ++i) {
             const Expr ch = c.child(src, i);
             if (c.kind(ch) == NodeKind::Pow &&
                 c.kind(c.child(ch, 1)) == NodeKind::Number &&
@@ -753,20 +755,20 @@ std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
         // Build the (m + n) x (m + n) Sylvester matrix Sylv_y(F, G):
         //   - First `n` rows: shifted coefficients of F (from degree m down to 0)
         //   - Next `m` rows:  shifted coefficients of G (from degree n down to 0)
-        const std::size_t dim = static_cast<std::size_t>(m + n);
+        const keel::usize dim = static_cast<keel::usize>(m + n);
         SymMatrix Sylv = SymMatrix::zeros(c, dim, dim);
         for (int row = 0; row < n; ++row) {
             for (int k = 0; k <= m; ++k) {
-                Sylv.at(static_cast<std::size_t>(row),
-                        static_cast<std::size_t>(row + k)) =
-                    aCoeffs[static_cast<std::size_t>(m - k)];
+                Sylv.at(static_cast<keel::usize>(row),
+                        static_cast<keel::usize>(row + k)) =
+                    aCoeffs[static_cast<keel::usize>(m - k)];
             }
         }
         for (int row = 0; row < m; ++row) {
             for (int k = 0; k <= n; ++k) {
-                Sylv.at(static_cast<std::size_t>(n + row),
-                        static_cast<std::size_t>(row + k)) =
-                    bCoeffs[static_cast<std::size_t>(n - k)];
+                Sylv.at(static_cast<keel::usize>(n + row),
+                        static_cast<keel::usize>(row + k)) =
+                    bCoeffs[static_cast<keel::usize>(n - k)];
             }
         }
         const Expr resX = det(c, Sylv, budget);
@@ -819,7 +821,7 @@ Expr extractNumeratorExpr(Ctx &c, Expr e)
     if (c.kind(src) != NodeKind::Mul)
         return src;
     std::vector<Expr> numFactors;
-    for (std::size_t i = 0; i < c.childCount(src); ++i) {
+    for (keel::usize i = 0; i < c.childCount(src); ++i) {
         const Expr ch = c.child(src, i);
         if (c.kind(ch) == NodeKind::Pow &&
             c.kind(c.child(ch, 1)) == NodeKind::Number &&
@@ -838,7 +840,7 @@ bool certifySystemTuple(Ctx &c, const std::vector<Expr> &eqs,
         return false;
     for (const Expr &eq : eqs) {
         Expr cur = eq;
-        for (std::size_t i = 0; i < vars.size(); ++i) {
+        for (keel::usize i = 0; i < vars.size(); ++i) {
             if (hasPoleAt(c, cur, vars[i], sol[i]))
                 return false;
             cur = c.subs(cur, vars[i], sol[i]);
@@ -856,7 +858,7 @@ void addUniqueSystemTuple(Ctx &c, std::vector<std::vector<Expr>> &out,
         if (existing.size() != cand.size())
             continue;
         bool same = true;
-        for (std::size_t i = 0; i < cand.size(); ++i) {
+        for (keel::usize i = 0; i < cand.size(); ++i) {
             if (!isZeroAfterSimplify(c, c.add({existing[i], c.neg(cand[i])}))) {
                 same = false;
                 break;
@@ -884,7 +886,7 @@ void backSubstituteLexBasis(Ctx &c, const std::vector<Expr> &basis,
         return;
     }
 
-    const std::size_t uIdx = static_cast<std::size_t>(idx);
+    const keel::usize uIdx = static_cast<keel::usize>(idx);
     const Expr curVar = vars[uIdx];
 
     // Specialize all basis polynomials at already-bound variables vars[idx + 1 .. k - 1],
@@ -892,14 +894,14 @@ void backSubstituteLexBasis(Ctx &c, const std::vector<Expr> &basis,
     std::vector<Expr> uniPolys;
     for (const Expr &g : basis) {
         Expr spec = g;
-        for (std::size_t j = uIdx + 1; j < vars.size(); ++j)
+        for (keel::usize j = uIdx + 1; j < vars.size(); ++j)
             spec = c.subs(spec, vars[j], partial[j]);
         spec = c.simplify(spec);
         if (c.isZero(spec))
             continue;
         bool hasEarlier = false;
         for (int j = 0; j < idx; ++j) {
-            if (mentionsVar(c, spec, vars[static_cast<std::size_t>(j)])) {
+            if (mentionsVar(c, spec, vars[static_cast<keel::usize>(j)])) {
                 hasEarlier = true;
                 break;
             }
@@ -953,10 +955,10 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
         if (eq.isNull())
             return solutions;
     }
-    for (std::size_t i = 0; i < vars.size(); ++i) {
+    for (keel::usize i = 0; i < vars.size(); ++i) {
         if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol)
             return solutions;
-        for (std::size_t j = i + 1; j < vars.size(); ++j) {
+        for (keel::usize j = i + 1; j < vars.size(); ++j) {
             if (vars[i] == vars[j])
                 return solutions;
         }
@@ -996,8 +998,8 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
     // 3. Parametric linear variable peel: if any equation is linear in some
     //    variable `vars[j]` with non-zero coefficient independent of `vars`,
     //    eliminate `vars[j]` and recurse on the remaining N - 1 variables.
-    for (std::size_t eqIdx = 0; eqIdx < numEqs.size(); ++eqIdx) {
-        for (std::size_t vIdx = 0; vIdx < vars.size(); ++vIdx) {
+    for (keel::usize eqIdx = 0; eqIdx < numEqs.size(); ++eqIdx) {
+        for (keel::usize vIdx = 0; vIdx < vars.size(); ++vIdx) {
             std::vector<Expr> lCoeffs;
             if (!extractPolyCoeffsInVar(c, numEqs[eqIdx], vars[vIdx], 1,
                                         lCoeffs) ||
@@ -1017,14 +1019,14 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
 
             const Expr exprForVj = c.simplify(c.div(c.neg(lCoeffs[0]), a1));
             std::vector<Expr> subEqs;
-            for (std::size_t i = 0; i < eqs.size(); ++i) {
+            for (keel::usize i = 0; i < eqs.size(); ++i) {
                 if (i == eqIdx)
                     continue;
                 subEqs.push_back(
                     c.simplify(c.subs(eqs[i], vars[vIdx], exprForVj)));
             }
             std::vector<Expr> remVars;
-            for (std::size_t i = 0; i < vars.size(); ++i) {
+            for (keel::usize i = 0; i < vars.size(); ++i) {
                 if (i != vIdx)
                     remVars.push_back(vars[i]);
             }
@@ -1033,13 +1035,13 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
             const auto subSols = solveSystem(c, subEqs, remVars, budget);
             for (const auto &subTup : subSols) {
                 Expr valVj = exprForVj;
-                for (std::size_t i = 0; i < remVars.size(); ++i)
+                for (keel::usize i = 0; i < remVars.size(); ++i)
                     valVj = c.subs(valVj, remVars[i], subTup[i]);
                 valVj = c.simplify(valVj);
                 std::vector<Expr> fullTup;
                 fullTup.reserve(vars.size());
-                std::size_t remCursor = 0;
-                for (std::size_t i = 0; i < vars.size(); ++i) {
+                keel::usize remCursor = 0;
+                for (keel::usize i = 0; i < vars.size(); ++i) {
                     if (i == vIdx)
                         fullTup.push_back(valVj);
                     else

@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/core/expr.hpp>
 
 #include <unordered_map>
@@ -9,11 +10,11 @@ Expr Ctx::diff(Expr e, Expr var)
     if (e.isNull() || var.isNull())
         return Expr();
     assert(kind(var) == NodeKind::Symbol && "diff variable must be a Symbol");
-    std::unordered_map<std::uint32_t, Expr> memo;
+    std::unordered_map<keel::u32, Expr> memo;
     return diffRec(e, var, memo);
 }
 
-Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &memo)
+Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
 {
     if (e.isNull())
         return Expr();
@@ -32,7 +33,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
     case NodeKind::Add: {
         std::vector<Expr> ds;
         bool failed = false;
-        for (std::size_t i = 0; i < childCount(e); ++i) {
+        for (keel::usize i = 0; i < childCount(e); ++i) {
             const Expr di = diffRec(child(e, i), var, memo);
             if (di.isNull()) {
                 failed = true;
@@ -46,10 +47,10 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
     }
     case NodeKind::Mul: {
         // n-ary product rule: sum_i (d(fi) * prod_{j != i} fj).
-        const std::size_t n = childCount(e);
+        const keel::usize n = childCount(e);
         std::vector<Expr> terms;
         bool failed = false;
-        for (std::size_t i = 0; i < n; ++i) {
+        for (keel::usize i = 0; i < n; ++i) {
             const Expr di = diffRec(child(e, i), var, memo);
             if (di.isNull()) {
                 failed = true;
@@ -57,7 +58,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             }
             std::vector<Expr> factors;
             factors.push_back(di);
-            for (std::size_t j = 0; j < n; ++j)
+            for (keel::usize j = 0; j < n; ++j)
                 if (j != i)
                     factors.push_back(child(e, j));
             terms.push_back(mul(factors));
@@ -80,7 +81,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             }
             const Rational c = numberValue(v);
             result = mul({number(c),
-                          pow(u, number(c - Rational(std::int64_t{1}))),
+                          pow(u, number(c - Rational(keel::i64{1}))),
                           du});
         } else if (kind(u) == NodeKind::Number) {
             // d(a^v) = a^v * log(a) * v'
@@ -107,7 +108,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             } else {
                 result = mul({e,
                               add({mul({dv, func("log", u)}),
-                                   mul({v, mul({du, pow(u, number(std::int64_t{-1}))})})})});
+                                   mul({v, mul({du, pow(u, number(keel::i64{-1}))})})})});
             }
         }
         break;
@@ -136,7 +137,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                     const Expr b1 = add({b, one()});
                     const Expr c1 = add({cParam, one()});
                     result = mul({
-                        a, b, pow(cParam, number(std::int64_t{-1})),
+                        a, b, pow(cParam, number(keel::i64{-1})),
                         func("hypergeom2F1", {a1, b1, c1, u}), du});
                 }
             }
@@ -158,7 +159,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                     const Expr a1 = add({a, one()});
                     const Expr b1 = add({b, one()});
                     result = mul({
-                        a, pow(b, number(std::int64_t{-1})),
+                        a, pow(b, number(keel::i64{-1})),
                         func("hypergeom1F1", {a1, b1, u}), du});
                 }
             }
@@ -177,13 +178,13 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             }
             if (name == "ellipticF" || name == "ellipticEInc" ||
                 name == "ellipticE") {
-                const Expr half = number(Rational(std::int64_t{1}, BigInt(2)));
-                const Expr mHalf = number(Rational(std::int64_t{-1}, BigInt(2)));
+                const Expr half = number(Rational(keel::i64{1}, BigInt(2)));
+                const Expr mHalf = number(Rational(keel::i64{-1}, BigInt(2)));
                 const Expr sinPhi = func("sin", n);
                 const Expr cosPhi = func("cos", n);
                 const Expr radArg = add({
                     one(),
-                    neg(mul({u, pow(sinPhi, number(std::int64_t{2}))}))});
+                    neg(mul({u, pow(sinPhi, number(keel::i64{2}))}))});
                 const Expr fInc = func("ellipticF", n, u);
                 const Expr eInc = func("ellipticEInc", n, u);
                 std::vector<Expr> totalTerms;
@@ -200,18 +201,18 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                         const Expr t1 = mul({
                             half,
                             add({eInc, neg(mul({oneMinusM, fInc}))}),
-                            pow(u, number(std::int64_t{-1})),
-                            pow(oneMinusM, number(std::int64_t{-1}))});
+                            pow(u, number(keel::i64{-1})),
+                            pow(oneMinusM, number(keel::i64{-1}))});
                         const Expr t2 = neg(mul({
                             half, sinPhi, cosPhi,
-                            pow(oneMinusM, number(std::int64_t{-1})),
+                            pow(oneMinusM, number(keel::i64{-1})),
                             pow(radArg, mHalf)}));
                         dM = add({t1, t2});
                     } else {
                         dM = mul({
                             half,
                             add({eInc, neg(fInc)}),
-                            pow(u, number(std::int64_t{-1}))});
+                            pow(u, number(keel::i64{-1}))});
                     }
                     totalTerms.push_back(mul({dM, du}));
                 }
@@ -219,31 +220,31 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                 break;
             }
             if (name == "ellipticPi") {
-                const Expr half = number(Rational(std::int64_t{1}, BigInt(2)));
+                const Expr half = number(Rational(keel::i64{1}, BigInt(2)));
                 const Expr km = func("ellipticK", u);
                 const Expr em = func("ellipticE", u);
                 const Expr mMinusN = add({u, neg(n)});
-                const Expr nMinus1 = add({n, number(std::int64_t{-1})});
+                const Expr nMinus1 = add({n, number(keel::i64{-1})});
                 const Expr oneMinusM = add({one(), neg(u)});
                 std::vector<Expr> totalTerms;
                 if (!isZero(dn)) {
                     const Expr numN = add({
                         em,
-                        mul({mMinusN, pow(n, number(std::int64_t{-1})), km}),
-                        mul({add({pow(n, number(std::int64_t{2})), neg(u)}),
-                             pow(n, number(std::int64_t{-1})), e})});
+                        mul({mMinusN, pow(n, number(keel::i64{-1})), km}),
+                        mul({add({pow(n, number(keel::i64{2})), neg(u)}),
+                             pow(n, number(keel::i64{-1})), e})});
                     const Expr dN = mul({
                         half, numN,
-                        pow(mMinusN, number(std::int64_t{-1})),
-                        pow(nMinus1, number(std::int64_t{-1}))});
+                        pow(mMinusN, number(keel::i64{-1})),
+                        pow(nMinus1, number(keel::i64{-1}))});
                     totalTerms.push_back(mul({dN, dn}));
                 }
                 if (!isZero(du)) {
                     const Expr numM = add({em, neg(mul({oneMinusM, e}))});
                     const Expr dM = mul({
                         half, numM,
-                        pow(mMinusN, number(std::int64_t{-1})),
-                        pow(oneMinusM, number(std::int64_t{-1}))});
+                        pow(mMinusN, number(keel::i64{-1})),
+                        pow(oneMinusM, number(keel::i64{-1}))});
                     totalTerms.push_back(mul({dM, du}));
                 }
                 result = totalTerms.size() == 1 ? totalTerms[0] : add(totalTerms);
@@ -281,19 +282,19 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             if (!isZero(dn))
                 break;
             if (name == "igamma") {
-                const Expr nm1 = add({n, number(std::int64_t{-1})});
+                const Expr nm1 = add({n, number(keel::i64{-1})});
                 result = neg(mul({pow(u, nm1), func("exp", neg(u)), du}));
                 break;
             }
             if (name == "gammainc") {
-                const Expr nm1 = add({n, number(std::int64_t{-1})});
+                const Expr nm1 = add({n, number(keel::i64{-1})});
                 result = mul({pow(u, nm1), func("exp", neg(u)), du});
                 break;
             }
             if (name == "hypergeom0F1") {
                 const Expr np1 = add({n, one()});
                 result = mul({
-                    pow(n, number(std::int64_t{-1})),
+                    pow(n, number(keel::i64{-1})),
                     func("hypergeom0F1", np1, u), du});
                 break;
             }
@@ -301,19 +302,19 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                 if (isZero(n)) {
                     result = zero();
                 } else {
-                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    const Expr nm1 = add({n, number(keel::i64{-1})});
                     const Expr num = mul({
                         n,
                         add({func("legendreP", nm1, u), neg(mul({u, e}))})});
                     const Expr den =
-                        add({one(), neg(pow(u, number(std::int64_t{2})))});
-                    result = mul({num, pow(den, number(std::int64_t{-1})), du});
+                        add({one(), neg(pow(u, number(keel::i64{2})))});
+                    result = mul({num, pow(den, number(keel::i64{-1})), du});
                 }
             } else if (name == "chebyshevT") {
                 if (isZero(n)) {
                     result = zero();
                 } else {
-                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    const Expr nm1 = add({n, number(keel::i64{-1})});
                     result = mul({n, func("chebyshevU", nm1, u), du});
                 }
             } else if (name == "chebyshevU") {
@@ -325,25 +326,25 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                         mul({u, e}),
                         neg(mul({np1, func("chebyshevT", np1, u)}))});
                     const Expr den =
-                        add({one(), neg(pow(u, number(std::int64_t{2})))});
-                    result = mul({num, pow(den, number(std::int64_t{-1})), du});
+                        add({one(), neg(pow(u, number(keel::i64{2})))});
+                    result = mul({num, pow(den, number(keel::i64{-1})), du});
                 }
             } else if (name == "hermiteH") {
                 if (isZero(n)) {
                     result = zero();
                 } else {
-                    const Expr nm1 = add({n, number(std::int64_t{-1})});
-                    result = mul({number(std::int64_t{2}), n,
+                    const Expr nm1 = add({n, number(keel::i64{-1})});
+                    result = mul({number(keel::i64{2}), n,
                                   func("hermiteH", nm1, u), du});
                 }
             } else if (name == "laguerreL") {
                 if (isZero(n)) {
                     result = zero();
                 } else {
-                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    const Expr nm1 = add({n, number(keel::i64{-1})});
                     const Expr num =
                         mul({n, add({e, neg(func("laguerreL", nm1, u))})});
-                    result = mul({num, pow(u, number(std::int64_t{-1})), du});
+                    result = mul({num, pow(u, number(keel::i64{-1})), du});
                 }
             } else if (name == "besselj" || name == "bessely" ||
                        name == "besselk") {
@@ -353,7 +354,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                     result = mul({neg(nextF), du});
                 } else {
                     result = mul({
-                        add({mul({n, pow(u, number(std::int64_t{-1})), e}),
+                        add({mul({n, pow(u, number(keel::i64{-1})), e}),
                              neg(nextF)}),
                         du});
                 }
@@ -364,21 +365,21 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
                     result = mul({nextF, du});
                 } else {
                     result = mul({
-                        add({mul({n, pow(u, number(std::int64_t{-1})), e}),
+                        add({mul({n, pow(u, number(keel::i64{-1})), e}),
                              nextF}),
                         du});
                 }
             } else if (name == "polylog") {
-                const Expr nm1 = add({n, number(std::int64_t{-1})});
+                const Expr nm1 = add({n, number(keel::i64{-1})});
                 result = mul({
                     func("polylog", nm1, u),
-                    pow(u, number(std::int64_t{-1})),
+                    pow(u, number(keel::i64{-1})),
                     du});
             } else if (name == "bernoulliB" || name == "eulerE") {
                 if (isZero(n)) {
                     result = zero();
                 } else {
-                    const Expr nm1 = add({n, number(std::int64_t{-1})});
+                    const Expr nm1 = add({n, number(keel::i64{-1})});
                     result = mul({n, func(name, nm1, u), du});
                 }
             } else {
@@ -395,100 +396,100 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
             break;
         }
         if (name == "sqrt")
-            result = mul({number(Rational(std::int64_t{1}, BigInt(2))),
-                          pow(u, number(Rational(std::int64_t{-1}, BigInt(2)))),
+            result = mul({number(Rational(keel::i64{1}, BigInt(2))),
+                          pow(u, number(Rational(keel::i64{-1}, BigInt(2)))),
                           du});
         else if (name == "exp")
             result = mul({e, du});
         else if (name == "log")
-            result = mul({du, pow(u, number(std::int64_t{-1}))});
+            result = mul({du, pow(u, number(keel::i64{-1}))});
         else if (name == "sin")
             result = mul({func("cos", u), du});
         else if (name == "cos")
             result = mul({neg(func("sin", u)), du});
         else if (name == "tan")
-            result = mul({du, add({one(), pow(e, number(std::int64_t{2}))})});
+            result = mul({du, add({one(), pow(e, number(keel::i64{2}))})});
         else if (name == "cot")
-            result = neg(mul({du, add({one(), pow(e, number(std::int64_t{2}))})}));
+            result = neg(mul({du, add({one(), pow(e, number(keel::i64{2}))})}));
         else if (name == "sec")
             result = mul({e, func("tan", u), du});
         else if (name == "csc")
             result = neg(mul({e, func("cot", u), du}));
         else if (name == "atan")
-            result = mul({du, pow(add({one(), pow(u, number(std::int64_t{2}))}),
-                                  number(std::int64_t{-1}))});
+            result = mul({du, pow(add({one(), pow(u, number(keel::i64{2}))}),
+                                  number(keel::i64{-1}))});
         else if (name == "acot")
-            result = neg(mul({du, pow(add({one(), pow(u, number(std::int64_t{2}))}),
-                                      number(std::int64_t{-1}))}));
+            result = neg(mul({du, pow(add({one(), pow(u, number(keel::i64{2}))}),
+                                      number(keel::i64{-1}))}));
         else if (name == "asin")
-            result = mul({du, pow(add({one(), neg(pow(u, number(std::int64_t{2})))}),
-                                  number(Rational(std::int64_t{-1}, BigInt(2))))});
+            result = mul({du, pow(add({one(), neg(pow(u, number(keel::i64{2})))}),
+                                  number(Rational(keel::i64{-1}, BigInt(2))))});
         else if (name == "acos")
-            result = neg(mul({du, pow(add({one(), neg(pow(u, number(std::int64_t{2})))}),
-                                      number(Rational(std::int64_t{-1}, BigInt(2))))}));
+            result = neg(mul({du, pow(add({one(), neg(pow(u, number(keel::i64{2})))}),
+                                      number(Rational(keel::i64{-1}, BigInt(2))))}));
         else if (name == "sinh")
             result = mul({func("cosh", u), du});
         else if (name == "cosh")
             result = mul({func("sinh", u), du});
         else if (name == "tanh")
-            result = mul({du, add({one(), neg(pow(e, number(std::int64_t{2})))})});
+            result = mul({du, add({one(), neg(pow(e, number(keel::i64{2})))})});
         else if (name == "coth")
-            result = mul({du, add({one(), neg(pow(e, number(std::int64_t{2})))})});
+            result = mul({du, add({one(), neg(pow(e, number(keel::i64{2})))})});
         else if (name == "sech")
             result = neg(mul({e, func("tanh", u), du}));
         else if (name == "csch")
             result = neg(mul({e, func("coth", u), du}));
         else if (name == "asinh")
-            result = mul({du, pow(add({one(), pow(u, number(std::int64_t{2}))}),
-                                  number(Rational(std::int64_t{-1}, BigInt(2))))});
+            result = mul({du, pow(add({one(), pow(u, number(keel::i64{2}))}),
+                                  number(Rational(keel::i64{-1}, BigInt(2))))});
         else if (name == "acosh")
-            result = mul({du, pow(add({number(std::int64_t{-1}), pow(u, number(std::int64_t{2}))}),
-                                  number(Rational(std::int64_t{-1}, BigInt(2))))});
+            result = mul({du, pow(add({number(keel::i64{-1}), pow(u, number(keel::i64{2}))}),
+                                  number(Rational(keel::i64{-1}, BigInt(2))))});
         else if (name == "atanh")
-            result = mul({du, pow(add({one(), neg(pow(u, number(std::int64_t{2})))}),
-                                  number(std::int64_t{-1}))});
+            result = mul({du, pow(add({one(), neg(pow(u, number(keel::i64{2})))}),
+                                  number(keel::i64{-1}))});
         else if (name == "erf")
-            result = mul({number(std::int64_t{2}),
+            result = mul({number(keel::i64{2}),
                           pow(symbol("pi"),
-                              number(Rational(std::int64_t{-1}, BigInt(2)))),
-                          func("exp", neg(pow(u, number(std::int64_t{2})))),
+                              number(Rational(keel::i64{-1}, BigInt(2)))),
+                          func("exp", neg(pow(u, number(keel::i64{2})))),
                           du});
         else if (name == "erfc")
-            result = neg(mul({number(std::int64_t{2}),
+            result = neg(mul({number(keel::i64{2}),
                               pow(symbol("pi"),
-                                  number(Rational(std::int64_t{-1}, BigInt(2)))),
-                              func("exp", neg(pow(u, number(std::int64_t{2})))),
+                                  number(Rational(keel::i64{-1}, BigInt(2)))),
+                              func("exp", neg(pow(u, number(keel::i64{2})))),
                               du}));
         else if (name == "erfi")
-            result = mul({number(std::int64_t{2}),
+            result = mul({number(keel::i64{2}),
                           pow(symbol("pi"),
-                              number(Rational(std::int64_t{-1}, BigInt(2)))),
-                          func("exp", pow(u, number(std::int64_t{2}))),
+                              number(Rational(keel::i64{-1}, BigInt(2)))),
+                          func("exp", pow(u, number(keel::i64{2}))),
                           du});
         else if (name == "Ei")
-            result = mul({func("exp", u), pow(u, number(std::int64_t{-1})), du});
+            result = mul({func("exp", u), pow(u, number(keel::i64{-1})), du});
         else if (name == "li")
             result = mul(
-                {pow(func("log", u), number(std::int64_t{-1})), du});
+                {pow(func("log", u), number(keel::i64{-1})), du});
         else if (name == "Si")
-            result = mul({func("sin", u), pow(u, number(std::int64_t{-1})), du});
+            result = mul({func("sin", u), pow(u, number(keel::i64{-1})), du});
         else if (name == "Ci")
-            result = mul({func("cos", u), pow(u, number(std::int64_t{-1})), du});
+            result = mul({func("cos", u), pow(u, number(keel::i64{-1})), du});
         else if (name == "FresnelS")
             result = mul(
-                {func("sin", mul({number(Rational(std::int64_t{1}, BigInt(2))),
+                {func("sin", mul({number(Rational(keel::i64{1}, BigInt(2))),
                                   symbol("pi"),
-                                  pow(u, number(std::int64_t{2}))})),
+                                  pow(u, number(keel::i64{2}))})),
                  du});
         else if (name == "FresnelC")
             result = mul(
-                {func("cos", mul({number(Rational(std::int64_t{1}, BigInt(2))),
+                {func("cos", mul({number(Rational(keel::i64{1}, BigInt(2))),
                                   symbol("pi"),
-                                  pow(u, number(std::int64_t{2}))})),
+                                  pow(u, number(keel::i64{2}))})),
                  du});
         else if (name == "dilog" || name == "Li2" || name == "polylog2")
             result = neg(mul({func("log", add({one(), neg(u)})),
-                              pow(u, number(std::int64_t{-1})), du}));
+                              pow(u, number(keel::i64{-1})), du}));
         else if (name == "gamma")
             result = mul({e, func("digamma", u), du});
         else if (name == "factorial") {
@@ -507,22 +508,22 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &mem
         else if (name == "airyBiPrime")
             result = mul({u, func("airyBi", u), du});
         else if (name == "ellipticK") {
-            const Expr half = number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr half = number(Rational(keel::i64{1}, BigInt(2)));
             const Expr oneMinusU = add({one(), neg(u)});
             const Expr num = add({
                 func("ellipticE", u),
                 neg(mul({oneMinusU, e}))});
             result = mul({
                 half, num,
-                pow(u, number(std::int64_t{-1})),
-                pow(oneMinusU, number(std::int64_t{-1})),
+                pow(u, number(keel::i64{-1})),
+                pow(oneMinusU, number(keel::i64{-1})),
                 du});
         } else if (name == "ellipticE") {
-            const Expr half = number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr half = number(Rational(keel::i64{1}, BigInt(2)));
             const Expr num = add({e, neg(func("ellipticK", u))});
             result = mul({
                 half, num,
-                pow(u, number(std::int64_t{-1})),
+                pow(u, number(keel::i64{-1})),
                 du});
         } else if (name == "F") {
             result = mul({func("dF", u), du});

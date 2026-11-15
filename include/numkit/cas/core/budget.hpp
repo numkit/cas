@@ -1,12 +1,13 @@
 // core/budget.hpp — cancellation/budget token for long-running algorithms.
 #pragma once
 
+#include <keel/core.h>
 #include <cstddef>
 #include <cstdint>
 
 namespace numkit::cas {
 
-enum class BudgetStatus : std::uint8_t
+enum class BudgetStatus : keel::u8
 {
     Ok = 0,
     StepExhausted = 1,
@@ -22,14 +23,14 @@ enum class BudgetStatus : std::uint8_t
 // ============================================================
 struct Budget
 {
-    std::int64_t steps = -1;
-    std::size_t maxArenaBytes = 0;
-    std::size_t stepsUsed_ = 0;
-    std::size_t arenaBytesUsed_ = 0;
+    keel::i64 steps = -1;
+    keel::usize maxArenaBytes = 0;
+    keel::usize stepsUsed_ = 0;
+    keel::usize arenaBytesUsed_ = 0;
     BudgetStatus status_ = BudgetStatus::Ok;
 
     Budget() = default;
-    explicit Budget(std::int64_t maxSteps, std::size_t maxArena = 0)
+    explicit Budget(keel::i64 maxSteps, keel::usize maxArena = 0)
         : steps(maxSteps), maxArenaBytes(maxArena)
     {
     }
@@ -37,8 +38,8 @@ struct Budget
     bool unlimited() const { return steps < 0 && maxArenaBytes == 0; }
     bool ok() const noexcept { return status_ == BudgetStatus::Ok; }
     BudgetStatus status() const noexcept { return status_; }
-    std::size_t stepsUsed() const noexcept { return stepsUsed_; }
-    std::size_t arenaBytesUsed() const noexcept { return arenaBytesUsed_; }
+    keel::usize stepsUsed() const noexcept { return stepsUsed_; }
+    keel::usize arenaBytesUsed() const noexcept { return arenaBytesUsed_; }
 
     // Consume one step; false means the budget is exhausted and the
     // algorithm must return its honest "not finished" outcome.
@@ -58,7 +59,7 @@ struct Budget
 
     bool step() noexcept { return tryConsume(); }
 
-    bool recordArenaBytes(std::size_t bytes) noexcept
+    bool recordArenaBytes(keel::usize bytes) noexcept
     {
         if (status_ != BudgetStatus::Ok)
             return false;

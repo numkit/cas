@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/linalg/symmatrix.hpp>
 
@@ -23,14 +24,14 @@ bool matEq(Ctx &c, const SymMatrix &A, const SymMatrix &B)
 {
     if (A.rows() != B.rows() || A.cols() != B.cols())
         return false;
-    for (std::size_t r = 0; r < A.rows(); ++r)
-        for (std::size_t col = 0; col < A.cols(); ++col)
+    for (keel::usize r = 0; r < A.rows(); ++r)
+        for (keel::usize col = 0; col < A.cols(); ++col)
             if (!exprEq(c, A.at(r, col), B.at(r, col)))
                 return false;
     return true;
 }
 
-SymMatrix parseMat(Ctx &c, std::size_t rows, std::size_t cols,
+SymMatrix parseMat(Ctx &c, keel::usize rows, keel::usize cols,
                    const std::vector<const char *> &src)
 {
     std::vector<Expr> data;
@@ -130,7 +131,7 @@ TEST(SymMatrixTest, GradientAndHessianRosenbrock)
     const SymMatrix gAtMin = g.subs(c, x, c.one()).subs(c, y, c.one());
     EXPECT_TRUE(matEq(c, gAtMin, SymMatrix::zeros(c, 2, 1)));
     const SymMatrix HAtMin = H.subs(c, x, c.one()).subs(c, y, c.one());
-    EXPECT_TRUE(exprEq(c, det(c, HAtMin), c.number(std::int64_t{400})));
+    EXPECT_TRUE(exprEq(c, det(c, HAtMin), c.number(keel::i64{400})));
 }
 
 TEST(SymMatrixTest, DeterminantVandermonde3x3)
@@ -203,18 +204,18 @@ TEST(SymMatrixTest, CharpolyInverseAndLinsolveSymbolic)
 
 namespace {
 
-SymMatrix randomPolyMatrix(Ctx &c, Expr x, std::size_t rows, std::size_t cols,
+SymMatrix randomPolyMatrix(Ctx &c, Expr x, keel::usize rows, keel::usize cols,
                            std::mt19937 &rng)
 {
     std::uniform_int_distribution<int> cDist(-3, 3);
     SymMatrix M(rows, cols);
-    for (std::size_t r = 0; r < rows; ++r) {
-        for (std::size_t col = 0; col < cols; ++col) {
+    for (keel::usize r = 0; r < rows; ++r) {
+        for (keel::usize col = 0; col < cols; ++col) {
             const int c0 = cDist(rng);
             const int c1 = cDist(rng);
             M.at(r, col) = simplifyRationalExpr(
-                c, c.add({c.number(static_cast<std::int64_t>(c0)),
-                          c.mul({c.number(static_cast<std::int64_t>(c1)), x})}));
+                c, c.add({c.number(static_cast<keel::i64>(c0)),
+                          c.mul({c.number(static_cast<keel::i64>(c1)), x})}));
         }
     }
     return M;
@@ -257,7 +258,7 @@ TEST(SymMatrixTest, PropertyCayleyHamiltonAndAdjugate)
         const Expr c1 = c.subs(dcp1, lam, c.zero());
         const Expr dcp2 = c.diff(dcp1, lam);
         const Expr c2 = simplifyRationalExpr(
-            c, c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))),
+            c, c.mul({c.number(Rational(keel::i64{1}, BigInt(2))),
                       c.subs(dcp2, lam, c.zero())}));
 
         const SymMatrix A2 = A.mul(c, A);
@@ -345,8 +346,8 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
         const SymMatrix A = parseMat(c, 2, 2, {"1", "2", "2", "1"});
         const std::vector<Expr> evals = eigenvalues(c, A);
         ASSERT_EQ(evals.size(), 2u);
-        EXPECT_EQ(evals[0], c.number(std::int64_t{-1}));
-        EXPECT_EQ(evals[1], c.number(std::int64_t{3}));
+        EXPECT_EQ(evals[0], c.number(keel::i64{-1}));
+        EXPECT_EQ(evals[1], c.number(keel::i64{3}));
 
         const std::vector<EigenPair> pairs = eigenvectors(c, A);
         ASSERT_EQ(pairs.size(), 2u);
@@ -365,12 +366,12 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
         const SymMatrix J = parseMat(c, 2, 2, {"2", "1", "0", "2"});
         const std::vector<Expr> evals = eigenvalues(c, J);
         ASSERT_EQ(evals.size(), 2u);
-        EXPECT_EQ(evals[0], c.number(std::int64_t{2}));
-        EXPECT_EQ(evals[1], c.number(std::int64_t{2}));
+        EXPECT_EQ(evals[0], c.number(keel::i64{2}));
+        EXPECT_EQ(evals[1], c.number(keel::i64{2}));
 
         const std::vector<EigenPair> pairs = eigenvectors(c, J);
         ASSERT_EQ(pairs.size(), 1u);
-        EXPECT_EQ(pairs[0].lambda, c.number(std::int64_t{2}));
+        EXPECT_EQ(pairs[0].lambda, c.number(keel::i64{2}));
         EXPECT_EQ(pairs[0].multiplicity, 2u);
         ASSERT_EQ(pairs[0].vectors.size(), 1u);
         EXPECT_TRUE(matEq(c, pairs[0].vectors[0],
@@ -384,10 +385,10 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
             c, 3, 3, {"2", "0", "0", "0", "2", "0", "0", "0", "5"});
         const std::vector<EigenPair> pairs = eigenvectors(c, A);
         ASSERT_EQ(pairs.size(), 2u);
-        EXPECT_EQ(pairs[0].lambda, c.number(std::int64_t{2}));
+        EXPECT_EQ(pairs[0].lambda, c.number(keel::i64{2}));
         EXPECT_EQ(pairs[0].multiplicity, 2u);
         EXPECT_EQ(pairs[0].vectors.size(), 2u);
-        EXPECT_EQ(pairs[1].lambda, c.number(std::int64_t{5}));
+        EXPECT_EQ(pairs[1].lambda, c.number(keel::i64{5}));
         EXPECT_EQ(pairs[1].multiplicity, 1u);
         EXPECT_EQ(pairs[1].vectors.size(), 1u);
     }
@@ -485,7 +486,7 @@ TEST(SymMatrixTest, RrefRankAndLUDecomposition)
             {"1", "2", "1", "1",
              "2", "4", "2", "2",
              "1", "2", "3", "4"});
-        std::vector<std::size_t> pivs;
+        std::vector<keel::usize> pivs;
         const SymMatrix R = rref(c, A, &pivs);
         ASSERT_FALSE(R.empty());
         EXPECT_EQ(rank(c, A), 2u);
@@ -529,11 +530,11 @@ TEST(SymMatrixTest, RrefRankAndLUDecomposition)
     std::mt19937_64 rng(0x4C5550524F50ULL);
     std::uniform_int_distribution<int> entryDist(-4, 4);
     for (int iter = 0; iter < 50; ++iter) {
-        const std::size_t rows = (iter % 2 == 0) ? 3 : 4;
-        const std::size_t cols = (iter % 2 == 0) ? 4 : 3;
+        const keel::usize rows = (iter % 2 == 0) ? 3 : 4;
+        const keel::usize cols = (iter % 2 == 0) ? 4 : 3;
         SymMatrix M(rows, cols);
-        for (std::size_t r = 0; r < rows; ++r)
-            for (std::size_t j = 0; j < cols; ++j)
+        for (keel::usize r = 0; r < rows; ++r)
+            for (keel::usize j = 0; j < cols; ++j)
                 M.at(r, j) = c.number(entryDist(rng));
         const LUDecomposition d = lu(c, M);
         ASSERT_TRUE(d.proved()) << "iter " << iter << ": " << d.reason;
@@ -571,16 +572,16 @@ TEST(SymMatrixTest, GramSchmidtAndQRDecomposition)
              "0", "1"});
         const QRDecomposition d = qr(c, A);
         ASSERT_TRUE(d.proved()) << d.reason;
-        for (std::size_t r = 0; r < 3; ++r) {
-            for (std::size_t j = 0; j < 2; ++j) {
+        for (keel::usize r = 0; r < 3; ++r) {
+            for (keel::usize j = 0; j < 2; ++j) {
                 const Expr diffEntry =
                     c.add({d.Q.mul(c, d.R).at(r, j), c.neg(A.at(r, j))});
                 EXPECT_EQ(c.simplify(diffEntry), c.zero());
             }
         }
         const SymMatrix QtQ = d.Q.transpose().mul(c, d.Q);
-        for (std::size_t i = 0; i < 2; ++i) {
-            for (std::size_t j = 0; j < 2; ++j) {
+        for (keel::usize i = 0; i < 2; ++i) {
+            for (keel::usize j = 0; j < 2; ++j) {
                 const Expr want = (i == j) ? c.one() : c.zero();
                 EXPECT_EQ(c.simplify(c.add({QtQ.at(i, j), c.neg(want)})),
                           c.zero());

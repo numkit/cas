@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/sturm.hpp>
 
 #include <string>
@@ -10,7 +11,7 @@ using numkit::cas::Rational;
 using numkit::cas::RootInterval;
 using numkit::cas::UPoly;
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -18,20 +19,20 @@ std::uint64_t nextU64(std::uint64_t &state)
     return state * 0x2545F4914F6CDD1DULL;
 }
 
-Rational rr(std::uint64_t &state, int range)
+Rational rr(keel::u64 &state, int range)
 {
-    const std::int64_t n = static_cast<std::int64_t>(nextU64(state) % (2 * range + 1)) - range;
-    const std::int64_t d =
-        nextU64(state) % 3 == 0 ? static_cast<std::int64_t>(nextU64(state) % 4 + 1) : 1;
+    const keel::i64 n = static_cast<keel::i64>(nextU64(state) % (2 * range + 1)) - range;
+    const keel::i64 d =
+        nextU64(state) % 3 == 0 ? static_cast<keel::i64>(nextU64(state) % 4 + 1) : 1;
     return Rational(BigInt(n), BigInt(d));
 }
 
 UPoly P(const std::string &csv)
 {
     std::vector<Rational> cs;
-    std::size_t pos = 0;
+    keel::usize pos = 0;
     while (pos <= csv.size()) {
-        const std::size_t comma = csv.find(',', pos);
+        const keel::usize comma = csv.find(',', pos);
         const std::string tok =
             csv.substr(pos, comma == std::string::npos ? std::string::npos
                                                        : comma - pos);
@@ -89,12 +90,12 @@ TEST(SturmFixed, OracleVectors)
     for (const Case &c : kCases) {
         const UPoly p = P(c.poly);
         const std::vector<RootInterval> roots = numkit::cas::isolateRealRoots(p);
-        ASSERT_EQ(roots.size(), static_cast<std::size_t>(c.count)) << c.poly;
+        ASSERT_EQ(roots.size(), static_cast<keel::usize>(c.count)) << c.poly;
         ASSERT_EQ(roots.size(), c.roots.size());
-        for (std::size_t i = 0; i < roots.size(); ++i) {
+        for (keel::usize i = 0; i < roots.size(); ++i) {
             const RootInterval iv = numkit::cas::refineRoot(
                 p.squarefreePart(), roots[i],
-                Rational(std::int64_t{1}, BigInt(1000000)));
+                Rational(keel::i64{1}, BigInt(1000000)));
             EXPECT_LE(toD(iv.lo), c.roots[i] + 1e-5) << c.poly;
             EXPECT_GE(toD(iv.hi), c.roots[i] - 1e-5) << c.poly;
         }
@@ -108,7 +109,7 @@ TEST(SturmFixed, KnownBounds)
     const std::vector<RootInterval> roots = numkit::cas::isolateRealRoots(q);
     ASSERT_EQ(roots.size(), 2u);
     const RootInterval r2 = numkit::cas::refineRoot(
-        q, roots[1], Rational(std::int64_t{1}, BigInt(1000000)));
+        q, roots[1], Rational(keel::i64{1}, BigInt(1000000)));
     const double mid = 0.5 * (toD(r2.lo) + toD(r2.hi));
     EXPECT_NEAR(mid, 1.414213562, 1e-5);
 
@@ -122,13 +123,13 @@ TEST(SturmFixed, KnownBounds)
 
 TEST(SturmProperty, IsolationInvariants)
 {
-    std::uint64_t state = 0x5714571457145714ULL;
+    keel::u64 state = 0x5714571457145714ULL;
     for (int iter = 0; iter < 3000; ++iter) {
         const int deg = 1 + static_cast<int>(nextU64(state) % 6);
         std::vector<Rational> cs;
         for (int i = 0; i < deg; ++i)
             cs.push_back(rr(state, 6));
-        cs.push_back(rr(state, 5).isZero() ? Rational(std::int64_t{1}) : rr(state, 5));
+        cs.push_back(rr(state, 5).isZero() ? Rational(keel::i64{1}) : rr(state, 5));
         const UPoly p(cs);
 
         const UPoly psf = p.squarefreePart();
@@ -139,7 +140,7 @@ TEST(SturmProperty, IsolationInvariants)
 
         // Pairwise disjoint interiors, ordered; endpoints may be exact
         // roots shared with neighbours.
-        for (std::size_t i = 0; i < roots.size(); ++i) {
+        for (keel::usize i = 0; i < roots.size(); ++i) {
             if (roots[i].exact()) {
                 EXPECT_TRUE(psf.eval(roots[i].lo).isZero());
             } else if (!psf.eval(roots[i].lo).isZero() && !psf.eval(roots[i].hi).isZero()) {
@@ -157,11 +158,11 @@ TEST(SturmProperty, IsolationInvariants)
         // Refinement keeps the root and shrinks the interval.
         for (const RootInterval &iv : roots) {
             const RootInterval fine = numkit::cas::refineRoot(
-                psf, iv, Rational(std::int64_t{1}, BigInt(1 << 20)));
+                psf, iv, Rational(keel::i64{1}, BigInt(1 << 20)));
             if (fine.exact()) {
                 EXPECT_TRUE(psf.eval(fine.lo).isZero());
             } else {
-                EXPECT_LE(fine.hi - fine.lo, Rational(std::int64_t{1}, BigInt(1 << 20)));
+                EXPECT_LE(fine.hi - fine.lo, Rational(keel::i64{1}, BigInt(1 << 20)));
                 if (!psf.eval(fine.lo).isZero() && !psf.eval(fine.hi).isZero())
                     EXPECT_TRUE((psf.eval(fine.lo) * psf.eval(fine.hi)).signum() < 0);
             }
@@ -171,16 +172,16 @@ TEST(SturmProperty, IsolationInvariants)
 
 TEST(SturmProperty, KnownRationalRootsContained)
 {
-    std::uint64_t state = 0x244466668888ULL + 1;
+    keel::u64 state = 0x244466668888ULL + 1;
     for (int iter = 0; iter < 2000; ++iter) {
         // Product of known rational roots: every root must be isolated.
         const int k = 1 + static_cast<int>(nextU64(state) % 4);
         std::vector<Rational> wanted;
-        UPoly p(Rational(std::int64_t{1}));
+        UPoly p(Rational(keel::i64{1}));
         for (int i = 0; i < k; ++i) {
             Rational r = rr(state, 8);
             if (r.isZero())
-                r = Rational(std::int64_t{1});
+                r = Rational(keel::i64{1});
             bool dup = false;
             for (const Rational &w : wanted)
                 if (w == r)
@@ -188,7 +189,7 @@ TEST(SturmProperty, KnownRationalRootsContained)
             if (dup)
                 continue;
             wanted.push_back(r);
-            p = p * UPoly(std::vector<Rational>{Rational(-r), Rational(std::int64_t{1})});
+            p = p * UPoly(std::vector<Rational>{Rational(-r), Rational(keel::i64{1})});
         }
         const std::vector<RootInterval> roots = numkit::cas::isolateRealRoots(p);
         ASSERT_EQ(roots.size(), wanted.size());

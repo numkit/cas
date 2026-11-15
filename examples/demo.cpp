@@ -1,4 +1,5 @@
 // examples/demo.cpp — a showcase of what the numkit-cas core can do.
+#include <keel/core.h>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/num/bigint.hpp>
@@ -34,8 +35,8 @@ int main()
     std::printf("2^256      = %s\n", BigInt::powUInt(BigInt(2), 256).toString().c_str());
     std::printf("100!       = %s\n", factorial(100).toString().c_str());
     std::printf("1/3 + 1/6  = %s\n",
-                (Rational(std::int64_t{1}, BigInt(3)) +
-                 Rational(std::int64_t{1}, BigInt(6))).toString().c_str());
+                (Rational(keel::i64{1}, BigInt(3)) +
+                 Rational(keel::i64{1}, BigInt(6))).toString().c_str());
 
     Ctx c;
     const Expr x = c.symbol("x");
@@ -44,7 +45,7 @@ int main()
     const Expr f = c.mul({x, x, c.func("sin", x)});
     std::printf("f      = %s\n", c.toString(f).c_str());
     std::printf("d f    = %s\n", c.toString(c.diff(f, x)).c_str());
-    const Expr g = c.pow(c.add({x, c.one()}), c.number(std::int64_t{2}));
+    const Expr g = c.pow(c.add({x, c.one()}), c.number(keel::i64{2}));
     std::printf("g      = %s\n", c.toString(g).c_str());
     std::printf("d g    = %s\n", c.toString(c.diff(g, x)).c_str());
     const Expr h = c.pow(x, x);
@@ -67,21 +68,21 @@ int main()
     integrate("1/(1+x^2)", c.div(c.one(), q1));
     integrate("x/(1+x^2)", c.div(x, q1));
     integrate("1/(x^3+x)", c.div(c.one(), c.mul({x, q1})));
-    integrate("1/(1+x^2)^2", c.div(c.one(), c.pow(q1, c.number(std::int64_t{2}))));
+    integrate("1/(1+x^2)^2", c.div(c.one(), c.pow(q1, c.number(keel::i64{2}))));
     integrate("1/(1+4x^2)",
-              c.div(c.one(), c.add({c.one(), c.mul({c.number(std::int64_t{4}), x2})})));
+              c.div(c.one(), c.add({c.one(), c.mul({c.number(keel::i64{4}), x2})})));
     integrate("x^3/(1+x^2)", c.div(x3, q1));
     integrate("(3x+1)/(1+x^2)^2",
-              c.div(c.add({c.one(), c.mul({c.number(std::int64_t{3}), x})}),
-                    c.pow(q1, c.number(std::int64_t{2}))));
+              c.div(c.add({c.one(), c.mul({c.number(keel::i64{3}), x})}),
+                    c.pow(q1, c.number(keel::i64{2}))));
     // Algebraic residues of any degree — RootOf atoms with proofs
     // (all three were honest Unevaluated in the M0 demo).
-    integrate("1/(x^3+2)", c.div(c.one(), c.add({c.number(std::int64_t{2}), x3})));
-    integrate("1/(2+x^2)", c.div(c.one(), c.add({c.number(std::int64_t{2}), x2})));
+    integrate("1/(x^3+2)", c.div(c.one(), c.add({c.number(keel::i64{2}), x3})));
+    integrate("1/(2+x^2)", c.div(c.one(), c.add({c.number(keel::i64{2}), x2})));
     integrate("1/(x^4+1)", c.div(c.one(), c.add({c.one(), x2, x2})));
     integrate("1/((x^3+2)(x^3+3))",
-              c.div(c.one(), c.mul({c.add({c.number(std::int64_t{2}), x3}),
-                                    c.add({c.number(std::int64_t{3}), x3})})));
+              c.div(c.one(), c.mul({c.add({c.number(keel::i64{2}), x3}),
+                                    c.add({c.number(keel::i64{3}), x3})})));
 
     header("the verification loop closes (diff of an integral)");
     const RationalIntegral r0 = integrateRational(c, c.div(c.one(), q1), x);

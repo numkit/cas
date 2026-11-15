@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/groebner.hpp>
 
 #include <numkit/cas/core/parser.hpp>
@@ -223,7 +224,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
         const Expr f = parseExpr(c, "x^4 - y^4");
         const FactorMultiResult res = factorMulti(c, f, {x, y});
         ASSERT_TRUE(res.proved()) << res.reason;
-        EXPECT_EQ(res.content, Rational(std::int64_t{1}));
+        EXPECT_EQ(res.content, Rational(keel::i64{1}));
         EXPECT_EQ(res.factors.size(), 3u);
         for (const auto &it : res.factors)
             EXPECT_EQ(it.multiplicity, 1);
@@ -237,7 +238,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
             parseExpr(c, "3*x*(x + 2*y - 1)^2*(x^2 - y + 2)"));
         const FactorMultiResult res = factorMulti(c, f, {x, y});
         ASSERT_TRUE(res.proved()) << res.reason;
-        EXPECT_EQ(res.content, Rational(std::int64_t{3}));
+        EXPECT_EQ(res.content, Rational(keel::i64{3}));
         ASSERT_EQ(res.factors.size(), 3u);
         EXPECT_TRUE(samePoly(res.expr, f));
     }
@@ -260,7 +261,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
             c, "(x^2 + x*y + 2*y^2 + 1)*(2*x^2 - x*y + y^2 - 3)"));
         const FactorMultiResult res = factorMulti(c, f, {x, y});
         ASSERT_TRUE(res.proved()) << res.reason;
-        EXPECT_EQ(res.content, Rational(std::int64_t{2}));
+        EXPECT_EQ(res.content, Rational(keel::i64{2}));
         EXPECT_EQ(res.factors.size(), 2u);
         EXPECT_TRUE(samePoly(res.expr, f));
     }

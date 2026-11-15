@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/transform/laplace.hpp>
 
 #include <numkit/cas/core/simplify.hpp>
@@ -30,26 +31,26 @@ bool mentionsSymbol(const Ctx &c, Expr e, Expr var)
         return false;
     if (e == var)
         return true;
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         if (mentionsSymbol(c, c.child(e, i), var))
             return true;
     return false;
 }
 
-BigInt factorialBigInt(std::int64_t n)
+BigInt factorialBigInt(keel::i64 n)
 {
     BigInt acc(1);
-    for (std::int64_t k = 2; k <= n; ++k)
+    for (keel::i64 k = 2; k <= n; ++k)
         acc *= BigInt(k);
     return acc;
 }
 
 // Coefficient (2k)! / (4^k * k!) in Gamma(k + 1/2) = coeff * sqrt(pi).
-Rational halfIntGammaCoeff(std::int64_t k)
+Rational halfIntGammaCoeff(keel::i64 k)
 {
     const BigInt num = factorialBigInt(2 * k);
     const BigInt den =
-        BigInt::powUInt(BigInt(4), static_cast<std::uint64_t>(k)) *
+        BigInt::powUInt(BigInt(4), static_cast<keel::u64>(k)) *
         factorialBigInt(k);
     return Rational(num, den);
 }
@@ -58,18 +59,18 @@ Rational halfIntGammaCoeff(std::int64_t k)
 // prod_i p_i^(k_i * exp) so that e.g. 4^(1/2) -> 2 and 8^(1/2) -> 2*2^(1/2).
 Expr factorPosRationalPower(Ctx &c, const Rational &v, const Rational &exp)
 {
-    if (v == Rational(std::int64_t{1}) || exp.isZero())
+    if (v == Rational(keel::i64{1}) || exp.isZero())
         return c.one();
     std::vector<Expr> parts;
     for (const auto &pk : BigInt::factorize(v.num())) {
         parts.push_back(c.pow(
             c.number(Rational(pk.first, BigInt(1))),
-            c.number(exp * Rational(static_cast<std::int64_t>(pk.second)))));
+            c.number(exp * Rational(static_cast<keel::i64>(pk.second)))));
     }
     for (const auto &pk : BigInt::factorize(v.den())) {
         parts.push_back(c.pow(
             c.number(Rational(pk.first, BigInt(1))),
-            c.number(-exp * Rational(static_cast<std::int64_t>(pk.second)))));
+            c.number(-exp * Rational(static_cast<keel::i64>(pk.second)))));
     }
     return parts.empty() ? c.one() : c.mul(parts);
 }
@@ -101,7 +102,7 @@ bool extractLinearInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out)
     if (c.kind(ex) == NodeKind::Mul) {
         std::vector<Expr> others;
         int varCount = 0;
-        for (std::size_t i = 0; i < c.childCount(ex); ++i) {
+        for (keel::usize i = 0; i < c.childCount(ex); ++i) {
             const Expr ch = c.child(ex, i);
             if (ch == var) {
                 ++varCount;
@@ -121,7 +122,7 @@ bool extractLinearInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out)
     if (c.kind(ex) == NodeKind::Add) {
         std::vector<Expr> c0Terms;
         std::vector<Expr> c1Terms;
-        for (std::size_t i = 0; i < c.childCount(ex); ++i) {
+        for (keel::usize i = 0; i < c.childCount(ex); ++i) {
             Expr sub0, sub1;
             if (!extractLinearInVar(c, c.child(ex, i), var, sub0, sub1))
                 return false;
@@ -154,7 +155,7 @@ bool extractQuadraticInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out,
             return true;
         }
         if (c.kind(term) == NodeKind::Pow && c.child(term, 0) == var &&
-            c.child(term, 1) == c.number(std::int64_t{2})) {
+            c.child(term, 1) == c.number(keel::i64{2})) {
             degOut = 2;
             coeffOut = c.one();
             return true;
@@ -162,13 +163,13 @@ bool extractQuadraticInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out,
         if (c.kind(term) == NodeKind::Mul) {
             std::vector<Expr> others;
             int deg = 0;
-            for (std::size_t i = 0; i < c.childCount(term); ++i) {
+            for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr ch = c.child(term, i);
                 if (ch == var) {
                     deg += 1;
                 } else if (c.kind(ch) == NodeKind::Pow &&
                            c.child(ch, 0) == var &&
-                           c.child(ch, 1) == c.number(std::int64_t{2})) {
+                           c.child(ch, 1) == c.number(keel::i64{2})) {
                     deg += 2;
                 } else if (!mentionsSymbol(c, ch, var)) {
                     others.push_back(ch);
@@ -187,7 +188,7 @@ bool extractQuadraticInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out,
 
     std::vector<Expr> degTerms[3];
     if (c.kind(ex) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(ex); ++i) {
+        for (keel::usize i = 0; i < c.childCount(ex); ++i) {
             int d = 0;
             Expr cf;
             if (!matchMonomial(c.child(ex, i), d, cf))
@@ -221,7 +222,7 @@ Expr rewriteHypToExp(Ctx &c, Expr e, Expr var)
     case NodeKind::Func: {
         const std::string &fn = c.funcName(e);
         const Expr u = rewriteHypToExp(c, c.child(e, 0), var);
-        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+        const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
         if (fn == "sinh") {
             return c.mul(
                 {half, c.add({c.func("exp", u), c.neg(c.func("exp", c.neg(u)))})});
@@ -239,7 +240,7 @@ Expr rewriteHypToExp(Ctx &c, Expr e, Expr var)
     case NodeKind::Mul: {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(rewriteHypToExp(c, c.child(e, i), var));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
     }
@@ -253,19 +254,19 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
 {
     if (e.isNull() || !mentionsSymbol(c, e, var))
         return e;
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
 
     if (c.kind(e) == NodeKind::Pow && c.kind(c.child(e, 0)) == NodeKind::Func &&
         c.kind(c.child(e, 1)) == NodeKind::Number) {
         const std::string &fn = c.funcName(c.child(e, 0));
         const Expr u = c.child(c.child(e, 0), 0);
-        std::int64_t k = 0;
+        keel::i64 k = 0;
         if ((fn == "sin" || fn == "cos" || fn == "sinh" || fn == "cosh") &&
             c.numberValue(c.child(e, 1)).den() == BigInt(1) &&
             c.numberValue(c.child(e, 1)).num().fitsInt64(k) && k >= 2 &&
             k <= 12) {
             changed = true;
-            const Expr twoU = c.mul({c.number(std::int64_t{2}), u});
+            const Expr twoU = c.mul({c.number(keel::i64{2}), u});
             Expr sq;
             if (fn == "sin") {
                 sq = c.mul({half, c.add({c.one(), c.neg(c.func("cos", twoU))})});
@@ -286,14 +287,14 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
     if (c.kind(e) == NodeKind::Mul) {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(reduceTrigProductsOnce(c, c.child(e, i), var, changed));
         if (changed)
             return c.expand(c.mul(kids));
 
         int idx1 = -1, idx2 = -1;
         bool hypPair = false;
-        for (std::size_t i = 0; i < kids.size(); ++i) {
+        for (keel::usize i = 0; i < kids.size(); ++i) {
             if (c.kind(kids[i]) == NodeKind::Func &&
                 mentionsSymbol(c, kids[i], var)) {
                 const std::string &fn = c.funcName(kids[i]);
@@ -318,8 +319,8 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
         }
         if (idx1 >= 0 && idx2 >= 0) {
             changed = true;
-            const Expr f1 = kids[static_cast<std::size_t>(idx1)];
-            const Expr f2 = kids[static_cast<std::size_t>(idx2)];
+            const Expr f1 = kids[static_cast<keel::usize>(idx1)];
+            const Expr f2 = kids[static_cast<keel::usize>(idx2)];
             const std::string &fn1 = c.funcName(f1);
             const std::string &fn2 = c.funcName(f2);
             const Expr u = c.child(f1, 0);
@@ -362,7 +363,7 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
             }
             std::vector<Expr> rest;
             rest.push_back(pairSum);
-            for (std::size_t i = 0; i < kids.size(); ++i) {
+            for (keel::usize i = 0; i < kids.size(); ++i) {
                 if (static_cast<int>(i) != idx1 && static_cast<int>(i) != idx2)
                     rest.push_back(kids[i]);
             }
@@ -374,7 +375,7 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
     if (c.kind(e) == NodeKind::Add) {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(reduceTrigProductsOnce(c, c.child(e, i), var, changed));
         return c.add(kids);
     }
@@ -409,7 +410,7 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
     if (c.kind(f) == NodeKind::Add) {
         std::vector<Expr> parts;
         parts.reserve(c.childCount(f));
-        for (std::size_t i = 0; i < c.childCount(f); ++i) {
+        for (keel::usize i = 0; i < c.childCount(f); ++i) {
             const LaplaceResult ri =
                 laplaceRec(c, c.child(f, i), t, s, budget, depth + 1);
             if (!ri.proved())
@@ -424,7 +425,7 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
     // 3. Direct variable t: L{t}(s) = 1 / s^2.
     if (f == t) {
         out.status = LaplaceResult::Status::ProvedSymbolic;
-        out.F = c.pow(s, c.number(std::int64_t{-2}));
+        out.F = c.pow(s, c.number(keel::i64{-2}));
         return out;
     }
 
@@ -432,7 +433,7 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
     if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == t &&
         c.kind(c.child(f, 1)) == NodeKind::Number) {
         const Rational &re = c.numberValue(c.child(f, 1));
-        std::int64_t n = 0;
+        keel::i64 n = 0;
         if (re.den() == BigInt(1) && re.num().fitsInt64(n) && n >= 0 &&
             n <= 64) {
             out.status = LaplaceResult::Status::ProvedSymbolic;
@@ -440,14 +441,14 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
                            c.pow(s, c.number(-(n + 1)))});
             return out;
         }
-        std::int64_t num2 = 0;
+        keel::i64 num2 = 0;
         if (re.den() == BigInt(2) && re.num().fitsInt64(num2) && num2 >= -1 &&
             num2 <= 63) {
             // re = (2*k - 1)/2 -> k = (num2 + 1)/2 >= 0
-            const std::int64_t k = (num2 + 1) / 2;
+            const keel::i64 k = (num2 + 1) / 2;
             const Rational coeff = halfIntGammaCoeff(k);
             const Expr sqrtPi = c.pow(
-                c.symbol("pi"), c.number(Rational(std::int64_t{1}, BigInt(2))));
+                c.symbol("pi"), c.number(Rational(keel::i64{1}, BigInt(2))));
             out.status = LaplaceResult::Status::ProvedSymbolic;
             out.F = c.mul({c.number(coeff), sqrtPi,
                            c.pow(s, c.number(Rational(-(2 * k + 1), BigInt(2))))});
@@ -462,13 +463,13 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
         if (fn == "sqrt") {
             return laplaceRec(
                 c,
-                c.pow(arg, c.number(Rational(std::int64_t{1}, BigInt(2)))), t,
+                c.pow(arg, c.number(Rational(keel::i64{1}, BigInt(2)))), t,
                 s, budget, depth + 1);
         }
         Expr phi, w;
         if (extractLinearInVar(c, arg, t, phi, w) && !c.isZero(w)) {
-            const Expr s2 = c.pow(s, c.number(std::int64_t{2}));
-            const Expr w2 = c.pow(w, c.number(std::int64_t{2}));
+            const Expr s2 = c.pow(s, c.number(keel::i64{2}));
+            const Expr w2 = c.pow(w, c.number(keel::i64{2}));
             if (fn == "exp") {
                 const Expr shiftDen = c.add({s, c.neg(w)});
                 const Expr pref =
@@ -532,10 +533,10 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
         std::vector<Expr> constFactors;
         std::vector<Expr> expPhis;
         std::vector<Expr> expShifts;
-        std::int64_t tPow = 0;
+        keel::i64 tPow = 0;
         std::vector<Expr> otherFactors;
 
-        for (std::size_t i = 0; i < c.childCount(f); ++i) {
+        for (keel::usize i = 0; i < c.childCount(f); ++i) {
             const Expr ch = c.child(f, i);
             if (!mentionsSymbol(c, ch, t)) {
                 constFactors.push_back(ch);
@@ -548,7 +549,7 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
             if (c.kind(ch) == NodeKind::Pow && c.child(ch, 0) == t &&
                 c.kind(c.child(ch, 1)) == NodeKind::Number) {
                 const Rational &re = c.numberValue(c.child(ch, 1));
-                std::int64_t k = 0;
+                keel::i64 k = 0;
                 if (re.den() == BigInt(1) && re.num().fitsInt64(k) && k >= 1 &&
                     k <= 16) {
                     tPow += k;
@@ -587,7 +588,7 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
             if (coreRes.proved()) {
                 Expr G = coreRes.F;
                 if (applyDiffAfter) {
-                    for (std::int64_t k = 0; k < tPow; ++k)
+                    for (keel::i64 k = 0; k < tPow; ++k)
                         G = c.diff(G, s);
                     if (tPow % 2 != 0)
                         G = c.neg(G);
@@ -664,7 +665,7 @@ bool invertPartialFractionTerm(Ctx &c, const UPoly &R, const UPoly &P, int j,
         std::vector<Expr> factors;
         factors.push_back(c.number(coef));
         if (j > 1)
-            factors.push_back(c.pow(t, c.number(static_cast<std::int64_t>(j - 1))));
+            factors.push_back(c.pow(t, c.number(static_cast<keel::i64>(j - 1))));
         if (!r.isZero())
             factors.push_back(c.func("exp", c.mul({c.number(r), t})));
         outTerm = c.mul(factors);
@@ -674,8 +675,8 @@ bool invertPartialFractionTerm(Ctx &c, const UPoly &R, const UPoly &P, int j,
         // P(s) = s^2 + b*s + c0 = (s - alpha)^2 + Delta
         const Rational b = P.coeff(1);
         const Rational c0 = P.coeff(0);
-        const Rational alpha = -b / Rational(std::int64_t{2});
-        const Rational delta = c0 - (b * b) / Rational(std::int64_t{4});
+        const Rational alpha = -b / Rational(keel::i64{2});
+        const Rational delta = c0 - (b * b) / Rational(keel::i64{4});
         if (delta.isZero())
             return false;
 
@@ -688,11 +689,11 @@ bool invertPartialFractionTerm(Ctx &c, const UPoly &R, const UPoly &P, int j,
         const bool isOscillatory = delta.signum() > 0;
         const Rational absDelta = isOscillatory ? delta : -delta;
         const Expr w = factorPosRationalPower(
-            c, absDelta, Rational(std::int64_t{1}, BigInt(2)));
+            c, absDelta, Rational(keel::i64{1}, BigInt(2)));
         const Expr invW = factorPosRationalPower(
-            c, absDelta, Rational(std::int64_t{-1}, BigInt(2)));
+            c, absDelta, Rational(keel::i64{-1}, BigInt(2)));
         const Expr invW3 = factorPosRationalPower(
-            c, absDelta, Rational(std::int64_t{-3}, BigInt(2)));
+            c, absDelta, Rational(keel::i64{-3}, BigInt(2)));
         const Expr wt = c.mul({w, t});
         const Expr cosFn = isOscillatory ? c.func("cos", wt) : c.func("cosh", wt);
         const Expr sinFn = isOscillatory ? c.func("sin", wt) : c.func("sinh", wt);
@@ -717,7 +718,7 @@ bool invertPartialFractionTerm(Ctx &c, const UPoly &R, const UPoly &P, int j,
         std::vector<Expr> pieces;
         if (!A.isZero()) {
             pieces.push_back(c.mul(
-                {c.number(A / Rational(std::int64_t{2})), invW, t, sinFn}));
+                {c.number(A / Rational(keel::i64{2})), invW, t, sinFn}));
         }
         if (!B.isZero()) {
             const Expr inner =
@@ -725,7 +726,7 @@ bool invertPartialFractionTerm(Ctx &c, const UPoly &R, const UPoly &P, int j,
                     ? c.add({sinFn, c.neg(c.mul({w, t, cosFn}))})
                     : c.add({c.mul({w, t, cosFn}), c.neg(sinFn)});
             pieces.push_back(c.mul(
-                {c.number(B / Rational(std::int64_t{2})), invW3, inner}));
+                {c.number(B / Rational(keel::i64{2})), invW3, inner}));
         }
         const Expr body = pieces.empty() ? c.zero() : c.add(pieces);
         outTerm = c.mul({expFactor, body});
@@ -754,7 +755,7 @@ bool tryRationalIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
 
     // Normalize D to monic and divide N by lc(D).
     const Rational lcD = D.lc();
-    N = N * UPoly(Rational(std::int64_t{1}) / lcD);
+    N = N * UPoly(Rational(keel::i64{1}) / lcD);
     D.makeMonic();
 
     const std::vector<UPoly> rawFactors = factorOverQ(D, budget);
@@ -767,7 +768,7 @@ bool tryRationalIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     if (rawFactors.empty())
         return false;
 
-    std::vector<std::pair<UPoly, std::uint64_t>> grouped;
+    std::vector<std::pair<UPoly, keel::u64>> grouped;
     for (UPoly f : rawFactors) {
         f.makeMonic();
         bool found = false;
@@ -791,7 +792,7 @@ bool tryRationalIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     std::vector<UPoly> numerators(grouped.size());
     UPoly remNum = N;
     UPoly remDen = D;
-    for (std::size_t i = 0; i < grouped.size(); ++i) {
+    for (keel::usize i = 0; i < grouped.size(); ++i) {
         const UPoly &PiM = primePowers[i];
         if (i + 1 == grouped.size()) {
             numerators[i] = remNum;
@@ -811,7 +812,7 @@ bool tryRationalIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
 
     // P_i-adic expansion of each A_i / P_i^{m_i} = sum_{j=1}^{m_i} R_{i,j} / P_i^j
     std::vector<Expr> timeTerms;
-    for (std::size_t i = 0; i < grouped.size(); ++i) {
+    for (keel::usize i = 0; i < grouped.size(); ++i) {
         const UPoly &P = grouped[i].first;
         const int m = static_cast<int>(grouped[i].second);
         UPoly cur = numerators[i];
@@ -851,7 +852,7 @@ bool tryParametricIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     if (c.kind(F) == NodeKind::Add) {
         std::vector<Expr> pieces;
         pieces.reserve(c.childCount(F));
-        for (std::size_t i = 0; i < c.childCount(F); ++i) {
+        for (keel::usize i = 0; i < c.childCount(F); ++i) {
             Expr pi;
             if (!tryParametricIlaplace(c, c.child(F, i), s, t, budget, pi))
                 return false;
@@ -865,18 +866,18 @@ bool tryParametricIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     if (c.kind(F) == NodeKind::Pow &&
         c.kind(c.child(F, 1)) == NodeKind::Number) {
         const Rational &re = c.numberValue(c.child(F, 1));
-        std::int64_t num2 = 0;
+        keel::i64 num2 = 0;
         if (re.den() == BigInt(2) && re.num().fitsInt64(num2) && num2 <= -1 &&
             (-num2) % 2 == 1) {
-            const std::int64_t k = (-num2 - 1) / 2;
+            const keel::i64 k = (-num2 - 1) / 2;
             Expr c0, c1;
             if (extractLinearInVar(c, c.child(F, 0), s, c0, c1) &&
                 c1 == c.one()) {
                 const Rational gammaCoeff = halfIntGammaCoeff(k);
-                const Rational invCoeff = Rational(std::int64_t{1}) / gammaCoeff;
+                const Rational invCoeff = Rational(keel::i64{1}) / gammaCoeff;
                 const Expr invSqrtPi = c.pow(
                     c.symbol("pi"),
-                    c.number(Rational(std::int64_t{-1}, BigInt(2))));
+                    c.number(Rational(keel::i64{-1}, BigInt(2))));
                 const Expr tPow = c.pow(
                     t, c.number(Rational(2 * k - 1, BigInt(2))));
                 const Expr expShift =
@@ -893,7 +894,7 @@ bool tryParametricIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     std::vector<Expr> constFactors;
     std::vector<Expr> sNumFactors;
     Expr denBase;
-    std::int64_t denMult = 0;
+    keel::i64 denMult = 0;
 
     auto inspectFactor = [&](Expr ch) -> bool {
         if (!mentionsSymbol(c, ch, s)) {
@@ -904,7 +905,7 @@ bool tryParametricIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
             c.kind(c.child(ch, 1)) == NodeKind::Number &&
             c.numberValue(c.child(ch, 1)).signum() < 0) {
             const Rational &re = c.numberValue(c.child(ch, 1));
-            std::int64_t m = 0;
+            keel::i64 m = 0;
             if (re.den() == BigInt(1) && (-re.num()).fitsInt64(m) && m >= 1 &&
                 m <= 32) {
                 if (!denBase.isNull())
@@ -926,7 +927,7 @@ bool tryParametricIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     };
 
     if (c.kind(F) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(F); ++i) {
+        for (keel::usize i = 0; i < c.childCount(F); ++i) {
             if (!inspectFactor(c.child(F, i)))
                 return false;
         }
@@ -979,12 +980,12 @@ bool tryParametricIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
         Expr q0, q1, q2;
         if (extractQuadraticInVar(c, denBase, s, q0, q1, q2) &&
             !c.isZero(q2)) {
-            const Expr twoQ2 = c.mul({c.number(std::int64_t{2}), q2});
+            const Expr twoQ2 = c.mul({c.number(keel::i64{2}), q2});
             const Expr alpha = c.simplify(c.neg(c.div(q1, twoQ2)));
             // (s - alpha)^2 + Delta where Delta = q0/q2 - alpha^2
             const Expr delta = c.simplify(
                 c.add({c.div(q0, q2),
-                       c.neg(c.pow(alpha, c.number(std::int64_t{2})))}));
+                       c.neg(c.pow(alpha, c.number(keel::i64{2})))}));
             if (c.isZero(delta)) {
                 // Repeated linear pole (s - alpha)^2:
                 // (beta1*(s - alpha) + (beta0 + beta1*alpha)) / (q2 * (s - alpha)^2)
@@ -1014,13 +1015,13 @@ bool tryParametricIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
                 c.numberValue(c.child(delta, 0)).signum() < 0) {
                 isHyp = true;
             }
-            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
             const Expr wSq = isHyp ? negDelta : delta;
             Expr w = c.simplify(c.pow(wSq, half));
             // Even when wSq = w0^2 for an unconstrained symbol w0, (w0^2)^(1/2)
             // in Laplace denominator s^2 + w0^2 corresponds to frequency w0:
             if (c.kind(wSq) == NodeKind::Pow &&
-                c.child(wSq, 1) == c.number(std::int64_t{2})) {
+                c.child(wSq, 1) == c.number(keel::i64{2})) {
                 w = c.child(wSq, 0);
             }
 

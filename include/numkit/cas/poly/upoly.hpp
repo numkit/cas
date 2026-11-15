@@ -1,6 +1,7 @@
 // poly/upoly.hpp — dense univariate polynomial over Q (exact arithmetic).
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/num/rational.hpp>
 
 #include <cstdint>
@@ -27,14 +28,14 @@ public:
     UPoly() = default;
     explicit UPoly(Rational c);
     explicit UPoly(std::vector<Rational> coeffs);
-    static UPoly monomial(Rational c, std::uint64_t exp); // c * x^exp
+    static UPoly monomial(Rational c, keel::u64 exp); // c * x^exp
 
     int deg() const { return static_cast<int>(c_.size()) - 1; }
     bool isZero() const { return c_.empty(); }
     bool isConst() const { return c_.size() <= 1; }
-    Rational coeff(std::size_t i) const
+    Rational coeff(keel::usize i) const
     {
-        return i < c_.size() ? c_[i] : Rational(std::int64_t{0});
+        return i < c_.size() ? c_[i] : Rational(keel::i64{0});
     }
     const Rational &lc() const; // asserts !isZero
     const std::vector<Rational> &coeffs() const { return c_; }
@@ -57,7 +58,7 @@ public:
     static UPoly invMod(const UPoly &u, const UPoly &m);
 
     UPoly derivative() const;
-    UPoly powUInt(std::uint64_t n) const;
+    UPoly powUInt(keel::u64 n) const;
 
     // Monic greatest common divisor (Euclid over Q).
     static UPoly gcd(const UPoly &a, const UPoly &b);

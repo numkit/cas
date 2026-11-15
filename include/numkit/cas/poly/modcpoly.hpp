@@ -1,6 +1,7 @@
 // poly/modcpoly.hpp — polynomials over the quotient field Q[t]/(c).
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <cstddef>
@@ -23,7 +24,7 @@ public:
     explicit ModCRing(UPoly c);
 
     const UPoly &modulus() const { return c_; }
-    std::size_t dim() const { return static_cast<std::size_t>(c_.deg()); }
+    keel::usize dim() const { return static_cast<keel::usize>(c_.deg()); }
 
     UPoly reduce(const UPoly &a) const { return a % c_; }
     UPoly add(const UPoly &a, const UPoly &b) const;
@@ -57,13 +58,13 @@ public:
     ModCPoly(const ModCRing &ring, std::vector<UPoly> coeffs);
 
     static ModCPoly constant(const ModCRing &ring, UPoly c0);
-    static ModCPoly monomial(const ModCRing &ring, UPoly c0, std::size_t exp);
+    static ModCPoly monomial(const ModCRing &ring, UPoly c0, keel::usize exp);
 
     bool hasRing() const { return ring_ != nullptr; }
     const ModCRing &ring() const;
     int deg() const { return static_cast<int>(c_.size()) - 1; }
     bool isZero() const { return c_.empty(); }
-    UPoly coeff(std::size_t i) const
+    UPoly coeff(keel::usize i) const
     {
         return i < c_.size() ? c_[i] : (ring_ != nullptr ? ring_->zero() : UPoly());
     }

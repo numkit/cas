@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/num/rational.hpp>
 
 #include <limits>
@@ -128,7 +129,7 @@ TEST(RationalFixed, PythonOracleVectors)
 
 TEST(RationalProperty, FieldAxioms)
 {
-    std::uint64_t state = 0x51ED270B4C9E1DBFULL;
+    keel::u64 state = 0x51ED270B4C9E1DBFULL;
     for (int iter = 0; iter < 20000; ++iter) {
         const Rational a = randomRational(state, 3);
         const Rational b = randomRational(state, 3);
@@ -161,30 +162,30 @@ TEST(RationalProperty, FieldAxioms)
 
 TEST(RationalProperty, SmallRangeAgainstInt64)
 {
-    std::uint64_t state = 0x0F1E2D3C4B5A6978ULL;
+    keel::u64 state = 0x0F1E2D3C4B5A6978ULL;
     for (int iter = 0; iter < 20000; ++iter) {
-        const std::int64_t an = static_cast<std::int64_t>(nextU64(state) % 2000) - 1000;
-        const std::int64_t ad = static_cast<std::int64_t>(nextU64(state) % 2000) + 1;
-        const std::int64_t bn = static_cast<std::int64_t>(nextU64(state) % 2000) - 1000;
-        const std::int64_t bd = static_cast<std::int64_t>(nextU64(state) % 2000) + 1;
+        const keel::i64 an = static_cast<keel::i64>(nextU64(state) % 2000) - 1000;
+        const keel::i64 ad = static_cast<keel::i64>(nextU64(state) % 2000) + 1;
+        const keel::i64 bn = static_cast<keel::i64>(nextU64(state) % 2000) - 1000;
+        const keel::i64 bd = static_cast<keel::i64>(nextU64(state) % 2000) + 1;
 
         const Rational a(an, ad);
         const Rational b(bn, bd);
 
         // Exact int64 oracle: cross-multiplied sums/products stay in range.
-        const std::int64_t sumN = an * bd + bn * ad;
-        const std::int64_t sumD = ad * bd;
-        const std::int64_t g = std::gcd(sumN, sumD); // gcd of absolutes
+        const keel::i64 sumN = an * bd + bn * ad;
+        const keel::i64 sumD = ad * bd;
+        const keel::i64 g = std::gcd(sumN, sumD); // gcd of absolutes
         EXPECT_EQ(a + b, Rational(BigInt(sumN / g), BigInt(sumD / g)));
 
-        EXPECT_EQ(a < b, an * static_cast<std::int64_t>(bd) <
-                             bn * static_cast<std::int64_t>(ad));
+        EXPECT_EQ(a < b, an * static_cast<keel::i64>(bd) <
+                             bn * static_cast<keel::i64>(ad));
     }
 }
 
 TEST(RationalProperty, StringRoundTrip)
 {
-    std::uint64_t state = 0x13579BDF2468ACE0ULL;
+    keel::u64 state = 0x13579BDF2468ACE0ULL;
     for (int iter = 0; iter < 10000; ++iter) {
         const Rational a = randomRational(state, 4);
         Rational back;
@@ -195,13 +196,13 @@ TEST(RationalProperty, StringRoundTrip)
 
 TEST(RationalFits, Int64Boundary)
 {
-    std::int64_t out = 0;
+    keel::i64 out = 0;
     EXPECT_TRUE(Rational(42).fitsInt64(out));
     EXPECT_EQ(out, 42);
     EXPECT_TRUE(parseR("-9223372036854775808").fitsInt64(out));
-    EXPECT_EQ(out, std::numeric_limits<std::int64_t>::min());
+    EXPECT_EQ(out, std::numeric_limits<keel::i64>::min());
     EXPECT_FALSE(parseR("1/2").fitsInt64(out));
     EXPECT_FALSE(parseR("9223372036854775808").fitsInt64(out));
-    EXPECT_EQ(Rational(std::numeric_limits<std::int64_t>::min()).toString(),
+    EXPECT_EQ(Rational(std::numeric_limits<keel::i64>::min()).toString(),
               "-9223372036854775808");
 }

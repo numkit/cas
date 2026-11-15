@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/fppoly.hpp>
 
 #include <gtest/gtest.h>
@@ -7,7 +8,7 @@ namespace {
 using numkit::cas::BigInt;
 using numkit::cas::FpPoly;
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -15,7 +16,7 @@ std::uint64_t nextU64(std::uint64_t &state)
     return state * 0x2545F4914F6CDD1DULL;
 }
 
-FpPoly P(std::uint64_t p, const std::vector<std::uint64_t> &cs)
+FpPoly P(keel::u64 p, const std::vector<keel::u64> &cs)
 {
     return FpPoly(p, cs);
 }
@@ -52,7 +53,7 @@ void verifyFactorization(const FpPoly &f, const std::vector<FpPoly> &factors)
 
 TEST(FpPolyBasics, Arithmetic)
 {
-    const std::uint64_t p = 7;
+    const keel::u64 p = 7;
     // (x + 3)(x + 5) = x^2 + x + 1 (mod 7): 3+5=8=1, 15=1
     const FpPoly a = P(p, {3, 1});
     const FpPoly b = P(p, {5, 1});
@@ -68,7 +69,7 @@ TEST(FpPolyBasics, Arithmetic)
 
 TEST(FpPolyBasics, DivisionAndGcd)
 {
-    const std::uint64_t p = 101;
+    const keel::u64 p = 101;
     FpPoly q, r;
     FpPoly::divMod(P(p, {1, 2, 3}), P(p, {5, 1}), q, r);
     EXPECT_EQ(q * P(p, {5, 1}) + r, P(p, {1, 2, 3}));
@@ -79,12 +80,12 @@ TEST(FpPolyBasics, DivisionAndGcd)
 
 TEST(FpPolyFixed, ExtGcdIdentity)
 {
-    std::uint64_t state = 0xE7C0FFEE42ULL;
+    keel::u64 state = 0xE7C0FFEE42ULL;
     for (int iter = 0; iter < 500; ++iter) {
-        const std::uint64_t p = 7;
+        const keel::u64 p = 7;
         const int da = 1 + static_cast<int>(nextU64(state) % 4);
         const int db = 1 + static_cast<int>(nextU64(state) % 3);
-        std::vector<std::uint64_t> ca, cb;
+        std::vector<keel::u64> ca, cb;
         for (int i = 0; i < da; ++i) ca.push_back(nextU64(state) % p);
         ca.push_back(1 + nextU64(state) % (p - 1));
         for (int i = 0; i < db; ++i) cb.push_back(nextU64(state) % p);
@@ -109,7 +110,7 @@ TEST(FpPolyFixed, ClassicFactorizations)
     verifyFactorization(P(3, {2, 0, 0, 0, 0, 1}), f1);
 
     // x^7 - x mod 7 splits completely into 7 linears.
-    std::vector<std::uint64_t> cs8(8, 0);
+    std::vector<keel::u64> cs8(8, 0);
     cs8[1] = 6; // -x
     cs8[7] = 1;
     const std::vector<FpPoly> f2 = FpPoly::factor(P(7, cs8));
@@ -132,11 +133,11 @@ TEST(FpPolyFixed, ClassicFactorizations)
 
 TEST(FpPolyProperty, RandomFactorizations)
 {
-    std::uint64_t state = 0xFACC1337C0DEULL;
+    keel::u64 state = 0xFACC1337C0DEULL;
     for (int iter = 0; iter < 500; ++iter) {
-        const std::uint64_t p = (iter % 2 == 0) ? 101 : 7;
+        const keel::u64 p = (iter % 2 == 0) ? 101 : 7;
         const int deg = 2 + static_cast<int>(nextU64(state) % 6);
-        std::vector<std::uint64_t> cs;
+        std::vector<keel::u64> cs;
         for (int i = 0; i < deg; ++i)
             cs.push_back(nextU64(state) % p);
         cs.push_back(1 + nextU64(state) % (p - 1)); // monic, nonzero lc
@@ -152,7 +153,7 @@ TEST(FpPolyProperty, RandomFactorizations)
         // Determinism: same input, same output.
         const std::vector<FpPoly> factors2 = FpPoly::factor(f);
         ASSERT_EQ(factors.size(), factors2.size());
-        for (std::size_t i = 0; i < factors.size(); ++i)
+        for (keel::usize i = 0; i < factors.size(); ++i)
             ASSERT_EQ(factors[i], factors2[i]);
     }
 }
@@ -161,19 +162,19 @@ TEST(FpPolyProperty, BuiltFromKnownIrreducibles)
 {
     // Product of independently-built irreducibles factors back into
     // exactly those factors (up to ordering, which is deterministic).
-    std::uint64_t state = 0x123499887766ULL;
+    keel::u64 state = 0x123499887766ULL;
     int checked = 0;
     while (checked < 60) {
-        const std::uint64_t p = 101;
+        const keel::u64 p = 101;
         const int deg = 1 + static_cast<int>(nextU64(state) % 4);
-        std::vector<std::uint64_t> cs;
+        std::vector<keel::u64> cs;
         for (int i = 0; i < deg; ++i)
             cs.push_back(nextU64(state) % p);
         cs.push_back(1);
         const FpPoly f(p, cs);
         if (f.deg() < 1 || !f.isIrreducible())
             continue;
-        const FpPoly h = P(p, {static_cast<std::uint64_t>(1 + nextU64(state) % 100), 1});
+        const FpPoly h = P(p, {static_cast<keel::u64>(1 + nextU64(state) % 100), 1});
         const FpPoly prod = f * h;
         const std::vector<FpPoly> factors = FpPoly::factor(prod);
         verifyFactorization(prod, factors);

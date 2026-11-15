@@ -1,3 +1,5 @@
+#include <keel/core.h>
+#include <keel/math.h>
 #include <numkit/cas/core/simplify.hpp>
 
 #include <numkit/cas/integrate/ratint.hpp>
@@ -29,14 +31,14 @@ Expr pickBest(const Ctx &c, Expr a, Expr b)
         return a;
     if (a == b)
         return a;
-    const std::size_t costA = c.exprCost(a);
-    const std::size_t costB = c.exprCost(b);
+    const keel::usize costA = c.exprCost(a);
+    const keel::usize costB = c.exprCost(b);
     if (costB < costA)
         return b;
     if (costA < costB)
         return a;
-    const std::size_t leafA = c.leafCount(a);
-    const std::size_t leafB = c.leafCount(b);
+    const keel::usize leafA = c.leafCount(a);
+    const keel::usize leafB = c.leafCount(b);
     if (leafB < leafA)
         return b;
     return a;
@@ -90,7 +92,7 @@ bool matchSqTrigFactor(Ctx &c, Expr f, SqTrigKind &kindOut, Expr &argOut,
     if (c.kind(base) != NodeKind::Func || c.kind(exp) != NodeKind::Number)
         return false;
     const Rational &re = c.numberValue(exp);
-    std::int64_t k = 0;
+    keel::i64 k = 0;
     if (!(re.den() == BigInt(1)) || !re.num().fitsInt64(k) || k < 2)
         return false;
 
@@ -124,12 +126,12 @@ std::vector<SqTrigTerm> analyzeSqTrigTerm(Ctx &c, Expr term)
         return out;
     }
     if (c.kind(term) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(term); ++i) {
+        for (keel::usize i = 0; i < c.childCount(term); ++i) {
             if (matchSqTrigFactor(c, c.child(term, i), k, u, residual, exactSq)) {
                 std::vector<Expr> rest;
                 if (residual != c.one())
                     rest.push_back(residual);
-                for (std::size_t j = 0; j < c.childCount(term); ++j)
+                for (keel::usize j = 0; j < c.childCount(term); ++j)
                     if (j != i)
                         rest.push_back(c.child(term, j));
                 const Expr cof = rest.empty() ? c.one() : c.mul(rest);
@@ -150,22 +152,22 @@ Expr simplifyAddNode(Ctx &c, Expr e)
 
     std::vector<Expr> terms;
     terms.reserve(c.childCount(e));
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         terms.push_back(c.child(e, i));
 
     bool changed = true;
     while (changed) {
         changed = false;
-        const std::size_t n = terms.size();
+        const keel::usize n = terms.size();
         std::vector<std::vector<SqTrigTerm>> info(n);
-        for (std::size_t i = 0; i < n; ++i)
+        for (keel::usize i = 0; i < n; ++i)
             info[i] = analyzeSqTrigTerm(c, terms[i]);
 
         // 1a. Exact Pythagorean identity: A*sin(u)^2 + A*cos(u)^2 -> A and
         //     B*cosh(u)^2 - B*sinh(u)^2 -> B (works for any cofactor A, including trig powers).
-        for (std::size_t i = 0; i < n && !changed; ++i) {
+        for (keel::usize i = 0; i < n && !changed; ++i) {
             for (const SqTrigTerm &ti : info[i]) {
-                for (std::size_t j = i + 1; j < n && !changed; ++j) {
+                for (keel::usize j = i + 1; j < n && !changed; ++j) {
                     for (const SqTrigTerm &tj : info[j]) {
                         if (!(ti.arg == tj.arg))
                             continue;
@@ -182,7 +184,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                             pA->cofactor == pB->cofactor) {
                             terms[i] = pA->cofactor;
                             terms.erase(terms.begin() +
-                                        static_cast<std::ptrdiff_t>(j));
+                                        static_cast<keel::isize>(j));
                             changed = true;
                             break;
                         }
@@ -191,7 +193,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                             pA->cofactor == c.neg(pB->cofactor)) {
                             terms[i] = pB->cofactor;
                             terms.erase(terms.begin() +
-                                        static_cast<std::ptrdiff_t>(j));
+                                        static_cast<keel::isize>(j));
                             changed = true;
                             break;
                         }
@@ -204,37 +206,37 @@ Expr simplifyAddNode(Ctx &c, Expr e)
 
         // 2. Complement rules: C - C*sin(u)^2 -> C*cos(u)^2, C - C*cos(u)^2 -> C*sin(u)^2,
         //    C + C*sinh(u)^2 -> C*cosh(u)^2, -C + C*cosh(u)^2 -> C*sinh(u)^2.
-        for (std::size_t i = 0; i < n && !changed; ++i) {
+        for (keel::usize i = 0; i < n && !changed; ++i) {
             for (const SqTrigTerm &ti : info[i]) {
                 const Expr u = ti.arg;
                 const Expr cof = ti.cofactor;
                 const Expr negCof = c.neg(cof);
-                for (std::size_t j = 0; j < n && !changed; ++j) {
+                for (keel::usize j = 0; j < n && !changed; ++j) {
                     if (i == j)
                         continue;
                     if (ti.kind == SqTrigKind::Sin2 && terms[j] == negCof) {
                         terms[std::min(i, j)] = c.mul(
-                            {negCof, c.pow(c.func("cos", u), c.number(std::int64_t{2}))});
+                            {negCof, c.pow(c.func("cos", u), c.number(keel::i64{2}))});
                         terms.erase(terms.begin() +
-                                    static_cast<std::ptrdiff_t>(std::max(i, j)));
+                                    static_cast<keel::isize>(std::max(i, j)));
                         changed = true;
                     } else if (ti.kind == SqTrigKind::Cos2 && terms[j] == negCof) {
                         terms[std::min(i, j)] = c.mul(
-                            {negCof, c.pow(c.func("sin", u), c.number(std::int64_t{2}))});
+                            {negCof, c.pow(c.func("sin", u), c.number(keel::i64{2}))});
                         terms.erase(terms.begin() +
-                                    static_cast<std::ptrdiff_t>(std::max(i, j)));
+                                    static_cast<keel::isize>(std::max(i, j)));
                         changed = true;
                     } else if (ti.kind == SqTrigKind::Sinh2 && terms[j] == cof) {
                         terms[std::min(i, j)] = c.mul(
-                            {cof, c.pow(c.func("cosh", u), c.number(std::int64_t{2}))});
+                            {cof, c.pow(c.func("cosh", u), c.number(keel::i64{2}))});
                         terms.erase(terms.begin() +
-                                    static_cast<std::ptrdiff_t>(std::max(i, j)));
+                                    static_cast<keel::isize>(std::max(i, j)));
                         changed = true;
                     } else if (ti.kind == SqTrigKind::Cosh2 && terms[j] == negCof) {
                         terms[std::min(i, j)] = c.mul(
-                            {cof, c.pow(c.func("sinh", u), c.number(std::int64_t{2}))});
+                            {cof, c.pow(c.func("sinh", u), c.number(keel::i64{2}))});
                         terms.erase(terms.begin() +
-                                    static_cast<std::ptrdiff_t>(std::max(i, j)));
+                                    static_cast<keel::isize>(std::max(i, j)));
                         changed = true;
                     }
                 }
@@ -245,11 +247,11 @@ Expr simplifyAddNode(Ctx &c, Expr e)
 
         // 1b. Double-angle cosine/cosh rules for pure degree-2 squares:
         //     B*cos(u)^2 - B*sin(u)^2 -> B*cos(2*u), B*cosh(u)^2 + B*sinh(u)^2 -> B*cosh(2*u).
-        for (std::size_t i = 0; i < n && !changed; ++i) {
+        for (keel::usize i = 0; i < n && !changed; ++i) {
             for (const SqTrigTerm &ti : info[i]) {
                 if (!ti.exactSq)
                     continue;
-                for (std::size_t j = i + 1; j < n && !changed; ++j) {
+                for (keel::usize j = i + 1; j < n && !changed; ++j) {
                     for (const SqTrigTerm &tj : info[j]) {
                         if (!tj.exactSq || !(ti.arg == tj.arg))
                             continue;
@@ -266,9 +268,9 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                             pA->cofactor == c.neg(pB->cofactor)) {
                             terms[i] = c.mul(
                                 {pB->cofactor,
-                                 c.func("cos", c.mul({c.number(std::int64_t{2}), ti.arg}))});
+                                 c.func("cos", c.mul({c.number(keel::i64{2}), ti.arg}))});
                             terms.erase(terms.begin() +
-                                        static_cast<std::ptrdiff_t>(j));
+                                        static_cast<keel::isize>(j));
                             changed = true;
                             break;
                         }
@@ -277,9 +279,9 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                             pA->cofactor == pB->cofactor) {
                             terms[i] = c.mul(
                                 {pB->cofactor,
-                                 c.func("cosh", c.mul({c.number(std::int64_t{2}), ti.arg}))});
+                                 c.func("cosh", c.mul({c.number(keel::i64{2}), ti.arg}))});
                             terms.erase(terms.begin() +
-                                        static_cast<std::ptrdiff_t>(j));
+                                        static_cast<keel::isize>(j));
                             changed = true;
                             break;
                         }
@@ -292,7 +294,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
 
         // 3. Logarithm combination: log(u) + log(v) -> log(simplifyRationalExpr(u*v)),
         //    log(u) - log(v) -> log(simplifyRationalExpr(u/v)) when cost decreases.
-        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+        for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
             Expr uLog;
             int signI = 0;
             if (c.kind(terms[i]) == NodeKind::Func &&
@@ -303,7 +305,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                        c.childCount(terms[i]) == 2 &&
                        c.kind(c.child(terms[i], 0)) == NodeKind::Number &&
                        c.numberValue(c.child(terms[i], 0)) ==
-                           Rational(std::int64_t{-1}) &&
+                           Rational(keel::i64{-1}) &&
                        c.kind(c.child(terms[i], 1)) == NodeKind::Func &&
                        c.funcName(c.child(terms[i], 1)) == "log") {
                 uLog = c.child(c.child(terms[i], 1), 0);
@@ -312,7 +314,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             if (signI == 0)
                 continue;
 
-            for (std::size_t j = i + 1; j < terms.size() && !changed; ++j) {
+            for (keel::usize j = i + 1; j < terms.size() && !changed; ++j) {
                 Expr vLog;
                 int signJ = 0;
                 if (c.kind(terms[j]) == NodeKind::Func &&
@@ -323,7 +325,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                            c.childCount(terms[j]) == 2 &&
                            c.kind(c.child(terms[j], 0)) == NodeKind::Number &&
                            c.numberValue(c.child(terms[j], 0)) ==
-                               Rational(std::int64_t{-1}) &&
+                               Rational(keel::i64{-1}) &&
                            c.kind(c.child(terms[j], 1)) == NodeKind::Func &&
                            c.funcName(c.child(terms[j], 1)) == "log") {
                     vLog = c.child(c.child(terms[j], 1), 0);
@@ -355,7 +357,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 const Expr pairSum = c.add({terms[i], terms[j]});
                 if (c.exprCost(merged) <= c.exprCost(pairSum)) {
                     terms[i] = merged;
-                    terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                    terms.erase(terms.begin() + static_cast<keel::isize>(j));
                     changed = true;
                 }
             }
@@ -378,7 +380,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 std::vector<Expr> others;
                 std::string fn;
                 Expr arg;
-                for (std::size_t k = 0; k < c.childCount(t); ++k) {
+                for (keel::usize k = 0; k < c.childCount(t); ++k) {
                     const Expr ch = c.child(t, k);
                     if (fn.empty() && c.kind(ch) == NodeKind::Func &&
                         (c.funcName(ch) == "erf" || c.funcName(ch) == "erfc")) {
@@ -397,14 +399,14 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             }
             return false;
         };
-        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+        for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
             Expr coefI, argI;
             std::string fnI;
             if (!matchErfTerm(terms[i], coefI, fnI, argI))
                 continue;
             const Expr negCoefI = c.neg(coefI);
             const std::string compFn = (fnI == "erf") ? "erfc" : "erf";
-            for (std::size_t j = 0; j < terms.size() && !changed; ++j) {
+            for (keel::usize j = 0; j < terms.size() && !changed; ++j) {
                 if (i == j)
                     continue;
                 Expr coefJ, argJ;
@@ -412,7 +414,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 if (j > i && matchErfTerm(terms[j], coefJ, fnJ, argJ) &&
                     fnJ == compFn && argI == argJ && coefI == coefJ) {
                     terms[i] = coefI;
-                    terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                    terms.erase(terms.begin() + static_cast<keel::isize>(j));
                     changed = true;
                     break;
                 }
@@ -420,7 +422,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                     terms[std::min(i, j)] =
                         c.mul({negCoefI, c.func(compFn, argI)});
                     terms.erase(terms.begin() +
-                                static_cast<std::ptrdiff_t>(std::max(i, j)));
+                                static_cast<keel::isize>(std::max(i, j)));
                     changed = true;
                     break;
                 }
@@ -441,7 +443,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 std::vector<Expr> others;
                 Expr arg;
                 bool hasDilog = false;
-                for (std::size_t k = 0; k < c.childCount(t); ++k) {
+                for (keel::usize k = 0; k < c.childCount(t); ++k) {
                     const Expr ch = c.child(t, k);
                     if (!hasDilog && c.kind(ch) == NodeKind::Func &&
                         (c.funcName(ch) == "dilog" || c.funcName(ch) == "Li2" ||
@@ -460,27 +462,27 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             }
             return false;
         };
-        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+        for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
             Expr coefI, argI;
             if (!matchDilogTerm(terms[i], coefI, argI) || c.isZero(argI))
                 continue;
-            for (std::size_t j = i + 1; j < terms.size() && !changed; ++j) {
+            for (keel::usize j = i + 1; j < terms.size() && !changed; ++j) {
                 Expr coefJ, argJ;
                 if (!matchDilogTerm(terms[j], coefJ, argJ) || c.isZero(argJ) ||
                     !(coefI == coefJ))
                     continue;
                 const Expr sumMinus1 = simplifyRationalExpr(
-                    c, c.add({argI, argJ, c.number(std::int64_t{-1})}));
+                    c, c.add({argI, argJ, c.number(keel::i64{-1})}));
                 if (!sumMinus1.isNull() && c.isZero(sumMinus1)) {
                     const Expr pi2Over6 = c.mul(
-                        {c.number(Rational(std::int64_t{1}, BigInt(6))),
-                         c.pow(c.symbol("pi"), c.number(std::int64_t{2}))});
+                        {c.number(Rational(keel::i64{1}, BigInt(6))),
+                         c.pow(c.symbol("pi"), c.number(keel::i64{2}))});
                     const Expr eulerVal = c.add(
                         {pi2Over6,
                          c.neg(c.mul(
                              {c.func("log", argI), c.func("log", argJ)}))});
                     terms[i] = c.mul({coefI, eulerVal});
-                    terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                    terms.erase(terms.begin() + static_cast<keel::isize>(j));
                     changed = true;
                     break;
                 }
@@ -507,7 +509,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 std::vector<Expr> others;
                 std::string fn;
                 Expr arg;
-                for (std::size_t k = 0; k < c.childCount(t); ++k) {
+                for (keel::usize k = 0; k < c.childCount(t); ++k) {
                     const Expr ch = c.child(t, k);
                     if (fn.empty() && c.kind(ch) == NodeKind::Func &&
                         (c.funcName(ch) == "digamma" || c.funcName(ch) == "psi" ||
@@ -527,24 +529,24 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             }
             return false;
         };
-        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+        for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
             Expr coefI, argI;
             std::string fnI;
             if (!matchPolygammaTerm(terms[i], coefI, fnI, argI))
                 continue;
             struct CosetMember {
-                std::size_t termIdx;
+                keel::usize termIdx;
                 Expr coef;
                 Expr arg;
-                std::int64_t offset; // arg - argI
+                keel::i64 offset; // arg - argI
             };
             std::vector<CosetMember> coset;
             coset.push_back({i, coefI, argI, 0});
-            std::int64_t minOff = 0;
-            std::int64_t maxOff = 0;
+            keel::i64 minOff = 0;
+            keel::i64 maxOff = 0;
             Expr minArg = argI;
             bool hasDistinctShift = false;
-            for (std::size_t j = i + 1; j < terms.size(); ++j) {
+            for (keel::usize j = i + 1; j < terms.size(); ++j) {
                 Expr coefJ, argJ;
                 std::string fnJ;
                 if (!matchPolygammaTerm(terms[j], coefJ, fnJ, argJ) ||
@@ -552,11 +554,11 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                     continue;
                 const Expr diffJI =
                     simplifyRationalExpr(c, c.add({argJ, c.neg(argI)}));
-                std::int64_t m = 0;
+                keel::i64 m = 0;
                 if (!diffJI.isNull() && c.kind(diffJI) == NodeKind::Number &&
                     c.numberValue(diffJI).den() == BigInt(1) &&
                     c.numberValue(diffJI).num().fitsInt64(m) &&
-                    std::abs(m) <= 16) {
+                    keel::abs(m) <= 16) {
                     coset.push_back({j, coefJ, argJ, m});
                     if (m != 0)
                         hasDistinctShift = true;
@@ -573,19 +575,19 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 std::vector<Expr> rationalTailTerms;
                 for (const auto &cm : coset) {
                     totalCoefTerms.push_back(cm.coef);
-                    const std::int64_t shift = cm.offset - minOff;
+                    const keel::i64 shift = cm.offset - minOff;
                     if (shift > 0) {
                         std::vector<Expr> stepTerms;
-                        for (std::int64_t r = 0; r < shift; ++r) {
+                        for (keel::i64 r = 0; r < shift; ++r) {
                             const Expr denomBase =
                                 r == 0 ? minArg
                                        : simplifyRationalExpr(
                                              c, c.add({minArg, c.number(r)}));
                             const Expr step =
                                 (fnI == "digamma")
-                                    ? c.pow(denomBase, c.number(std::int64_t{-1}))
+                                    ? c.pow(denomBase, c.number(keel::i64{-1}))
                                     : c.neg(c.pow(denomBase,
-                                                  c.number(std::int64_t{-2})));
+                                                  c.number(keel::i64{-2})));
                             stepTerms.push_back(step);
                         }
                         const Expr sumSteps = stepTerms.size() == 1
@@ -607,9 +609,9 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                     replacementTerms.push_back(rt);
                 terms[coset[0].termIdx] =
                     replacementTerms.empty() ? c.zero() : c.add(replacementTerms);
-                for (std::size_t idx = coset.size() - 1; idx >= 1; --idx) {
+                for (keel::usize idx = coset.size() - 1; idx >= 1; --idx) {
                     terms.erase(terms.begin() +
-                                static_cast<std::ptrdiff_t>(coset[idx].termIdx));
+                                static_cast<keel::isize>(coset[idx].termIdx));
                 }
                 changed = true;
                 break;
@@ -629,7 +631,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 c.kind(c.child(t, 0)) == NodeKind::Func &&
                 c.childCount(c.child(t, 0)) == 1 &&
                 c.kind(c.child(t, 1)) == NodeKind::Number &&
-                c.numberValue(c.child(t, 1)) == Rational(std::int64_t{2})) {
+                c.numberValue(c.child(t, 1)) == Rational(keel::i64{2})) {
                 const std::string &fn = c.funcName(c.child(t, 0));
                 if (fn == "ellipticK" || fn == "ellipticE") {
                     coefOut = c.one();
@@ -643,7 +645,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             if (c.kind(t) == NodeKind::Mul) {
                 std::vector<std::pair<std::string, Expr>> ellFactors;
                 std::vector<Expr> others;
-                for (std::size_t i = 0; i < c.childCount(t); ++i) {
+                for (keel::usize i = 0; i < c.childCount(t); ++i) {
                     const Expr ch = c.child(t, i);
                     if (c.kind(ch) == NodeKind::Func && c.childCount(ch) == 1 &&
                         (c.funcName(ch) == "ellipticK" ||
@@ -656,7 +658,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                                 c.funcName(c.child(ch, 0)) == "ellipticE") &&
                                c.kind(c.child(ch, 1)) == NodeKind::Number &&
                                c.numberValue(c.child(ch, 1)) ==
-                                   Rational(std::int64_t{2})) {
+                                   Rational(keel::i64{2})) {
                         const std::string &fn = c.funcName(c.child(ch, 0));
                         const Expr a0 = c.child(c.child(ch, 0), 0);
                         ellFactors.push_back({fn, a0});
@@ -679,7 +681,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             return false;
         };
 
-        for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+        for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
             Expr cI, a1I, a2I;
             std::string f1I, f2I;
             if (!matchEllipticPair(terms[i], cI, f1I, a1I, f2I, a2I))
@@ -692,15 +694,15 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             if (!(f1I == "ellipticE" && f2I == "ellipticK"))
                 continue;
             const Expr sumArgs = simplifyRationalExpr(
-                c, c.add({a1I, a2I, c.number(std::int64_t{-1})}));
+                c, c.add({a1I, a2I, c.number(keel::i64{-1})}));
             if (sumArgs.isNull() || !c.isZero(sumArgs))
                 continue;
 
             const Expr halfPi = c.mul(
-                {c.number(Rational(std::int64_t{1}, BigInt(2))), c.symbol("pi")});
+                {c.number(Rational(keel::i64{1}, BigInt(2))), c.symbol("pi")});
             if (a1I == a2I) {
                 // Symmetric m = 1/2 case: look for -1/2 * cI * ellipticK(1/2)^2
-                for (std::size_t j = 0; j < terms.size(); ++j) {
+                for (keel::usize j = 0; j < terms.size(); ++j) {
                     if (j == i)
                         continue;
                     Expr cJ, a1J, a2J;
@@ -713,7 +715,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                             c, c.add({cI, c.mul({c.number(2), cJ})})))) {
                         const Expr scale = c.neg(cJ);
                         terms[i] = c.mul({scale, halfPi});
-                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                        terms.erase(terms.begin() + static_cast<keel::isize>(j));
                         changed = true;
                         break;
                     }
@@ -723,9 +725,9 @@ Expr simplifyAddNode(Ctx &c, Expr e)
 
             // General m != 1 - m case: look for E(a2I)*K(a1I) with coef cI
             // and K(a1I)*K(a2I) with coef -cI.
-            std::size_t idxEK2 = terms.size();
-            std::size_t idxKK = terms.size();
-            for (std::size_t j = 0; j < terms.size(); ++j) {
+            keel::usize idxEK2 = terms.size();
+            keel::usize idxKK = terms.size();
+            for (keel::usize j = 0; j < terms.size(); ++j) {
                 if (j == i)
                     continue;
                 Expr cJ, a1J, a2J;
@@ -749,10 +751,10 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             }
             if (idxEK2 < terms.size() && idxKK < terms.size()) {
                 terms[i] = c.mul({cI, halfPi});
-                const std::size_t hi = std::max(idxEK2, idxKK);
-                const std::size_t lo = std::min(idxEK2, idxKK);
-                terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(hi));
-                terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(lo));
+                const keel::usize hi = std::max(idxEK2, idxKK);
+                const keel::usize lo = std::min(idxEK2, idxKK);
+                terms.erase(terms.begin() + static_cast<keel::isize>(hi));
+                terms.erase(terms.begin() + static_cast<keel::isize>(lo));
                 changed = true;
                 break;
             }
@@ -767,7 +769,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                                Expr &nOut, Expr &xOut) -> bool {
             std::vector<Expr> facs;
             if (c.kind(t) == NodeKind::Mul) {
-                for (std::size_t i = 0; i < c.childCount(t); ++i)
+                for (keel::usize i = 0; i < c.childCount(t); ++i)
                     facs.push_back(c.child(t, i));
             } else {
                 facs.push_back(t);
@@ -796,12 +798,12 @@ Expr simplifyAddNode(Ctx &c, Expr e)
         bool changed = true;
         while (changed && terms.size() >= 2) {
             changed = false;
-            for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+            for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
                 Expr cI, nI, xI;
                 std::string fnI;
                 if (!matchBEPoly(terms[i], cI, fnI, nI, xI))
                     continue;
-                for (std::size_t j = 0; j < terms.size(); ++j) {
+                for (keel::usize j = 0; j < terms.size(); ++j) {
                     if (j == i)
                         continue;
                     Expr cJ, nJ, xJ;
@@ -817,8 +819,8 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                         c.isZero(simplifyRationalExpr(c, c.add({cI, cJ})))) {
                         terms[i] = c.mul({
                             cI, nI,
-                            c.pow(xJ, c.add({nI, c.number(std::int64_t{-1})}))});
-                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                            c.pow(xJ, c.add({nI, c.number(keel::i64{-1})}))});
+                        terms.erase(terms.begin() + static_cast<keel::isize>(j));
                         changed = true;
                         break;
                     }
@@ -826,8 +828,8 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                         c.isZero(
                             simplifyRationalExpr(c, c.add({cI, c.neg(cJ)})))) {
                         terms[i] =
-                            c.mul({c.number(std::int64_t{2}), cI, c.pow(xJ, nI)});
-                        terms.erase(terms.begin() + static_cast<std::ptrdiff_t>(j));
+                            c.mul({c.number(keel::i64{2}), cI, c.pow(xJ, nI)});
+                        terms.erase(terms.begin() + static_cast<keel::isize>(j));
                         changed = true;
                         break;
                     }
@@ -849,7 +851,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 else if (c.funcName(node) == "zeta")
                     hasZeta = true;
             }
-            for (std::size_t i = 0; i < c.childCount(node); ++i)
+            for (keel::usize i = 0; i < c.childCount(node); ++i)
                 self(self, c.child(node, i));
         };
         for (const Expr &t : terms)
@@ -872,7 +874,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                     return node;
                 std::vector<Expr> ch;
                 ch.reserve(c.childCount(node));
-                for (std::size_t i = 0; i < c.childCount(node); ++i)
+                for (keel::usize i = 0; i < c.childCount(node); ++i)
                     ch.push_back(self(self, c.child(node, i)));
                 if (c.kind(node) == NodeKind::Add)
                     return c.add(ch);
@@ -898,7 +900,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                                  Expr &sOut, Expr &xOut) -> bool {
             std::vector<Expr> facs;
             if (c.kind(t) == NodeKind::Mul) {
-                for (std::size_t i = 0; i < c.childCount(t); ++i)
+                for (keel::usize i = 0; i < c.childCount(t); ++i)
                     facs.push_back(c.child(t, i));
             } else {
                 facs.push_back(t);
@@ -927,12 +929,12 @@ Expr simplifyAddNode(Ctx &c, Expr e)
         bool changed = true;
         while (changed && terms.size() >= 2) {
             changed = false;
-            for (std::size_t i = 0; i < terms.size() && !changed; ++i) {
+            for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
                 Expr cI, sI, xI;
                 std::string fnI;
                 if (!matchIncGamma(terms[i], cI, fnI, sI, xI))
                     continue;
-                for (std::size_t j = 0; j < terms.size(); ++j) {
+                for (keel::usize j = 0; j < terms.size(); ++j) {
                     if (j == i)
                         continue;
                     Expr cJ, sJ, xJ;
@@ -947,7 +949,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                         terms[i] = c.mul(
                             {cI, simplifyFuncNode(c, c.func("gamma", sI))});
                         terms.erase(terms.begin() +
-                                    static_cast<std::ptrdiff_t>(j));
+                                    static_cast<keel::isize>(j));
                         changed = true;
                         break;
                     }
@@ -964,7 +966,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                             terms[i] =
                                 (fnI == "igamma") ? tail : c.neg(tail);
                             terms.erase(terms.begin() +
-                                        static_cast<std::ptrdiff_t>(j));
+                                        static_cast<keel::isize>(j));
                             changed = true;
                             break;
                         }
@@ -989,7 +991,7 @@ Expr simplifyMulNode(Ctx &c, Expr e)
 
     std::vector<Expr> factors;
     std::vector<Expr> expArgs;
-    for (std::size_t i = 0; i < c.childCount(e); ++i) {
+    for (keel::usize i = 0; i < c.childCount(e); ++i) {
         const Expr ch = c.child(e, i);
         if (c.kind(ch) == NodeKind::Func && c.funcName(ch) == "exp") {
             expArgs.push_back(c.child(ch, 0));
@@ -1018,11 +1020,11 @@ Expr simplifyMulNode(Ctx &c, Expr e)
     bool mergedDoubleSin = true;
     while (mergedDoubleSin) {
         mergedDoubleSin = false;
-        std::size_t numIdx = factors.size();
-        for (std::size_t i = 0; i < factors.size(); ++i) {
+        keel::usize numIdx = factors.size();
+        for (keel::usize i = 0; i < factors.size(); ++i) {
             if (c.kind(factors[i]) == NodeKind::Number) {
                 const Rational &rv = c.numberValue(factors[i]);
-                std::int64_t p = 0;
+                keel::i64 p = 0;
                 if (rv.num().fitsInt64(p) && p != 0 && p % 2 == 0) {
                     numIdx = i;
                     break;
@@ -1030,21 +1032,21 @@ Expr simplifyMulNode(Ctx &c, Expr e)
             }
         }
         if (numIdx < factors.size()) {
-            for (std::size_t i = 0; i < factors.size() && !mergedDoubleSin; ++i) {
+            for (keel::usize i = 0; i < factors.size() && !mergedDoubleSin; ++i) {
                 if (c.kind(factors[i]) != NodeKind::Func ||
                     c.funcName(factors[i]) != "sin")
                     continue;
                 const Expr u = c.child(factors[i], 0);
-                for (std::size_t j = 0; j < factors.size() && !mergedDoubleSin; ++j) {
+                for (keel::usize j = 0; j < factors.size() && !mergedDoubleSin; ++j) {
                     if (i == j || c.kind(factors[j]) != NodeKind::Func ||
                         c.funcName(factors[j]) != "cos" ||
                         !(c.child(factors[j], 0) == u))
                         continue;
                     const Rational halfNum =
-                        c.numberValue(factors[numIdx]) / Rational(std::int64_t{2});
+                        c.numberValue(factors[numIdx]) / Rational(keel::i64{2});
                     factors[numIdx] = c.number(halfNum);
-                    factors[i] = c.func("sin", c.mul({c.number(std::int64_t{2}), u}));
-                    factors.erase(factors.begin() + static_cast<std::ptrdiff_t>(j));
+                    factors[i] = c.func("sin", c.mul({c.number(keel::i64{2}), u}));
+                    factors.erase(factors.begin() + static_cast<keel::isize>(j));
                     mergedDoubleSin = true;
                 }
             }
@@ -1057,7 +1059,7 @@ Expr simplifyMulNode(Ctx &c, Expr e)
         if (c.kind(f) == NodeKind::Func) {
             fnOut = c.funcName(f);
             argOut = c.child(f, 0);
-            expOut = Rational(std::int64_t{1});
+            expOut = Rational(keel::i64{1});
             return true;
         }
         if (c.kind(f) == NodeKind::Pow &&
@@ -1074,7 +1076,7 @@ Expr simplifyMulNode(Ctx &c, Expr e)
     bool mergedTan = true;
     while (mergedTan) {
         mergedTan = false;
-        for (std::size_t i = 0; i < factors.size() && !mergedTan; ++i) {
+        for (keel::usize i = 0; i < factors.size() && !mergedTan; ++i) {
             std::string fnI;
             Expr uI;
             Rational expI;
@@ -1084,7 +1086,7 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                 continue;
             const std::string wantCos = (fnI == "sin") ? "cos" : "cosh";
             const std::string outTan = (fnI == "sin") ? "tan" : "tanh";
-            for (std::size_t j = 0; j < factors.size() && !mergedTan; ++j) {
+            for (keel::usize j = 0; j < factors.size() && !mergedTan; ++j) {
                 if (i == j)
                     continue;
                 std::string fnJ;
@@ -1095,7 +1097,7 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                 if (fnJ == wantCos && uI == uJ && expI == -expJ &&
                     expI.signum() > 0) {
                     factors[i] = c.pow(c.func(outTan, uI), c.number(expI));
-                    factors.erase(factors.begin() + static_cast<std::ptrdiff_t>(j));
+                    factors.erase(factors.begin() + static_cast<keel::isize>(j));
                     mergedTan = true;
                 }
             }
@@ -1109,17 +1111,17 @@ Expr simplifyMulNode(Ctx &c, Expr e)
     bool mergedGamma = true;
     while (mergedGamma) {
         mergedGamma = false;
-        for (std::size_t i = 0; i < factors.size() && !mergedGamma; ++i) {
+        for (keel::usize i = 0; i < factors.size() && !mergedGamma; ++i) {
             std::string fnI;
             Expr uI;
             Rational expI;
             if (!extractTrigPow(factors[i], fnI, uI, expI) || fnI != "gamma")
                 continue;
-            const bool isPosUnitI = (expI == Rational(std::int64_t{1}));
-            const bool isNegUnitI = (expI == Rational(std::int64_t{-1}));
+            const bool isPosUnitI = (expI == Rational(keel::i64{1}));
+            const bool isNegUnitI = (expI == Rational(keel::i64{-1}));
             if (!isPosUnitI && !isNegUnitI)
                 continue;
-            for (std::size_t j = i + 1; j < factors.size() && !mergedGamma; ++j) {
+            for (keel::usize j = i + 1; j < factors.size() && !mergedGamma; ++j) {
                 std::string fnJ;
                 Expr uJ;
                 Rational expJ;
@@ -1131,15 +1133,15 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                     const Expr denArg = isPosUnitI ? uJ : uI;
                     const Expr diffArgs =
                         simplifyRationalExpr(c, c.add({numArg, c.neg(denArg)}));
-                    std::int64_t m = 0;
+                    keel::i64 m = 0;
                     if (!diffArgs.isNull() &&
                         c.kind(diffArgs) == NodeKind::Number &&
                         c.numberValue(diffArgs).den() == BigInt(1) &&
                         c.numberValue(diffArgs).num().fitsInt64(m) &&
-                        std::abs(m) <= 12) {
+                        keel::abs(m) <= 12) {
                         std::vector<Expr> pochFactors;
                         if (m > 0) {
-                            for (std::int64_t k = 0; k < m; ++k) {
+                            for (keel::i64 k = 0; k < m; ++k) {
                                 const Expr step =
                                     k == 0 ? denArg
                                            : simplifyRationalExpr(
@@ -1147,19 +1149,19 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                                 pochFactors.push_back(step);
                             }
                         } else if (m < 0) {
-                            for (std::int64_t k = 0; k < -m; ++k) {
+                            for (keel::i64 k = 0; k < -m; ++k) {
                                 const Expr step =
                                     k == 0 ? numArg
                                            : simplifyRationalExpr(
                                                  c, c.add({numArg, c.number(k)}));
                                 pochFactors.push_back(
-                                    c.pow(step, c.number(std::int64_t{-1})));
+                                    c.pow(step, c.number(keel::i64{-1})));
                             }
                         }
                         factors[i] = pochFactors.empty() ? c.one()
                                                          : c.mul(pochFactors);
                         factors.erase(factors.begin() +
-                                      static_cast<std::ptrdiff_t>(j));
+                                      static_cast<keel::isize>(j));
                         mergedGamma = true;
                         break;
                     }
@@ -1168,12 +1170,12 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                 if (expI == expJ) {
                     const Expr sumArgs =
                         simplifyRationalExpr(c, c.add({uI, uJ}));
-                    std::int64_t m = 0;
+                    keel::i64 m = 0;
                     if (!sumArgs.isNull() &&
                         c.kind(sumArgs) == NodeKind::Number &&
                         c.numberValue(sumArgs).den() == BigInt(1) &&
                         c.numberValue(sumArgs).num().fitsInt64(m) &&
-                        std::abs(m - 1) <= 12) {
+                        keel::abs(m - 1) <= 12) {
                         // Choose canonical argument u for sin(pi * u):
                         // if rational, shift into (0, 1); otherwise pick lower-cost arg.
                         Expr uBase = uI;
@@ -1184,10 +1186,10 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                             const Rational &rJ = c.numberValue(uJ);
                             if (rI.den() == BigInt(1) || rJ.den() == BigInt(1))
                                 continue;
-                            if (!(rI > Rational(std::int64_t{0}) &&
-                                  rI < Rational(std::int64_t{1})) &&
-                                (rJ > Rational(std::int64_t{0}) &&
-                                 rJ < Rational(std::int64_t{1}))) {
+                            if (!(rI > Rational(keel::i64{0}) &&
+                                  rI < Rational(keel::i64{1})) &&
+                                (rJ > Rational(keel::i64{0}) &&
+                                 rJ < Rational(keel::i64{1}))) {
                                 std::swap(uBase, vOther);
                             }
                         } else if (c.exprCost(uJ) < c.exprCost(uI)) {
@@ -1208,29 +1210,29 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                         std::vector<Expr> reflFactors;
                         reflFactors.push_back(c.symbol("pi"));
                         reflFactors.push_back(
-                            c.pow(sinVal, c.number(std::int64_t{-1})));
-                        const std::int64_t shiftM = m - 1;
+                            c.pow(sinVal, c.number(keel::i64{-1})));
+                        const keel::i64 shiftM = m - 1;
                         if (shiftM > 0) {
-                            for (std::int64_t k = 0; k < shiftM; ++k) {
+                            for (keel::i64 k = 0; k < shiftM; ++k) {
                                 const Expr step = simplifyRationalExpr(
                                     c, c.add({oneMinusU, c.number(k)}));
                                 reflFactors.push_back(step);
                             }
                         } else if (shiftM < 0) {
-                            for (std::int64_t k = 0; k < -shiftM; ++k) {
+                            for (keel::i64 k = 0; k < -shiftM; ++k) {
                                 const Expr step = simplifyRationalExpr(
                                     c, c.add({vOther, c.number(k)}));
                                 reflFactors.push_back(
-                                    c.pow(step, c.number(std::int64_t{-1})));
+                                    c.pow(step, c.number(keel::i64{-1})));
                             }
                         }
                         const Expr prodRefl = c.mul(reflFactors);
                         factors[i] = isPosUnitI
                                          ? prodRefl
                                          : c.pow(prodRefl,
-                                                 c.number(std::int64_t{-1}));
+                                                 c.number(keel::i64{-1}));
                         factors.erase(factors.begin() +
-                                      static_cast<std::ptrdiff_t>(j));
+                                      static_cast<keel::isize>(j));
                         mergedGamma = true;
                         break;
                     }
@@ -1243,12 +1245,12 @@ Expr simplifyMulNode(Ctx &c, Expr e)
     bool mergedAbsSign = true;
     while (mergedAbsSign) {
         mergedAbsSign = false;
-        for (std::size_t i = 0; i < factors.size() && !mergedAbsSign; ++i) {
+        for (keel::usize i = 0; i < factors.size() && !mergedAbsSign; ++i) {
             if (c.kind(factors[i]) != NodeKind::Func ||
                 c.funcName(factors[i]) != "abs")
                 continue;
             const Expr u = c.child(factors[i], 0);
-            for (std::size_t j = 0; j < factors.size() && !mergedAbsSign; ++j) {
+            for (keel::usize j = 0; j < factors.size() && !mergedAbsSign; ++j) {
                 if (i == j || c.kind(factors[j]) != NodeKind::Func ||
                     c.funcName(factors[j]) != "sign")
                     continue;
@@ -1256,7 +1258,7 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                 if (u == v || c.neg(u) == v) {
                     factors[i] = (u == v) ? u : c.neg(u);
                     factors.erase(factors.begin() +
-                                  static_cast<std::ptrdiff_t>(j));
+                                  static_cast<keel::isize>(j));
                     mergedAbsSign = true;
                 }
             }
@@ -1295,23 +1297,23 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             if (b == cc)
                 return c.pow(c.add({c.one(), c.neg(z)}), c.neg(a));
 
-            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
-            const Expr mHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+            const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
+            const Expr mHalf = c.number(Rational(keel::i64{-1}, BigInt(2)));
             const Expr threeHalf =
-                c.number(Rational(std::int64_t{3}, BigInt(2)));
-            const Expr two = c.number(std::int64_t{2});
+                c.number(Rational(keel::i64{3}, BigInt(2)));
+            const Expr two = c.number(keel::i64{2});
             // hypergeom2F1(1, 1, 2, z) -> -log(1 - z) / z
             if (a == c.one() && b == c.one() && cc == two && !c.isZero(z)) {
                 return c.neg(c.mul({
                     simplifyFuncNode(c,
                                      c.func("log", c.add({c.one(), c.neg(z)}))),
-                    c.pow(z, c.number(std::int64_t{-1}))}));
+                    c.pow(z, c.number(keel::i64{-1}))}));
             }
             // hypergeom2F1(1/2, 1/2, 1, z) -> 2/pi * ellipticK(z)
             if (a == half && b == half && cc == c.one()) {
                 return c.mul({
                     two,
-                    c.pow(c.symbol("pi"), c.number(std::int64_t{-1})),
+                    c.pow(c.symbol("pi"), c.number(keel::i64{-1})),
                     simplifyFuncNode(c, c.func("ellipticK", z))});
             }
             // hypergeom2F1(-1/2, 1/2, 1, z) or (1/2, -1/2, 1, z) -> 2/pi * ellipticE(z)
@@ -1319,7 +1321,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 cc == c.one()) {
                 return c.mul({
                     two,
-                    c.pow(c.symbol("pi"), c.number(std::int64_t{-1})),
+                    c.pow(c.symbol("pi"), c.number(keel::i64{-1})),
                     simplifyFuncNode(c, c.func("ellipticE", z))});
             }
             // hypergeom2F1(1/2, 1/2, 3/2, z) -> asin(sqrt(z)) / sqrt(z)
@@ -1346,9 +1348,9 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         simplifyFuncNode(c, c.func("gamma", cc)),
                         simplifyFuncNode(c, c.func("gamma", cab)),
                         c.pow(simplifyFuncNode(c, c.func("gamma", ca)),
-                              c.number(std::int64_t{-1})),
+                              c.number(keel::i64{-1})),
                         c.pow(simplifyFuncNode(c, c.func("gamma", cb)),
-                              c.number(std::int64_t{-1}))});
+                              c.number(keel::i64{-1}))});
                     return (c.kind(gProd) == NodeKind::Mul)
                                ? simplifyMulNode(c, gProd)
                                : gProd;
@@ -1372,12 +1374,12 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 if (!expd.isNull() && !(expd == e))
                     return expd;
             }
-            if (a == c.one() && b == c.number(std::int64_t{2}) &&
+            if (a == c.one() && b == c.number(keel::i64{2}) &&
                 !c.isZero(z)) {
                 return c.mul({
                     c.add({simplifyFuncNode(c, c.func("exp", z)),
-                           c.number(std::int64_t{-1})}),
-                    c.pow(z, c.number(std::int64_t{-1}))});
+                           c.number(keel::i64{-1})}),
+                    c.pow(z, c.number(keel::i64{-1}))});
             }
         }
         return e;
@@ -1431,9 +1433,9 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             }
             if (c.kind(nArg) == NodeKind::Number) {
                 const Rational &rn = c.numberValue(nArg);
-                std::int64_t k = 0;
+                keel::i64 k = 0;
                 if (rn.den() == BigInt(1) && rn.num().fitsInt64(k) && k < 0) {
-                    const std::int64_t absK = -k;
+                    const keel::i64 absK = -k;
                     if (fn == "besselj" || fn == "bessely") {
                         const Expr posF = c.func(fn, c.number(absK), xArg);
                         return (absK % 2 == 0) ? posF : c.neg(posF);
@@ -1442,14 +1444,14 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         return c.func(fn, c.number(absK), xArg);
                     }
                 }
-                std::int64_t p = 0;
+                keel::i64 p = 0;
                 if (rn.den() == BigInt(2) && rn.num().fitsInt64(p) &&
-                    std::abs(p) <= 9) {
+                    keel::abs(p) <= 9) {
                     // Half-integer order nu = p/2 (odd p = 2*m + 1)
                     const Expr half =
-                        c.number(Rational(std::int64_t{1}, BigInt(2)));
+                        c.number(Rational(keel::i64{1}, BigInt(2)));
                     const Expr mHalf =
-                        c.number(Rational(std::int64_t{-1}, BigInt(2)));
+                        c.number(Rational(keel::i64{-1}, BigInt(2)));
                     const Expr pref = c.mul({
                         c.pow(c.number(2), half),
                         c.pow(c.symbol("pi"), mHalf),
@@ -1466,7 +1468,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         if (p == 1) return f1;
                         if (p > 1) {
                             Expr prev = fm1, cur = f1;
-                            for (std::int64_t odd = 1; odd < p; odd += 2) {
+                            for (keel::i64 odd = 1; odd < p; odd += 2) {
                                 const Expr next = c.expand(c.add({
                                     c.mul({c.number(odd), invX, cur}),
                                     c.neg(prev)}));
@@ -1476,7 +1478,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                             return cur;
                         }
                         Expr prev = f1, cur = fm1;
-                        for (std::int64_t odd = -1; odd > p; odd -= 2) {
+                        for (keel::i64 odd = -1; odd > p; odd -= 2) {
                             const Expr next = c.expand(c.add({
                                 c.mul({c.number(odd), invX, cur}),
                                 c.neg(prev)}));
@@ -1492,7 +1494,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         if (p == 1) return f1;
                         if (p > 1) {
                             Expr prev = fm1, cur = f1;
-                            for (std::int64_t odd = 1; odd < p; odd += 2) {
+                            for (keel::i64 odd = 1; odd < p; odd += 2) {
                                 const Expr next = c.expand(c.add({
                                     prev,
                                     c.neg(c.mul({c.number(odd), invX, cur}))}));
@@ -1502,7 +1504,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                             return cur;
                         }
                         Expr prev = f1, cur = fm1;
-                        for (std::int64_t odd = -1; odd > p; odd -= 2) {
+                        for (keel::i64 odd = -1; odd > p; odd -= 2) {
                             const Expr next = c.expand(c.add({
                                 prev,
                                 c.mul({c.number(-odd), invX, cur})}));
@@ -1512,7 +1514,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         return cur;
                     }
                     if (fn == "besselk") {
-                        const std::int64_t absP = std::abs(p);
+                        const keel::i64 absP = keel::abs(p);
                         const Expr kPref = c.mul({
                             c.pow(c.symbol("pi"), half),
                             c.pow(c.number(2), mHalf),
@@ -1521,7 +1523,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         if (absP == 1)
                             return kPref;
                         Expr prev = kPref, cur = kPref;
-                        for (std::int64_t odd = 1; odd < absP; odd += 2) {
+                        for (keel::i64 odd = 1; odd < absP; odd += 2) {
                             const Expr next = c.expand(c.add({
                                 prev,
                                 c.mul({c.number(odd), invX, cur})}));
@@ -1556,7 +1558,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             Rational kPi;
             bool isRatPi = false;
             if (nArg == piSym) {
-                kPi = Rational(std::int64_t{1});
+                kPi = Rational(keel::i64{1});
                 isRatPi = true;
             } else if (c.kind(nArg) == NodeKind::Mul &&
                        c.childCount(nArg) == 2 &&
@@ -1566,7 +1568,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 isRatPi = true;
             }
             if (isRatPi) {
-                const Rational twoK = kPi * Rational(std::int64_t{2});
+                const Rational twoK = kPi * Rational(keel::i64{2});
                 if (twoK.den() == BigInt(1)) {
                     const std::string compFn =
                         (fn == "ellipticF") ? "ellipticK" : "ellipticE";
@@ -1583,15 +1585,15 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 return simplifyFuncNode(c, c.func("ellipticK", xArg));
             if (c.isZero(xArg)) {
                 return c.mul({
-                    c.number(Rational(std::int64_t{1}, BigInt(2))),
+                    c.number(Rational(keel::i64{1}, BigInt(2))),
                     c.symbol("pi"),
                     c.pow(c.add({c.one(), c.neg(nArg)}),
-                          c.number(Rational(std::int64_t{-1}, BigInt(2))))});
+                          c.number(Rational(keel::i64{-1}, BigInt(2))))});
             }
             if (nArg == xArg) {
                 return c.mul({
                     c.pow(c.add({c.one(), c.neg(xArg)}),
-                          c.number(std::int64_t{-1})),
+                          c.number(keel::i64{-1})),
                     simplifyFuncNode(c, c.func("ellipticE", xArg))});
             }
             return e;
@@ -1611,7 +1613,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         if (fn == "polylog") {
             if (c.isZero(xArg))
                 return c.zero();
-            if (nArg == c.number(std::int64_t{2}))
+            if (nArg == c.number(keel::i64{2}))
                 return simplifyFuncNode(c, c.func("dilog", xArg));
             if (nArg == c.one()) {
                 return c.neg(simplifyFuncNode(
@@ -1619,32 +1621,32 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             }
             if (c.kind(nArg) == NodeKind::Number) {
                 const Rational &rn = c.numberValue(nArg);
-                std::int64_t sInt = 0;
+                keel::i64 sInt = 0;
                 if (rn.den() == BigInt(1) && rn.num().fitsInt64(sInt) &&
                     sInt <= 0 && sInt >= -12) {
-                    const std::int64_t m = -sInt;
+                    const keel::i64 m = -sInt;
                     const Expr oneMinusX = c.add({c.one(), c.neg(xArg)});
                     const Expr denPow =
                         c.pow(oneMinusX, c.number(-(m + 1)));
                     if (m == 0)
                         return c.mul({xArg, denPow});
-                    std::vector<BigInt> eul(static_cast<std::size_t>(m),
+                    std::vector<BigInt> eul(static_cast<keel::usize>(m),
                                             BigInt(0));
                     eul[0] = BigInt(1);
-                    for (std::int64_t i = 2; i <= m; ++i) {
-                        for (std::int64_t k = i - 1; k >= 1; --k) {
-                            eul[static_cast<std::size_t>(k)] =
+                    for (keel::i64 i = 2; i <= m; ++i) {
+                        for (keel::i64 k = i - 1; k >= 1; --k) {
+                            eul[static_cast<keel::usize>(k)] =
                                 BigInt(k + 1) *
-                                    eul[static_cast<std::size_t>(k)] +
+                                    eul[static_cast<keel::usize>(k)] +
                                 BigInt(i - k) *
-                                    eul[static_cast<std::size_t>(k - 1)];
+                                    eul[static_cast<keel::usize>(k - 1)];
                         }
                     }
                     std::vector<Expr> numTerms;
-                    for (std::int64_t k = 0; k < m; ++k) {
+                    for (keel::i64 k = 0; k < m; ++k) {
                         numTerms.push_back(c.mul({
                             c.number(Rational(
-                                eul[static_cast<std::size_t>(k)], BigInt(1))),
+                                eul[static_cast<keel::usize>(k)], BigInt(1))),
                             c.pow(xArg, c.number(m - k))}));
                     }
                     return c.mul({c.add(numTerms), denPow});
@@ -1654,11 +1656,11 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 if ((c.kind(nArg) == NodeKind::Number &&
                      c.numberValue(nArg) > Rational(1)) ||
                     c.isAssumedPositive(
-                        c.add({nArg, c.number(std::int64_t{-1})}))) {
+                        c.add({nArg, c.number(keel::i64{-1})}))) {
                     return simplifyFuncNode(c, c.func("zeta", nArg));
                 }
             }
-            if (xArg == c.number(std::int64_t{-1})) {
+            if (xArg == c.number(keel::i64{-1})) {
                 if ((c.kind(nArg) == NodeKind::Number &&
                      c.numberValue(nArg) > Rational(0)) ||
                     c.isAssumedPositive(nArg)) {
@@ -1695,7 +1697,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         simplifyFuncNode(c, c.func("gamma", xArg)),
                         c.pow(simplifyFuncNode(
                                   c, c.func("gamma", c.add({nArg, xArg}))),
-                              c.number(std::int64_t{-1}))});
+                              c.number(keel::i64{-1}))});
                     return (c.kind(gProd) == NodeKind::Mul)
                                ? simplifyMulNode(c, gProd)
                                : gProd;
@@ -1708,14 +1710,14 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                     return expd;
             }
             const Expr sumM1 = simplifyRationalExpr(
-                c, c.add({nArg, xArg, c.number(std::int64_t{-1})}));
+                c, c.add({nArg, xArg, c.number(keel::i64{-1})}));
             if (!sumM1.isNull() && c.isZero(sumM1)) {
                 const Expr sinVal = simplifyFuncNode(
                     c, c.func("sin", c.mul({c.symbol("pi"), nArg})));
                 if (!c.isZero(sinVal)) {
                     return c.mul({
                         c.symbol("pi"),
-                        c.pow(sinVal, c.number(std::int64_t{-1}))});
+                        c.pow(sinVal, c.number(keel::i64{-1}))});
                 }
             }
             return e;
@@ -1733,15 +1735,15 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             }
             if (c.kind(nArg) == NodeKind::Number) {
                 const Rational &rn = c.numberValue(nArg);
-                std::int64_t nInt = 0;
+                keel::i64 nInt = 0;
                 if (rn.den() == BigInt(1) && rn.num().fitsInt64(nInt) &&
                     nInt >= 1 && nInt <= 20) {
                     BigInt nFact(1);
-                    for (std::int64_t k = 2; k <= nInt - 1; ++k)
+                    for (keel::i64 k = 2; k <= nInt - 1; ++k)
                         nFact = nFact * BigInt(k);
                     std::vector<Expr> sumTerms;
                     BigInt kFact(1);
-                    for (std::int64_t k = 0; k < nInt; ++k) {
+                    for (keel::i64 k = 0; k < nInt; ++k) {
                         if (k >= 2)
                             kFact = kFact * BigInt(k);
                         sumTerms.push_back(c.mul({
@@ -1758,7 +1760,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         c.neg(igVal)});
                 }
                 const Expr half =
-                    c.number(Rational(std::int64_t{1}, BigInt(2)));
+                    c.number(Rational(keel::i64{1}, BigInt(2)));
                 if (nArg == half &&
                     ((c.kind(xArg) == NodeKind::Number &&
                       c.numberValue(xArg) >= Rational(0)) ||
@@ -1777,11 +1779,11 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         if (fn == "hypergeom0F1") {
             if (c.isZero(xArg))
                 return c.one();
-            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
-            const Expr mHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+            const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
+            const Expr mHalf = c.number(Rational(keel::i64{-1}, BigInt(2)));
             const Expr threeHalf =
-                c.number(Rational(std::int64_t{3}, BigInt(2)));
-            const Expr two = c.number(std::int64_t{2});
+                c.number(Rational(keel::i64{3}, BigInt(2)));
+            const Expr two = c.number(keel::i64{2});
             Expr posX;
             if (extractNegativeArg(c, xArg, posX)) {
                 const Expr twoSq = c.mul({two, c.pow(posX, half)});
@@ -1790,7 +1792,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 if (nArg == threeHalf && !c.isZero(posX)) {
                     return c.mul({
                         simplifyFuncNode(c, c.func("sin", twoSq)),
-                        c.pow(two, c.number(std::int64_t{-1})),
+                        c.pow(two, c.number(keel::i64{-1})),
                         c.pow(posX, mHalf)});
                 }
             } else if ((c.kind(xArg) == NodeKind::Number &&
@@ -1802,7 +1804,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 if (nArg == threeHalf) {
                     return c.mul({
                         simplifyFuncNode(c, c.func("sinh", twoSq)),
-                        c.pow(two, c.number(std::int64_t{-1})),
+                        c.pow(two, c.number(keel::i64{-1})),
                         c.pow(xArg, mHalf)});
                 }
             }
@@ -1841,17 +1843,17 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
 
     if (fn == "zeta" && c.kind(arg) == NodeKind::Number) {
         const Rational &ra = c.numberValue(arg);
-        std::int64_t sInt = 0;
+        keel::i64 sInt = 0;
         if (ra.den() == BigInt(1) && ra.num().fitsInt64(sInt) && sInt >= 2 &&
             (sInt % 2 == 0) && sInt <= 30) {
             Rational b2k;
             if (c.evalExact(c.func("bernoulliB", arg), {}, b2k)) {
-                const std::int64_t k = sInt / 2;
+                const keel::i64 k = sInt / 2;
                 BigInt fact2k(1);
-                for (std::int64_t j = 2; j <= sInt; ++j)
+                for (keel::i64 j = 2; j <= sInt; ++j)
                     fact2k = fact2k * BigInt(j);
                 const BigInt twoPow = BigInt::powUInt(
-                    BigInt(2), static_cast<std::size_t>(sInt - 1));
+                    BigInt(2), static_cast<keel::usize>(sInt - 1));
                 const Rational sign(k % 2 == 1 ? 1 : -1);
                 const Rational coef =
                     sign * Rational(twoPow, fact2k) * b2k;
@@ -1865,12 +1867,12 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     if (fn == "dirichletEta" && c.kind(arg) == NodeKind::Number) {
         const Rational &ra = c.numberValue(arg);
         if (ra == Rational(1))
-            return c.func("log", c.number(std::int64_t{2}));
-        std::int64_t sInt = 0;
+            return c.func("log", c.number(keel::i64{2}));
+        keel::i64 sInt = 0;
         if (ra.den() == BigInt(1) && ra.num().fitsInt64(sInt) && sInt >= 2 &&
             sInt <= 30) {
             const BigInt twoPow =
-                BigInt::powUInt(BigInt(2), static_cast<std::size_t>(sInt - 1));
+                BigInt::powUInt(BigInt(2), static_cast<keel::usize>(sInt - 1));
             const Rational etaFactor(twoPow - BigInt(1), twoPow);
             return c.mul({
                 c.number(etaFactor),
@@ -1881,7 +1883,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     if (c.isZero(arg)) {
         if (fn == "ellipticK" || fn == "ellipticE") {
             return c.mul({
-                c.number(Rational(std::int64_t{1}, BigInt(2))),
+                c.number(Rational(keel::i64{1}, BigInt(2))),
                 c.symbol("pi")});
         }
         if (fn == "airyAi") {
@@ -1912,7 +1914,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
 
     // Canonicalize sqrt(u) -> u^(1/2)
     if (fn == "sqrt") {
-        return c.pow(arg, c.number(Rational(std::int64_t{1}, BigInt(2))));
+        return c.pow(arg, c.number(Rational(keel::i64{1}, BigInt(2))));
     }
 
     // Canonicalize Li2(u) / polylog2(u) -> dilog(u) and evaluate exact special values.
@@ -1920,18 +1922,18 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         return simplifyFuncNode(c, c.func("dilog", arg));
     }
     if (fn == "dilog") {
-        const Expr pi2 = c.pow(c.symbol("pi"), c.number(std::int64_t{2}));
+        const Expr pi2 = c.pow(c.symbol("pi"), c.number(keel::i64{2}));
         if (arg == c.one()) {
-            return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), pi2});
+            return c.mul({c.number(Rational(keel::i64{1}, BigInt(6))), pi2});
         }
-        if (arg == c.number(std::int64_t{-1})) {
-            return c.mul({c.number(Rational(std::int64_t{-1}, BigInt(12))), pi2});
+        if (arg == c.number(keel::i64{-1})) {
+            return c.mul({c.number(Rational(keel::i64{-1}, BigInt(12))), pi2});
         }
-        if (arg == c.number(Rational(std::int64_t{1}, BigInt(2)))) {
-            const Expr log2 = c.func("log", c.number(std::int64_t{2}));
-            return c.add({c.mul({c.number(Rational(std::int64_t{1}, BigInt(12))), pi2}),
-                          c.mul({c.number(Rational(std::int64_t{-1}, BigInt(2))),
-                                 c.pow(log2, c.number(std::int64_t{2}))})});
+        if (arg == c.number(Rational(keel::i64{1}, BigInt(2)))) {
+            const Expr log2 = c.func("log", c.number(keel::i64{2}));
+            return c.add({c.mul({c.number(Rational(keel::i64{1}, BigInt(12))), pi2}),
+                          c.mul({c.number(Rational(keel::i64{-1}, BigInt(2))),
+                                 c.pow(log2, c.number(keel::i64{2}))})});
         }
     }
 
@@ -1945,25 +1947,25 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     }
     if (fn == "gamma" && c.kind(arg) == NodeKind::Number) {
         const Rational &ra = c.numberValue(arg);
-        std::int64_t p = 0;
+        keel::i64 p = 0;
         if (ra.den() == BigInt(2) && ra.num().fitsInt64(p) &&
-            std::abs(p) <= 41) {
+            keel::abs(p) <= 41) {
             const Expr sqrtPi = c.pow(
-                c.symbol("pi"), c.number(Rational(std::int64_t{1}, BigInt(2))));
+                c.symbol("pi"), c.number(Rational(keel::i64{1}, BigInt(2))));
             if (p > 0) {
-                const std::int64_t n = (p - 1) / 2;
+                const keel::i64 n = (p - 1) / 2;
                 BigInt df(1);
-                for (std::int64_t k = 1; k <= n; ++k)
+                for (keel::i64 k = 1; k <= n; ++k)
                     df = df * BigInt(2 * k - 1);
                 const Rational coef(df,
-                                    BigInt(1) << static_cast<std::uint64_t>(n));
+                                    BigInt(1) << static_cast<keel::u64>(n));
                 return c.mul({c.number(coef), sqrtPi});
             }
-            const std::int64_t n = (1 - p) / 2;
+            const keel::i64 n = (1 - p) / 2;
             BigInt df(1);
-            for (std::int64_t k = 1; k <= n; ++k)
+            for (keel::i64 k = 1; k <= n; ++k)
                 df = df * BigInt(2 * k - 1);
-            BigInt num = BigInt(1) << static_cast<std::uint64_t>(n);
+            BigInt num = BigInt(1) << static_cast<keel::u64>(n);
             if (n % 2 != 0)
                 num = -num;
             return c.mul({c.number(Rational(num, df)), sqrtPi});
@@ -1971,29 +1973,29 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     }
     if (fn == "lgamma" && c.kind(arg) == NodeKind::Number) {
         const Rational &ra = c.numberValue(arg);
-        std::int64_t k = 0;
+        keel::i64 k = 0;
         if (ra.den() == BigInt(1) && ra.num().fitsInt64(k) && k >= 3 &&
             k <= 31) {
             BigInt fact(1);
-            for (std::int64_t i = 2; i <= k - 1; ++i)
+            for (keel::i64 i = 2; i <= k - 1; ++i)
                 fact = fact * BigInt(i);
             return c.func("log", c.number(Rational(fact, BigInt(1))));
         }
-        if (ra == Rational(std::int64_t{1}, BigInt(2))) {
-            return c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))),
+        if (ra == Rational(keel::i64{1}, BigInt(2))) {
+            return c.mul({c.number(Rational(keel::i64{1}, BigInt(2))),
                           c.func("log", c.symbol("pi"))});
         }
     }
     if (fn == "digamma" && c.kind(arg) == NodeKind::Number) {
         const Rational &ra = c.numberValue(arg);
-        std::int64_t p = 0, q = 0;
+        keel::i64 p = 0, q = 0;
         if (ra.num().fitsInt64(p) && ra.den().fitsInt64(q) && p > 0 &&
             p <= 80 && (q == 1 || q == 2 || q == 3 || q == 4)) {
             const Expr negEG = c.neg(c.symbol("euler_gamma"));
-            const std::int64_t n = (p - 1) / q;
-            const std::int64_t rem = p - n * q; // in {1, ..., q}
-            Rational harmShift(std::int64_t{0});
-            for (std::int64_t k = 0; k < n; ++k) {
+            const keel::i64 n = (p - 1) / q;
+            const keel::i64 rem = p - n * q; // in {1, ..., q}
+            Rational harmShift(keel::i64{0});
+            for (keel::i64 k = 0; k < n; ++k) {
                 harmShift =
                     harmShift + Rational(q, BigInt(rem + k * q));
             }
@@ -2002,24 +2004,24 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 terms.push_back(c.number(harmShift));
             if (q == 2) {
                 terms.push_back(c.mul(
-                    {c.number(std::int64_t{-2}),
-                     c.func("log", c.number(std::int64_t{2}))}));
+                    {c.number(keel::i64{-2}),
+                     c.func("log", c.number(keel::i64{2}))}));
             } else if (q == 4) {
                 terms.push_back(c.mul(
-                    {c.number(std::int64_t{-3}),
-                     c.func("log", c.number(std::int64_t{2}))}));
+                    {c.number(keel::i64{-3}),
+                     c.func("log", c.number(keel::i64{2}))}));
                 const Expr halfPi = c.mul(
-                    {c.number(Rational(std::int64_t{1}, BigInt(2))),
+                    {c.number(Rational(keel::i64{1}, BigInt(2))),
                      c.symbol("pi")});
                 terms.push_back(rem == 1 ? c.neg(halfPi) : halfPi);
             } else if (q == 3) {
                 terms.push_back(c.mul(
-                    {c.number(Rational(std::int64_t{-3}, BigInt(2))),
-                     c.func("log", c.number(std::int64_t{3}))}));
+                    {c.number(Rational(keel::i64{-3}, BigInt(2))),
+                     c.func("log", c.number(keel::i64{3}))}));
                 const Expr piSqrt3Over6 = c.mul(
-                    {c.number(Rational(std::int64_t{1}, BigInt(6))),
-                     c.pow(c.number(std::int64_t{3}),
-                           c.number(Rational(std::int64_t{1}, BigInt(2)))),
+                    {c.number(Rational(keel::i64{1}, BigInt(6))),
+                     c.pow(c.number(keel::i64{3}),
+                           c.number(Rational(keel::i64{1}, BigInt(2)))),
                      c.symbol("pi")});
                 terms.push_back(rem == 1 ? c.neg(piSqrt3Over6) : piSqrt3Over6);
             }
@@ -2028,23 +2030,23 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     }
     if (fn == "trigamma" && c.kind(arg) == NodeKind::Number) {
         const Rational &ra = c.numberValue(arg);
-        std::int64_t p = 0, q = 0;
+        keel::i64 p = 0, q = 0;
         if (ra.num().fitsInt64(p) && ra.den().fitsInt64(q) && p > 0 &&
             p <= 80 && (q == 1 || q == 2)) {
-            const Expr pi2 = c.pow(c.symbol("pi"), c.number(std::int64_t{2}));
-            const std::int64_t n = (p - 1) / q;
-            const std::int64_t rem = p - n * q;
-            Rational shiftSum(std::int64_t{0});
-            for (std::int64_t k = 0; k < n; ++k) {
-                const std::int64_t denom = rem + k * q;
+            const Expr pi2 = c.pow(c.symbol("pi"), c.number(keel::i64{2}));
+            const keel::i64 n = (p - 1) / q;
+            const keel::i64 rem = p - n * q;
+            Rational shiftSum(keel::i64{0});
+            for (keel::i64 k = 0; k < n; ++k) {
+                const keel::i64 denom = rem + k * q;
                 shiftSum =
                     shiftSum - Rational(q * q, BigInt(denom * denom));
             }
             const Expr lead =
                 (q == 1)
-                    ? c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))),
+                    ? c.mul({c.number(Rational(keel::i64{1}, BigInt(6))),
                              pi2})
-                    : c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))),
+                    : c.mul({c.number(Rational(keel::i64{1}, BigInt(2))),
                              pi2});
             return shiftSum.isZero()
                        ? lead
@@ -2065,7 +2067,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         if (c.isAssumedPositive(arg))
             return c.one();
         if (c.isAssumedNegative(arg))
-            return c.number(std::int64_t{-1});
+            return c.number(keel::i64{-1});
     }
     if (fn == "heaviside") {
         if (c.isAssumedPositive(arg))
@@ -2097,7 +2099,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         Rational kPi;
         bool isRatPi = false;
         if (arg == piSym) {
-            kPi = Rational(std::int64_t{1});
+            kPi = Rational(keel::i64{1});
             isRatPi = true;
         } else if (c.kind(arg) == NodeKind::Mul && c.childCount(arg) == 2 &&
                    c.kind(c.child(arg, 0)) == NodeKind::Number &&
@@ -2105,23 +2107,23 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             kPi = c.numberValue(c.child(arg, 0));
             isRatPi = true;
         }
-        std::int64_t p = 0, q = 0;
+        keel::i64 p = 0, q = 0;
         if (isRatPi && kPi.num().fitsInt64(p) && kPi.den().fitsInt64(q) &&
             (q == 1 || q == 2 || q == 3 || q == 4 || q == 6)) {
-            const std::int64_t twoQ = 2 * q;
-            const std::int64_t m = ((p % twoQ) + twoQ) % twoQ;
-            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+            const keel::i64 twoQ = 2 * q;
+            const keel::i64 m = ((p % twoQ) + twoQ) % twoQ;
+            const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
             const Expr sqrt3Over2 =
-                c.mul({half, c.pow(c.number(std::int64_t{3}), half)});
+                c.mul({half, c.pow(c.number(keel::i64{3}), half)});
             const Expr invSqrt2 = c.pow(
-                c.number(std::int64_t{2}),
-                c.number(Rational(std::int64_t{-1}, BigInt(2))));
+                c.number(keel::i64{2}),
+                c.number(Rational(keel::i64{-1}, BigInt(2))));
             Expr sinVal, cosVal;
             if (q == 4) {
                 sinVal = (m == 1 || m == 3) ? invSqrt2 : c.neg(invSqrt2);
                 cosVal = (m == 1 || m == 7) ? invSqrt2 : c.neg(invSqrt2);
             } else {
-                const std::int64_t n = m * (6 / q);
+                const keel::i64 n = m * (6 / q);
                 switch (n) {
                 case 0:
                     sinVal = c.zero();
@@ -2149,7 +2151,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                     break;
                 case 6:
                     sinVal = c.zero();
-                    cosVal = c.number(std::int64_t{-1});
+                    cosVal = c.number(keel::i64{-1});
                     break;
                 case 7:
                     sinVal = c.neg(half);
@@ -2160,7 +2162,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                     cosVal = c.neg(half);
                     break;
                 case 9:
-                    sinVal = c.number(std::int64_t{-1});
+                    sinVal = c.number(keel::i64{-1});
                     cosVal = c.zero();
                     break;
                 case 10:
@@ -2185,9 +2187,9 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 if (fn == "cot" && !c.isZero(sinVal))
                     return c.div(cosVal, sinVal);
                 if (fn == "sec" && !c.isZero(cosVal))
-                    return c.pow(cosVal, c.number(std::int64_t{-1}));
+                    return c.pow(cosVal, c.number(keel::i64{-1}));
                 if (fn == "csc" && !c.isZero(sinVal))
-                    return c.pow(sinVal, c.number(std::int64_t{-1}));
+                    return c.pow(sinVal, c.number(keel::i64{-1}));
             }
         }
         // Symbolic integer multiples of pi: sin(n*pi) -> 0, tan(n*pi) -> 0,
@@ -2195,7 +2197,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         if (!isRatPi && c.kind(arg) == NodeKind::Mul) {
             std::vector<Expr> otherFactors;
             bool hasPi = false;
-            for (std::size_t i = 0; i < c.childCount(arg); ++i) {
+            for (keel::usize i = 0; i < c.childCount(arg); ++i) {
                 const Expr ch = c.child(arg, i);
                 if (!hasPi && ch == piSym)
                     hasPi = true;
@@ -2217,7 +2219,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                                 .isZero();
                         if (isEven)
                             return c.one();
-                        return c.pow(c.number(std::int64_t{-1}), kExpr);
+                        return c.pow(c.number(keel::i64{-1}), kExpr);
                     }
                 }
             }
@@ -2227,65 +2229,65 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
     // Special values of inverse trigonometric functions.
     if (fn == "asin" || fn == "acos" || fn == "atan" || fn == "acot") {
         const Expr piSym = c.symbol("pi");
-        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+        const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
         if (arg == c.one()) {
             if (fn == "asin")
                 return c.mul({half, piSym});
             if (fn == "acos")
                 return c.zero();
             if (fn == "atan" || fn == "acot")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(4))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(4))), piSym});
         }
-        if (arg == c.number(std::int64_t{-1}) && fn == "acos")
+        if (arg == c.number(keel::i64{-1}) && fn == "acos")
             return piSym;
         if (c.isZero(arg) && (fn == "acos" || fn == "acot"))
             return c.mul({half, piSym});
         if (arg == half) {
             if (fn == "asin")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(6))), piSym});
             if (fn == "acos")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(3))), piSym});
         }
-        if (arg == c.number(Rational(std::int64_t{-1}, BigInt(2))) && fn == "acos")
-            return c.mul({c.number(Rational(std::int64_t{2}, BigInt(3))), piSym});
-        const Expr sqrt2 = c.pow(c.number(std::int64_t{2}), half);
+        if (arg == c.number(Rational(keel::i64{-1}, BigInt(2))) && fn == "acos")
+            return c.mul({c.number(Rational(keel::i64{2}, BigInt(3))), piSym});
+        const Expr sqrt2 = c.pow(c.number(keel::i64{2}), half);
         const Expr invSqrt2 = c.pow(
-            c.number(std::int64_t{2}),
-            c.number(Rational(std::int64_t{-1}, BigInt(2))));
+            c.number(keel::i64{2}),
+            c.number(Rational(keel::i64{-1}, BigInt(2))));
         const Expr halfSqrt2 = c.mul({half, sqrt2});
         if (arg == invSqrt2 || arg == halfSqrt2) {
             if (fn == "asin" || fn == "acos")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(4))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(4))), piSym});
         }
         if ((arg == c.neg(invSqrt2) || arg == c.neg(halfSqrt2)) && fn == "acos") {
-            return c.mul({c.number(Rational(std::int64_t{3}, BigInt(4))), piSym});
+            return c.mul({c.number(Rational(keel::i64{3}, BigInt(4))), piSym});
         }
-        const Expr sqrt3 = c.pow(c.number(std::int64_t{3}), half);
+        const Expr sqrt3 = c.pow(c.number(keel::i64{3}), half);
         const Expr halfSqrt3 = c.mul({half, sqrt3});
         if (arg == halfSqrt3) {
             if (fn == "asin")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(3))), piSym});
             if (fn == "acos")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(6))), piSym});
         }
         if (arg == c.neg(halfSqrt3) && fn == "acos") {
-            return c.mul({c.number(Rational(std::int64_t{5}, BigInt(6))), piSym});
+            return c.mul({c.number(Rational(keel::i64{5}, BigInt(6))), piSym});
         }
         const Expr invSqrt3 = c.pow(
-            c.number(std::int64_t{3}),
-            c.number(Rational(std::int64_t{-1}, BigInt(2))));
+            c.number(keel::i64{3}),
+            c.number(Rational(keel::i64{-1}, BigInt(2))));
         if (arg == sqrt3) {
             if (fn == "atan")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(3))), piSym});
             if (fn == "acot")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(6))), piSym});
         }
         if (arg == invSqrt3 ||
-            arg == c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), sqrt3})) {
+            arg == c.mul({c.number(Rational(keel::i64{1}, BigInt(3))), sqrt3})) {
             if (fn == "atan")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(6))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(6))), piSym});
             if (fn == "acot")
-                return c.mul({c.number(Rational(std::int64_t{1}, BigInt(3))), piSym});
+                return c.mul({c.number(Rational(keel::i64{1}, BigInt(3))), piSym});
         }
     }
 
@@ -2318,9 +2320,9 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 return c.neg(u);
         }
         // Cross-trig of inverse trig
-        const Expr u2 = c.pow(u, c.number(std::int64_t{2}));
-        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
-        const Expr negHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+        const Expr u2 = c.pow(u, c.number(keel::i64{2}));
+        const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
+        const Expr negHalf = c.number(Rational(keel::i64{-1}, BigInt(2)));
         if ((fn == "cos" && innerFn == "asin") ||
             (fn == "sin" && innerFn == "acos")) {
             return c.pow(c.add({c.one(), c.neg(u2)}), half);
@@ -2335,7 +2337,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
             return c.pow(c.add({c.one(), u2}), half);
         }
         if (fn == "sinh" && innerFn == "acosh") {
-            return c.pow(c.add({c.number(std::int64_t{-1}), u2}), half);
+            return c.pow(c.add({c.number(keel::i64{-1}), u2}), half);
         }
     }
 
@@ -2366,7 +2368,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         if (c.isAssumedPositive(b) && c.isAssumedReal(ex))
             return c.mul({ex, c.func("log", b)});
         if (c.kind(ex) == NodeKind::Number) {
-            std::int64_t k = 0;
+            keel::i64 k = 0;
             if (c.numberValue(ex).den() == BigInt(1) &&
                 c.numberValue(ex).num().fitsInt64(k) && (k % 2 != 0)) {
                 return c.mul({ex, c.func("log", b)});
@@ -2393,7 +2395,7 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
     case NodeKind::Func: {
         std::vector<Expr> args;
         args.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             args.push_back(rewriteBottomUp(c, c.child(e, i)));
         return simplifyFuncNode(c, c.func(c.funcName(e), args));
     }
@@ -2427,7 +2429,7 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
                         if (pe.second >= 2) {
                             sPart = sPart * BigInt::powUInt(
                                                 pe.first,
-                                                static_cast<std::uint64_t>(
+                                                static_cast<keel::u64>(
                                                     pe.second / 2));
                         }
                         if (pe.second % 2 == 1)
@@ -2454,7 +2456,7 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
             return rewriteBottomUp(c, c.pow(c.child(b, 0), ex));
         }
         // (-1)^(2*k*n) -> 1 when ex is an even integer multiple of an Integer expression
-        if (b == c.number(std::int64_t{-1}) && c.isAssumedInteger(ex) &&
+        if (b == c.number(keel::i64{-1}) && c.isAssumedInteger(ex) &&
             c.kind(ex) == NodeKind::Mul &&
             c.kind(c.child(ex, 0)) == NodeKind::Number &&
             c.numberValue(c.child(ex, 0)).den() == BigInt(1) &&
@@ -2508,7 +2510,7 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
             const Rational &re = c.numberValue(outerEx);
             std::vector<Expr> extracted;
             std::vector<Expr> remaining;
-            for (std::size_t i = 0; i < c.childCount(mulBase); ++i) {
+            for (keel::usize i = 0; i < c.childCount(mulBase); ++i) {
                 const Expr ch = c.child(mulBase, i);
                 if (c.kind(ch) == NodeKind::Number &&
                     c.numberValue(ch).signum() > 0 && re.den() == BigInt(2)) {
@@ -2578,14 +2580,14 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
     case NodeKind::Mul: {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(rewriteBottomUp(c, c.child(e, i)));
         return simplifyMulNode(c, c.mul(kids));
     }
     case NodeKind::Add: {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(rewriteBottomUp(c, c.child(e, i)));
         return simplifyAddNode(c, c.add(kids));
     }
@@ -2607,7 +2609,7 @@ void collectTrigArgs(const Ctx &c, Expr e, std::vector<Expr> &args)
                 args.push_back(arg);
         }
     }
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         collectTrigArgs(c, c.child(e, i), args);
 }
 
@@ -2630,7 +2632,7 @@ Expr toSinCosRec(Ctx &c, Expr e, bool expandDoubleAngle,
         if (c.childCount(e) != 1) {
             std::vector<Expr> args;
             args.reserve(c.childCount(e));
-            for (std::size_t i = 0; i < c.childCount(e); ++i)
+            for (keel::usize i = 0; i < c.childCount(e); ++i)
                 args.push_back(
                     toSinCosRec(c, c.child(e, i), expandDoubleAngle, trigArgs));
             return c.func(c.funcName(e), args);
@@ -2645,19 +2647,19 @@ Expr toSinCosRec(Ctx &c, Expr e, bool expandDoubleAngle,
             c.kind(u) == NodeKind::Mul && c.childCount(u) >= 2 &&
             c.kind(c.child(u, 0)) == NodeKind::Number) {
             const Rational &rv = c.numberValue(c.child(u, 0));
-            std::int64_t p = 0;
+            keel::i64 p = 0;
             if (rv.den() == BigInt(1) && rv.num().fitsInt64(p) && p != 0 &&
                 p % 2 == 0) {
                 std::vector<Expr> rest;
                 if (p / 2 != 1)
                     rest.push_back(c.number(p / 2));
-                for (std::size_t i = 1; i < c.childCount(u); ++i)
+                for (keel::usize i = 1; i < c.childCount(u); ++i)
                     rest.push_back(c.child(u, i));
                 halfU = rest.empty() ? c.one() : c.mul(rest);
                 for (const Expr &ta : trigArgs) {
                     if (ta == halfU || c.neg(ta) == halfU ||
-                        c.mul({c.number(std::int64_t{2}), ta}) == halfU ||
-                        c.mul({c.number(std::int64_t{-2}), ta}) == halfU) {
+                        c.mul({c.number(keel::i64{2}), ta}) == halfU ||
+                        c.mul({c.number(keel::i64{-2}), ta}) == halfU) {
                         isDouble = true;
                         break;
                     }
@@ -2666,7 +2668,7 @@ Expr toSinCosRec(Ctx &c, Expr e, bool expandDoubleAngle,
         }
 
         if (isDouble) {
-            const Expr two = c.number(std::int64_t{2});
+            const Expr two = c.number(keel::i64{2});
             if (fn == "sin") {
                 return c.mul({two, c.func("sin", halfU), c.func("cos", halfU)});
             }
@@ -2689,17 +2691,17 @@ Expr toSinCosRec(Ctx &c, Expr e, bool expandDoubleAngle,
         if (fn == "cot")
             return c.div(c.func("cos", u), c.func("sin", u));
         if (fn == "sec")
-            return c.pow(c.func("cos", u), c.number(std::int64_t{-1}));
+            return c.pow(c.func("cos", u), c.number(keel::i64{-1}));
         if (fn == "csc")
-            return c.pow(c.func("sin", u), c.number(std::int64_t{-1}));
+            return c.pow(c.func("sin", u), c.number(keel::i64{-1}));
         if (fn == "tanh")
             return c.div(c.func("sinh", u), c.func("cosh", u));
         if (fn == "coth")
             return c.div(c.func("cosh", u), c.func("sinh", u));
         if (fn == "sech")
-            return c.pow(c.func("cosh", u), c.number(std::int64_t{-1}));
+            return c.pow(c.func("cosh", u), c.number(keel::i64{-1}));
         if (fn == "csch")
-            return c.pow(c.func("sinh", u), c.number(std::int64_t{-1}));
+            return c.pow(c.func("sinh", u), c.number(keel::i64{-1}));
         return c.func(fn, u);
     }
     case NodeKind::Pow:
@@ -2710,7 +2712,7 @@ Expr toSinCosRec(Ctx &c, Expr e, bool expandDoubleAngle,
     case NodeKind::Mul: {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(
                 toSinCosRec(c, c.child(e, i), expandDoubleAngle, trigArgs));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
@@ -2736,11 +2738,11 @@ void collectSymbols(const Ctx &c, Expr e, std::vector<Expr> &syms)
             syms.push_back(e);
         return;
     }
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         collectSymbols(c, c.child(e, i), syms);
 }
 
-bool isThreeTermRecurrenceFunc(const std::string &fn, std::size_t arity)
+bool isThreeTermRecurrenceFunc(const std::string &fn, keel::usize arity)
 {
     if (arity == 2) {
         return fn == "besselj" || fn == "bessely" || fn == "besseli" ||
@@ -2764,7 +2766,7 @@ void collectRecurrenceFuncNodes(const Ctx &c, Expr e, std::vector<Expr> &nodes)
         if (std::find(nodes.begin(), nodes.end(), e) == nodes.end())
             nodes.push_back(e);
     }
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         collectRecurrenceFuncNodes(c, c.child(e, i), nodes);
 }
 
@@ -2783,43 +2785,43 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
     Expr curExpr = e;
     bool anyReduced = false;
 
-    for (std::size_t i = 0; i < nodes.size(); ++i) {
+    for (keel::usize i = 0; i < nodes.size(); ++i) {
         if (used[i])
             continue;
         used[i] = true;
         const std::string fn = c.funcName(nodes[i]);
-        const std::size_t arity = c.childCount(nodes[i]);
-        const std::size_t nParams = arity - 1;
+        const keel::usize arity = c.childCount(nodes[i]);
+        const keel::usize nParams = arity - 1;
         const Expr uArg = c.child(nodes[i], nParams);
         if (c.isZero(uArg))
             continue;
 
         struct ShiftNode {
             Expr node;
-            std::int64_t off;
+            keel::i64 off;
         };
         std::vector<ShiftNode> group;
         group.push_back({nodes[i], 0});
-        std::int64_t minOff = 0, maxOff = 0;
+        keel::i64 minOff = 0, maxOff = 0;
         Expr minNode = nodes[i];
 
-        for (std::size_t j = i + 1; j < nodes.size(); ++j) {
+        for (keel::usize j = i + 1; j < nodes.size(); ++j) {
             if (used[j])
                 continue;
             if (c.funcName(nodes[j]) != fn || c.childCount(nodes[j]) != arity ||
                 !(c.child(nodes[j], nParams) == uArg))
                 continue;
-            std::int64_t m = 0;
+            keel::i64 m = 0;
             bool sameShift = true;
-            for (std::size_t p = 0; p < nParams; ++p) {
+            for (keel::usize p = 0; p < nParams; ++p) {
                 const Expr diffJI = simplifyRationalExpr(
                     c, c.add({c.child(nodes[j], p),
                               c.neg(c.child(nodes[i], p))}));
-                std::int64_t mp = 0;
+                keel::i64 mp = 0;
                 if (diffJI.isNull() || c.kind(diffJI) != NodeKind::Number ||
                     c.numberValue(diffJI).den() != BigInt(1) ||
                     !c.numberValue(diffJI).num().fitsInt64(mp) ||
-                    std::abs(mp) > 8 || (p > 0 && mp != m)) {
+                    keel::abs(mp) > 8 || (p > 0 && mp != m)) {
                     sameShift = false;
                     break;
                 }
@@ -2837,14 +2839,14 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
             }
         }
 
-        const std::int64_t span = maxOff - minOff;
+        const keel::i64 span = maxOff - minOff;
         if (group.size() < 2 || span < 2 || span > 8)
             continue;
 
-        auto buildShiftedNode = [&](std::int64_t shift) -> Expr {
+        auto buildShiftedNode = [&](keel::i64 shift) -> Expr {
             std::vector<Expr> args;
             args.reserve(arity);
-            for (std::size_t p = 0; p < nParams; ++p) {
+            for (keel::usize p = 0; p < nParams; ++p) {
                 const Expr baseP = c.child(minNode, p);
                 if (shift == 0) {
                     args.push_back(baseP);
@@ -2859,18 +2861,18 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
             return c.func(fn, args);
         };
 
-        std::vector<Expr> seq(static_cast<std::size_t>(span + 1));
+        std::vector<Expr> seq(static_cast<keel::usize>(span + 1));
         seq[0] = buildShiftedNode(0);
         seq[1] = buildShiftedNode(1);
 
         const Expr minOrd = c.child(minNode, 0);
         bool ok = true;
-        for (std::int64_t r = 1; r < span; ++r) {
+        for (keel::i64 r = 1; r < span; ++r) {
             const Expr mu = simplifyRationalExpr(
                 c, c.add({minOrd, c.number(r)}));
             const Expr muExpr = mu.isNull() ? c.add({minOrd, c.number(r)}) : mu;
-            const Expr fPrev = seq[static_cast<std::size_t>(r - 1)];
-            const Expr fCur = seq[static_cast<std::size_t>(r)];
+            const Expr fPrev = seq[static_cast<keel::usize>(r - 1)];
+            const Expr fCur = seq[static_cast<keel::usize>(r)];
             Expr fNext;
             if (fn == "besselj" || fn == "bessely") {
                 fNext = c.add({
@@ -2945,16 +2947,16 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
                 ok = false;
                 break;
             }
-            seq[static_cast<std::size_t>(r + 1)] = fNext;
+            seq[static_cast<keel::usize>(r + 1)] = fNext;
         }
         if (!ok)
             continue;
 
         for (const auto &sn : group) {
-            const std::int64_t k = sn.off - minOff;
+            const keel::i64 k = sn.off - minOff;
             if (k >= 2) {
                 curExpr = c.subs(curExpr, sn.node,
-                                 seq[static_cast<std::size_t>(k)]);
+                                 seq[static_cast<keel::usize>(k)]);
                 anyReduced = true;
             }
         }
@@ -3086,7 +3088,7 @@ BigInt lcmAdditiveTermDenominators(const Ctx &c, Expr e)
     };
     if (c.kind(e) == NodeKind::Add) {
         BigInt L(1);
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const BigInt d = termDen(c.child(e, i));
             if (d > BigInt(1)) {
                 const BigInt g = BigInt::gcd(L, d);
@@ -3156,7 +3158,7 @@ NumDenResult numden(Ctx &c, Expr e, Budget *budget)
     };
 
     if (c.kind(norm) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(norm); ++i)
+        for (keel::usize i = 0; i < c.childCount(norm); ++i)
             classifyFactor(c.child(norm, i));
     } else {
         classifyFactor(norm);
@@ -3202,20 +3204,20 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
 
     std::vector<Expr> terms;
     if (c.kind(expd) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+        for (keel::usize i = 0; i < c.childCount(expd); ++i)
             terms.push_back(c.child(expd, i));
     } else {
         terms.push_back(expd);
     }
 
-    std::int64_t maxDeg = 0;
-    std::vector<std::pair<std::int64_t, Expr>> buckets;
+    keel::i64 maxDeg = 0;
+    std::vector<std::pair<keel::i64, Expr>> buckets;
     buckets.reserve(terms.size());
 
     for (const Expr &t : terms) {
         if (c.isZero(t))
             continue;
-        std::int64_t deg = 0;
+        keel::i64 deg = 0;
         std::vector<Expr> rest;
         auto splitFactor = [&](Expr f) {
             if (f == var) {
@@ -3225,7 +3227,7 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
             if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == var &&
                 c.kind(c.child(f, 1)) == NodeKind::Number) {
                 const Rational &rv = c.numberValue(c.child(f, 1));
-                std::int64_t k = 0;
+                keel::i64 k = 0;
                 if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 0 &&
                     k <= 256) {
                     deg += k;
@@ -3235,7 +3237,7 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
             rest.push_back(f);
         };
         if (c.kind(t) == NodeKind::Mul) {
-            for (std::size_t i = 0; i < c.childCount(t); ++i)
+            for (keel::usize i = 0; i < c.childCount(t); ++i)
                 splitFactor(c.child(t, i));
         } else {
             splitFactor(t);
@@ -3247,13 +3249,13 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
         buckets.emplace_back(deg, coef);
     }
 
-    res.dense.assign(static_cast<std::size_t>(maxDeg + 1), c.zero());
+    res.dense.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
     for (const auto &pr : buckets) {
-        const std::size_t idx = static_cast<std::size_t>(pr.first);
+        const keel::usize idx = static_cast<keel::usize>(pr.first);
         res.dense[idx] = c.add({res.dense[idx], pr.second});
     }
 
-    for (std::size_t k = 0; k < res.dense.size(); ++k) {
+    for (keel::usize k = 0; k < res.dense.size(); ++k) {
         res.dense[k] = simplify(c, res.dense[k]);
         if (!c.isZero(res.dense[k])) {
             res.coefficients.push_back(res.dense[k]);
@@ -3262,7 +3264,7 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
                     ? c.one()
                     : (k == 1
                            ? var
-                           : c.pow(var, c.number(static_cast<std::int64_t>(k))));
+                           : c.pow(var, c.number(static_cast<keel::i64>(k))));
             res.terms.push_back(monom);
         }
     }
@@ -3283,7 +3285,7 @@ Expr collect(Ctx &c, Expr e, Expr var)
 
     std::vector<Expr> addTerms;
     addTerms.reserve(cr.coefficients.size());
-    for (std::size_t i = 0; i < cr.coefficients.size(); ++i) {
+    for (keel::usize i = 0; i < cr.coefficients.size(); ++i) {
         addTerms.push_back(c.mul({cr.coefficients[i], cr.terms[i]}));
     }
     return addTerms.size() == 1 ? addTerms[0] : c.add(addTerms);
@@ -3338,7 +3340,7 @@ Expr partfrac(Ctx &c, Expr e, Expr var, Budget *budget)
 
     struct IrredGroup {
         UPoly P;
-        std::uint64_t mult = 0;
+        keel::u64 mult = 0;
         UPoly Pm;
     };
     std::vector<IrredGroup> groups;
@@ -3351,9 +3353,9 @@ Expr partfrac(Ctx &c, Expr e, Expr var, Budget *budget)
         }
     }
 
-    for (std::size_t i = 0; i < groups.size(); ++i) {
+    for (keel::usize i = 0; i < groups.size(); ++i) {
         UPoly Qi(Rational(1));
-        for (std::size_t j = 0; j < groups.size(); ++j) {
+        for (keel::usize j = 0; j < groups.size(); ++j) {
             if (j != i)
                 Qi = Qi * groups[j].Pm;
         }
@@ -3362,8 +3364,8 @@ Expr partfrac(Ctx &c, Expr e, Expr var, Budget *budget)
                              : UPoly::invMod(Qi, groups[i].Pm);
         UPoly Ai = (rem * Ui) % groups[i].Pm;
 
-        std::vector<std::pair<std::uint64_t, UPoly>> padicNumerators;
-        for (std::uint64_t k = groups[i].mult; k >= 1; --k) {
+        std::vector<std::pair<keel::u64, UPoly>> padicNumerators;
+        for (keel::u64 k = groups[i].mult; k >= 1; --k) {
             UPoly qk, rk;
             UPoly::divMod(Ai, groups[i].P, qk, rk);
             if (!rk.isZero())
@@ -3378,7 +3380,7 @@ Expr partfrac(Ctx &c, Expr e, Expr var, Budget *budget)
              ++it) {
             const Expr numExpr = toExpr(c, it->second, var);
             const Expr denPow = c.pow(
-                baseExpr, c.number(-static_cast<std::int64_t>(it->first)));
+                baseExpr, c.number(-static_cast<keel::i64>(it->first)));
             pfTerms.push_back(c.mul({numExpr, denPow}));
         }
     }
@@ -3450,7 +3452,7 @@ std::string toLatex(const Ctx &c, Expr e)
         return "\\operatorname{RootOf}";
     case NodeKind::Add: {
         std::string out;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const std::string t = toLatex(c, c.child(e, i));
             if (i == 0) {
                 out += t;
@@ -3466,7 +3468,7 @@ std::string toLatex(const Ctx &c, Expr e)
         int sign = 1;
         std::vector<std::pair<std::string, bool>> numFacs;
         std::vector<std::pair<std::string, bool>> denFacs;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr f = c.child(e, i);
             if (c.kind(f) == NodeKind::Number) {
                 const Rational &rv = c.numberValue(f);
@@ -3510,7 +3512,7 @@ std::string toLatex(const Ctx &c, Expr e)
             if (facs.empty())
                 return "1";
             std::string s;
-            for (std::size_t i = 0; i < facs.size(); ++i) {
+            for (keel::usize i = 0; i < facs.size(); ++i) {
                 if (i > 0)
                     s += " ";
                 if (facs.size() > 1 && facs[i].second) {
@@ -3585,7 +3587,7 @@ std::string toLatex(const Ctx &c, Expr e)
             }
         }
         std::string args;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             if (i > 0)
                 args += ", ";
             args += toLatex(c, c.child(e, i));
@@ -3624,7 +3626,7 @@ std::string toCCodeRec(const Ctx &c, Expr e, int parentPrec)
         return "0.0";
     case NodeKind::Add: {
         std::string out;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const std::string t = toCCodeRec(c, c.child(e, i), 1);
             if (i == 0) {
                 out += t;
@@ -3638,7 +3640,7 @@ std::string toCCodeRec(const Ctx &c, Expr e, int parentPrec)
     }
     case NodeKind::Mul: {
         std::string out;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             if (i > 0)
                 out += " * ";
             out += toCCodeRec(c, c.child(e, i), 2);
@@ -3663,7 +3665,7 @@ std::string toCCodeRec(const Ctx &c, Expr e, int parentPrec)
     case NodeKind::Func: {
         const std::string &fn = c.funcName(e);
         std::string args;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             if (i > 0)
                 args += ", ";
             args += toCCodeRec(c, c.child(e, i), 0);

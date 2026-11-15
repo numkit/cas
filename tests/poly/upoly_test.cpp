@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <gtest/gtest.h>
@@ -12,9 +13,9 @@ using numkit::cas::UPoly;
 UPoly P(const std::string &csv)
 {
     std::vector<Rational> cs;
-    std::size_t pos = 0;
+    keel::usize pos = 0;
     while (pos <= csv.size()) {
-        const std::size_t comma = csv.find(',', pos);
+        const keel::usize comma = csv.find(',', pos);
         const std::string tok =
             csv.substr(pos, comma == std::string::npos ? std::string::npos
                                                        : comma - pos);
@@ -40,7 +41,7 @@ std::string S(const UPoly &p)
     return out;
 }
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -49,14 +50,14 @@ std::uint64_t nextU64(std::uint64_t &state)
 }
 
 // Random polynomial, degree 0..maxDeg, mixed integer/fraction coefficients.
-UPoly rndPoly(std::uint64_t &state, int maxDeg)
+UPoly rndPoly(keel::u64 &state, int maxDeg)
 {
     const int deg = static_cast<int>(nextU64(state) % (maxDeg + 1));
     std::vector<Rational> cs;
     for (int i = 0; i <= deg; ++i) {
-        const std::int64_t n = static_cast<std::int64_t>(nextU64(state) % 19) - 9;
-        const std::int64_t d =
-            (nextU64(state) % 4 == 0) ? static_cast<std::int64_t>(nextU64(state) % 4 + 1)
+        const keel::i64 n = static_cast<keel::i64>(nextU64(state) % 19) - 9;
+        const keel::i64 d =
+            (nextU64(state) % 4 == 0) ? static_cast<keel::i64>(nextU64(state) % 4 + 1)
                                       : 1;
         cs.emplace_back(BigInt(n), BigInt(d));
     }
@@ -111,13 +112,13 @@ TEST(UPolyBasics, ConstructionAndDegree)
 {
     EXPECT_TRUE(UPoly().isZero());
     EXPECT_EQ(UPoly().deg(), -1);
-    EXPECT_EQ(UPoly(Rational(std::int64_t{5})).deg(), 0);
+    EXPECT_EQ(UPoly(Rational(keel::i64{5})).deg(), 0);
     EXPECT_EQ(P("1,2,3").deg(), 2);
     EXPECT_EQ(P("1,2,0").deg(), 1); // trailing zero trimmed
     EXPECT_EQ(P("0,0,0").isZero(), true);
-    EXPECT_EQ(UPoly::monomial(Rational(std::int64_t{3}), 4).coeff(4),
-              Rational(std::int64_t{3}));
-    EXPECT_EQ(UPoly::monomial(Rational(std::int64_t{3}), 4).deg(), 4);
+    EXPECT_EQ(UPoly::monomial(Rational(keel::i64{3}), 4).coeff(4),
+              Rational(keel::i64{3}));
+    EXPECT_EQ(UPoly::monomial(Rational(keel::i64{3}), 4).deg(), 4);
 }
 
 TEST(UPolyBasics, ArithmeticAndToString)
@@ -127,7 +128,7 @@ TEST(UPolyBasics, ArithmeticAndToString)
     EXPECT_EQ(S(P("1,2") * P("3,4")), "3,10,8");
     EXPECT_EQ(S(-P("1,-2,3")), "-1,2,-3");
     EXPECT_EQ(P("0,1").powUInt(3), P("0,0,0,1"));
-    EXPECT_EQ(P("0,2").powUInt(0), UPoly(Rational(std::int64_t{1})));
+    EXPECT_EQ(P("0,2").powUInt(0), UPoly(Rational(keel::i64{1})));
 
     EXPECT_EQ(P("0,0,0,-3,1").toString(), "x^4 - 3*x^3");
     EXPECT_EQ(P("4,0,-3/2,1").toString(), "x^3 - 3/2*x^2 + 4");
@@ -141,7 +142,7 @@ TEST(UPolyBasics, DerivativeAndEval)
     EXPECT_EQ(P("1,2,3").derivative(), P("2,6"));
     EXPECT_EQ(P("7").derivative().isZero(), true);
     EXPECT_EQ(P("0,0,0,1").derivative(), P("0,0,3"));
-    EXPECT_EQ(P("-2,1").eval(Rational(std::int64_t{7})), Rational(std::int64_t{5}));
+    EXPECT_EQ(P("-2,1").eval(Rational(keel::i64{7})), Rational(keel::i64{5}));
     EXPECT_EQ(P("1,0,1").eval(Rational(BigInt(1), BigInt(2))),
               Rational(BigInt(5), BigInt(4)));
 }
@@ -157,7 +158,7 @@ TEST(UPolyFixed, PythonOracleGcdAndResultant)
 
 TEST(UPolyProperty, RingAndDivisionInvariants)
 {
-    std::uint64_t state = 0x5A17C0DEF00DBAULL;
+    keel::u64 state = 0x5A17C0DEF00DBAULL;
     for (int iter = 0; iter < 5000; ++iter) {
         const UPoly a = rndPoly(state, 6);
         const UPoly b = rndPoly(state, 6);
@@ -182,7 +183,7 @@ TEST(UPolyProperty, RingAndDivisionInvariants)
 
 TEST(UPolyProperty, GcdInvariants)
 {
-    std::uint64_t state = 0x1234ABCD5678EF90ULL;
+    keel::u64 state = 0x1234ABCD5678EF90ULL;
     for (int iter = 0; iter < 3000; ++iter) {
         const UPoly u = rndPoly(state, 3);
         const UPoly v = rndPoly(state, 3);
@@ -195,7 +196,7 @@ TEST(UPolyProperty, GcdInvariants)
             continue;
         const UPoly g = UPoly::gcd(a, b);
 
-        ASSERT_EQ(g.lc(), Rational(std::int64_t{1})); // monic
+        ASSERT_EQ(g.lc(), Rational(keel::i64{1})); // monic
         UPoly q, r;
         UPoly::divMod(a, g, q, r);
         ASSERT_TRUE(r.isZero()) << S(a) << " gcd " << S(b) << " = " << S(g);
@@ -208,7 +209,7 @@ TEST(UPolyProperty, GcdInvariants)
 
 TEST(UPolyProperty, Squarefree)
 {
-    std::uint64_t state = 0xC0FFEE1234567890ULL;
+    keel::u64 state = 0xC0FFEE1234567890ULL;
     for (int iter = 0; iter < 3000; ++iter) {
         // Build a product of pairwise-coprime squarefree factors with
         // powers: a = f1^3 * f2 * f3^2. Random polys are neither coprime
@@ -242,13 +243,13 @@ TEST(UPolyProperty, Squarefree)
 
         const std::vector<UPoly> fs = a.squarefreeDecomposition();
         UPoly rebuild = UPoly(Rational(a.lc()));
-        for (std::size_t i = 0; i < fs.size(); ++i)
+        for (keel::usize i = 0; i < fs.size(); ++i)
             rebuild = rebuild * fs[i].powUInt(i + 1);
         ASSERT_EQ(rebuild, a) << S(a);
         for (const UPoly &f : fs) {
             if (f.isConst())
                 continue;
-            ASSERT_EQ(f.lc(), Rational(std::int64_t{1}));
+            ASSERT_EQ(f.lc(), Rational(keel::i64{1}));
             ASSERT_TRUE(UPoly::gcd(f, f.derivative()).isConst());
         }
     }
@@ -256,7 +257,7 @@ TEST(UPolyProperty, Squarefree)
 
 TEST(UPolyProperty, ResultantIdentities)
 {
-    std::uint64_t state = 0x9E3779B97F4A7C15ULL;
+    keel::u64 state = 0x9E3779B97F4A7C15ULL;
     for (int iter = 0; iter < 3000; ++iter) {
         const UPoly a = rndPoly(state, 4);
         const UPoly b = rndPoly(state, 3);
@@ -278,9 +279,9 @@ TEST(UPolyProperty, ResultantIdentities)
                   UPoly::resultant(a, c) * UPoly::resultant(b, c));
 
         // Evaluation oracle: res(A, x - r) == A(r).
-        const std::int64_t r = static_cast<std::int64_t>(nextU64(state) % 41) - 20;
+        const keel::i64 r = static_cast<keel::i64>(nextU64(state) % 41) - 20;
         const UPoly lin = UPoly(std::vector<Rational>{Rational(-r),
-                                                      Rational(std::int64_t{1})});
+                                                      Rational(keel::i64{1})});
         ASSERT_EQ(UPoly::resultant(a, lin), a.eval(Rational(r)))
             << S(a) << " at " << r;
     }

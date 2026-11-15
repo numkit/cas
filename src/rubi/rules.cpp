@@ -10,6 +10,7 @@
 // canonical arity; rules with explicit `/` cannot match since the
 // DAG canonicalizes division away - their step-3 matcher twin will
 // handle that).
+#include <keel/core.h>
 #include <numkit/cas/rubi/rules.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/integrate/verify.hpp>
@@ -28,7 +29,7 @@ namespace numkit::cas::rubi {
 namespace {
 
 bool exprMatchesTerm(const RuleTables &t, Ctx &c, Expr e, Expr var,
-                     std::int32_t tag, std::int32_t valId)
+                     keel::i32 tag, keel::i32 valId)
 {
     switch (tag) {
     case kTagNum: {
@@ -88,7 +89,7 @@ void upsertBinding(std::vector<Binding> &acc, const std::string &name,
 }
 
 using LeafCallback =
-    std::function<bool(std::int32_t firstRule, const std::vector<Binding> &bnd)>;
+    std::function<bool(keel::i32 firstRule, const std::vector<Binding> &bnd)>;
 
 // Prefix-trie walker with full backtracking over a pending-expression
 // stack `work` (stored in reverse so `work.back()` is the next Expr
@@ -97,22 +98,22 @@ using LeafCallback =
 // pattern variable `blank == "_."`, `opt == 1`). Calls `onLeaf`
 // whenever `work` empties at a leaf node; stops and returns true as
 // soon as `onLeaf` accepts.
-bool matchStep(const RuleTables &t, Ctx &c, Expr var, std::int32_t node,
+bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
                std::vector<Expr> &work, std::vector<Binding> &acc,
                const LeafCallback &onLeaf, bool inMul = false)
 {
     if (work.empty()) {
         if (t.nodeRow(node, 3) != 0)
             return false; // pattern chain longer than expression
-        const std::int32_t rule = t.nodeRow(node, 4);
+        const keel::i32 rule = t.nodeRow(node, 4);
         if (rule < 0)
             return false;
         return onLeaf(rule, acc);
     }
 
     const Expr e = work.back();
-    const std::int32_t nEdges = t.nodeRow(node, 3);
-    const std::int32_t first = t.nodeRow(node, 2);
+    const keel::i32 nEdges = t.nodeRow(node, 3);
+    const keel::i32 first = t.nodeRow(node, 2);
 
     if (e.isNull()) {
         const Expr one = c.one();
@@ -155,34 +156,34 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, std::int32_t node,
     //       fresh wildcard);
     //   3b. unbound wildcard edges (fresh pattern variable).
     for (int ei = first; ei < first + nEdges; ++ei) {
-        const std::int32_t tag = t.edgeRow(ei, 0);
+        const keel::i32 tag = t.edgeRow(ei, 0);
         if (tag == kTagAny)
             continue;
-        const std::int32_t valId = t.edgeRow(ei, 1);
-        const std::int32_t next = t.edgeRow(ei, 2);
-        const std::int32_t arity = t.edgeRow(ei, 3);
+        const keel::i32 valId = t.edgeRow(ei, 1);
+        const keel::i32 next = t.edgeRow(ei, 2);
+        const keel::i32 arity = t.edgeRow(ei, 3);
         if (!exprMatchesTerm(t, c, e, var, tag, valId) ||
-            static_cast<std::int32_t>(c.childCount(e)) != arity)
+            static_cast<keel::i32>(c.childCount(e)) != arity)
             continue;
 
         if ((c.kind(e) == NodeKind::Mul && arity >= 2 && arity <= 4) ||
             (c.kind(e) == NodeKind::Add && arity >= 2 && arity <= 3)) {
             const bool nextInMul = (c.kind(e) == NodeKind::Mul) || inMul;
-            std::array<std::size_t, 4> perm = {{0, 1, 2, 3}};
+            std::array<keel::usize, 4> perm = {{0, 1, 2, 3}};
             do {
                 work.pop_back();
-                for (std::int32_t ci = arity; ci > 0; --ci)
+                for (keel::i32 ci = arity; ci > 0; --ci)
                     work.push_back(
-                        c.child(e, perm[static_cast<std::size_t>(ci - 1)]));
+                        c.child(e, perm[static_cast<keel::usize>(ci - 1)]));
                 if (matchStep(t, c, var, next, work, acc, onLeaf, nextInMul))
                     return true;
-                work.resize(work.size() - static_cast<std::size_t>(arity));
+                work.resize(work.size() - static_cast<keel::usize>(arity));
                 work.push_back(e);
             } while (std::next_permutation(
-                perm.begin(), perm.begin() + static_cast<std::size_t>(arity)));
+                perm.begin(), perm.begin() + static_cast<keel::usize>(arity)));
         } else {
             work.pop_back();
-            for (std::size_t ci = c.childCount(e); ci > 0; --ci)
+            for (keel::usize ci = c.childCount(e); ci > 0; --ci)
                 work.push_back(c.child(e, ci - 1));
             if (matchStep(t, c, var, next, work, acc, onLeaf, inMul))
                 return true;
@@ -198,18 +199,18 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, std::int32_t node,
                 std::string(t.str(t.edgeRow(ei, 1))) != "*" ||
                 t.edgeRow(ei, 3) != 2)
                 continue;
-            const std::int32_t next = t.edgeRow(ei, 2);
-            const std::int32_t vFirst = t.nodeRow(next, 2);
-            const std::int32_t vCount = t.nodeRow(next, 3);
+            const keel::i32 next = t.edgeRow(ei, 2);
+            const keel::i32 vFirst = t.nodeRow(next, 2);
+            const keel::i32 vCount = t.nodeRow(next, 3);
             for (int ve = vFirst; ve < vFirst + vCount; ++ve) {
                 if (t.edgeRow(ve, 0) != kTagAny || !t.edgeRow(ve, 4))
                     continue;
                 const std::string vName = t.str(t.edgeRow(ve, 1));
-                const std::int32_t afterV = t.edgeRow(ve, 2);
+                const keel::i32 afterV = t.edgeRow(ve, 2);
                 const Binding *existing = findBinding(acc, vName);
                 if (existing && !(existing->value == one))
                     continue;
-                const std::size_t mark = acc.size();
+                const keel::usize mark = acc.size();
                 if (!existing)
                     acc.push_back(Binding{vName, one});
                 if (matchStep(t, c, var, afterV, work, acc, onLeaf, inMul))
@@ -226,18 +227,18 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, std::int32_t node,
                 std::string(t.str(t.edgeRow(ei, 1))) != "+" ||
                 t.edgeRow(ei, 3) != 3)
                 continue;
-            const std::int32_t next = t.edgeRow(ei, 2);
-            const std::int32_t vFirst = t.nodeRow(next, 2);
-            const std::int32_t vCount = t.nodeRow(next, 3);
+            const keel::i32 next = t.edgeRow(ei, 2);
+            const keel::i32 vFirst = t.nodeRow(next, 2);
+            const keel::i32 vCount = t.nodeRow(next, 3);
             for (int ve = vFirst; ve < vFirst + vCount; ++ve) {
                 if (t.edgeRow(ve, 0) != kTagAny || !t.edgeRow(ve, 4))
                     continue;
                 const std::string vName = t.str(t.edgeRow(ve, 1));
-                const std::int32_t afterV = t.edgeRow(ve, 2);
+                const keel::i32 afterV = t.edgeRow(ve, 2);
                 const Binding *existing = findBinding(acc, vName);
                 if (existing && !(existing->value == zero))
                     continue;
-                const std::size_t mark = acc.size();
+                const keel::usize mark = acc.size();
                 if (!existing)
                     acc.push_back(Binding{vName, zero});
                 for (int ord = 0; ord < 2; ++ord) {
@@ -263,18 +264,18 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, std::int32_t node,
                 std::string(t.str(t.edgeRow(ei, 1))) != "+" ||
                 t.edgeRow(ei, 3) != 2)
                 continue;
-            const std::int32_t next = t.edgeRow(ei, 2);
-            const std::int32_t vFirst = t.nodeRow(next, 2);
-            const std::int32_t vCount = t.nodeRow(next, 3);
+            const keel::i32 next = t.edgeRow(ei, 2);
+            const keel::i32 vFirst = t.nodeRow(next, 2);
+            const keel::i32 vCount = t.nodeRow(next, 3);
             for (int ve = vFirst; ve < vFirst + vCount; ++ve) {
                 if (t.edgeRow(ve, 0) != kTagAny || !t.edgeRow(ve, 4))
                     continue;
                 const std::string vName = t.str(t.edgeRow(ve, 1));
-                const std::int32_t afterV = t.edgeRow(ve, 2);
+                const keel::i32 afterV = t.edgeRow(ve, 2);
                 const Binding *existing = findBinding(acc, vName);
                 if (existing && !(existing->value == zero))
                     continue;
-                const std::size_t mark = acc.size();
+                const keel::usize mark = acc.size();
                 if (!existing)
                     acc.push_back(Binding{vName, zero});
                 if (matchStep(t, c, var, afterV, work, acc, onLeaf, inMul))
@@ -341,7 +342,7 @@ int matchFirst(const RuleTables &t, Ctx &c, Expr e,
     std::vector<Expr> work{e};
     std::vector<Binding> acc;
     matchStep(t, c, c.symbol("x"), 0, work, acc,
-              [&](std::int32_t rule, const std::vector<Binding> &bnd) {
+              [&](keel::i32 rule, const std::vector<Binding> &bnd) {
                   matchedRule = rule;
                   bindings = bnd;
                   return true;
@@ -373,7 +374,7 @@ bool mentionsVarRec(Ctx &c, Expr e, Expr var)
 {
     if (e == var)
         return true;
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         if (mentionsVarRec(c, c.child(e, i), var))
             return true;
     return false;
@@ -388,21 +389,21 @@ namespace {
 // subtree size is itself 1 + its children's sizes (induction on the
 // same rule). Every consumer MUST go through child(), never
 // childOff + k.
-std::int32_t subtreeSize(const std::int32_t *terms, std::int32_t term);
+keel::i32 subtreeSize(const keel::i32 *terms, keel::i32 term);
 
-std::int32_t childOf(const std::int32_t *terms, std::int32_t term, int k)
+keel::i32 childOf(const keel::i32 *terms, keel::i32 term, int k)
 {
-    const std::int32_t childOff = terms[term * 4 + 2];
-    std::int32_t pos = childOff;
+    const keel::i32 childOff = terms[term * 4 + 2];
+    keel::i32 pos = childOff;
     for (int i = 0; i < k; ++i)
         pos += subtreeSize(terms, pos);
     return pos;
 }
 
-std::int32_t subtreeSize(const std::int32_t *terms, std::int32_t term)
+keel::i32 subtreeSize(const keel::i32 *terms, keel::i32 term)
 {
-    std::int32_t total = 1;
-    const std::int32_t nkids = terms[term * 4 + 3];
+    keel::i32 total = 1;
+    const keel::i32 nkids = terms[term * 4 + 3];
     for (int i = 0; i < nkids; ++i)
         total += subtreeSize(terms, childOf(terms, term, i));
     return total;
@@ -413,12 +414,12 @@ constexpr int kMaxRubiDepth = 8;
 Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
                     Budget *budget = nullptr);
 
-bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
+bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                    Expr currentE, Expr var, const std::vector<Binding> &bnd,
-                   std::int32_t term, int depth);
+                   keel::i32 term, int depth);
 
 // Exact non-negative integer n-th root of a non-negative BigInt `m` (n >= 2).
-bool nthRootExact(const BigInt &m, std::uint64_t n, BigInt &root)
+bool nthRootExact(const BigInt &m, keel::u64 n, BigInt &root)
 {
     if (m.signum() < 0 || n < 2)
         return false;
@@ -477,7 +478,7 @@ Expr extractNumerDenom(Ctx &c, Expr arg, bool isDenom)
     if (c.kind(arg) == NodeKind::Mul) {
         std::vector<Expr> parts;
         parts.reserve(c.childCount(arg));
-        for (std::size_t i = 0; i < c.childCount(arg); ++i) {
+        for (keel::usize i = 0; i < c.childCount(arg); ++i) {
             const Expr p = extractNumerDenom(c, c.child(arg, i), isDenom);
             if (p.isNull())
                 return Expr();
@@ -496,7 +497,7 @@ Expr distributeMul(Ctx &c, Expr u, Expr v)
     if (c.kind(u) == NodeKind::Add) {
         std::vector<Expr> parts;
         parts.reserve(c.childCount(u));
-        for (std::size_t i = 0; i < c.childCount(u); ++i)
+        for (keel::usize i = 0; i < c.childCount(u); ++i)
             parts.push_back(c.mul({v, c.child(u, i)}));
         return c.add(parts);
     }
@@ -518,13 +519,13 @@ Expr expandPolyTimesBinomialPow(Ctx &c, const UPoly &P, const UPoly &B,
         UPoly Q, R;
         UPoly::divMod(cur, B, Q, R);
         if (!R.isZero()) {
-            for (std::size_t i = 0; i <= R.deg(); ++i) {
+            for (keel::usize i = 0; i <= R.deg(); ++i) {
                 if (R.coeff(i).isZero())
                     continue;
                 Expr mono = c.number(R.coeff(i));
                 if (i > 0) {
                     mono = c.mul(
-                        {mono, c.pow(var, c.number(static_cast<std::int64_t>(i)))});
+                        {mono, c.pow(var, c.number(static_cast<keel::i64>(i)))});
                 }
                 const Expr bPow = c.pow(BExpr, c.number(expK));
                 if (bPow.isNull())
@@ -533,7 +534,7 @@ Expr expandPolyTimesBinomialPow(Ctx &c, const UPoly &P, const UPoly &B,
             }
         }
         cur = Q;
-        expK += Rational(std::int64_t{1});
+        expK += Rational(keel::i64{1});
     }
     return sumTerms.empty() ? c.zero() : c.add(sumTerms);
 }
@@ -566,7 +567,7 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
     // Case 1: pure polynomial in var.
     UPoly N, D;
     if (toRational(c, u, var, N, D) && !D.isZero() && D.isConst()) {
-        const UPoly P = N * UPoly(Rational(std::int64_t{1}) / D.coeff(0));
+        const UPoly P = N * UPoly(Rational(keel::i64{1}) / D.coeff(0));
         const Expr ex = c.expand(toExpr(c, P, var));
         return (ex == u) ? Expr() : ex;
     }
@@ -579,14 +580,14 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
         UPoly basePoly;
         Rational exp;
     };
-    UPoly polyProd(Rational(std::int64_t{1}));
+    UPoly polyProd(Rational(keel::i64{1}));
     std::vector<BinomFactor> nonPoly;
-    for (std::size_t i = 0; i < c.childCount(u); ++i) {
+    for (keel::usize i = 0; i < c.childCount(u); ++i) {
         const Expr ch = c.child(u, i);
         UPoly nCh, dCh;
         if (toRational(c, ch, var, nCh, dCh) && !dCh.isZero() && dCh.isConst()) {
             polyProd = polyProd * nCh *
-                       UPoly(Rational(std::int64_t{1}) / dCh.coeff(0));
+                       UPoly(Rational(keel::i64{1}) / dCh.coeff(0));
             continue;
         }
         if (c.kind(ch) == NodeKind::Pow &&
@@ -596,7 +597,7 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
             if (toRational(c, c.child(ch, 0), var, nB, dB) && !dB.isZero() &&
                 dB.isConst() && nB.deg() >= 1) {
                 const UPoly B =
-                    nB * UPoly(Rational(std::int64_t{1}) / dB.coeff(0));
+                    nB * UPoly(Rational(keel::i64{1}) / dB.coeff(0));
                 nonPoly.push_back({c.child(ch, 0), B, r});
                 continue;
             }
@@ -626,13 +627,13 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
         if (allNegInt) {
             // Compute D_i = B_i^{|r_i|} for each factor.
             std::vector<UPoly> denFactors;
-            UPoly totalDen(Rational(std::int64_t{1}));
+            UPoly totalDen(Rational(keel::i64{1}));
             for (const BinomFactor &bf : nonPoly) {
-                std::int64_t m = 0;
+                keel::i64 m = 0;
                 if (!(-bf.exp.num()).fitsInt64(m) || m <= 0 || m > 12)
                     return Expr();
-                UPoly di(Rational(std::int64_t{1}));
-                for (std::int64_t k = 0; k < m; ++k)
+                UPoly di(Rational(keel::i64{1}));
+                for (keel::i64 k = 0; k < m; ++k)
                     di = di * bf.basePoly;
                 denFactors.push_back(di);
                 totalDen = totalDen * di;
@@ -645,7 +646,7 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
 
             UPoly curNum = rem;
             UPoly curDen = totalDen;
-            for (std::size_t i = 0; i < nonPoly.size(); ++i) {
+            for (keel::usize i = 0; i < nonPoly.size(); ++i) {
                 const UPoly &Di = denFactors[i];
                 UPoly otherDen, dummyRem;
                 UPoly::divMod(curDen, Di, otherDen, dummyRem);
@@ -683,16 +684,16 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
 // resolving bound pattern names and executing Rubi/Mathematica helper
 // heads. Returns a null Expr for unsupported heads or invalid domain
 // operations (honest decline).
-Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
+Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                       Expr currentE, Expr var,
                       const std::vector<Binding> &bnd,
-                      std::int32_t term, int depth, Budget *budget = nullptr)
+                      keel::i32 term, int depth, Budget *budget = nullptr)
 {
     if (budget && !budget->ok())
         return Expr();
-    const std::int32_t tag = t.termRow(terms, term, 0);
-    const std::int32_t valId = t.termRow(terms, term, 1);
-    const std::int32_t nkids = t.termRow(terms, term, 3);
+    const keel::i32 tag = t.termRow(terms, term, 0);
+    const keel::i32 valId = t.termRow(terms, term, 1);
+    const keel::i32 nkids = t.termRow(terms, term, 3);
     switch (tag) {
     case kTagNum: {
         Rational r;
@@ -831,7 +832,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 return (isFree == wantFree) ? u : c.one();
             }
             std::vector<Expr> parts;
-            for (std::size_t i = 0; i < c.childCount(u); ++i) {
+            for (keel::usize i = 0; i < c.childCount(u); ++i) {
                 const Expr ch = c.child(u, i);
                 const bool isFree = !mentionsVarRec(c, ch, xArg);
                 if (isFree == wantFree)
@@ -849,22 +850,22 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             return distributeMul(c, body, factor);
         }
         if (nkids == 2 && (head == "With" || head == "Module")) {
-            const std::int32_t listTerm = childOf(terms, term, 0);
+            const keel::i32 listTerm = childOf(terms, term, 0);
             if (t.termRow(terms, listTerm, 0) != kTagOp ||
                 std::string(t.str(t.termRow(terms, listTerm, 1))) != "list")
                 return Expr();
             std::vector<Binding> localBnd = bnd;
-            const std::int32_t nDecls = t.termRow(terms, listTerm, 3);
+            const keel::i32 nDecls = t.termRow(terms, listTerm, 3);
             for (int i = 0; i < nDecls; ++i) {
-                const std::int32_t decl = childOf(terms, listTerm, i);
+                const keel::i32 decl = childOf(terms, listTerm, i);
                 if (t.termRow(terms, decl, 0) == kTagSym)
                     continue; // uninitialized Module variable
                 if (t.termRow(terms, decl, 0) != kTagOp ||
                     std::string(t.str(t.termRow(terms, decl, 1))) != "bind" ||
                     t.termRow(terms, decl, 3) != 2)
                     return Expr();
-                const std::int32_t lhs = childOf(terms, decl, 0);
-                const std::int32_t rhs = childOf(terms, decl, 1);
+                const keel::i32 lhs = childOf(terms, decl, 0);
+                const keel::i32 rhs = childOf(terms, decl, 1);
                 if (t.termRow(terms, lhs, 0) != kTagSym)
                     return Expr();
                 const Expr val = buildReplacement(
@@ -894,7 +895,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             return c.subs(body, var, subExpr);
         }
         if (nkids == 2 && head == "ReplaceAll") {
-            const std::int32_t ruleTerm = childOf(terms, term, 1);
+            const keel::i32 ruleTerm = childOf(terms, term, 1);
             if (t.termRow(terms, ruleTerm, 0) != kTagOp ||
                 std::string(t.str(t.termRow(terms, ruleTerm, 1))) != "->" ||
                 t.termRow(terms, ruleTerm, 3) != 2)
@@ -923,7 +924,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth);
             if (powExpr.isNull() || u.isNull() || !(xArg == var))
                 return Expr();
-            std::int64_t k = 1;
+            keel::i64 k = 1;
             if (powExpr == var) {
                 k = 1;
             } else if (c.kind(powExpr) == NodeKind::Pow &&
@@ -939,9 +940,9 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             UPoly N, D;
             if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero())
                 return Expr();
-            const std::size_t ku = static_cast<std::size_t>(k);
+            const keel::usize ku = static_cast<keel::usize>(k);
             std::vector<Rational> coeffs(N.deg() / ku + 1, Rational(0));
-            for (std::size_t i = 0; i <= N.deg(); ++i) {
+            for (keel::usize i = 0; i <= N.deg(); ++i) {
                 if (N.coeff(i).isZero())
                     continue;
                 if (i % ku != 0)
@@ -957,7 +958,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
             if (u.isNull() || xArg.isNull())
                 return Expr();
-            std::int64_t k = 1;
+            keel::i64 k = 1;
             if (!(xArg == var)) {
                 if (c.kind(xArg) == NodeKind::Pow && c.child(xArg, 0) == var &&
                     c.kind(c.child(xArg, 1)) == NodeKind::Number &&
@@ -971,7 +972,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             UPoly N, D;
             if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero())
                 return Expr();
-            return c.number(static_cast<std::int64_t>(N.deg()) / k);
+            return c.number(static_cast<keel::i64>(N.deg()) / k);
         }
         if (nkids == 3 && (head == "Coeff" || head == "Coefficient")) {
             const Expr u = buildReplacement(
@@ -983,11 +984,11 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             if (u.isNull() || xArg.isNull() || kExpr.isNull() ||
                 c.kind(kExpr) != NodeKind::Number)
                 return Expr();
-            std::int64_t ki = 0;
+            keel::i64 ki = 0;
             const Rational &kv = c.numberValue(kExpr);
             if (!(kv.den() == BigInt(1)) || !kv.num().fitsInt64(ki) || ki < 0)
                 return Expr();
-            std::int64_t step = 1;
+            keel::i64 step = 1;
             if (!(xArg == var)) {
                 if (c.kind(xArg) == NodeKind::Pow && c.child(xArg, 0) == var &&
                     c.kind(c.child(xArg, 1)) == NodeKind::Number &&
@@ -1003,7 +1004,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero())
                 return Expr();
             return c.number(
-                N.coeff(static_cast<std::size_t>(ki * step)) / D.coeff(0));
+                N.coeff(static_cast<keel::usize>(ki * step)) / D.coeff(0));
         }
         if (nkids == 3 && (head == "PolynomialQuotient" ||
                            head == "PolynomialRemainder" ||
@@ -1024,8 +1025,8 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 !toRational(c, v, var, Nv, Dv) || !Dv.isConst() || Dv.isZero() ||
                 Nv.isZero())
                 return Expr();
-            const UPoly Pu = Nu * UPoly(Rational(std::int64_t{1}) / Du.coeff(0));
-            const UPoly Pv = Nv * UPoly(Rational(std::int64_t{1}) / Dv.coeff(0));
+            const UPoly Pu = Nu * UPoly(Rational(keel::i64{1}) / Du.coeff(0));
+            const UPoly Pv = Nv * UPoly(Rational(keel::i64{1}) / Dv.coeff(0));
             UPoly Q, R;
             UPoly::divMod(Pu, Pv, Q, R);
             if (head == "PolynomialDivide") {
@@ -1033,7 +1034,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 if (R.isZero())
                     return qExpr;
                 const Expr rExpr =
-                    c.mul({toExpr(c, R, var), c.pow(v, c.number(std::int64_t{-1}))});
+                    c.mul({toExpr(c, R, var), c.pow(v, c.number(keel::i64{-1}))});
                 return Q.isZero() ? rExpr : c.add({qExpr, rExpr});
             }
             return toExpr(c, head == "PolynomialQuotient" ? Q : R, var);
@@ -1136,7 +1137,7 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             if (q.isNull() || n.isNull() || c.kind(n) != NodeKind::Number)
                 return Expr();
             const Rational &nv = c.numberValue(n);
-            std::int64_t ni = 0;
+            keel::i64 ni = 0;
             if (!(nv.den() == BigInt(1)) || !nv.num().fitsInt64(ni) || ni < 2)
                 return Expr();
             const Expr invN = c.number(Rational(BigInt(1), BigInt(ni)));
@@ -1154,8 +1155,8 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 return Expr();
             const Rational absV = v.signum() >= 0 ? v : -v;
             BigInt rn, rd;
-            if (nthRootExact(absV.num(), static_cast<std::uint64_t>(ni), rn) &&
-                nthRootExact(absV.den(), static_cast<std::uint64_t>(ni), rd)) {
+            if (nthRootExact(absV.num(), static_cast<keel::u64>(ni), rn) &&
+                nthRootExact(absV.den(), static_cast<keel::u64>(ni), rd)) {
                 const Rational rExact(v.signum() >= 0 ? rn : -rn, rd);
                 return c.number(rExact);
             }
@@ -1209,13 +1210,13 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 budget);
         }
         if (op == ";") {
-            const std::int32_t stmt = childOf(terms, term, 0);
+            const keel::i32 stmt = childOf(terms, term, 0);
             std::vector<Binding> localBnd = bnd;
             if (t.termRow(terms, stmt, 0) == kTagOp &&
                 std::string(t.str(t.termRow(terms, stmt, 1))) == "bind" &&
                 t.termRow(terms, stmt, 3) == 2) {
-                const std::int32_t lhs = childOf(terms, stmt, 0);
-                const std::int32_t rhs = childOf(terms, stmt, 1);
+                const keel::i32 lhs = childOf(terms, stmt, 0);
+                const keel::i32 rhs = childOf(terms, stmt, 1);
                 if (t.termRow(terms, lhs, 0) != kTagSym)
                     return Expr();
                 const Expr val = buildReplacement(
@@ -1270,13 +1271,13 @@ Expr buildReplacement(const RuleTables &t, const std::int32_t *terms, Ctx &c,
     }
 }
 
-bool termMentionsVar(const RuleTables &t, const std::int32_t *terms, Ctx &c,
+bool termMentionsVar(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                      Expr var, const std::vector<Binding> &bnd,
-                     std::int32_t term)
+                     keel::i32 term)
 {
-    const std::int32_t tag = t.termRow(terms, term, 0);
-    const std::int32_t valId = t.termRow(terms, term, 1);
-    const std::int32_t nkids = t.termRow(terms, term, 3);
+    const keel::i32 tag = t.termRow(terms, term, 0);
+    const keel::i32 valId = t.termRow(terms, term, 1);
+    const keel::i32 nkids = t.termRow(terms, term, 3);
     if (tag == kTagSym) {
         const std::string s = t.str(valId);
         for (const Binding &b : bnd)
@@ -1290,13 +1291,13 @@ bool termMentionsVar(const RuleTables &t, const std::int32_t *terms, Ctx &c,
     return false;
 }
 
-bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
+bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                    Expr currentE, Expr var, const std::vector<Binding> &bnd,
-                   std::int32_t term, int depth)
+                   keel::i32 term, int depth)
 {
-    const std::int32_t tag = t.termRow(terms, term, 0);
-    const std::int32_t valId = t.termRow(terms, term, 1);
-    const std::int32_t nkids = t.termRow(terms, term, 3);
+    const keel::i32 tag = t.termRow(terms, term, 0);
+    const keel::i32 valId = t.termRow(terms, term, 1);
+    const keel::i32 nkids = t.termRow(terms, term, 3);
     if (tag == kTagOp) {
         const std::string op = t.str(valId);
         if ((op == "&&" || op == "||") && nkids == 2) {
@@ -1425,8 +1426,8 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
         if (!(xArg == var))
             return false;
-        const std::int32_t uTerm = childOf(terms, term, 0);
-        auto checkOneLinear = [&](std::int32_t subTerm) -> bool {
+        const keel::i32 uTerm = childOf(terms, term, 0);
+        auto checkOneLinear = [&](keel::i32 subTerm) -> bool {
             const Expr u =
                 buildReplacement(t, terms, c, currentE, var, bnd, subTerm, depth);
             if (u.isNull())
@@ -1437,7 +1438,7 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
         };
         if (t.termRow(terms, uTerm, 0) == kTagOp &&
             std::string(t.str(t.termRow(terms, uTerm, 1))) == "list") {
-            const std::int32_t nItems = t.termRow(terms, uTerm, 3);
+            const keel::i32 nItems = t.termRow(terms, uTerm, 3);
             for (int i = 0; i < nItems; ++i)
                 if (!checkOneLinear(childOf(terms, uTerm, i)))
                     return false;
@@ -1453,7 +1454,7 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
             t, terms, c, currentE, var, bnd, childOf(terms, term, 1), depth);
         if (u.isNull() || xArg.isNull())
             return false;
-        std::int64_t step = 1;
+        keel::i64 step = 1;
         if (!(xArg == var)) {
             if (c.kind(xArg) == NodeKind::Pow && c.child(xArg, 0) == var &&
                 c.kind(c.child(xArg, 1)) == NodeKind::Number &&
@@ -1469,19 +1470,19 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
         if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero() ||
             N.deg() < 1)
             return false;
-        const std::size_t su = static_cast<std::size_t>(step);
-        for (std::size_t i = 0; i <= N.deg(); ++i)
+        const keel::usize su = static_cast<keel::usize>(step);
+        for (keel::usize i = 0; i <= N.deg(); ++i)
             if (!N.coeff(i).isZero() && (i % su != 0))
                 return false;
         if (nkids == 3) {
             const Expr dExpr = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 2), depth);
-            std::int64_t di = 0;
+            keel::i64 di = 0;
             if (dExpr.isNull() || c.kind(dExpr) != NodeKind::Number ||
                 !(c.numberValue(dExpr).den() == BigInt(1)) ||
                 !c.numberValue(dExpr).num().fitsInt64(di) || di < 0)
                 return false;
-            return N.deg() == static_cast<std::size_t>(di * step);
+            return N.deg() == static_cast<keel::usize>(di * step);
         }
         return true;
     }
@@ -1492,7 +1493,7 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
             if (ai.isNull() || c.kind(ai) != NodeKind::Number)
                 return false;
-            v[static_cast<std::size_t>(i)] = c.numberValue(ai);
+            v[static_cast<keel::usize>(i)] = c.numberValue(ai);
         }
         const auto isInt = [](const Rational &r) {
             return r.den() == BigInt(1);
@@ -1544,7 +1545,7 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
             if (ai.isNull() || c.kind(ai) != NodeKind::Number)
                 return false;
-            v[static_cast<std::size_t>(i)] = c.numberValue(ai);
+            v[static_cast<keel::usize>(i)] = c.numberValue(ai);
         }
         const auto isInt = [](const Rational &r) {
             return r.den() == BigInt(1);
@@ -1646,9 +1647,9 @@ bool evalCondition(const RuleTables &t, const std::int32_t *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
             if (ai.isNull())
                 return false;
-            exprs[static_cast<std::size_t>(i)] = ai;
+            exprs[static_cast<keel::usize>(i)] = ai;
             if (c.kind(ai) == NodeKind::Number)
-                vals[static_cast<std::size_t>(i)] = c.numberValue(ai);
+                vals[static_cast<keel::usize>(i)] = c.numberValue(ai);
             else
                 allNum = false;
         }
@@ -1726,18 +1727,18 @@ namespace {
 // 2^(-1/2)*3^(1/2).
 Expr factorRationalPower(Ctx &c, const Rational &v, const Rational &exp)
 {
-    if (v == Rational(std::int64_t{1}) || exp.isZero())
+    if (v == Rational(keel::i64{1}) || exp.isZero())
         return c.one();
     std::vector<Expr> parts;
     for (const auto &pk : BigInt::factorize(v.num())) {
         parts.push_back(
             c.pow(c.number(Rational(pk.first, BigInt(1))),
-                  c.number(exp * Rational(static_cast<std::int64_t>(pk.second)))));
+                  c.number(exp * Rational(static_cast<keel::i64>(pk.second)))));
     }
     for (const auto &pk : BigInt::factorize(v.den())) {
         parts.push_back(
             c.pow(c.number(Rational(pk.first, BigInt(1))),
-                  c.number(-exp * Rational(static_cast<std::int64_t>(pk.second)))));
+                  c.number(-exp * Rational(static_cast<keel::i64>(pk.second)))));
     }
     return parts.empty() ? c.one() : c.mul(parts);
 }
@@ -1754,14 +1755,14 @@ Expr normalizeRadicals(Ctx &c, Expr e, Expr var)
     case NodeKind::Add: {
         std::vector<Expr> items;
         items.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             items.push_back(normalizeRadicals(c, c.child(e, i), var));
         return c.add(items);
     }
     case NodeKind::Mul: {
         std::vector<Expr> items;
         items.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             items.push_back(normalizeRadicals(c, c.child(e, i), var));
         return c.mul(items);
     }
@@ -1779,7 +1780,7 @@ Expr normalizeRadicals(Ctx &c, Expr e, Expr var)
                 if (toRational(c, base, var, N, D) && !D.isZero() &&
                     D.isConst() && N.deg() >= 1) {
                     const UPoly P =
-                        N * UPoly(Rational(std::int64_t{1}) / D.coeff(0));
+                        N * UPoly(Rational(keel::i64{1}) / D.coeff(0));
                     BigInt numGcd(0), denLcm(1);
                     for (const Rational &q : P.coeffs()) {
                         numGcd = BigInt::gcd(numGcd, q.num());
@@ -1808,23 +1809,23 @@ Expr normalizeRadicals(Ctx &c, Expr e, Expr var)
 
 // LCM of fractional exponent denominators in a product or power `q`
 // (bounded to [2..12]; 0 when none or out of range).
-std::int64_t radicalExponentLcm(const Ctx &c, Expr q)
+keel::i64 radicalExponentLcm(const Ctx &c, Expr q)
 {
-    auto denomOf = [&](Expr node) -> std::int64_t {
+    auto denomOf = [&](Expr node) -> keel::i64 {
         if (c.kind(node) != NodeKind::Pow ||
             c.kind(c.child(node, 1)) != NodeKind::Number)
             return 1;
-        std::int64_t d = 1;
+        keel::i64 d = 1;
         if (!c.numberValue(c.child(node, 1)).den().fitsInt64(d) || d <= 0)
             return 0;
         return d;
     };
-    std::int64_t L = 1;
+    keel::i64 L = 1;
     if (c.kind(q) == NodeKind::Pow) {
         L = denomOf(q);
     } else if (c.kind(q) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(q); ++i) {
-            const std::int64_t d = denomOf(c.child(q, i));
+        for (keel::usize i = 0; i < c.childCount(q); ++i) {
+            const keel::i64 d = denomOf(c.child(q, i));
             if (d <= 0)
                 return 0;
             L = std::lcm(L, d);
@@ -1847,7 +1848,7 @@ int evalRadicalProductSign(Ctx &c, Expr e, const std::string &varName,
         return c.symbolName(e) == varName ? x0.signum() : 0;
     case NodeKind::Mul: {
         int s = 1;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const int cs = evalRadicalProductSign(c, c.child(e, i), varName, x0);
             if (cs == 0)
                 return 0;
@@ -1859,7 +1860,7 @@ int evalRadicalProductSign(Ctx &c, Expr e, const std::string &varName,
         if (c.kind(c.child(e, 1)) != NodeKind::Number)
             return 0;
         const Rational &exp = c.numberValue(c.child(e, 1));
-        std::int64_t p = 0, q = 0;
+        keel::i64 p = 0, q = 0;
         if (!exp.num().fitsInt64(p) || !exp.den().fitsInt64(q) || q <= 0)
             return 0;
         const int bs = evalRadicalProductSign(c, c.child(e, 0), varName, x0);
@@ -1881,7 +1882,7 @@ int evalRadicalProductSign(Ctx &c, Expr e, const std::string &varName,
 }
 
 bool collectSingleLinearRadical(Ctx &c, Expr e, Expr var, Expr &radBase,
-                                std::int64_t &qLcm)
+                                keel::i64 &qLcm)
 {
     if (c.kind(e) == NodeKind::Func)
         return false;
@@ -1890,7 +1891,7 @@ bool collectSingleLinearRadical(Ctx &c, Expr e, Expr var, Expr &radBase,
             return false;
         const Rational &r = c.numberValue(c.child(e, 1));
         if (!(r.den() == BigInt(1))) {
-            std::int64_t q = 0;
+            keel::i64 q = 0;
             if (!r.den().fitsInt64(q) || q < 2 || q > 12)
                 return false;
             if (radBase.isNull())
@@ -1903,14 +1904,14 @@ bool collectSingleLinearRadical(Ctx &c, Expr e, Expr var, Expr &radBase,
             return true;
         }
     }
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         if (!collectSingleLinearRadical(c, c.child(e, i), var, radBase, qLcm))
             return false;
     return true;
 }
 
 Expr substLinearRadical(Ctx &c, Expr e, Expr var, Expr radBase,
-                        std::int64_t qLcm, Expr tSym, Expr xOfT)
+                        keel::i64 qLcm, Expr tSym, Expr xOfT)
 {
     if (e == var)
         return xOfT;
@@ -1923,7 +1924,7 @@ Expr substLinearRadical(Ctx &c, Expr e, Expr var, Expr radBase,
     if (c.kind(e) == NodeKind::Add || c.kind(e) == NodeKind::Mul) {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(substLinearRadical(c, c.child(e, i), var, radBase,
                                               qLcm, tSym, xOfT));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
@@ -1947,7 +1948,7 @@ bool checkNormalizedCertificate(Ctx &c, Expr dF, Expr e, Expr var)
     if (toRational(c, dF, var, n1, d1) && toRational(c, e, var, n2, d2))
         return n1 * d2 == n2 * d1;
 
-    const Expr invE = c.pow(e, c.number(std::int64_t{-1}));
+    const Expr invE = c.pow(e, c.number(keel::i64{-1}));
     if (invE.isNull())
         return false;
     const Expr Q = distributeMul(c, dF, invE);
@@ -1955,7 +1956,7 @@ bool checkNormalizedCertificate(Ctx &c, Expr dF, Expr e, Expr var)
     if (toRational(c, Q, var, nQ, dQ) && !dQ.isZero())
         return nQ == dQ;
 
-    const std::int64_t L = radicalExponentLcm(c, Q);
+    const keel::i64 L = radicalExponentLcm(c, Q);
     if (L >= 2) {
         const Expr QL = c.pow(Q, c.number(L));
         UPoly nQL, dQL;
@@ -1964,16 +1965,16 @@ bool checkNormalizedCertificate(Ctx &c, Expr dF, Expr e, Expr var)
                 return true;
             const std::string &varName = c.symbolName(var);
             const std::array<Rational, 10> kSignSamples = {{
-                Rational(std::int64_t{0}),
-                Rational(std::int64_t{1}, BigInt(8)),
-                Rational(std::int64_t{1}, BigInt(2)),
-                Rational(std::int64_t{5}, BigInt(4)),
-                Rational(std::int64_t{3}),
-                Rational(std::int64_t{16}),
-                Rational(std::int64_t{-1}, BigInt(8)),
-                Rational(std::int64_t{-1}, BigInt(2)),
-                Rational(std::int64_t{-3}),
-                Rational(std::int64_t{-16}),
+                Rational(keel::i64{0}),
+                Rational(keel::i64{1}, BigInt(8)),
+                Rational(keel::i64{1}, BigInt(2)),
+                Rational(keel::i64{5}, BigInt(4)),
+                Rational(keel::i64{3}),
+                Rational(keel::i64{16}),
+                Rational(keel::i64{-1}, BigInt(8)),
+                Rational(keel::i64{-1}, BigInt(2)),
+                Rational(keel::i64{-3}),
+                Rational(keel::i64{-16}),
             }};
             for (const Rational &x0 : kSignSamples) {
                 const int s = evalRadicalProductSign(c, Q, varName, x0);
@@ -1994,14 +1995,14 @@ Expr rewriteTrigToSinCos(Ctx &c, Expr e)
     case NodeKind::Add: {
         std::vector<Expr> ch;
         ch.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
         return c.add(ch);
     }
     case NodeKind::Mul: {
         std::vector<Expr> ch;
         ch.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
         return c.mul(ch);
     }
@@ -2012,7 +2013,7 @@ Expr rewriteTrigToSinCos(Ctx &c, Expr e)
         if (c.childCount(e) != 1) {
             std::vector<Expr> args;
             args.reserve(c.childCount(e));
-            for (std::size_t i = 0; i < c.childCount(e); ++i)
+            for (keel::usize i = 0; i < c.childCount(e); ++i)
                 args.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
             return c.func(c.funcName(e), args);
         }
@@ -2053,14 +2054,14 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
     case NodeKind::Add: {
         std::vector<Expr> ch;
         ch.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(clearNestedDenominators(c, c.child(e, i)));
         return c.add(ch);
     }
     case NodeKind::Mul: {
         std::vector<Expr> ch;
         ch.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(clearNestedDenominators(c, c.child(e, i)));
         return c.mul(ch);
     }
@@ -2089,10 +2090,10 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
                         }
                     }
                 };
-                for (std::size_t i = 0; i < c.childCount(b); ++i) {
+                for (keel::usize i = 0; i < c.childCount(b); ++i) {
                     const Expr term = c.child(b, i);
                     if (c.kind(term) == NodeKind::Mul) {
-                        for (std::size_t j = 0; j < c.childCount(term); ++j)
+                        for (keel::usize j = 0; j < c.childCount(term); ++j)
                             recordFactor(c.child(term, j));
                     } else {
                         recordFactor(term);
@@ -2116,7 +2117,7 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
     case NodeKind::Func: {
         std::vector<Expr> args;
         args.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             args.push_back(clearNestedDenominators(c, c.child(e, i)));
         return c.func(c.funcName(e), args);
     }
@@ -2152,10 +2153,10 @@ bool isZeroOrClearedZero(Ctx &c, Expr delta, Expr var)
                 }
             }
         };
-        for (std::size_t i = 0; i < c.childCount(delta); ++i) {
+        for (keel::usize i = 0; i < c.childCount(delta); ++i) {
             const Expr term = c.child(delta, i);
             if (c.kind(term) == NodeKind::Mul) {
-                for (std::size_t j = 0; j < c.childCount(term); ++j)
+                for (keel::usize j = 0; j < c.childCount(term); ++j)
                     recordNegPow(c.child(term, j));
             } else {
                 recordNegPow(term);
@@ -2216,7 +2217,7 @@ bool certificateHolds(Ctx &c, Expr F, Expr e, Expr var)
 
     // Single linear radical rationalizing substitution t = (c0 + c1*x)^(1/q):
     Expr radBase;
-    std::int64_t qLcm = 1;
+    keel::i64 qLcm = 1;
     if (collectSingleLinearRadical(c, dFNorm, var, radBase, qLcm) &&
         collectSingleLinearRadical(c, eNorm, var, radBase, qLcm) &&
         !radBase.isNull() && qLcm >= 2) {
@@ -2227,7 +2228,7 @@ bool certificateHolds(Ctx &c, Expr F, Expr e, Expr var)
             const Rational c1 = nB.coeff(1) / dB.coeff(0);
             const Expr tSym = c.symbol("_t_rad");
             const Expr xOfT =
-                c.mul({c.number(Rational(std::int64_t{1}) / c1),
+                c.mul({c.number(Rational(keel::i64{1}) / c1),
                        c.add({c.pow(tSym, c.number(qLcm)), c.number(-c0)})});
             const Expr dFT = substLinearRadical(c, dFNorm, var, radBase, qLcm,
                                                 tSym, xOfT);
@@ -2256,12 +2257,12 @@ Expr rubiLinearityFallback(const RuleTables &t, Ctx &c, Expr e, Expr var,
     if (c.kind(e) == NodeKind::Number) {
         F = c.mul({e, var});
     } else if (e == var) {
-        F = c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))),
-                   c.pow(var, c.number(std::int64_t{2}))});
+        F = c.mul({c.number(Rational(keel::i64{1}, BigInt(2))),
+                   c.pow(var, c.number(keel::i64{2}))});
     } else if (c.kind(e) == NodeKind::Mul &&
                c.kind(c.child(e, 0)) == NodeKind::Number) {
         std::vector<Expr> rest;
-        for (std::size_t i = 1; i < c.childCount(e); ++i)
+        for (keel::usize i = 1; i < c.childCount(e); ++i)
             rest.push_back(c.child(e, i));
         const Expr inner =
             rubiApplyDepth(t, c, c.mul(rest), var, depth + 1, budget);
@@ -2270,7 +2271,7 @@ Expr rubiLinearityFallback(const RuleTables &t, Ctx &c, Expr e, Expr var,
         F = c.mul({c.child(e, 0), inner});
     } else if (c.kind(e) == NodeKind::Add) {
         std::vector<Expr> pieces;
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr p =
                 rubiApplyDepth(t, c, c.child(e, i), var, depth + 1, budget);
             if (p.isNull())
@@ -2301,7 +2302,7 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
         c.kind(c.child(e, 0)) == NodeKind::Number) {
         std::vector<Expr> rest;
         rest.reserve(c.childCount(e) - 1);
-        for (std::size_t i = 1; i < c.childCount(e); ++i)
+        for (keel::usize i = 1; i < c.childCount(e); ++i)
             rest.push_back(c.child(e, i));
         const Expr inner =
             rubiApplyDepth(t, c, c.mul(rest), var, depth + 1, budget);
@@ -2313,7 +2314,7 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
 
     struct CandidateHit
     {
-        std::int32_t rule;
+        keel::i32 rule;
         std::vector<Binding> bnd;
     };
     std::vector<CandidateHit> hits;
@@ -2321,8 +2322,8 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
     std::vector<Binding> acc;
     matchStep(
         t, c, var, 0, work, acc,
-        [&](std::int32_t firstRule, const std::vector<Binding> &bnd) {
-            for (std::int32_t rule = firstRule; rule >= 0;
+        [&](keel::i32 firstRule, const std::vector<Binding> &bnd) {
+            for (keel::i32 rule = firstRule; rule >= 0;
                  rule = t.ruleRow(rule, 3)) {
                 hits.push_back(CandidateHit{rule, bnd});
             }
@@ -2336,8 +2337,8 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
         if (budget &&
             (!budget->step() || !budget->recordArenaBytes(c.nodeCount() * 32)))
             return Expr();
-        const std::int32_t repOff = t.ruleRow(h.rule, 0);
-        const std::int32_t condOff = t.ruleRow(h.rule, 1);
+        const keel::i32 repOff = t.ruleRow(h.rule, 0);
+        const keel::i32 condOff = t.ruleRow(h.rule, 1);
         if (condOff >= 0 &&
             !evalCondition(t, t.condTerms, c, e, var, h.bnd, condOff, depth))
             continue;

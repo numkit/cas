@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/transform/ztrans.hpp>
 
 #include <numkit/cas/core/simplify.hpp>
@@ -38,7 +39,7 @@ bool mentionsSymbol(const Ctx &c, Expr e, Expr sym)
         return false;
     if (e == sym)
         return true;
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         if (mentionsSymbol(c, c.child(e, i), sym))
             return true;
     return false;
@@ -71,7 +72,7 @@ bool matchLinearInVar(Ctx &c, Expr arg, Expr var, Expr &c0Out, Expr &c1Out)
         if (c.kind(term) == NodeKind::Mul) {
             std::vector<Expr> others;
             bool foundVar = false;
-            for (std::size_t i = 0; i < c.childCount(term); ++i) {
+            for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr ch = c.child(term, i);
                 if (!foundVar && ch == var) {
                     foundVar = true;
@@ -101,7 +102,7 @@ bool matchLinearInVar(Ctx &c, Expr arg, Expr var, Expr &c0Out, Expr &c1Out)
     if (c.kind(ex) == NodeKind::Add) {
         std::vector<Expr> constTerms;
         std::vector<Expr> linCoeffs;
-        for (std::size_t i = 0; i < c.childCount(ex); ++i) {
+        for (keel::usize i = 0; i < c.childCount(ex); ++i) {
             const Expr ti = c.child(ex, i);
             if (!mentionsSymbol(c, ti, var)) {
                 constTerms.push_back(ti);
@@ -133,7 +134,7 @@ Expr rewriteHypToExpZ(Ctx &c, Expr e, Expr var)
     case NodeKind::Func: {
         const std::string &fn = c.funcName(e);
         const Expr u = rewriteHypToExpZ(c, c.child(e, 0), var);
-        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+        const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
         if (fn == "sinh") {
             return c.mul(
                 {half, c.add({c.func("exp", u), c.neg(c.func("exp", c.neg(u)))})});
@@ -151,7 +152,7 @@ Expr rewriteHypToExpZ(Ctx &c, Expr e, Expr var)
     case NodeKind::Mul: {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(rewriteHypToExpZ(c, c.child(e, i), var));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
     }
@@ -163,25 +164,25 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
 {
     if (e.isNull() || !mentionsSymbol(c, e, var))
         return e;
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
 
     if (c.kind(e) == NodeKind::Pow && c.kind(c.child(e, 0)) == NodeKind::Func &&
         c.kind(c.child(e, 1)) == NodeKind::Number) {
         const std::string &fn = c.funcName(c.child(e, 0));
         const Expr u = c.child(c.child(e, 0), 0);
-        std::int64_t p = 0;
+        keel::i64 p = 0;
         if (mentionsSymbol(c, u, var) &&
             c.numberValue(c.child(e, 1)).den() == BigInt(1) &&
             c.numberValue(c.child(e, 1)).num().fitsInt64(p) && p >= 2 &&
             p <= 6) {
-            const Expr twoU = c.mul({c.number(std::int64_t{2}), u});
+            const Expr twoU = c.mul({c.number(keel::i64{2}), u});
             Expr sq;
             if (fn == "sin")
                 sq = c.mul({half, c.add({c.one(), c.neg(c.func("cos", twoU))})});
             else if (fn == "cos")
                 sq = c.mul({half, c.add({c.one(), c.func("cos", twoU)})});
             else if (fn == "sinh")
-                sq = c.mul({half, c.add({c.func("cosh", twoU), c.number(std::int64_t{-1})})});
+                sq = c.mul({half, c.add({c.func("cosh", twoU), c.number(keel::i64{-1})})});
             else if (fn == "cosh")
                 sq = c.mul({half, c.add({c.func("cosh", twoU), c.one()})});
             if (!sq.isNull()) {
@@ -197,10 +198,10 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
     if (c.kind(e) == NodeKind::Mul) {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(
                 reduceTrigProductsOnceZ(c, c.child(e, i), var, changed));
-        for (std::size_t i = 0; i < kids.size(); ++i) {
+        for (keel::usize i = 0; i < kids.size(); ++i) {
             if (c.kind(kids[i]) != NodeKind::Func)
                 continue;
             const std::string &f1 = c.funcName(kids[i]);
@@ -209,7 +210,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
             const Expr u = c.child(kids[i], 0);
             if (!mentionsSymbol(c, u, var))
                 continue;
-            for (std::size_t j = i + 1; j < kids.size(); ++j) {
+            for (keel::usize j = i + 1; j < kids.size(); ++j) {
                 if (c.kind(kids[j]) != NodeKind::Func)
                     continue;
                 const std::string &f2 = c.funcName(kids[j]);
@@ -235,7 +236,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
                                                   c.neg(c.func("sin", uMinusV))})});
                 }
                 kids[i] = prodSum;
-                kids.erase(kids.begin() + static_cast<std::ptrdiff_t>(j));
+                kids.erase(kids.begin() + static_cast<keel::isize>(j));
                 changed = true;
                 return c.mul(kids);
             }
@@ -246,7 +247,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
     if (c.kind(e) == NodeKind::Add) {
         std::vector<Expr> kids;
         kids.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(
                 reduceTrigProductsOnceZ(c, c.child(e, i), var, changed));
         return c.add(kids);
@@ -273,7 +274,7 @@ Expr normalizeForZTrans(Ctx &c, Expr e, Expr n)
 
 // Evaluate f(n) at a non-negative integer point n = k, folding kroneckerDelta(0) = 1
 // and kroneckerDelta(m != 0) = 0.
-Expr evalDiscreteAtInt(Ctx &c, Expr e, Expr n, std::int64_t k)
+Expr evalDiscreteAtInt(Ctx &c, Expr e, Expr n, keel::i64 k)
 {
     const Expr sub = c.subs(e, n, c.number(k));
     auto foldDeltas = [&](auto &self, Expr node) -> Expr {
@@ -307,7 +308,7 @@ Expr evalDiscreteAtInt(Ctx &c, Expr e, Expr n, std::int64_t k)
         case NodeKind::Mul: {
             std::vector<Expr> ch;
             ch.reserve(c.childCount(node));
-            for (std::size_t i = 0; i < c.childCount(node); ++i)
+            for (keel::usize i = 0; i < c.childCount(node); ++i)
                 ch.push_back(self(self, c.child(node, i)));
             return c.kind(node) == NodeKind::Add ? c.add(ch) : c.mul(ch);
         }
@@ -326,15 +327,15 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
     if (!mentionsSymbol(c, term, n)) {
         // Constant c: Z{c}(z) = c * z / (z - 1).
         out.F = c.mul({term, z,
-                       c.pow(c.add({z, c.number(std::int64_t{-1})}),
-                             c.number(std::int64_t{-1}))});
+                       c.pow(c.add({z, c.number(keel::i64{-1})}),
+                             c.number(keel::i64{-1}))});
         out.status = ZTransResult::Status::ProvedSymbolic;
         return out;
     }
 
     std::vector<Expr> factors;
     if (c.kind(term) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(term); ++i)
+        for (keel::usize i = 0; i < c.childCount(term); ++i)
             factors.push_back(c.child(term, i));
     } else {
         factors.push_back(term);
@@ -343,11 +344,11 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
     std::vector<Expr> constFacs;
     std::vector<Expr> geomBases;
     std::vector<Expr> nonDeltaFacs;
-    std::int64_t nDeg = 0;
+    keel::i64 nDeg = 0;
     std::string trigFn;
     Expr trigPhase, trigFreq;
     bool hasDelta = false;
-    std::int64_t deltaK = 0;
+    keel::i64 deltaK = 0;
 
     for (const Expr &fac : factors) {
         if (!mentionsSymbol(c, fac, n)) {
@@ -366,7 +367,7 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
             // n^k (k in Z_{>=1})
             if (base == n && c.kind(expNode) == NodeKind::Number) {
                 const Rational &re = c.numberValue(expNode);
-                std::int64_t kVal = 0;
+                keel::i64 kVal = 0;
                 if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
                     kVal >= 1 && kVal <= 12) {
                     nDeg += kVal;
@@ -411,7 +412,7 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
                 // Match n - k == 0 or k - n == 0 -> k = -c0 / c1.
                 const Expr kExpr = c.simplify(c.neg(c.div(c0, c1)));
                 Rational kRat;
-                std::int64_t kVal = 0;
+                keel::i64 kVal = 0;
                 if (c.evalExact(kExpr, {}, kRat) && kRat.den() == BigInt(1) &&
                     kRat.num().fitsInt64(kVal)) {
                     hasDelta = true;
@@ -449,17 +450,17 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
     Expr baseZ;
     if (trigFn.empty()) {
         // Z{r^n}(z) = z / (z - r).
-        baseZ = c.mul({z, c.pow(c.add({z, c.neg(r)}), c.number(std::int64_t{-1}))});
+        baseZ = c.mul({z, c.pow(c.add({z, c.neg(r)}), c.number(keel::i64{-1}))});
     } else if (trigFn == "sin" || trigFn == "cos") {
         const Expr cosW = c.simplify(c.func("cos", trigFreq));
         const Expr sinW = c.simplify(c.func("sin", trigFreq));
         const Expr rCosW = c.mul({r, cosW});
         const Expr rSinW = c.mul({r, sinW});
         const Expr denom = c.add(
-            {c.pow(z, c.number(std::int64_t{2})),
-             c.neg(c.mul({c.number(std::int64_t{2}), rCosW, z})),
-             c.pow(r, c.number(std::int64_t{2}))});
-        const Expr invDen = c.pow(denom, c.number(std::int64_t{-1}));
+            {c.pow(z, c.number(keel::i64{2})),
+             c.neg(c.mul({c.number(keel::i64{2}), rCosW, z})),
+             c.pow(r, c.number(keel::i64{2}))});
+        const Expr invDen = c.pow(denom, c.number(keel::i64{-1}));
         const Expr zCos = c.mul({z, c.add({z, c.neg(rCosW)}), invDen});
         const Expr zSin = c.mul({z, rSinW, invDen});
         if (c.isZero(trigPhase)) {
@@ -480,10 +481,10 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
         const Expr rCoshW = c.mul({r, coshW});
         const Expr rSinhW = c.mul({r, sinhW});
         const Expr denom = c.add(
-            {c.pow(z, c.number(std::int64_t{2})),
-             c.neg(c.mul({c.number(std::int64_t{2}), rCoshW, z})),
-             c.pow(r, c.number(std::int64_t{2}))});
-        const Expr invDen = c.pow(denom, c.number(std::int64_t{-1}));
+            {c.pow(z, c.number(keel::i64{2})),
+             c.neg(c.mul({c.number(keel::i64{2}), rCoshW, z})),
+             c.pow(r, c.number(keel::i64{2}))});
+        const Expr invDen = c.pow(denom, c.number(keel::i64{-1}));
         const Expr zCosh = c.mul({z, c.add({z, c.neg(rCoshW)}), invDen});
         const Expr zSinh = c.mul({z, rSinhW, invDen});
         if (c.isZero(trigPhase)) {
@@ -501,7 +502,7 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
 
     // Apply (-z * d/dz)^nDeg to baseZ.
     Expr curZ = baseZ;
-    for (std::int64_t k = 0; k < nDeg; ++k) {
+    for (keel::i64 k = 0; k < nDeg; ++k) {
         if (!checkZBudget(c, budget, out.reason))
             return out;
         curZ = simplifyRationalExpr(
@@ -524,7 +525,7 @@ ZTransResult ztransRec(Ctx &c, Expr f, Expr n, Expr z, Budget *budget)
     if (c.kind(norm) == NodeKind::Add) {
         std::vector<Expr> parts;
         parts.reserve(c.childCount(norm));
-        for (std::size_t i = 0; i < c.childCount(norm); ++i) {
+        for (keel::usize i = 0; i < c.childCount(norm); ++i) {
             const ZTransResult pi =
                 ztransTerm(c, c.child(norm, i), n, z, budget);
             if (!pi.proved())
@@ -562,7 +563,7 @@ Expr binomialExpr(Ctx &c, Expr n, int k)
     for (int j = 0; j < k; ++j) {
         fact = fact * BigInt(j + 1);
         numFactors.push_back(
-            j == 0 ? n : c.add({n, c.number(static_cast<std::int64_t>(-j))}));
+            j == 0 ? n : c.add({n, c.number(static_cast<keel::i64>(-j))}));
     }
     numFactors.push_back(c.number(Rational(BigInt(1), fact)));
     return c.mul(numFactors);
@@ -579,7 +580,7 @@ Expr invertLinearZPole(Ctx &c, Expr r, int k, Expr n)
     const Expr rScale =
         (r == c.one())
             ? c.one()
-            : c.pow(r, c.number(static_cast<std::int64_t>(-(k - 1))));
+            : c.pow(r, c.number(static_cast<keel::i64>(-(k - 1))));
     return c.mul({binom, rScale, rPowN});
 }
 
@@ -590,29 +591,29 @@ bool invertQuadraticZFactor(Ctx &c, const Rational &bRat, const Rational &dRat,
 {
     if (k < 1 || k > 2 || dRat.isZero())
         return false;
-    const Rational disc = bRat * bRat - Rational(std::int64_t{4}) * dRat;
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Rational disc = bRat * bRat - Rational(keel::i64{4}) * dRat;
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
 
     if (disc.signum() > 0) {
         // Real quadratic roots r1, r2 = (-b +/- sqrt(disc)) / 2.
         const Expr sqrtDisc = c.simplify(c.pow(c.number(disc), half));
         const Expr negHalfB =
-            c.number(-bRat * Rational(std::int64_t{1}, BigInt(2)));
+            c.number(-bRat * Rational(keel::i64{1}, BigInt(2)));
         const Expr halfSqrt = c.mul({half, sqrtDisc});
         const Expr r1 = c.add({negHalfB, halfSqrt});
         const Expr r2 = c.add({negHalfB, c.neg(halfSqrt)});
         const Expr invSqrtDisc =
             c.simplify(c.pow(c.number(disc),
-                             c.number(Rational(std::int64_t{-1}, BigInt(2)))));
+                             c.number(Rational(keel::i64{-1}, BigInt(2)))));
         if (k == 1) {
             // (A*z + B) / ((z - r1)*(z - r2)) = alpha1 / (z - r1) + alpha2 / (z - r2)
             // alpha1 = A/2 + (2*B - A*b) / (2*sqrt(disc)),
             // alpha2 = A/2 - (2*B - A*b) / (2*sqrt(disc)).
             const Expr halfA =
-                c.number(aRat * Rational(std::int64_t{1}, BigInt(2)));
+                c.number(aRat * Rational(keel::i64{1}, BigInt(2)));
             const Expr diffPart = c.mul(
-                {c.number((Rational(std::int64_t{2}) * bNumRat - aRat * bRat) *
-                          Rational(std::int64_t{1}, BigInt(2))),
+                {c.number((Rational(keel::i64{2}) * bNumRat - aRat * bRat) *
+                          Rational(keel::i64{1}, BigInt(2))),
                  invSqrtDisc});
             const Expr alpha1 = c.add({halfA, diffPart});
             const Expr alpha2 = c.add({halfA, c.neg(diffPart)});
@@ -626,13 +627,13 @@ bool invertQuadraticZFactor(Ctx &c, const Rational &bRat, const Rational &dRat,
         // c11 = (A*(r1 - r2) - 2*(A*r1 + B)) / (r1 - r2)^3
         //     = -(A*(r1 + r2) + 2*B) / (disc * sqrt(disc)) = (A*b - 2*B) / (disc * sqrt(disc)),
         // c21 = -c11.
-        const Expr invDisc = c.number(Rational(std::int64_t{1}) / disc);
+        const Expr invDisc = c.number(Rational(keel::i64{1}) / disc);
         const Expr c12 = c.mul(
             {c.add({c.mul({c.number(aRat), r1}), c.number(bNumRat)}), invDisc});
         const Expr c22 = c.mul(
             {c.add({c.mul({c.number(aRat), r2}), c.number(bNumRat)}), invDisc});
         const Expr c11 = c.mul(
-            {c.number(aRat * bRat - Rational(std::int64_t{2}) * bNumRat),
+            {c.number(aRat * bRat - Rational(keel::i64{2}) * bNumRat),
              invDisc, invSqrtDisc});
         const Expr c21 = c.neg(c11);
         out = c.add({c.mul({c11, invertLinearZPole(c, r1, 1, n)}),
@@ -649,21 +650,21 @@ bool invertQuadraticZFactor(Ctx &c, const Rational &bRat, const Rational &dRat,
         const Expr r = c.simplify(c.pow(c.number(dRat), half));
         const Expr invR = c.simplify(
             c.pow(c.number(dRat),
-                  c.number(Rational(std::int64_t{-1}, BigInt(2)))));
+                  c.number(Rational(keel::i64{-1}, BigInt(2)))));
         const Expr cosW = c.simplify(c.mul(
-            {c.number(-bRat * Rational(std::int64_t{1}, BigInt(2))), invR}));
+            {c.number(-bRat * Rational(keel::i64{1}, BigInt(2))), invR}));
         const Expr omega = c.simplify(c.func("acos", cosW));
         const Expr rPowN = (r == c.one()) ? c.one() : c.pow(r, n);
         const Expr cosWn = c.func("cos", c.mul({omega, n}));
         const Expr sinWn = c.func("sin", c.mul({omega, n}));
         const Expr invSqrtNegDisc = c.simplify(
             c.pow(c.number(negDisc),
-                  c.number(Rational(std::int64_t{-1}, BigInt(2)))));
+                  c.number(Rational(keel::i64{-1}, BigInt(2)))));
         if (k == 1) {
             // z*(A*z + B) / (z^2 + b*z + d)
             //   = A * z*(z + b/2)/Q + ((2*B - A*b)/sqrt(-disc)) * z*(sqrt(-disc)/2)/Q
             const Expr sinCoeff = c.mul(
-                {c.number(Rational(std::int64_t{2}) * bNumRat - aRat * bRat),
+                {c.number(Rational(keel::i64{2}) * bNumRat - aRat * bRat),
                  invSqrtNegDisc});
             out = c.add({c.mul({c.number(aRat), rPowN, cosWn}),
                          c.mul({sinCoeff, rPowN, sinWn})});
@@ -695,11 +696,11 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
 
     // Factor out z^p from D(z): D(z) = z^p * dTilde(z) with dTilde(0) != 0.
     int pZero = 0;
-    while (pZero <= D.deg() && D.coeff(static_cast<std::size_t>(pZero)).isZero())
+    while (pZero <= D.deg() && D.coeff(static_cast<keel::usize>(pZero)).isZero())
         ++pZero;
     std::vector<Rational> dTildeCoeffs;
     for (int i = pZero; i <= D.deg(); ++i)
-        dTildeCoeffs.push_back(D.coeff(static_cast<std::size_t>(i)));
+        dTildeCoeffs.push_back(D.coeff(static_cast<keel::usize>(i)));
     UPoly dTilde(dTildeCoeffs);
 
     // Require causal sequence: deg(N) <= deg(D).
@@ -709,14 +710,14 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     // Decompose F(z)/z = N(z) / (z^(pZero+1) * dTilde(z)):
     //   1. If dTilde is constant, F(z) = sum_{k=0}^pZero c_k * z^(-k).
     const UPoly zPow = UPoly::monomial(
-        Rational(std::int64_t{1}), static_cast<std::uint64_t>(pZero + 1));
+        Rational(keel::i64{1}), static_cast<keel::u64>(pZero + 1));
     std::vector<Expr> seqTerms;
 
     UPoly mPoly;
     if (dTilde.deg() == 0) {
-        const Rational invC = Rational(std::int64_t{1}) / dTilde.coeff(0);
+        const Rational invC = Rational(keel::i64{1}) / dTilde.coeff(0);
         for (int i = 0; i <= N.deg(); ++i) {
-            const Rational ci = N.coeff(static_cast<std::size_t>(i)) * invC;
+            const Rational ci = N.coeff(static_cast<keel::usize>(i)) * invC;
             if (ci.isZero())
                 continue;
             const int kShift = pZero - i;
@@ -725,7 +726,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
             const Expr deltaArg =
                 (kShift == 0)
                     ? n
-                    : c.add({n, c.number(static_cast<std::int64_t>(-kShift))});
+                    : c.add({n, c.number(static_cast<keel::i64>(-kShift))});
             seqTerms.push_back(
                 c.mul({c.number(ci), c.func("kroneckerDelta", deltaArg)}));
         }
@@ -736,14 +737,14 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     // Normalize dTilde to be monic.
     const Rational dLc = dTilde.lc();
     dTilde.makeMonic();
-    N = N * UPoly(Rational(std::int64_t{1}) / dLc);
+    N = N * UPoly(Rational(keel::i64{1}) / dLc);
 
     // N(z) / (z^(pZero+1) * dTilde(z)) = p0(z) / z^(pZero+1) + mPoly(z) / dTilde(z)
     // where p0(z) = (N * invMod(dTilde, z^(pZero+1))) mod z^(pZero+1).
     const UPoly invDTilde = UPoly::invMod(dTilde % zPow, zPow);
     const UPoly p0 = (N * invDTilde) % zPow;
     for (int i = 0; i <= p0.deg(); ++i) {
-        const Rational ci = p0.coeff(static_cast<std::size_t>(i));
+        const Rational ci = p0.coeff(static_cast<keel::usize>(i));
         if (ci.isZero())
             continue;
         const int kShift = pZero - i;
@@ -752,7 +753,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
         const Expr deltaArg =
             (kShift == 0)
                 ? n
-                : c.add({n, c.number(static_cast<std::int64_t>(-kShift))});
+                : c.add({n, c.number(static_cast<keel::i64>(-kShift))});
         seqTerms.push_back(
             c.mul({c.number(ci), c.func("kroneckerDelta", deltaArg)}));
     }
@@ -790,9 +791,9 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
                 fs.push_back(IrredFactor{ir, 1, ir});
         }
 
-        for (std::size_t j = 0; j < fs.size(); ++j) {
-            UPoly mj(Rational(std::int64_t{1}));
-            for (std::size_t i = 0; i < fs.size(); ++i) {
+        for (keel::usize j = 0; j < fs.size(); ++j) {
+            UPoly mj(Rational(keel::i64{1}));
+            for (keel::usize i = 0; i < fs.size(); ++i) {
                 if (i != j)
                     mj = mj * fs[i].qPow;
             }
@@ -835,7 +836,7 @@ bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
     const Expr fOverZ = simplifyRationalExpr(c, c.div(F, z));
     std::vector<Expr> factors;
     if (c.kind(fOverZ) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(fOverZ); ++i)
+        for (keel::usize i = 0; i < c.childCount(fOverZ); ++i)
             factors.push_back(c.child(fOverZ, i));
     } else {
         factors.push_back(fOverZ);
@@ -848,7 +849,7 @@ bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
         if (poleK == 0 && c.kind(fac) == NodeKind::Pow &&
             c.kind(c.child(fac, 1)) == NodeKind::Number) {
             const Rational &re = c.numberValue(c.child(fac, 1));
-            std::int64_t kVal = 0;
+            keel::i64 kVal = 0;
             Expr c0, c1;
             if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
                 kVal <= -1 && kVal >= -6 &&
@@ -872,7 +873,7 @@ bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
     const Expr numExpr = numFacs.empty() ? c.one() : c.mul(numFacs);
     if (!mentionsSymbol(c, numExpr, z)) {
         const Expr scale =
-            c.mul({numExpr, c.pow(c1, c.number(static_cast<std::int64_t>(-poleK)))});
+            c.mul({numExpr, c.pow(c1, c.number(static_cast<keel::i64>(-poleK)))});
         out = c.simplify(c.mul({scale, invertLinearZPole(c, r, poleK, n)}));
         return true;
     }
@@ -909,7 +910,7 @@ ZTransResult iztrans(Ctx &c, Expr F, Expr z, Expr n, Budget *budget)
     if (!ok && c.kind(F) == NodeKind::Add) {
         std::vector<Expr> parts;
         bool allOk = true;
-        for (std::size_t i = 0; i < c.childCount(F); ++i) {
+        for (keel::usize i = 0; i < c.childCount(F); ++i) {
             const ZTransResult sub = iztrans(c, c.child(F, i), z, n, budget);
             if (!sub.proved()) {
                 allOk = false;
@@ -992,7 +993,7 @@ Expr expandSequenceShifts(Ctx &c, Expr e, Expr n)
     case NodeKind::Mul: {
         std::vector<Expr> ch;
         ch.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(expandSequenceShifts(c, c.child(e, i), n));
         return c.kind(e) == NodeKind::Add ? c.add(ch) : c.mul(ch);
     }
@@ -1004,11 +1005,11 @@ bool certifyRecurrence(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
                        Expr y, Expr n)
 {
     std::vector<Expr> lhsTerms;
-    for (std::size_t k = 0; k < coeffs.size(); ++k) {
+    for (keel::usize k = 0; k < coeffs.size(); ++k) {
         if (c.isZero(coeffs[k]))
             continue;
         const Expr nPlusK =
-            (k == 0) ? n : c.add({n, c.number(static_cast<std::int64_t>(k))});
+            (k == 0) ? n : c.add({n, c.number(static_cast<keel::i64>(k))});
         const Expr yk = c.subs(y, n, nPlusK);
         lhsTerms.push_back(c.mul({coeffs[k], yk}));
     }
@@ -1036,7 +1037,7 @@ RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
         out.reason = "invalid recurrence specification";
         return out;
     }
-    std::size_t orderK = coeffs.size() - 1;
+    keel::usize orderK = coeffs.size() - 1;
     while (orderK > 0 && c.isZero(coeffs[orderK]))
         --orderK;
     if (orderK == 0) {
@@ -1055,19 +1056,19 @@ RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
     // and initial-condition numerator I(z) = sum_{k=1}^K a_k * sum_{j=0}^{k-1} y(j) * z^(k - j).
     std::vector<Expr> pTerms;
     std::vector<Expr> initTerms;
-    for (std::size_t k = 0; k <= orderK; ++k) {
+    for (keel::usize k = 0; k <= orderK; ++k) {
         if (c.isZero(coeffs[k]))
             continue;
         pTerms.push_back(
             k == 0 ? coeffs[0]
                    : c.mul({coeffs[k],
-                            c.pow(z, c.number(static_cast<std::int64_t>(k)))}));
-        for (std::size_t j = 0; j < k; ++j) {
+                            c.pow(z, c.number(static_cast<keel::i64>(k)))}));
+        for (keel::usize j = 0; j < k; ++j) {
             if (c.isZero(initVals[j]))
                 continue;
             initTerms.push_back(c.mul(
                 {coeffs[k], initVals[j],
-                 c.pow(z, c.number(static_cast<std::int64_t>(k - j)))}));
+                 c.pow(z, c.number(static_cast<keel::i64>(k - j)))}));
         }
     }
     const Expr pZ = pTerms.empty() ? c.zero() : c.add(pTerms);
@@ -1094,14 +1095,14 @@ RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
 
     std::vector<Expr> trimmedCoeffs(coeffs.begin(),
                                     coeffs.begin() +
-                                        static_cast<std::ptrdiff_t>(orderK + 1));
+                                        static_cast<keel::isize>(orderK + 1));
     if (!certifyRecurrence(c, trimmedCoeffs, rhs, inv.F, n)) {
         out.reason = "recurrence solution failed residual certificate";
         return out;
     }
-    for (std::size_t j = 0; j < orderK; ++j) {
+    for (keel::usize j = 0; j < orderK; ++j) {
         const Expr yAtJ =
-            evalDiscreteAtInt(c, inv.F, n, static_cast<std::int64_t>(j));
+            evalDiscreteAtInt(c, inv.F, n, static_cast<keel::i64>(j));
         const Expr err = c.simplify(c.add({yAtJ, c.neg(initVals[j])}));
         if (err.isNull() || !c.isZero(err)) {
             out.reason = "recurrence solution failed initial value certificate";
@@ -1123,7 +1124,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
         out.reason = "invalid recurrence specification";
         return out;
     }
-    std::size_t orderK = coeffs.size() - 1;
+    keel::usize orderK = coeffs.size() - 1;
     while (orderK > 0 && c.isZero(coeffs[orderK]))
         --orderK;
     if (orderK == 0) {
@@ -1135,13 +1136,13 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
 
     const Expr z = c.symbol("_z_char");
     std::vector<Expr> pTerms;
-    for (std::size_t k = 0; k <= orderK; ++k) {
+    for (keel::usize k = 0; k <= orderK; ++k) {
         if (!c.isZero(coeffs[k])) {
             pTerms.push_back(
                 k == 0
                     ? coeffs[0]
                     : c.mul({coeffs[k],
-                             c.pow(z, c.number(static_cast<std::int64_t>(k)))}));
+                             c.pow(z, c.number(static_cast<keel::i64>(k)))}));
         }
     }
     const Expr pZ = c.add(pTerms);
@@ -1152,17 +1153,17 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
     if (toRational(c, pZ, z, pNum, pDen) && pDen.isConst() && !pNum.isZero()) {
         int zeroMult = 0;
         while (zeroMult <= pNum.deg() &&
-               pNum.coeff(static_cast<std::size_t>(zeroMult)).isZero()) {
+               pNum.coeff(static_cast<keel::usize>(zeroMult)).isZero()) {
             const Expr deltaArg =
                 (zeroMult == 0)
                     ? n
-                    : c.add({n, c.number(static_cast<std::int64_t>(-zeroMult))});
+                    : c.add({n, c.number(static_cast<keel::i64>(-zeroMult))});
             basis.push_back(c.func("kroneckerDelta", deltaArg));
             ++zeroMult;
         }
         std::vector<Rational> nzCoeffs;
         for (int i = zeroMult; i <= pNum.deg(); ++i)
-            nzCoeffs.push_back(pNum.coeff(static_cast<std::size_t>(i)));
+            nzCoeffs.push_back(pNum.coeff(static_cast<keel::usize>(i)));
         UPoly nzPoly(nzCoeffs);
         nzPoly.makeMonic();
         if (nzPoly.deg() >= 1) {
@@ -1189,7 +1190,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
                 if (!found)
                     fms.push_back(FactorMult{ir, 1});
             }
-            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
             for (const auto &fm : fms) {
                 if (fm.q.deg() == 1) {
                     const Expr r = c.number(-fm.q.coeff(0));
@@ -1197,19 +1198,19 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
                     for (int m = 0; m < fm.mult; ++m) {
                         const Expr nPowM =
                             (m == 0) ? c.one()
-                                     : c.pow(n, c.number(static_cast<std::int64_t>(m)));
+                                     : c.pow(n, c.number(static_cast<keel::i64>(m)));
                         basis.push_back(c.mul({nPowM, rPowN}));
                     }
                 } else if (fm.q.deg() == 2) {
                     const Rational bRat = fm.q.coeff(1);
                     const Rational dRat = fm.q.coeff(0);
                     const Rational disc =
-                        bRat * bRat - Rational(std::int64_t{4}) * dRat;
+                        bRat * bRat - Rational(keel::i64{4}) * dRat;
                     if (disc.signum() > 0) {
                         const Expr sqrtDisc =
                             c.simplify(c.pow(c.number(disc), half));
                         const Expr negHalfB = c.number(
-                            -bRat * Rational(std::int64_t{1}, BigInt(2)));
+                            -bRat * Rational(keel::i64{1}, BigInt(2)));
                         const Expr r1 =
                             c.add({negHalfB, c.mul({half, sqrtDisc})});
                         const Expr r2 =
@@ -1218,7 +1219,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
                             const Expr nPowM =
                                 (m == 0)
                                     ? c.one()
-                                    : c.pow(n, c.number(static_cast<std::int64_t>(m)));
+                                    : c.pow(n, c.number(static_cast<keel::i64>(m)));
                             basis.push_back(c.mul({nPowM, c.pow(r1, n)}));
                             basis.push_back(c.mul({nPowM, c.pow(r2, n)}));
                         }
@@ -1226,9 +1227,9 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
                         const Expr r = c.simplify(c.pow(c.number(dRat), half));
                         const Expr invR = c.simplify(c.pow(
                             c.number(dRat),
-                            c.number(Rational(std::int64_t{-1}, BigInt(2)))));
+                            c.number(Rational(keel::i64{-1}, BigInt(2)))));
                         const Expr cosW = c.simplify(c.mul(
-                            {c.number(-bRat * Rational(std::int64_t{1}, BigInt(2))),
+                            {c.number(-bRat * Rational(keel::i64{1}, BigInt(2))),
                              invR}));
                         const Expr omega = c.simplify(c.func("acos", cosW));
                         const Expr rPowN =
@@ -1239,7 +1240,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
                             const Expr nPowM =
                                 (m == 0)
                                     ? c.one()
-                                    : c.pow(n, c.number(static_cast<std::int64_t>(m)));
+                                    : c.pow(n, c.number(static_cast<keel::i64>(m)));
                             basis.push_back(c.mul({nPowM, rPowN, cosWn}));
                             basis.push_back(c.mul({nPowM, rPowN, sinWn}));
                         }
@@ -1272,7 +1273,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
             for (int m = 0; m < mult; ++m) {
                 const Expr nPowM =
                     (m == 0) ? c.one()
-                             : c.pow(n, c.number(static_cast<std::int64_t>(m)));
+                             : c.pow(n, c.number(static_cast<keel::i64>(m)));
                 basis.push_back(c.mul({nPowM, rPowN}));
             }
         }
@@ -1284,7 +1285,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
     }
 
     std::vector<Expr> solTerms;
-    for (std::size_t i = 0; i < orderK; ++i) {
+    for (keel::usize i = 0; i < orderK; ++i) {
         const Expr ci = c.symbol("C" + std::to_string(i + 1));
         solTerms.push_back(c.mul({ci, basis[i]}));
     }
@@ -1303,7 +1304,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
     const Expr ySol = c.simplify(c.add(solTerms));
     std::vector<Expr> trimmedCoeffs(coeffs.begin(),
                                     coeffs.begin() +
-                                        static_cast<std::ptrdiff_t>(orderK + 1));
+                                        static_cast<keel::isize>(orderK + 1));
     if (!certifyRecurrence(c, trimmedCoeffs, rhs, ySol, n)) {
         out.reason = "general recurrence solution failed residual certificate";
         return out;

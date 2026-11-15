@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/sturm.hpp>
 
 #include <algorithm>
@@ -31,10 +32,10 @@ Rational cauchyRootBound(const UPoly &p)
     assert(!p.isZero());
     const Rational an = p.lc().abs();
     Rational m(0);
-    for (std::size_t i = 0; i + 1 < p.coeffs().size(); ++i)
+    for (keel::usize i = 0; i + 1 < p.coeffs().size(); ++i)
         if (p.coeff(i).abs() > m)
             m = p.coeff(i).abs();
-    return Rational(std::int64_t{1}) + m / an;
+    return Rational(keel::i64{1}) + m / an;
 }
 
 namespace {
@@ -45,9 +46,9 @@ int signOfR(const Rational &r)
 }
 
 // Sign variations of the Sturm chain at x (zeros skipped).
-std::size_t variations(const std::vector<UPoly> &sturm, const Rational &x)
+keel::usize variations(const std::vector<UPoly> &sturm, const Rational &x)
 {
-    std::size_t v = 0;
+    keel::usize v = 0;
     int prev = 0;
     for (const UPoly &s : sturm) {
         const int sg = signOfR(s.eval(x));
@@ -62,7 +63,7 @@ std::size_t variations(const std::vector<UPoly> &sturm, const Rational &x)
 
 } // namespace
 
-std::size_t countRealRoots(const std::vector<UPoly> &sturm,
+keel::usize countRealRoots(const std::vector<UPoly> &sturm,
                            const Rational &a, const Rational &b)
 {
     assert(!sturm.empty());
@@ -96,7 +97,7 @@ std::vector<RootInterval> isolateRealRoots(const UPoly &p0)
     while (!work.empty()) {
         const Item it = work.front();
         work.pop_front();
-        const std::size_t n =
+        const keel::usize n =
             countRealRoots(sturm, it.lo, it.hi) - (it.rootAtHi ? 1 : 0);
         if (n == 0)
             continue;
@@ -104,7 +105,7 @@ std::vector<RootInterval> isolateRealRoots(const UPoly &p0)
             out.push_back(RootInterval{it.lo, it.hi});
             continue;
         }
-        const Rational mid = (it.lo + it.hi) * Rational(std::int64_t{1}, BigInt(2));
+        const Rational mid = (it.lo + it.hi) * Rational(keel::i64{1}, BigInt(2));
         if (p.eval(mid).isZero()) {
             out.push_back(RootInterval{mid, mid});
             work.push_back({it.lo, mid, true});
@@ -132,7 +133,7 @@ RootInterval refineRoot(const UPoly &p, RootInterval iv,
     // counting stays correct with root endpoints.
     const std::vector<UPoly> sturm = sturmSequence(p);
     while (iv.hi - iv.lo > targetWidth) {
-        const Rational mid = (iv.lo + iv.hi) * Rational(std::int64_t{1}, BigInt(2));
+        const Rational mid = (iv.lo + iv.hi) * Rational(keel::i64{1}, BigInt(2));
         if (p.eval(mid).isZero())
             return RootInterval{mid, mid};
         if (countRealRoots(sturm, iv.lo, mid) > 0)

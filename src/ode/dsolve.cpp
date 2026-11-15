@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/ode/dsolve.hpp>
 
 #include <numkit/cas/core/series.hpp>
@@ -28,7 +29,7 @@ bool mentionsSym(const Ctx &c, Expr e, Expr sym)
         return false;
     if (e == sym)
         return true;
-    for (std::size_t i = 0; i < c.childCount(e); ++i)
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
         if (mentionsSym(c, c.child(e, i), sym))
             return true;
     return false;
@@ -84,7 +85,7 @@ Expr expOfIntegral(Ctx &c, Expr intA)
     };
 
     if (c.kind(expd) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+        for (keel::usize i = 0; i < c.childCount(expd); ++i)
             processTerm(c.child(expd, i));
     } else {
         processTerm(expd);
@@ -156,7 +157,7 @@ void splitIntoBasisTerms(Ctx &c, Expr e, Expr x,
         if (c.kind(t) == NodeKind::Mul) {
             std::vector<Expr> constPart;
             std::vector<Expr> xPart;
-            for (std::size_t i = 0; i < c.childCount(t); ++i) {
+            for (keel::usize i = 0; i < c.childCount(t); ++i) {
                 const Expr f = c.child(t, i);
                 if (mentionsSym(c, f, x))
                     xPart.push_back(f);
@@ -174,7 +175,7 @@ void splitIntoBasisTerms(Ctx &c, Expr e, Expr x,
     };
 
     if (c.kind(expd) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+        for (keel::usize i = 0; i < c.childCount(expd); ++i)
             processTerm(c.child(expd, i));
     } else {
         processTerm(expd);
@@ -202,7 +203,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     const Expr seeds[3] = {
         f,
         c.mul({x, f}),
-        c.mul({c.pow(x, c.number(std::int64_t{2})), f}),
+        c.mul({c.pow(x, c.number(keel::i64{2})), f}),
     };
 
     for (const Expr &seed : seeds) {
@@ -251,8 +252,8 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     if (phiBasis.empty() || rowAtoms.empty())
         return false;
 
-    auto findAtomRow = [&](Expr atom) -> std::size_t {
-        for (std::size_t r = 0; r < rowAtoms.size(); ++r)
+    auto findAtomRow = [&](Expr atom) -> keel::usize {
+        for (keel::usize r = 0; r < rowAtoms.size(); ++r)
             if (rowAtoms[r] == atom)
                 return r;
         return rowAtoms.size();
@@ -260,21 +261,21 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
     std::vector<Expr> activePhi;
     std::vector<Expr> activePsi;
-    for (std::size_t col = 0; col < phiBasis.size(); ++col) {
+    for (keel::usize col = 0; col < phiBasis.size(); ++col) {
         activePhi.push_back(phiBasis[col]);
         activePsi.push_back(psiImages[col]);
 
-        const std::size_t mRows = rowAtoms.size();
-        const std::size_t nCols = activePhi.size();
+        const keel::usize mRows = rowAtoms.size();
+        const keel::usize nCols = activePhi.size();
         if (mRows < nCols)
             continue;
 
         SymMatrix M = SymMatrix::zeros(c, mRows, nCols);
-        for (std::size_t j = 0; j < nCols; ++j) {
+        for (keel::usize j = 0; j < nCols; ++j) {
             std::vector<std::pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, activePsi[j], x, terms);
             for (const auto &kv : terms) {
-                const std::size_t r = findAtomRow(kv.second);
+                const keel::usize r = findAtomRow(kv.second);
                 if (r < mRows)
                     M.at(r, j) = c.simplify(c.add({M.at(r, j), kv.first}));
             }
@@ -282,7 +283,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
         SymMatrix rhsVec = SymMatrix::zeros(c, mRows, 1);
         for (const auto &kv : fTerms) {
-            const std::size_t r = findAtomRow(kv.second);
+            const keel::usize r = findAtomRow(kv.second);
             if (r < mRows)
                 rhsVec.at(r, 0) = c.simplify(c.add({rhsVec.at(r, 0), kv.first}));
         }
@@ -290,7 +291,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         const SymMatrix sol = linsolve(c, M, rhsVec, budget);
         if (!sol.empty()) {
             std::vector<Expr> ypTerms;
-            for (std::size_t j = 0; j < nCols; ++j) {
+            for (keel::usize j = 0; j < nCols; ++j) {
                 if (!c.isZero(sol.at(j, 0)))
                     ypTerms.push_back(c.mul({sol.at(j, 0), activePhi[j]}));
             }
@@ -368,7 +369,7 @@ bool trySeparableOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
     };
 
     if (c.kind(factoredRhs) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(factoredRhs); ++i)
+        for (keel::usize i = 0; i < c.childCount(factoredRhs); ++i)
             if (!classifyFactor(c.child(factoredRhs, i)))
                 return false;
     } else {
@@ -384,7 +385,7 @@ bool trySeparableOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
     if (isZeroSimp(c, hY))
         return false;
 
-    const Expr invHY = c.simplify(c.pow(hY, c.number(std::int64_t{-1})));
+    const Expr invHY = c.simplify(c.pow(hY, c.number(keel::i64{-1})));
     const RationalIntegral intG = integrate(c, gX, x, budget);
     if (!intG.proved())
         return false;
@@ -423,7 +424,7 @@ bool tryBernoulliOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
     Rational nExp(0);
     bool hasPower = false;
 
-    for (std::size_t i = 0; i < c.childCount(expd); ++i) {
+    for (keel::usize i = 0; i < c.childCount(expd); ++i) {
         const Expr term = c.child(expd, i);
         // Extract power of y in `term`
         Rational pY(0);
@@ -433,7 +434,7 @@ bool tryBernoulliOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
             if (!mentionsSym(c, f, y)) {
                 xRest.push_back(f);
             } else if (f == y) {
-                pY += Rational(std::int64_t{1});
+                pY += Rational(keel::i64{1});
             } else if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == y &&
                        c.kind(c.child(f, 1)) == NodeKind::Number) {
                 pY += c.numberValue(c.child(f, 1));
@@ -443,7 +444,7 @@ bool tryBernoulliOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
         };
 
         if (c.kind(term) == NodeKind::Mul) {
-            for (std::size_t j = 0; j < c.childCount(term); ++j)
+            for (keel::usize j = 0; j < c.childCount(term); ++j)
                 inspectFactor(c.child(term, j));
         } else {
             inspectFactor(term);
@@ -452,7 +453,7 @@ bool tryBernoulliOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
             return false;
 
         const Expr cof = xRest.empty() ? c.one() : c.mul(xRest);
-        if (pY == Rational(std::int64_t{1})) {
+        if (pY == Rational(keel::i64{1})) {
             linearTerms.push_back(cof);
         } else if (!pY.isZero()) {
             if (!hasPower) {
@@ -469,7 +470,7 @@ bool tryBernoulliOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
 
     if (!hasPower || powerCoeffs.empty())
         return false;
-    const Rational oneMinusN = Rational(std::int64_t{1}) - nExp;
+    const Rational oneMinusN = Rational(keel::i64{1}) - nExp;
     if (oneMinusN.isZero())
         return false;
 
@@ -485,7 +486,7 @@ bool tryBernoulliOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
     if (!tryLinearOde1(c, uRhs, x, uSym, C1, budget, uSol))
         return false;
 
-    const Rational invOneMinusN = Rational(std::int64_t{1}) / oneMinusN;
+    const Rational invOneMinusN = Rational(keel::i64{1}) / oneMinusN;
     yOut = c.simplify(c.pow(uSol, c.number(invOneMinusN)));
     return true;
 }
@@ -529,13 +530,13 @@ bool tryHomogeneousOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
 
     // Separable integration int du / (F(u) - u) = log(x) + C1, also trying
     // exponentiated algebraic forms exp(k * H(u)) = C1 * x^k.
-    const Expr invDiffU = c.simplify(c.pow(diffU, c.number(std::int64_t{-1})));
+    const Expr invDiffU = c.simplify(c.pow(diffU, c.number(keel::i64{-1})));
     const RationalIntegral intU = integrate(c, invDiffU, uSym, budget);
     if (!intU.proved())
         return false;
 
-    const std::int64_t kScales[] = {1, -1, 2, -2, 3, -3, 4, -4};
-    for (std::int64_t k : kScales) {
+    const keel::i64 kScales[] = {1, -1, 2, -2, 3, -3, 4, -4};
+    for (keel::i64 k : kScales) {
         const Expr kExpr = c.number(k);
         const Expr lhsExp = expOfIntegral(c, c.mul({kExpr, intU.F}));
         const Expr rhsExp = c.mul({C1, c.pow(x, kExpr)});
@@ -573,7 +574,7 @@ void splitRationalNumDen(Ctx &c, Expr e, Expr &numOut, Expr &denOut)
     };
 
     if (c.kind(rat) == NodeKind::Mul) {
-        for (std::size_t i = 0; i < c.childCount(rat); ++i)
+        for (keel::usize i = 0; i < c.childCount(rat); ++i)
             inspect(c.child(rat, i));
     } else {
         inspect(rat);
@@ -689,7 +690,7 @@ bool extractRiccatiCoeffs(Ctx &c, Expr rhs, Expr y, Expr &q0Out, Expr &q1Out,
     if (mentionsSym(c, c.simplify(d2), y))
         return false;
     q2Out = c.simplify(
-        c.mul({c.number(Rational(std::int64_t{1}, BigInt(2))), d2}));
+        c.mul({c.number(Rational(keel::i64{1}, BigInt(2))), d2}));
     if (isZeroSimp(c, q2Out))
         return false;
     q1Out = c.simplify(c.subs(d1, y, c.zero()));
@@ -719,7 +720,7 @@ bool solveRiccatiWithParticular(Ctx &c, Expr rhs, Expr q1, Expr q2, Expr yp,
         return false;
     }
     const Expr cand =
-        c.simplify(c.add({yp, c.pow(uSol, c.number(std::int64_t{-1}))}));
+        c.simplify(c.add({yp, c.pow(uSol, c.number(keel::i64{-1}))}));
     if (verifyOde1(c, cand, rhs, x, y)) {
         yOut = cand;
         return true;
@@ -749,7 +750,7 @@ bool tryRiccatiOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
         const Expr kSym = c.symbol("_riccati_k");
         for (int m : {0, 1, -1, 2}) {
             const Expr xm =
-                (m == 0) ? c.one() : c.pow(x, c.number(static_cast<std::int64_t>(m)));
+                (m == 0) ? c.one() : c.pow(x, c.number(static_cast<keel::i64>(m)));
             const Expr ypAns = c.mul({kSym, xm});
             const Expr dyp = c.diff(ypAns, x);
             const Expr res = c.simplify(
@@ -1093,8 +1094,8 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
     const Expr C1 = c.symbol("C1");
     const Expr C2 = c.symbol("C2");
-    const Expr two = c.number(std::int64_t{2});
-    const Expr four = c.number(std::int64_t{4});
+    const Expr two = c.number(keel::i64{2});
+    const Expr four = c.number(keel::i64{4});
     const Expr twoA = c.mul({two, a});
     const Expr disc =
         c.simplify(c.add({c.pow(b, two), c.neg(c.mul({four, a, d}))}));
@@ -1116,7 +1117,7 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             x, budget);
         Expr omega = wRoots.empty()
                          ? c.simplify(c.div(
-                               c.pow(negDisc, c.number(Rational(std::int64_t{1}, BigInt(2)))),
+                               c.pow(negDisc, c.number(Rational(keel::i64{1}, BigInt(2)))),
                                twoA))
                          : wRoots.back();
         const Expr env = c.simplify(c.func("exp", c.mul({alpha, x})));
@@ -1260,7 +1261,7 @@ bool verifyOde2EulerCauchy(Ctx &c, Expr ySol, Expr a, Expr b, Expr d, Expr f,
     const Expr d2y = c.diff(dy, x);
     if (d2y.isNull())
         return false;
-    const Expr x2 = c.pow(x, c.number(std::int64_t{2}));
+    const Expr x2 = c.pow(x, c.number(keel::i64{2}));
     const Expr lhs =
         c.add({c.mul({a, x2, d2y}), c.mul({b, x, dy}), c.mul({d, ySol})});
     return isZeroSimp(c, c.add({lhs, c.neg(f)}));
@@ -1288,8 +1289,8 @@ OdeResult dsolve2EulerCauchy(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
     const Expr C1 = c.symbol("C1");
     const Expr C2 = c.symbol("C2");
-    const Expr two = c.number(std::int64_t{2});
-    const Expr four = c.number(std::int64_t{4});
+    const Expr two = c.number(keel::i64{2});
+    const Expr four = c.number(keel::i64{4});
     const Expr twoA = c.mul({two, a});
 
     // Indicial equation for y = x^r:
@@ -1315,7 +1316,7 @@ OdeResult dsolve2EulerCauchy(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             x, budget);
         Expr omega = wRoots.empty()
                          ? c.simplify(c.div(
-                               c.pow(negDisc, c.number(Rational(std::int64_t{1}, BigInt(2)))),
+                               c.pow(negDisc, c.number(Rational(keel::i64{1}, BigInt(2)))),
                                twoA))
                          : wRoots.back();
         const Expr env = c.simplify(c.pow(x, alpha));
@@ -1470,10 +1471,10 @@ bool verifyOdeN(Ctx &c, Expr ySol, const std::vector<Expr> &coeffs, Expr f,
 {
     if (ySol.isNull() || coeffs.size() < 2)
         return false;
-    const std::size_t n = coeffs.size() - 1;
+    const keel::usize n = coeffs.size() - 1;
     std::vector<Expr> lhsTerms;
     Expr curDrv = ySol;
-    for (std::size_t k = 0; k <= n; ++k) {
+    for (keel::usize k = 0; k <= n; ++k) {
         if (k > 0) {
             curDrv = c.diff(curDrv, x);
             if (curDrv.isNull())
@@ -1489,14 +1490,14 @@ bool verifyOdeN(Ctx &c, Expr ySol, const std::vector<Expr> &coeffs, Expr f,
 bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
                             Expr x, Budget *budget, Expr &ypOut)
 {
-    const std::size_t n = coeffs.size() - 1;
+    const keel::usize n = coeffs.size() - 1;
     std::vector<Expr> rawAtoms;
-    for (std::size_t k = 0; k <= n; ++k) {
+    for (keel::usize k = 0; k <= n; ++k) {
         const Expr xk =
             (k == 0) ? c.one()
-                     : c.pow(x, c.number(static_cast<std::int64_t>(k)));
+                     : c.pow(x, c.number(static_cast<keel::i64>(k)));
         Expr cur = c.mul({xk, f});
-        for (std::size_t drv = 0; drv < n + 2; ++drv) {
+        for (keel::usize drv = 0; drv < n + 2; ++drv) {
             if (drv > 0)
                 cur = c.diff(cur, x);
             std::vector<std::pair<Expr, Expr>> terms;
@@ -1511,7 +1512,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     auto applyL = [&](Expr phi) -> Expr {
         std::vector<Expr> terms;
         Expr curDrv = phi;
-        for (std::size_t k = 0; k <= n; ++k) {
+        for (keel::usize k = 0; k <= n; ++k) {
             if (k > 0)
                 curDrv = c.diff(curDrv, x);
             if (!c.isZero(coeffs[k]))
@@ -1544,8 +1545,8 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     if (phiBasis.empty() || rowAtoms.empty())
         return false;
 
-    auto findAtomRow = [&](Expr atom) -> std::size_t {
-        for (std::size_t r = 0; r < rowAtoms.size(); ++r)
+    auto findAtomRow = [&](Expr atom) -> keel::usize {
+        for (keel::usize r = 0; r < rowAtoms.size(); ++r)
             if (rowAtoms[r] == atom)
                 return r;
         return rowAtoms.size();
@@ -1553,21 +1554,21 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
 
     std::vector<Expr> activePhi;
     std::vector<Expr> activePsi;
-    for (std::size_t col = 0; col < phiBasis.size(); ++col) {
+    for (keel::usize col = 0; col < phiBasis.size(); ++col) {
         activePhi.push_back(phiBasis[col]);
         activePsi.push_back(psiImages[col]);
 
-        const std::size_t mRows = rowAtoms.size();
-        const std::size_t nCols = activePhi.size();
+        const keel::usize mRows = rowAtoms.size();
+        const keel::usize nCols = activePhi.size();
         if (mRows < nCols)
             continue;
 
         SymMatrix M = SymMatrix::zeros(c, mRows, nCols);
-        for (std::size_t j = 0; j < nCols; ++j) {
+        for (keel::usize j = 0; j < nCols; ++j) {
             std::vector<std::pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, activePsi[j], x, terms);
             for (const auto &kv : terms) {
-                const std::size_t r = findAtomRow(kv.second);
+                const keel::usize r = findAtomRow(kv.second);
                 if (r < mRows)
                     M.at(r, j) = c.simplify(c.add({M.at(r, j), kv.first}));
             }
@@ -1575,7 +1576,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
 
         SymMatrix rhsVec = SymMatrix::zeros(c, mRows, 1);
         for (const auto &kv : fTerms) {
-            const std::size_t r = findAtomRow(kv.second);
+            const keel::usize r = findAtomRow(kv.second);
             if (r < mRows)
                 rhsVec.at(r, 0) =
                     c.simplify(c.add({rhsVec.at(r, 0), kv.first}));
@@ -1584,7 +1585,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
         const SymMatrix sol = linsolve(c, M, rhsVec, budget);
         if (!sol.empty()) {
             std::vector<Expr> ypTerms;
-            for (std::size_t j = 0; j < nCols; ++j) {
+            for (keel::usize j = 0; j < nCols; ++j) {
                 if (!c.isZero(sol.at(j, 0)))
                     ypTerms.push_back(c.mul({sol.at(j, 0), activePhi[j]}));
             }
@@ -1600,14 +1601,14 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
 bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                             Budget *budget, std::vector<Expr> &basisOut)
 {
-    const std::size_t n = coeffs.size() - 1;
+    const keel::usize n = coeffs.size() - 1;
     basisOut.clear();
 
     // Check if all coefficients are rational numbers so we can factor P(lambda)
     // over Q with exact multiplicities via factorOverQ.
     bool allRational = true;
     std::vector<Rational> ratCoeffs(n + 1);
-    for (std::size_t k = 0; k <= n; ++k) {
+    for (keel::usize k = 0; k <= n; ++k) {
         const Expr ck = c.simplify(coeffs[k]);
         if (c.kind(ck) == NodeKind::Number) {
             ratCoeffs[k] = c.numberValue(ck);
@@ -1620,7 +1621,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
     if (allRational) {
         const UPoly charPoly(ratCoeffs);
         const std::vector<UPoly> rawFactors = factorOverQ(charPoly, budget);
-        std::vector<std::pair<UPoly, std::size_t>> grouped;
+        std::vector<std::pair<UPoly, keel::usize>> grouped;
         for (const UPoly &fac : rawFactors) {
             bool found = false;
             for (auto &gm : grouped) {
@@ -1634,7 +1635,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                 grouped.emplace_back(fac, 1);
         }
 
-        std::size_t totalDeg = 0;
+        keel::usize totalDeg = 0;
         bool supportedFactors = true;
         for (const auto &gm : grouped) {
             const int d = gm.first.deg();
@@ -1642,24 +1643,24 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                 supportedFactors = false;
                 break;
             }
-            totalDeg += static_cast<std::size_t>(d) * gm.second;
+            totalDeg += static_cast<keel::usize>(d) * gm.second;
         }
 
         if (supportedFactors && totalDeg == n) {
-            const Expr two = c.number(std::int64_t{2});
-            const Expr four = c.number(std::int64_t{4});
+            const Expr two = c.number(keel::i64{2});
+            const Expr four = c.number(keel::i64{4});
             for (const auto &gm : grouped) {
                 const UPoly &fac = gm.first;
-                const std::size_t mult = gm.second;
+                const keel::usize mult = gm.second;
                 if (fac.deg() == 1) {
                     // Monic linear factor: lambda + c0 = 0 => r = -c0
                     const Expr r = c.number(-fac.coeff(0));
                     const Expr expRx = c.simplify(c.func("exp", c.mul({r, x})));
-                    for (std::size_t j = 0; j < mult; ++j) {
+                    for (keel::usize j = 0; j < mult; ++j) {
                         const Expr xj =
                             (j == 0)
                                 ? c.one()
-                                : c.pow(x, c.number(static_cast<std::int64_t>(j)));
+                                : c.pow(x, c.number(static_cast<keel::i64>(j)));
                         basisOut.push_back(c.simplify(c.mul({xj, expRx})));
                     }
                 } else if (fac.deg() == 2) {
@@ -1667,12 +1668,12 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                     const Rational pRat = fac.coeff(1);
                     const Rational qRat = fac.coeff(0);
                     const Rational discRat =
-                        pRat * pRat - Rational(std::int64_t{4}) * qRat;
+                        pRat * pRat - Rational(keel::i64{4}) * qRat;
                     const Expr pExpr = c.number(pRat);
                     const Expr qExpr = c.number(qRat);
                     if (discRat.signum() < 0) {
                         const Expr alpha =
-                            c.number(-pRat / Rational(std::int64_t{2}));
+                            c.number(-pRat / Rational(keel::i64{2}));
                         const Expr negDisc = c.number(-discRat);
                         const std::vector<Expr> wRoots = solveSymbolic(
                             c,
@@ -1683,7 +1684,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                             wRoots.empty()
                                 ? c.simplify(c.div(
                                       c.pow(negDisc,
-                                            c.number(Rational(std::int64_t{1},
+                                            c.number(Rational(keel::i64{1},
                                                               BigInt(2)))),
                                       two))
                                 : wRoots.back();
@@ -1691,12 +1692,12 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                             c.simplify(c.func("exp", c.mul({alpha, x})));
                         const Expr cosWx = c.func("cos", c.mul({omega, x}));
                         const Expr sinWx = c.func("sin", c.mul({omega, x}));
-                        for (std::size_t j = 0; j < mult; ++j) {
+                        for (keel::usize j = 0; j < mult; ++j) {
                             const Expr xj =
                                 (j == 0)
                                     ? c.one()
                                     : c.pow(x, c.number(
-                                                   static_cast<std::int64_t>(j)));
+                                                   static_cast<keel::i64>(j)));
                             basisOut.push_back(
                                 c.simplify(c.mul({xj, env, cosWx})));
                             basisOut.push_back(
@@ -1716,12 +1717,12 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                             c.simplify(c.func("exp", c.mul({roots[0], x})));
                         const Expr e2 =
                             c.simplify(c.func("exp", c.mul({roots[1], x})));
-                        for (std::size_t j = 0; j < mult; ++j) {
+                        for (keel::usize j = 0; j < mult; ++j) {
                             const Expr xj =
                                 (j == 0)
                                     ? c.one()
                                     : c.pow(x, c.number(
-                                                   static_cast<std::int64_t>(j)));
+                                                   static_cast<keel::i64>(j)));
                             basisOut.push_back(c.simplify(c.mul({xj, e1})));
                             basisOut.push_back(c.simplify(c.mul({xj, e2})));
                         }
@@ -1737,10 +1738,10 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
     basisOut.clear();
     const Expr rSym = c.symbol("_ode_n_sym_r");
     std::vector<Expr> charTerms;
-    for (std::size_t k = 0; k <= n; ++k) {
+    for (keel::usize k = 0; k <= n; ++k) {
         const Expr rk =
             (k == 0) ? c.one()
-                     : c.pow(rSym, c.number(static_cast<std::int64_t>(k)));
+                     : c.pow(rSym, c.number(static_cast<keel::i64>(k)));
         charTerms.push_back(c.mul({coeffs[k], rk}));
     }
     const Expr charEq = c.add(charTerms);
@@ -1750,9 +1751,9 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
 
     // Determine algebraic multiplicity of each root by checking derivatives of charEq
     for (const Expr &r : roots) {
-        std::size_t mult = 0;
+        keel::usize mult = 0;
         Expr drvEq = charEq;
-        for (std::size_t m = 0; m < n; ++m) {
+        for (keel::usize m = 0; m < n; ++m) {
             if (m > 0)
                 drvEq = c.diff(drvEq, rSym);
             if (isZeroSimp(c, c.subs(drvEq, rSym, r)))
@@ -1763,10 +1764,10 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
         if (mult == 0)
             mult = 1;
         const Expr expRx = c.simplify(c.func("exp", c.mul({r, x})));
-        for (std::size_t j = 0; j < mult && basisOut.size() < n; ++j) {
+        for (keel::usize j = 0; j < mult && basisOut.size() < n; ++j) {
             const Expr xj =
                 (j == 0) ? c.one()
-                         : c.pow(x, c.number(static_cast<std::int64_t>(j)));
+                         : c.pow(x, c.number(static_cast<keel::i64>(j)));
             basisOut.push_back(c.simplify(c.mul({xj, expRx})));
         }
     }
@@ -1776,12 +1777,12 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
 
 SymMatrix buildCompanionMatrix(Ctx &c, const std::vector<Expr> &coeffs)
 {
-    const std::size_t n = coeffs.size() - 1;
+    const keel::usize n = coeffs.size() - 1;
     const Expr aN = coeffs[n];
     SymMatrix A = SymMatrix::zeros(c, n, n);
-    for (std::size_t i = 0; i + 1 < n; ++i)
+    for (keel::usize i = 0; i + 1 < n; ++i)
         A.at(i, i + 1) = c.one();
-    for (std::size_t j = 0; j < n; ++j)
+    for (keel::usize j = 0; j < n; ++j)
         A.at(n - 1, j) = c.simplify(c.neg(c.div(coeffs[j], aN)));
     return A;
 }
@@ -1796,7 +1797,7 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
         out.reason = "invalid N-th order ODE arguments";
         return out;
     }
-    const std::size_t n = coeffs.size() - 1;
+    const keel::usize n = coeffs.size() - 1;
     for (const Expr &ck : coeffs) {
         if (ck.isNull() || mentionsSym(c, ck, x)) {
             out.reason = "coefficients must be non-null constants in x";
@@ -1823,7 +1824,7 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     if (buildHomogeneousBasisN(c, coeffs, x, budget, basis) &&
         basis.size() == n) {
         std::vector<Expr> yhTerms;
-        for (std::size_t i = 0; i < n; ++i) {
+        for (keel::usize i = 0; i < n; ++i) {
             const Expr Ci = c.symbol("C" + std::to_string(i + 1));
             yhTerms.push_back(c.mul({Ci, basis[i]}));
         }
@@ -1850,7 +1851,7 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
                     dsolveSystem1Linear(c, A, fVec, x, budget);
                 if (sysRes.proved() && !sysRes.y.empty()) {
                     Expr candYp = sysRes.y[0];
-                    for (std::size_t i = 0; i < n; ++i) {
+                    for (keel::usize i = 0; i < n; ++i) {
                         candYp = c.subs(
                             candYp, c.symbol("C" + std::to_string(i + 1)),
                             c.zero());
@@ -1904,7 +1905,7 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
         out.reason = "invalid N-th order IVP arguments";
         return out;
     }
-    const std::size_t n = coeffs.size() - 1;
+    const keel::usize n = coeffs.size() - 1;
     for (const Expr &iv : initVals) {
         if (iv.isNull()) {
             out.reason = "null initial condition value";
@@ -1917,19 +1918,19 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
         return gen;
 
     std::vector<Expr> cSyms(n);
-    for (std::size_t j = 0; j < n; ++j)
+    for (keel::usize j = 0; j < n; ++j)
         cSyms[j] = c.symbol("C" + std::to_string(j + 1));
 
     SymMatrix M = SymMatrix::zeros(c, n, n);
     SymMatrix rhs = SymMatrix::zeros(c, n, 1);
 
     Expr curDrv = gen.y;
-    for (std::size_t k = 0; k < n; ++k) {
+    for (keel::usize k = 0; k < n; ++k) {
         if (k > 0)
             curDrv = c.diff(curDrv, x);
         const Expr drvAt0 = c.simplify(c.subs(curDrv, x, x0));
         Expr constPart = drvAt0;
-        for (std::size_t j = 0; j < n; ++j) {
+        for (keel::usize j = 0; j < n; ++j) {
             M.at(k, j) = c.simplify(c.diff(drvAt0, cSyms[j]));
             constPart = c.subs(constPart, cSyms[j], c.zero());
         }
@@ -1944,7 +1945,7 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     }
 
     Expr yIVP = gen.y;
-    for (std::size_t j = 0; j < n; ++j)
+    for (keel::usize j = 0; j < n; ++j)
         yIVP = c.subs(yIVP, cSyms[j], sol.at(j, 0));
     yIVP = c.simplify(yIVP);
 
@@ -1954,7 +1955,7 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     }
 
     Expr checkDrv = yIVP;
-    for (std::size_t k = 0; k < n; ++k) {
+    for (keel::usize k = 0; k < n; ++k) {
         if (k > 0)
             checkDrv = c.diff(checkDrv, x);
         const Expr at0 = c.subs(checkDrv, x, x0);
@@ -1975,17 +1976,17 @@ bool verifyOdeSystem1Linear(Ctx &c, const std::vector<Expr> &ySol,
                             const SymMatrix &A, const std::vector<Expr> &f,
                             Expr x, Budget *budget)
 {
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     if (ySol.size() != n || (!f.empty() && f.size() != n))
         return false;
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         if (!checkOdeBudget(c, budget) || ySol[i].isNull())
             return false;
         const Expr dyi = c.diff(ySol[i], x);
         if (dyi.isNull())
             return false;
         std::vector<Expr> rhsTerms;
-        for (std::size_t j = 0; j < n; ++j) {
+        for (keel::usize j = 0; j < n; ++j) {
             if (!c.isZero(A.at(i, j)) && !c.isZero(ySol[j]))
                 rhsTerms.push_back(c.mul({A.at(i, j), ySol[j]}));
         }
@@ -2014,13 +2015,13 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
         out.reason = "invalid matrix or independent variable";
         return out;
     }
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     if (!f.empty() && f.size() != n) {
         out.reason = "forcing vector dimension mismatch";
         return out;
     }
-    for (std::size_t r = 0; r < n; ++r) {
-        for (std::size_t col = 0; col < n; ++col) {
+    for (keel::usize r = 0; r < n; ++r) {
+        for (keel::usize col = 0; col < n; ++col) {
             if (A.at(r, col).isNull() || mentionsSym(c, A.at(r, col), x)) {
                 out.reason = "matrix A must have x-independent constant entries";
                 return out;
@@ -2035,12 +2036,12 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
     }
 
     std::vector<Expr> cVec(n);
-    for (std::size_t i = 0; i < n; ++i)
+    for (keel::usize i = 0; i < n; ++i)
         cVec[i] = c.symbol("C" + std::to_string(i + 1));
 
     const SymMatrix yHomMat = Phi.mul(c, SymMatrix::column(cVec));
     std::vector<Expr> ySol(n, c.zero());
-    for (std::size_t i = 0; i < n; ++i)
+    for (keel::usize i = 0; i < n; ++i)
         ySol[i] = simplify(c, yHomMat.at(i, 0), budget);
 
     bool hasForcing = false;
@@ -2059,7 +2060,7 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
         const SymMatrix PhiInv = Phi.subs(c, x, c.neg(x));
         const SymMatrix integrandMat = PhiInv.mul(c, SymMatrix::column(f));
         SymMatrix intVec(n, 1, c.zero());
-        for (std::size_t i = 0; i < n; ++i) {
+        for (keel::usize i = 0; i < n; ++i) {
             const Expr term = simplify(c, integrandMat.at(i, 0), budget);
             if (c.isZero(term))
                 continue;
@@ -2071,7 +2072,7 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
             intVec.at(i, 0) = ant.F;
         }
         const SymMatrix ypMat = Phi.mul(c, intVec);
-        for (std::size_t i = 0; i < n; ++i) {
+        for (keel::usize i = 0; i < n; ++i) {
             ySol[i] = simplify(c, c.add({ySol[i], ypMat.at(i, 0)}), budget);
         }
     }
@@ -2104,7 +2105,7 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
         out.reason = "invalid IVP arguments";
         return out;
     }
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     for (const Expr &yi0 : y0) {
         if (yi0.isNull()) {
             out.reason = "null initial value";
@@ -2118,9 +2119,9 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
 
     // Extract particular solution y_p(x) by setting C1 = ... = Cn = 0
     std::vector<Expr> yp(n);
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         Expr e = gen.y[i];
-        for (std::size_t j = 0; j < n; ++j)
+        for (keel::usize j = 0; j < n; ++j)
             e = c.subs(e, c.symbol("C" + std::to_string(j + 1)), c.zero());
         yp[i] = simplify(c, e, budget);
     }
@@ -2129,7 +2130,7 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
     // Since Phi(x)^(-1) = Phi(-x), C = Phi(-x0) * (y0 - y_p(x0)) and
     // Phi(x) * C = Phi(x - x0) * (y0 - y_p(x0)).
     SymMatrix delta0(n, 1, c.zero());
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         const Expr ypAt0 = c.subs(yp[i], x, x0);
         delta0.at(i, 0) = simplify(c, c.add({y0[i], c.neg(ypAt0)}), budget);
     }
@@ -2139,7 +2140,7 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
     const SymMatrix yHomIVP = PhiShifted.mul(c, delta0);
 
     std::vector<Expr> yIVP(n);
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         yIVP[i] = simplify(c, c.add({yHomIVP.at(i, 0), yp[i]}), budget);
     }
 
@@ -2147,7 +2148,7 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
         out.reason = "IVP system solution failed ODE certificate";
         return out;
     }
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         const Expr atX0 = c.subs(yIVP[i], x, x0);
         if (!isZeroSimp(c, c.add({atX0, c.neg(y0[i])}))) {
             out.reason = "IVP system solution failed initial condition at x0";
@@ -2236,7 +2237,7 @@ OdeResult dsolve2Nonlinear(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
         if (pSol.proved() && !isZeroSimp(c, pSol.y)) {
             // Try both pSol.y as-is and with C1 replaced by 0 if symbolic C1
             // blocks rational integration, though general solution keeps C1.
-            const Expr invP = c.pow(pSol.y, c.number(std::int64_t{-1}));
+            const Expr invP = c.pow(pSol.y, c.number(keel::i64{-1}));
             const RationalIntegral intY = integrate(c, invP, y, budget);
             if (intY.proved()) {
                 const Expr impEq =
@@ -2412,16 +2413,16 @@ Expr principalSqrtExpr(Ctx &c, Expr val, Budget *budget)
         return c.zero();
     const Expr sSym = c.symbol("_ode_sp_s");
     const Expr eq =
-        c.add({c.pow(sSym, c.number(std::int64_t{2})), c.neg(sVal)});
+        c.add({c.pow(sSym, c.number(keel::i64{2})), c.neg(sVal)});
     const std::vector<Expr> roots = solveSymbolic(c, eq, sSym, budget);
     const Expr picked = pickPreferredParamRoot(c, roots);
     if (!picked.isNull())
         return c.simplify(picked);
     return c.simplify(
-        c.pow(sVal, c.number(Rational(std::int64_t{1}, BigInt(2)))));
+        c.pow(sVal, c.number(Rational(keel::i64{1}, BigInt(2)))));
 }
 
-bool exactInt64CubeRoot(std::int64_t v, std::int64_t &out)
+bool exactInt64CubeRoot(keel::i64 v, keel::i64 &out)
 {
     if (v < 0)
         return false;
@@ -2429,15 +2430,15 @@ bool exactInt64CubeRoot(std::int64_t v, std::int64_t &out)
         out = v;
         return true;
     }
-    std::int64_t lo = 1;
-    std::int64_t hi = 2000000;
+    keel::i64 lo = 1;
+    keel::i64 hi = 2000000;
     while (lo <= hi) {
-        const std::int64_t mid = lo + (hi - lo) / 2;
-        const std::int64_t sq = mid * mid;
+        const keel::i64 mid = lo + (hi - lo) / 2;
+        const keel::i64 sq = mid * mid;
         if (mid > 0 && sq > v / mid) {
             hi = mid - 1;
         } else {
-            const std::int64_t cb = sq * mid;
+            const keel::i64 cb = sq * mid;
             if (cb == v) {
                 out = mid;
                 return true;
@@ -2456,15 +2457,15 @@ Expr realCubeRootExpr(Ctx &c, Expr val)
     const Expr sVal = c.simplify(val);
     if (isZeroSimp(c, sVal))
         return c.zero();
-    const Expr oneThird = c.number(Rational(std::int64_t{1}, BigInt(3)));
+    const Expr oneThird = c.number(Rational(keel::i64{1}, BigInt(3)));
     if (c.kind(sVal) == NodeKind::Number) {
         const Rational r = c.numberValue(sVal);
         const int sgn = r.signum() < 0 ? -1 : 1;
         const Rational absR = r.abs();
-        std::int64_t numInt = 0;
-        std::int64_t denInt = 0;
-        std::int64_t numRt = 0;
-        std::int64_t denRt = 0;
+        keel::i64 numInt = 0;
+        keel::i64 denInt = 0;
+        keel::i64 numRt = 0;
+        keel::i64 denRt = 0;
         if (absR.num().fitsInt64(numInt) && absR.den().fitsInt64(denInt) &&
             exactInt64CubeRoot(numInt, numRt) &&
             exactInt64CubeRoot(denInt, denRt) && denRt > 0) {
@@ -2489,7 +2490,7 @@ bool tryLiouvilleSecondSolution(Ctx &c, Expr a, Expr b, Expr d, Expr y1, Expr x,
         return false;
     const Expr W = expOfIntegral(c, c.neg(intP.F));
     const Expr integrand =
-        c.simplify(c.div(W, c.pow(y1, c.number(std::int64_t{2}))));
+        c.simplify(c.div(W, c.pow(y1, c.number(keel::i64{2}))));
     const RationalIntegral intW = integrate(c, integrand, x, budget);
     if (!intW.proved())
         return false;
@@ -2572,7 +2573,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         return out;
     }
 
-    const Expr two = c.number(std::int64_t{2});
+    const Expr two = c.number(keel::i64{2});
     const Expr P = c.simplify(c.div(b, a));
     const Expr Q = c.simplify(c.div(d, a));
     const Expr fNorm = c.simplify(c.div(f, a));
@@ -2663,7 +2664,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         if (!beta1.isNull() && !D1.isNull() && !mentionsSym(c, beta1, x) &&
             !mentionsSym(c, D1, x) && c.kind(beta1) == NodeKind::Number) {
             const Rational bVal = c.numberValue(beta1);
-            if (bVal == Rational(std::int64_t{-2})) {
+            if (bVal == Rational(keel::i64{-2})) {
                 // Legendre's ODE: (1 - x^2)*y'' - 2*x*y' + n*(n + 1)*y = 0
                 const Expr nSym = c.symbol("_ode_leg_n");
                 const Expr eq =
@@ -2688,7 +2689,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                                 c.neg(c.mul({two, c.diff(y1, x)})));
                             if (tryUndeterminedCoeffs(
                                     c, omx2,
-                                    c.mul({c.number(std::int64_t{-2}), x}), D1,
+                                    c.mul({c.number(keel::i64{-2}), x}), D1,
                                     rhsQ, x, budget, qPoly)) {
                                 const Expr cand2 = c.simplify(c.add(
                                     {c.mul({y1, c.func("atanh", x)}), qPoly}));
@@ -2701,7 +2702,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                                                    budget, out))
                         return out;
                 }
-            } else if (bVal == Rational(std::int64_t{-1})) {
+            } else if (bVal == Rational(keel::i64{-1})) {
                 // Chebyshev 1st kind ODE: (1 - x^2)*y'' - x*y' + n^2*y = 0
                 Expr y1, y2;
                 if (isZeroSimp(c, D1)) {
@@ -2711,16 +2712,16 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                     const Expr nRoot = principalSqrtExpr(c, D1, budget);
                     y1 = c.simplify(c.func("chebyshevT", nRoot, x));
                     const Expr sqrtOmx2 = c.pow(
-                        omx2, c.number(Rational(std::int64_t{1}, BigInt(2))));
+                        omx2, c.number(Rational(keel::i64{1}, BigInt(2))));
                     const Expr nm1 =
-                        c.add({nRoot, c.number(std::int64_t{-1})});
+                        c.add({nRoot, c.number(keel::i64{-1})});
                     y2 = c.simplify(
                         c.mul({sqrtOmx2, c.func("chebyshevU", nm1, x)}));
                 }
                 if (attachParticularAndCertify(c, a, b, d, f, x, y1, y2, budget,
                                                out))
                     return out;
-            } else if (bVal == Rational(std::int64_t{-3})) {
+            } else if (bVal == Rational(keel::i64{-3})) {
                 // Chebyshev 2nd kind ODE: (1 - x^2)*y'' - 3*x*y' + n*(n + 2)*y = 0
                 const Expr nSym = c.symbol("_ode_cheb2_n");
                 const Expr eq = c.add(
@@ -2732,7 +2733,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                     const Expr y1 =
                         c.simplify(c.func("chebyshevU", nRoot, x));
                     const Expr invSqrtOmx2 = c.pow(
-                        omx2, c.number(Rational(std::int64_t{-1}, BigInt(2))));
+                        omx2, c.number(Rational(keel::i64{-1}, BigInt(2))));
                     const Expr np1 = c.add({nRoot, c.one()});
                     const Expr y2 = c.simplify(
                         c.mul({invSqrtOmx2, c.func("chebyshevT", np1, x)}));
@@ -2749,7 +2750,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         const Expr pOverX = c.simplify(c.div(P, x));
         if (!pOverX.isNull() && !mentionsSym(c, pOverX, x) &&
             !mentionsSym(c, Q, x) && c.kind(pOverX) == NodeKind::Number &&
-            c.numberValue(pOverX) == Rational(std::int64_t{-2})) {
+            c.numberValue(pOverX) == Rational(keel::i64{-2})) {
             const Expr nOrder = c.simplify(c.div(Q, two));
             const Expr y1 = c.simplify(c.func("hermiteH", nOrder, x));
             Expr y2;
@@ -2768,9 +2769,9 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                                               c.add({Q, two}), rhsQ, x, budget,
                                               qPoly)) {
                         const Expr sqrtPiHalf = c.mul(
-                            {c.number(Rational(std::int64_t{1}, BigInt(2))),
+                            {c.number(Rational(keel::i64{1}, BigInt(2))),
                              c.pow(c.symbol("pi"),
-                                   c.number(Rational(std::int64_t{1},
+                                   c.number(Rational(keel::i64{1},
                                                      BigInt(2))))});
                         const Expr cand2 = c.simplify(c.add(
                             {c.mul({y1, sqrtPiHalf, c.func("erfi", x)}),
@@ -2854,7 +2855,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                         const Expr a2 = c.simplify(
                             c.add({aK, c.neg(bK), c.one()}));
                         const Expr b2 = c.simplify(
-                            c.add({c.number(std::int64_t{2}), c.neg(bK)}));
+                            c.add({c.number(keel::i64{2}), c.neg(bK)}));
                         const Expr xPow = c.pow(
                             x, c.simplify(c.add({c.one(), c.neg(bK)})));
                         y2 = c.simplify(c.mul(
@@ -2888,7 +2889,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                 const Expr cG = c.simplify(c.subs(BG, x, c.zero()));
                 if (!cG.isNull() && !mentionsSym(c, cG, x)) {
                     const Expr apb = c.simplify(
-                        c.add({c.neg(dBdx), c.number(std::int64_t{-1})}));
+                        c.add({c.neg(dBdx), c.number(keel::i64{-1})}));
                     const Expr abProd = c.simplify(c.neg(DG));
                     const Expr tSym = c.symbol("_ode_hg_t");
                     const Expr eq = c.add({
@@ -2921,7 +2922,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                             const Expr b2 = c.simplify(
                                 c.add({bG, c.neg(cG), c.one()}));
                             const Expr c2 = c.simplify(
-                                c.add({c.number(std::int64_t{2}), c.neg(cG)}));
+                                c.add({c.number(keel::i64{2}), c.neg(cG)}));
                             const Expr xPow = c.pow(
                                 x, c.simplify(c.add({c.one(), c.neg(cG)})));
                             y2 = c.simplify(c.mul({
@@ -2954,7 +2955,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         for (int deg = 0; deg <= 4; ++deg) {
             const Expr phi =
                 (deg == 0) ? c.one()
-                           : c.pow(x, c.number(static_cast<std::int64_t>(deg)));
+                           : c.pow(x, c.number(static_cast<keel::i64>(deg)));
             const Expr d1 = c.diff(phi, x);
             const Expr d2 = c.diff(d1, x);
             const Expr img = c.simplify(
@@ -2976,11 +2977,11 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         if (!rowAtoms.empty() && rowAtoms.size() <= 12) {
             SymMatrix M =
                 SymMatrix::zeros(c, rowAtoms.size(), polyBasis.size());
-            for (std::size_t j = 0; j < polyBasis.size(); ++j) {
+            for (keel::usize j = 0; j < polyBasis.size(); ++j) {
                 std::vector<std::pair<Expr, Expr>> terms;
                 splitIntoBasisTerms(c, polyImages[j], x, terms);
                 for (const auto &kv : terms) {
-                    for (std::size_t r = 0; r < rowAtoms.size(); ++r) {
+                    for (keel::usize r = 0; r < rowAtoms.size(); ++r) {
                         if (rowAtoms[r] == kv.second) {
                             M.at(r, j) =
                                 c.simplify(c.add({M.at(r, j), kv.first}));
@@ -2993,7 +2994,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             if (!ns.empty()) {
                 auto buildVecPoly = [&](const SymMatrix &v) {
                     std::vector<Expr> terms;
-                    for (std::size_t j = 0; j < polyBasis.size(); ++j) {
+                    for (keel::usize j = 0; j < polyBasis.size(); ++j) {
                         if (!c.isZero(v.at(j, 0)))
                             terms.push_back(
                                 c.mul({v.at(j, 0), polyBasis[j]}));
@@ -3097,7 +3098,7 @@ namespace {
 bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
                             Budget *budget, std::vector<Expr> &coeffsOut)
 {
-    coeffsOut.assign(static_cast<std::size_t>(maxDeg + 1), c.zero());
+    coeffsOut.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
     const Expr tSym = c.symbol("_ode_jet_t");
     const Expr shifted = c.subs(exprInX, x, c.add({x0, tSym}));
     const Expr polyT = taylor(c, shifted, tSym, c.zero(), maxDeg, budget);
@@ -3117,25 +3118,25 @@ bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
                 coeffsOut[1] = c.simplify(c.add({coeffsOut[1], c.one()}));
             return true;
         }
-        std::int64_t kPow = 0;
+        keel::i64 kPow = 0;
         if (c.kind(term) == NodeKind::Pow && c.child(term, 0) == tSym &&
             c.kind(c.child(term, 1)) == NodeKind::Number &&
             c.numberValue(c.child(term, 1)).fitsInt64(kPow)) {
-            const std::int64_t k = kPow;
+            const keel::i64 k = kPow;
             if (k < 0)
                 return false;
             if (k <= maxDeg) {
-                const auto idx = static_cast<std::size_t>(k);
+                const auto idx = static_cast<keel::usize>(k);
                 coeffsOut[idx] = c.simplify(c.add({coeffsOut[idx], c.one()}));
             }
             return true;
         }
         if (c.kind(term) == NodeKind::Mul) {
-            std::int64_t degT = 0;
+            keel::i64 degT = 0;
             std::vector<Expr> coefParts;
-            for (std::size_t i = 0; i < c.childCount(term); ++i) {
+            for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr f = c.child(term, i);
-                std::int64_t kf = 0;
+                keel::i64 kf = 0;
                 if (!mentionsSym(c, f, tSym)) {
                     coefParts.push_back(f);
                 } else if (f == tSym) {
@@ -3144,7 +3145,7 @@ bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
                            c.child(f, 0) == tSym &&
                            c.kind(c.child(f, 1)) == NodeKind::Number &&
                            c.numberValue(c.child(f, 1)).fitsInt64(kf)) {
-                    const std::int64_t k = kf;
+                    const keel::i64 k = kf;
                     if (k < 0)
                         return false;
                     degT += k;
@@ -3153,7 +3154,7 @@ bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
                 }
             }
             if (degT <= maxDeg) {
-                const auto idx = static_cast<std::size_t>(degT);
+                const auto idx = static_cast<keel::usize>(degT);
                 const Expr coef =
                     coefParts.empty() ? c.one() : c.mul(coefParts);
                 coeffsOut[idx] = c.simplify(c.add({coeffsOut[idx], coef}));
@@ -3164,7 +3165,7 @@ bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
     };
 
     if (c.kind(expd) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+        for (keel::usize i = 0; i < c.childCount(expd); ++i)
             if (!processTerm(c.child(expd, i)))
                 return false;
     } else {
@@ -3211,7 +3212,7 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         return out;
     }
 
-    std::vector<Expr> cCoeffs(static_cast<std::size_t>(order + 1), c.zero());
+    std::vector<Expr> cCoeffs(static_cast<keel::usize>(order + 1), c.zero());
     cCoeffs[0] = y0;
     cCoeffs[1] = dy0;
 
@@ -3222,12 +3223,12 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         }
         std::vector<Expr> sumTerms;
         for (int k = 0; k <= n; ++k) {
-            const auto nkIdx = static_cast<std::size_t>(n - k);
-            const auto kIdx = static_cast<std::size_t>(k);
-            const auto kp1Idx = static_cast<std::size_t>(k + 1);
+            const auto nkIdx = static_cast<keel::usize>(n - k);
+            const auto kIdx = static_cast<keel::usize>(k);
+            const auto kp1Idx = static_cast<keel::usize>(k + 1);
             if (!c.isZero(pCoeffs[nkIdx]) && !c.isZero(cCoeffs[kp1Idx])) {
                 sumTerms.push_back(c.mul(
-                    {pCoeffs[nkIdx], c.number(static_cast<std::int64_t>(k + 1)),
+                    {pCoeffs[nkIdx], c.number(static_cast<keel::i64>(k + 1)),
                      cCoeffs[kp1Idx]}));
             }
             if (!c.isZero(qCoeffs[nkIdx]) && !c.isZero(cCoeffs[kIdx])) {
@@ -3237,23 +3238,23 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         const Expr sumVal =
             sumTerms.empty() ? c.zero() : c.simplify(c.add(sumTerms));
         const Expr numer =
-            c.simplify(c.add({rCoeffs[static_cast<std::size_t>(n)],
+            c.simplify(c.add({rCoeffs[static_cast<keel::usize>(n)],
                               c.neg(sumVal)}));
         const Expr denom =
-            c.number(static_cast<std::int64_t>((n + 2) * (n + 1)));
-        cCoeffs[static_cast<std::size_t>(n + 2)] =
+            c.number(static_cast<keel::i64>((n + 2) * (n + 1)));
+        cCoeffs[static_cast<keel::usize>(n + 2)] =
             c.simplify(c.div(numer, denom));
     }
 
     const Expr dx = c.add({x, c.neg(x0)});
     std::vector<Expr> yTerms;
     for (int k = 0; k <= order; ++k) {
-        const Expr ck = cCoeffs[static_cast<std::size_t>(k)];
+        const Expr ck = cCoeffs[static_cast<keel::usize>(k)];
         if (c.isZero(ck))
             continue;
         const Expr dxPow =
             (k == 0) ? c.one()
-                     : c.pow(dx, c.number(static_cast<std::int64_t>(k)));
+                     : c.pow(dx, c.number(static_cast<keel::i64>(k)));
         yTerms.push_back(c.mul({ck, dxPow}));
     }
     const Expr yPoly = yTerms.empty() ? c.zero() : c.add(yTerms);
@@ -3304,7 +3305,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
     const Expr dx = c.add({x, c.neg(x0)});
     const Expr P1 = c.simplify(c.mul({dx, c.div(b, a)}));
     const Expr Q2 =
-        c.simplify(c.mul({c.pow(dx, c.number(std::int64_t{2})), c.div(d, a)}));
+        c.simplify(c.mul({c.pow(dx, c.number(keel::i64{2})), c.div(d, a)}));
 
     std::vector<Expr> pCoeffs;
     std::vector<Expr> qCoeffs;
@@ -3315,9 +3316,9 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
     }
 
     const Expr rSym = c.symbol("_ode_frob_r");
-    const Expr two = c.number(std::int64_t{2});
+    const Expr two = c.number(keel::i64{2});
     auto evalIndicial = [&](Expr s) -> Expr {
-        return c.simplify(c.add({c.mul({s, c.add({s, c.number(std::int64_t{-1})})}),
+        return c.simplify(c.add({c.mul({s, c.add({s, c.number(keel::i64{-1})})}),
                                  c.mul({pCoeffs[0], s}), qCoeffs[0]}));
     };
 
@@ -3350,12 +3351,12 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
 
     std::vector<Expr> branches;
     for (const Expr &rRoot : uniqueRoots) {
-        std::vector<Expr> cCoeffs(static_cast<std::size_t>(order + 1), c.zero());
+        std::vector<Expr> cCoeffs(static_cast<keel::usize>(order + 1), c.zero());
         cCoeffs[0] = c.one();
         bool validBranch = true;
         for (int n = 1; n <= order; ++n) {
             const Expr rn =
-                c.add({rRoot, c.number(static_cast<std::int64_t>(n))});
+                c.add({rRoot, c.number(static_cast<keel::i64>(n))});
             const Expr indVal = evalIndicial(rn);
             if (indVal.isNull() || isZeroSimp(c, indVal)) {
                 validBranch = false;
@@ -3363,12 +3364,12 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
             }
             std::vector<Expr> sumTerms;
             for (int k = 0; k < n; ++k) {
-                const auto nkIdx = static_cast<std::size_t>(n - k);
-                const auto kIdx = static_cast<std::size_t>(k);
+                const auto nkIdx = static_cast<keel::usize>(n - k);
+                const auto kIdx = static_cast<keel::usize>(k);
                 if (c.isZero(cCoeffs[kIdx]))
                     continue;
                 const Expr rk =
-                    c.add({rRoot, c.number(static_cast<std::int64_t>(k))});
+                    c.add({rRoot, c.number(static_cast<keel::i64>(k))});
                 const Expr factor = c.simplify(
                     c.add({c.mul({rk, pCoeffs[nkIdx]}), qCoeffs[nkIdx]}));
                 if (!c.isZero(factor))
@@ -3376,7 +3377,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
             }
             const Expr sumVal =
                 sumTerms.empty() ? c.zero() : c.simplify(c.add(sumTerms));
-            cCoeffs[static_cast<std::size_t>(n)] =
+            cCoeffs[static_cast<keel::usize>(n)] =
                 c.simplify(c.neg(c.div(sumVal, indVal)));
         }
         if (!validBranch)
@@ -3384,12 +3385,12 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
 
         std::vector<Expr> sTerms;
         for (int k = 0; k <= order; ++k) {
-            const Expr ck = cCoeffs[static_cast<std::size_t>(k)];
+            const Expr ck = cCoeffs[static_cast<keel::usize>(k)];
             if (c.isZero(ck))
                 continue;
             const Expr dxPow =
                 (k == 0) ? c.one()
-                         : c.pow(dx, c.number(static_cast<std::int64_t>(k)));
+                         : c.pow(dx, c.number(static_cast<keel::i64>(k)));
             sTerms.push_back(c.mul({ck, dxPow}));
         }
         const Expr sPoly = sTerms.empty() ? c.zero() : c.add(sTerms);
@@ -3401,7 +3402,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
         const Expr frobRes = c.add(
             {c.mul({c.pow(dx, two), d2S}),
              c.mul({c.add({c.mul({two, rRoot}), P1}), dx, dS}),
-             c.mul({c.add({c.mul({rRoot, c.add({rRoot, c.number(std::int64_t{-1})})}),
+             c.mul({c.add({c.mul({rRoot, c.add({rRoot, c.number(keel::i64{-1})})}),
                            c.mul({rRoot, P1}), Q2}),
                     sPoly})});
         const Expr frobJet = taylor(c, frobRes, x, x0, order, budget);
@@ -3458,14 +3459,14 @@ struct CharCurveCandidate
 Expr applyTrigProductToSum(Ctx &c, Expr e)
 {
     const Expr expd = c.expand(e);
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
 
     auto rewriteMul = [&](Expr term) -> Expr {
         if (c.kind(term) != NodeKind::Mul)
             return term;
         std::vector<Expr> other;
         std::vector<std::pair<std::string, Expr>> trigFactors;
-        for (std::size_t i = 0; i < c.childCount(term); ++i) {
+        for (keel::usize i = 0; i < c.childCount(term); ++i) {
             const Expr f = c.child(term, i);
             if (c.kind(f) == NodeKind::Func && c.childCount(f) == 1 &&
                 (c.funcName(f) == "sin" || c.funcName(f) == "cos")) {
@@ -3512,7 +3513,7 @@ Expr applyTrigProductToSum(Ctx &c, Expr e)
 
     if (c.kind(expd) == NodeKind::Add) {
         std::vector<Expr> terms;
-        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+        for (keel::usize i = 0; i < c.childCount(expd); ++i)
             terms.push_back(rewriteMul(c.child(expd, i)));
         return c.add(terms);
     }
@@ -3887,8 +3888,8 @@ PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
         return out;
     }
 
-    const Expr two = c.number(std::int64_t{2});
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr two = c.number(keel::i64{2});
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
     const Expr c2 = c.pow(cWave, two);
     const Expr xMinusCt = c.add({x, c.neg(c.mul({cWave, t}))});
     const Expr xPlusCt = c.add({x, c.mul({cWave, t})});
@@ -3997,7 +3998,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
     }
 
     const Expr piSym = c.symbol("pi");
-    const Expr two = c.number(std::int64_t{2});
+    const Expr two = c.number(keel::i64{2});
     const Expr twoOverL = c.div(two, L);
     std::vector<Expr> modeTerms;
 
@@ -4017,7 +4018,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
             out.reason = "budget exhausted";
             return out;
         }
-        const Expr nExpr = c.number(static_cast<std::int64_t>(n));
+        const Expr nExpr = c.number(static_cast<keel::i64>(n));
         const Expr kN = c.div(c.mul({nExpr, piSym}), L);
         const Expr argX = c.mul({kN, x});
         const Expr basisN = (bc == PdeBoundaryKind::Dirichlet)
@@ -4079,7 +4080,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
     const Expr fExpr = initU.isNull() ? c.zero() : initU;
     const Expr gExpr = initUt.isNull() ? c.zero() : initUt;
     const Expr piSym = c.symbol("pi");
-    const Expr two = c.number(std::int64_t{2});
+    const Expr two = c.number(keel::i64{2});
     const Expr twoOverL = c.div(two, L);
     std::vector<Expr> modeTerms;
 
@@ -4111,7 +4112,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
             out.reason = "budget exhausted";
             return out;
         }
-        const Expr nExpr = c.number(static_cast<std::int64_t>(n));
+        const Expr nExpr = c.number(static_cast<keel::i64>(n));
         const Expr kN = c.div(c.mul({nExpr, piSym}), L);
         const Expr omegaN = c.mul({cWave, kN});
         const Expr argX = c.mul({kN, x});
@@ -4194,7 +4195,7 @@ PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
     }
 
     const Expr piSym = c.symbol("pi");
-    const Expr two = c.number(std::int64_t{2});
+    const Expr two = c.number(keel::i64{2});
     const Expr twoOverA = c.div(two, a);
     std::vector<Expr> modeTerms;
 
@@ -4203,7 +4204,7 @@ PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
             out.reason = "budget exhausted";
             return out;
         }
-        const Expr nExpr = c.number(static_cast<std::int64_t>(n));
+        const Expr nExpr = c.number(static_cast<keel::i64>(n));
         const Expr kN = c.div(c.mul({nExpr, piSym}), a);
         const Expr basisX = c.func("sin", c.mul({kN, x}));
         const Expr intN =

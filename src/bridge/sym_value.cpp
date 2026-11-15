@@ -1,4 +1,7 @@
 // src/bridge/sym_value.cpp — Value bridge and BuiltinClass for numkit::cas.
+#include <keel/core.h>
+#include <keel/memory.h>
+#include <keel/ref.h>
 #include <numkit/cas/sym_value.hpp>
 
 #include <numkit/cas/core/parser.hpp>
@@ -48,14 +51,14 @@ namespace {
     argcheck::detail::fail(msg, fn, id);
 }
 
-std::pmr::memory_resource *resolveMr(std::pmr::memory_resource *mr) noexcept
+keel::Allocator *resolveMr(keel::Allocator *mr) noexcept
 {
-    return mr ? mr : std::pmr::get_default_resource();
+    return mr ? mr : keel::default_allocator();
 }
 
 std::string trimStr(const std::string &s)
 {
-    std::size_t a = 0, b = s.size();
+    keel::usize a = 0, b = s.size();
     while (a < b && std::isspace(static_cast<unsigned char>(s[a])))
         ++a;
     while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1])))
@@ -76,7 +79,7 @@ bool isValidIdentifier(const std::string &s)
         return false;
     if (!(std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_'))
         return false;
-    for (std::size_t i = 1; i < s.size(); ++i) {
+    for (keel::usize i = 1; i < s.size(); ++i) {
         char ch = s[i];
         if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_'))
             return false;
@@ -98,23 +101,23 @@ Rational doubleToRational(double v)
     if (!std::isfinite(v))
         casFail("nk:sym:nonfinite", "sym: cannot convert non-finite double to exact rational");
     if (v == 0.0)
-        return Rational(std::int64_t{0});
+        return Rational(keel::i64{0});
     const double fl = std::floor(v);
     if (fl == v && std::fabs(v) <= 9.0e15)
-        return Rational(static_cast<std::int64_t>(v));
+        return Rational(static_cast<keel::i64>(v));
 
     const int sign = (v < 0.0) ? -1 : 1;
     const double av = std::fabs(v);
-    std::int64_t p0 = 0, q0 = 1;
-    std::int64_t p1 = 1, q1 = 0;
+    keel::i64 p0 = 0, q0 = 1;
+    keel::i64 p1 = 1, q1 = 0;
     double x = av;
     for (int iter = 0; iter < 32; ++iter) {
         const double aDbl = std::floor(x);
         if (aDbl > 1.0e12)
             break;
-        const std::int64_t a = static_cast<std::int64_t>(aDbl);
-        const std::int64_t p2 = a * p1 + p0;
-        const std::int64_t q2 = a * q1 + q0;
+        const keel::i64 a = static_cast<keel::i64>(aDbl);
+        const keel::i64 p2 = a * p1 + p0;
+        const keel::i64 q2 = a * q1 + q0;
         if (q2 <= 0 || q2 > 1000000000LL)
             break;
         p0 = p1;
@@ -140,10 +143,10 @@ Expr parseExprFlexible(Ctx &c, const std::string &raw, const char *fnName)
                     std::string(fnName) + ": symbolic expression string must not be empty");
 
     // Support equation strings "lhs == rhs" or "lhs = rhs" -> lhs - (rhs).
-    std::size_t eqPos = std::string::npos;
-    std::size_t eqLen = 0;
+    keel::usize eqPos = std::string::npos;
+    keel::usize eqLen = 0;
     int depth = 0;
-    for (std::size_t i = 0; i < s.size(); ++i) {
+    for (keel::usize i = 0; i < s.size(); ++i) {
         if (s[i] == '(' || s[i] == '[')
             ++depth;
         else if (s[i] == ')' || s[i] == ']')
@@ -199,16 +202,16 @@ void collectSymbolsRec(const Ctx &c, Expr e, std::set<std::string> &out)
             out.insert(nm);
         return;
     }
-    const std::size_t n = c.childCount(e);
-    for (std::size_t i = 0; i < n; ++i)
+    const keel::usize n = c.childCount(e);
+    for (keel::usize i = 0; i < n; ++i)
         collectSymbolsRec(c, c.child(e, i), out);
 }
 
 void collectSymbolsFromValue(const Value &v, Ctx &c, std::set<std::string> &out)
 {
     if (isSymValue(v)) {
-        const std::size_t n = v.objectCount();
-        for (std::size_t i = 0; i < n; ++i) {
+        const keel::usize n = v.objectCount();
+        for (keel::usize i = 0; i < n; ++i) {
             const ObjectState *st = v.objectStateAt(i);
             if (st && st->native) {
                 auto *sp = static_cast<const SymPayload *>(st->native.get());
@@ -283,12 +286,12 @@ bool parseAssumeDomain(const std::string &raw, AssumeDomain &domOut, bool &isCle
 
 template <typename UnaryFn>
 Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
-                  std::pmr::memory_resource *mr, const char *fnName)
+                  keel::Allocator *mr, const char *fnName)
 {
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     if (isSymValue(v)) {
-        const std::size_t n = v.objectCount();
+        const keel::usize n = v.objectCount();
         if (n == 0)
             return v;
         if (n == 1 && v.dims().rows() == 1 && v.dims().cols() == 1) {
@@ -296,7 +299,7 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
             return fromSymExpr(ctxPtr, fn(in), mr);
         }
         std::vector<std::shared_ptr<ObjectState>> states(n);
-        for (std::size_t i = 0; i < n; ++i) {
+        for (keel::usize i = 0; i < n; ++i) {
             const ObjectState *st = v.objectStateAt(i);
             Expr in = (st && st->native)
                           ? static_cast<const SymPayload *>(st->native.get())->expr
@@ -312,9 +315,9 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
             Expr in = doubleToSymExpr(c, (v.toScalar()));
             return fromSymExpr(ctxPtr, fn(in), mr);
         }
-        const std::size_t n = v.numel();
+        const keel::usize n = v.numel();
         std::vector<std::shared_ptr<ObjectState>> states(n);
-        for (std::size_t i = 0; i < n; ++i) {
+        for (keel::usize i = 0; i < n; ++i) {
             Expr in = doubleToSymExpr(c, (v.elemAt(i).toScalar()));
             auto nst = std::make_shared<ObjectState>(mr);
             nst->native = std::make_shared<SymPayload>(ctxPtr, fn(in));
@@ -332,7 +335,7 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
 
 template <typename BinaryFn>
 Value mapSymElementwiseBinary(const Value &a, const Value &b, Ctx &c, BinaryFn &&fn,
-                              std::pmr::memory_resource *mr, const char *fnName)
+                              keel::Allocator *mr, const char *fnName)
 {
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
@@ -345,15 +348,15 @@ Value mapSymElementwiseBinary(const Value &a, const Value &b, Ctx &c, BinaryFn &
     }
     if (aScalar) {
         SymMatrix out(B.rows(), B.cols(), c.zero());
-        for (std::size_t r = 0; r < B.rows(); ++r)
-            for (std::size_t col = 0; col < B.cols(); ++col)
+        for (keel::usize r = 0; r < B.rows(); ++r)
+            for (keel::usize col = 0; col < B.cols(); ++col)
                 out(r, col) = fn(A(0, 0), B(r, col));
         return fromSymMatrix(ctxPtr, out, mr);
     }
     if (bScalar) {
         SymMatrix out(A.rows(), A.cols(), c.zero());
-        for (std::size_t r = 0; r < A.rows(); ++r)
-            for (std::size_t col = 0; col < A.cols(); ++col)
+        for (keel::usize r = 0; r < A.rows(); ++r)
+            for (keel::usize col = 0; col < A.cols(); ++col)
                 out(r, col) = fn(A(r, col), B(0, 0));
         return fromSymMatrix(ctxPtr, out, mr);
     }
@@ -362,8 +365,8 @@ Value mapSymElementwiseBinary(const Value &a, const Value &b, Ctx &c, BinaryFn &
                     std::string(fnName) + ": matrix dimensions must agree");
     }
     SymMatrix out(A.rows(), A.cols(), c.zero());
-    for (std::size_t r = 0; r < A.rows(); ++r)
-        for (std::size_t col = 0; col < A.cols(); ++col)
+    for (keel::usize r = 0; r < A.rows(); ++r)
+        for (keel::usize col = 0; col < A.cols(); ++col)
             out(r, col) = fn(A(r, col), B(r, col));
     return fromSymMatrix(ctxPtr, out, mr);
 }
@@ -438,11 +441,11 @@ Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName)
 SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
 {
     if (isSymValue(v)) {
-        const std::size_t rows = v.dims().rows();
-        const std::size_t cols = v.dims().cols();
+        const keel::usize rows = v.dims().rows();
+        const keel::usize cols = v.dims().cols();
         SymMatrix M(rows, cols, c.zero());
-        for (std::size_t col = 0; col < cols; ++col) {
-            for (std::size_t r = 0; r < rows; ++r) {
+        for (keel::usize col = 0; col < cols; ++col) {
+            for (keel::usize r = 0; r < rows; ++r) {
                 const ObjectState *st = v.objectStateAt(col * rows + r);
                 if (st && st->native)
                     M(r, col) = static_cast<const SymPayload *>(st->native.get())->expr;
@@ -453,11 +456,11 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
     if (v.isNumeric() || v.isLogical()) {
         if (v.isEmpty())
             return SymMatrix(0, 0);
-        const std::size_t rows = v.dims().rows();
-        const std::size_t cols = v.dims().cols();
+        const keel::usize rows = v.dims().rows();
+        const keel::usize cols = v.dims().cols();
         SymMatrix M(rows, cols, c.zero());
-        for (std::size_t col = 0; col < cols; ++col) {
-            for (std::size_t r = 0; r < rows; ++r) {
+        for (keel::usize col = 0; col < cols; ++col) {
+            for (keel::usize r = 0; r < rows; ++r) {
                 M(r, col) = doubleToSymExpr(c, (v.elemAt(col * rows + r).toScalar()));
             }
         }
@@ -484,14 +487,14 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
             }
             if (rowVecs.empty())
                 return SymMatrix(0, 0);
-            const std::size_t rows = rowVecs.size();
-            const std::size_t cols = rowVecs[0].size();
+            const keel::usize rows = rowVecs.size();
+            const keel::usize cols = rowVecs[0].size();
             SymMatrix M(rows, cols, c.zero());
-            for (std::size_t r = 0; r < rows; ++r) {
+            for (keel::usize r = 0; r < rows; ++r) {
                 if (rowVecs[r].size() != cols)
                     casFail(std::string("nk:") + fnName + ":inconsistentMatrixRow",
                                 std::string(fnName) + ": inconsistent row lengths in symbolic matrix string");
-                for (std::size_t col = 0; col < cols; ++col)
+                for (keel::usize col = 0; col < cols; ++col)
                     M(r, col) = rowVecs[r][col];
             }
             return M;
@@ -500,11 +503,11 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
         return SymMatrix(1, 1, {e});
     }
     if (v.isCell()) {
-        const std::size_t rows = v.dims().rows();
-        const std::size_t cols = v.dims().cols();
+        const keel::usize rows = v.dims().rows();
+        const keel::usize cols = v.dims().cols();
         SymMatrix M(rows, cols, c.zero());
-        for (std::size_t col = 0; col < cols; ++col)
-            for (std::size_t r = 0; r < rows; ++r)
+        for (keel::usize col = 0; col < cols; ++col)
+            for (keel::usize r = 0; r < rows; ++r)
                 M(r, col) = toSymExpr(v.cellAt(col * rows + r), c, fnName);
         return M;
     }
@@ -517,21 +520,21 @@ std::vector<Expr> toSymVector(const numkit::Value &v, Ctx &c, const char *fnName
     if (v.isCell()) {
         std::vector<Expr> out;
         out.reserve(v.numel());
-        for (std::size_t i = 0; i < v.numel(); ++i)
+        for (keel::usize i = 0; i < v.numel(); ++i)
             out.push_back(toSymExpr(v.cellAt(i), c, fnName));
         return out;
     }
     SymMatrix M = toSymMatrix(v, c, fnName);
     std::vector<Expr> out;
     out.reserve(M.rows() * M.cols());
-    for (std::size_t r = 0; r < M.rows(); ++r)
-        for (std::size_t col = 0; col < M.cols(); ++col)
+    for (keel::usize r = 0; r < M.rows(); ++r)
+        for (keel::usize col = 0; col < M.cols(); ++col)
             out.push_back(M(r, col));
     return out;
 }
 
 numkit::Value fromSymExpr(const std::shared_ptr<Ctx> &c, Expr e,
-                          std::pmr::memory_resource *mr)
+                          keel::Allocator *mr)
 {
     mr = resolveMr(mr);
     auto st = std::make_shared<ObjectState>(mr);
@@ -540,16 +543,16 @@ numkit::Value fromSymExpr(const std::shared_ptr<Ctx> &c, Expr e,
 }
 
 numkit::Value fromSymMatrix(const std::shared_ptr<Ctx> &c, const SymMatrix &M,
-                            std::pmr::memory_resource *mr)
+                            keel::Allocator *mr)
 {
     mr = resolveMr(mr);
-    const std::size_t rows = M.rows();
-    const std::size_t cols = M.cols();
+    const keel::usize rows = M.rows();
+    const keel::usize cols = M.cols();
     if (rows == 1 && cols == 1)
         return fromSymExpr(c, M(0, 0), mr);
     std::vector<std::shared_ptr<ObjectState>> states(rows * cols);
-    for (std::size_t col = 0; col < cols; ++col) {
-        for (std::size_t r = 0; r < rows; ++r) {
+    for (keel::usize col = 0; col < cols; ++col) {
+        for (keel::usize r = 0; r < rows; ++r) {
             auto st = std::make_shared<ObjectState>(mr);
             st->native = std::make_shared<SymPayload>(c, M(r, col));
             states[col * rows + r] = std::move(st);
@@ -559,15 +562,15 @@ numkit::Value fromSymMatrix(const std::shared_ptr<Ctx> &c, const SymMatrix &M,
 }
 
 numkit::Value fromSymVector(const std::shared_ptr<Ctx> &c, const std::vector<Expr> &vec,
-                            bool column, std::pmr::memory_resource *mr)
+                            bool column, keel::Allocator *mr)
 {
     mr = resolveMr(mr);
     if (vec.size() == 1)
         return fromSymExpr(c, vec[0], mr);
-    const std::size_t rows = column ? vec.size() : (vec.empty() ? 0 : 1);
-    const std::size_t cols = column ? (vec.empty() ? 0 : 1) : vec.size();
+    const keel::usize rows = column ? vec.size() : (vec.empty() ? 0 : 1);
+    const keel::usize cols = column ? (vec.empty() ? 0 : 1) : vec.size();
     std::vector<std::shared_ptr<ObjectState>> states(vec.size());
-    for (std::size_t i = 0; i < vec.size(); ++i) {
+    for (keel::usize i = 0; i < vec.size(); ++i) {
         auto st = std::make_shared<ObjectState>(mr);
         st->native = std::make_shared<SymPayload>(c, vec[i]);
         states[i] = std::move(st);
@@ -581,12 +584,12 @@ numkit::Value fromSymVector(const std::shared_ptr<Ctx> &c, const std::vector<Exp
 
 namespace {
 
-void symCreate_argcheck(Span<const Value> args)
+void symCreate_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 0, 2, "sym");
 }
 
-void symsCommand_argcheck(Span<const Value> args)
+void symsCommand_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 0, 64, "syms");
 }
@@ -614,7 +617,7 @@ void symDouble_argcheck(const Value &v)
     }
 }
 
-void symVpa_argcheck(Span<const Value> args)
+void symVpa_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "vpa");
     if (args.size() == 2) {
@@ -622,17 +625,17 @@ void symVpa_argcheck(Span<const Value> args)
     }
 }
 
-void symFactor_argcheck(Span<const Value> args)
+void symFactor_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "factor");
 }
 
-void symCollect_argcheck(Span<const Value> args)
+void symCollect_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "collect");
 }
 
-void symCoeffs_argcheck(Span<const Value> args)
+void symCoeffs_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "coeffs");
 }
@@ -644,17 +647,17 @@ void symNumden_argcheck(const Value &v)
     }
 }
 
-void symPartfrac_argcheck(Span<const Value> args)
+void symPartfrac_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "partfrac");
 }
 
-void symSubs_argcheck(Span<const Value> args)
+void symSubs_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 2, 3, "subs");
 }
 
-void symSymvar_argcheck(Span<const Value> args)
+void symSymvar_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "symvar");
     if (args.size() == 2) {
@@ -662,90 +665,90 @@ void symSymvar_argcheck(Span<const Value> args)
     }
 }
 
-void symPoly2sym_argcheck(Span<const Value> args)
+void symPoly2sym_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "poly2sym");
 }
 
-void symSym2poly_argcheck(Span<const Value> args)
+void symSym2poly_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "sym2poly");
 }
 
-void symDiff_argcheck(Span<const Value> args)
+void symDiff_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "diff");
 }
 
-void symInt_argcheck(Span<const Value> args)
+void symInt_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 4, "int");
 }
 
-void symLimit_argcheck(Span<const Value> args)
+void symLimit_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 4, "limit");
 }
 
-void symTaylor_argcheck(Span<const Value> args)
+void symTaylor_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 7, "taylor");
 }
 
-void symLaurent_argcheck(Span<const Value> args)
+void symLaurent_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 4, "laurent");
 }
 
-void symMtaylor_argcheck(Span<const Value> args)
+void symMtaylor_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 2, 4, "mtaylor");
 }
 
-void symPade_argcheck(Span<const Value> args)
+void symPade_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 5, "pade");
 }
 
-void symResidue_argcheck(Span<const Value> args)
+void symResidue_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "residue");
 }
 
-void symSymsum_argcheck(Span<const Value> args)
+void symSymsum_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 3, 4, "symsum");
 }
 
-void symFiniteDiff_argcheck(Span<const Value> args)
+void symFiniteDiff_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 4, "finitediff");
 }
 
-void symEulerMaclaurin_argcheck(Span<const Value> args)
+void symEulerMaclaurin_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 4, 5, "eulermaclaurin");
 }
 
-void symSolve_argcheck(Span<const Value> args)
+void symSolve_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 4, "solve");
 }
 
-void symGroebner_argcheck(Span<const Value> args)
+void symGroebner_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "groebner");
 }
 
-void symPolyReduce_argcheck(Span<const Value> args)
+void symPolyReduce_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 2, 4, "polyreduce");
 }
 
 } // namespace
 
-numkit::Value symCreate(numkit::Span<const numkit::Value> args,
-                        std::pmr::memory_resource *mr)
+numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
+                        keel::Allocator *mr)
 {
     symCreate_argcheck(args);
     mr = resolveMr(mr);
@@ -766,7 +769,7 @@ numkit::Value symCreate(numkit::Span<const numkit::Value> args,
                 casFail("nk:sym:invalidAssumption",
                             "sym: unknown assumption '" + domStr + "'");
             }
-            Value out = symCreate(Span<const Value>(&a0, 1), mr);
+            Value out = symCreate(keel::ArrayRef<Value>(&a0, 1), mr);
             std::set<std::string> syms;
             collectSymbolsFromValue(out, c, syms);
             for (const auto &nm : syms) {
@@ -780,26 +783,26 @@ numkit::Value symCreate(numkit::Span<const numkit::Value> args,
                 casFail("nk:sym:invalidPrefix",
                             "sym: matrix symbol prefix '" + base + "' must be a valid identifier");
             }
-            std::size_t rows = 1, cols = 1;
+            keel::usize rows = 1, cols = 1;
             if (a1.numel() == 1) {
                 int n = static_cast<int>(a1.toScalar());
                 if (n < 0)
                     casFail("nk:sym:negativeSize", "sym: dimensions must be non-negative");
-                rows = static_cast<std::size_t>(n);
-                cols = static_cast<std::size_t>(n);
+                rows = static_cast<keel::usize>(n);
+                cols = static_cast<keel::usize>(n);
             } else if (a1.numel() == 2) {
                 int r = static_cast<int>(a1.elemAt(0).toScalar());
                 int col = static_cast<int>(a1.elemAt(1).toScalar());
                 if (r < 0 || col < 0)
                     casFail("nk:sym:negativeSize", "sym: dimensions must be non-negative");
-                rows = static_cast<std::size_t>(r);
-                cols = static_cast<std::size_t>(col);
+                rows = static_cast<keel::usize>(r);
+                cols = static_cast<keel::usize>(col);
             } else {
                 casFail("nk:sym:invalidSizeVec", "sym: dimension vector must have 1 or 2 elements");
             }
             SymMatrix M(rows, cols, c.zero());
-            for (std::size_t r = 0; r < rows; ++r) {
-                for (std::size_t col = 0; col < cols; ++col) {
+            for (keel::usize r = 0; r < rows; ++r) {
+                for (keel::usize col = 0; col < cols; ++col) {
                     std::string elemName;
                     if (rows == 1 || cols == 1) {
                         elemName = base + std::to_string(std::max(r, col) + 1);
@@ -836,9 +839,9 @@ numkit::Value symCreate(numkit::Span<const numkit::Value> args,
     casFail("nk:sym:unsupportedInput", "sym: unsupported input type");
 }
 
-void symsCommand(numkit::Span<const numkit::Value> args,
+void symsCommand(keel::ArrayRef<numkit::Value> args,
                  std::vector<std::pair<std::string, numkit::Value>> &bindingsOut,
-                 std::pmr::memory_resource *mr)
+                 keel::Allocator *mr)
 {
     symsCommand_argcheck(args);
     mr = resolveMr(mr);
@@ -860,7 +863,7 @@ void symsCommand(numkit::Span<const numkit::Value> args,
     bool hasTrailingDomain = false;
     AssumeDomain trailingDom = AssumeDomain::Any;
     bool trailingClear = false;
-    std::size_t varEnd = args.size();
+    keel::usize varEnd = args.size();
     if (args.size() >= 2 && (args[args.size() - 1].isChar() || args[args.size() - 1].isString())) {
         if (parseAssumeDomain(args[args.size() - 1].toString(), trailingDom, trailingClear)) {
             hasTrailingDomain = true;
@@ -868,7 +871,7 @@ void symsCommand(numkit::Span<const numkit::Value> args,
         }
     }
 
-    for (std::size_t i = 0; i < varEnd; ++i) {
+    for (keel::usize i = 0; i < varEnd; ++i) {
         if (!args[i].isChar() && !args[i].isString()) {
             casFail("nk:syms:invalidVarName",
                         "syms: arguments must be variable names (strings)");
@@ -887,7 +890,7 @@ void symsCommand(numkit::Span<const numkit::Value> args,
 }
 
 numkit::Value symAssume(const numkit::Value &symVal, const std::string &domainStr,
-                        std::pmr::memory_resource *mr)
+                        keel::Allocator *mr)
 {
     symAssume_argcheck(symVal, domainStr);
     mr = resolveMr(mr);
@@ -908,7 +911,7 @@ numkit::Value symAssume(const numkit::Value &symVal, const std::string &domainSt
 }
 
 numkit::Value symAssumptions(const numkit::Value &symVal,
-                             std::pmr::memory_resource *mr)
+                             keel::Allocator *mr)
 {
     if (!isSymValue(symVal) && !symVal.isChar() && !symVal.isString()) {
         casFail("nk:assumptions:invalidTarget",
@@ -940,7 +943,7 @@ numkit::Value symAssumptions(const numkit::Value &symVal,
 }
 
 numkit::Value symDouble(const numkit::Value &v,
-                        std::pmr::memory_resource *mr)
+                        keel::Allocator *mr)
 {
     symDouble_argcheck(v);
     mr = resolveMr(mr);
@@ -949,14 +952,14 @@ numkit::Value symDouble(const numkit::Value &v,
             return Value::scalar(v.toScalar(), mr);
         Value out = Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::DOUBLE, mr);
         double *dst = out.doubleDataMut();
-        for (std::size_t i = 0; i < v.numel(); ++i)
+        for (keel::usize i = 0; i < v.numel(); ++i)
             dst[i] = v.elemAt(i).toScalar();
         return out;
     }
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     if (isSymValue(v)) {
-        const std::size_t n = v.objectCount();
+        const keel::usize n = v.objectCount();
         if (n == 0)
             return Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::DOUBLE, mr);
         if (n == 1 && v.dims().rows() == 1 && v.dims().cols() == 1) {
@@ -971,7 +974,7 @@ numkit::Value symDouble(const numkit::Value &v,
         }
         Value out = Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::DOUBLE, mr);
         double *dst = out.doubleDataMut();
-        for (std::size_t i = 0; i < n; ++i) {
+        for (keel::usize i = 0; i < n; ++i) {
             const ObjectState *st = v.objectStateAt(i);
             Expr e = (st && st->native)
                          ? static_cast<const SymPayload *>(st->native.get())->expr
@@ -996,15 +999,15 @@ numkit::Value symDouble(const numkit::Value &v,
     return Value::scalar(val, mr);
 }
 
-numkit::Value symVpa(numkit::Span<const numkit::Value> args,
-                     std::pmr::memory_resource *mr)
+numkit::Value symVpa(keel::ArrayRef<numkit::Value> args,
+                     keel::Allocator *mr)
 {
     symVpa_argcheck(args);
     return symDouble(args[0], mr);
 }
 
 numkit::Value symChar(const numkit::Value &v,
-                      std::pmr::memory_resource *mr)
+                      keel::Allocator *mr)
 {
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
@@ -1022,7 +1025,7 @@ numkit::Value symChar(const numkit::Value &v,
 }
 
 numkit::Value symLatex(const numkit::Value &v,
-                       std::pmr::memory_resource *mr)
+                       keel::Allocator *mr)
 {
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
@@ -1032,7 +1035,7 @@ numkit::Value symLatex(const numkit::Value &v,
 }
 
 numkit::Value symCCode(const numkit::Value &v,
-                       std::pmr::memory_resource *mr)
+                       keel::Allocator *mr)
 {
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
@@ -1042,7 +1045,7 @@ numkit::Value symCCode(const numkit::Value &v,
 }
 
 numkit::Value symSimplify(const numkit::Value &v,
-                          std::pmr::memory_resource *mr)
+                          keel::Allocator *mr)
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
@@ -1050,16 +1053,16 @@ numkit::Value symSimplify(const numkit::Value &v,
 }
 
 numkit::Value symExpand(const numkit::Value &v,
-                        std::pmr::memory_resource *mr)
+                        keel::Allocator *mr)
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     return mapSymUnary(v, c, [&](Expr e) { return c.expand(e); }, mr, "expand");
 }
 
-void symFactor(numkit::Span<const numkit::Value> args, std::size_t nargout,
-               numkit::Span<numkit::Value> outs,
-               std::pmr::memory_resource *mr)
+void symFactor(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
+               keel::MutArrayRef<numkit::Value> outs,
+               keel::Allocator *mr)
 {
     symFactor_argcheck(args);
     mr = resolveMr(mr);
@@ -1079,7 +1082,7 @@ void symFactor(numkit::Span<const numkit::Value> args, std::size_t nargout,
     }
     if (nargout <= 1) {
         std::vector<Expr> facList;
-        if (res.content != Rational(std::int64_t{1}) || res.factors.empty()) {
+        if (res.content != Rational(keel::i64{1}) || res.factors.empty()) {
             facList.push_back(c.number(res.content));
         }
         for (const auto &it : res.factors) {
@@ -1090,7 +1093,7 @@ void symFactor(numkit::Span<const numkit::Value> args, std::size_t nargout,
     } else {
         std::vector<Expr> facList;
         std::vector<double> mults;
-        if (res.content != Rational(std::int64_t{1}) || res.factors.empty()) {
+        if (res.content != Rational(keel::i64{1}) || res.factors.empty()) {
             facList.push_back(c.number(res.content));
             mults.push_back(1.0);
         }
@@ -1101,14 +1104,14 @@ void symFactor(numkit::Span<const numkit::Value> args, std::size_t nargout,
         outs[0] = fromSymVector(ctxPtr, facList, /*column=*/false, mr);
         Value mVal = Value::matrix(1, mults.size(), ValueType::DOUBLE, mr);
         double *mp = mVal.doubleDataMut();
-        for (std::size_t i = 0; i < mults.size(); ++i)
+        for (keel::usize i = 0; i < mults.size(); ++i)
             mp[i] = mults[i];
         outs[1] = std::move(mVal);
     }
 }
 
-numkit::Value symCollect(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symCollect(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symCollect_argcheck(args);
     auto ctxPtr = defaultCtx();
@@ -1118,9 +1121,9 @@ numkit::Value symCollect(numkit::Span<const numkit::Value> args,
     return mapSymUnary(args[0], c, [&](Expr e) { return collect(c, e, var); }, mr, "collect");
 }
 
-void symCoeffs(numkit::Span<const numkit::Value> args, std::size_t nargout,
-               numkit::Span<numkit::Value> outs,
-               std::pmr::memory_resource *mr)
+void symCoeffs(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
+               keel::MutArrayRef<numkit::Value> outs,
+               keel::Allocator *mr)
 {
     symCoeffs_argcheck(args);
     mr = resolveMr(mr);
@@ -1136,9 +1139,9 @@ void symCoeffs(numkit::Span<const numkit::Value> args, std::size_t nargout,
     }
 }
 
-void symNumden(const numkit::Value &v, std::size_t nargout,
-               numkit::Span<numkit::Value> outs,
-               std::pmr::memory_resource *mr)
+void symNumden(const numkit::Value &v, keel::usize nargout,
+               keel::MutArrayRef<numkit::Value> outs,
+               keel::Allocator *mr)
 {
     symNumden_argcheck(v);
     mr = resolveMr(mr);
@@ -1147,8 +1150,8 @@ void symNumden(const numkit::Value &v, std::size_t nargout,
     SymMatrix M = toSymMatrix(v, c, "numden");
     SymMatrix N(M.rows(), M.cols(), c.zero());
     SymMatrix D(M.rows(), M.cols(), c.one());
-    for (std::size_t r = 0; r < M.rows(); ++r) {
-        for (std::size_t col = 0; col < M.cols(); ++col) {
+    for (keel::usize r = 0; r < M.rows(); ++r) {
+        for (keel::usize col = 0; col < M.cols(); ++col) {
             NumDenResult nd = numden(c, M(r, col));
             N(r, col) = nd.num;
             D(r, col) = nd.den;
@@ -1160,8 +1163,8 @@ void symNumden(const numkit::Value &v, std::size_t nargout,
     }
 }
 
-numkit::Value symPartfrac(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symPartfrac(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symPartfrac_argcheck(args);
     auto ctxPtr = defaultCtx();
@@ -1174,8 +1177,8 @@ numkit::Value symPartfrac(numkit::Span<const numkit::Value> args,
     }, mr, "partfrac");
 }
 
-numkit::Value symSubs(numkit::Span<const numkit::Value> args,
-                      std::pmr::memory_resource *mr)
+numkit::Value symSubs(keel::ArrayRef<numkit::Value> args,
+                      keel::Allocator *mr)
 {
     symSubs_argcheck(args);
     auto ctxPtr = defaultCtx();
@@ -1195,14 +1198,14 @@ numkit::Value symSubs(numkit::Span<const numkit::Value> args,
     }
     return mapSymUnary(args[0], c, [&](Expr e) {
         Expr cur = e;
-        for (std::size_t i = 0; i < fromList.size(); ++i)
+        for (keel::usize i = 0; i < fromList.size(); ++i)
             cur = c.subs(cur, fromList[i], toList[i]);
         return cur;
     }, mr, "subs");
 }
 
-numkit::Value symSymvar(numkit::Span<const numkit::Value> args,
-                        std::pmr::memory_resource *mr)
+numkit::Value symSymvar(keel::ArrayRef<numkit::Value> args,
+                        keel::Allocator *mr)
 {
     symSymvar_argcheck(args);
     mr = resolveMr(mr);
@@ -1212,7 +1215,7 @@ numkit::Value symSymvar(numkit::Span<const numkit::Value> args,
     collectSymbolsFromValue(args[0], c, syms);
     std::vector<std::string> sorted(syms.begin(), syms.end());
     if (args.size() == 2) {
-        const std::size_t n = static_cast<std::size_t>(args[1].toScalar());
+        const keel::usize n = static_cast<keel::usize>(args[1].toScalar());
         std::sort(sorted.begin(), sorted.end(), [](const std::string &a, const std::string &b) {
             const int da = symvarDistance(a);
             const int db = symvarDistance(b);
@@ -1228,8 +1231,8 @@ numkit::Value symSymvar(numkit::Span<const numkit::Value> args,
     return fromSymVector(ctxPtr, exprs, /*column=*/false, mr);
 }
 
-numkit::Value symPoly2sym(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symPoly2sym(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symPoly2sym_argcheck(args);
     mr = resolveMr(mr);
@@ -1239,19 +1242,19 @@ numkit::Value symPoly2sym(numkit::Span<const numkit::Value> args,
     Expr var = (args.size() >= 2) ? toSymExpr(args[1], c, "poly2sym") : c.symbol("x");
     if (cf.empty())
         return fromSymExpr(ctxPtr, c.zero(), mr);
-    const std::size_t n = cf.size();
+    const keel::usize n = cf.size();
     std::vector<Expr> terms;
     terms.reserve(n);
-    for (std::size_t i = 0; i < n; ++i) {
-        const std::size_t deg = n - 1 - i;
-        Expr mon = (deg == 0) ? c.one() : c.pow(var, c.number(static_cast<std::int64_t>(deg)));
+    for (keel::usize i = 0; i < n; ++i) {
+        const keel::usize deg = n - 1 - i;
+        Expr mon = (deg == 0) ? c.one() : c.pow(var, c.number(static_cast<keel::i64>(deg)));
         terms.push_back(c.mul({cf[i], mon}));
     }
     return fromSymExpr(ctxPtr, c.add(terms), mr);
 }
 
-numkit::Value symSym2poly(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symSym2poly(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symSym2poly_argcheck(args);
     mr = resolveMr(mr);
@@ -1264,10 +1267,10 @@ numkit::Value symSym2poly(numkit::Span<const numkit::Value> args,
     if (res.dense.empty()) {
         return Value::scalar(0.0, mr);
     }
-    const std::size_t n = res.dense.size();
+    const keel::usize n = res.dense.size();
     Value out = Value::matrix(1, n, ValueType::DOUBLE, mr);
     double *dst = out.doubleDataMut();
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         const Expr &ce = res.dense[n - 1 - i];
         double val = 0.0;
         if (!c.evalDouble(ce, {}, val)) {
@@ -1280,8 +1283,8 @@ numkit::Value symSym2poly(numkit::Span<const numkit::Value> args,
     return out;
 }
 
-numkit::Value symDiff(numkit::Span<const numkit::Value> args,
-                      std::pmr::memory_resource *mr)
+numkit::Value symDiff(keel::ArrayRef<numkit::Value> args,
+                      keel::Allocator *mr)
 {
     symDiff_argcheck(args);
     auto ctxPtr = defaultCtx();
@@ -1324,8 +1327,8 @@ numkit::Value symDiff(numkit::Span<const numkit::Value> args,
     }, mr, "diff");
 }
 
-numkit::Value symInt(numkit::Span<const numkit::Value> args,
-                     std::pmr::memory_resource *mr)
+numkit::Value symInt(keel::ArrayRef<numkit::Value> args,
+                     keel::Allocator *mr)
 {
     symInt_argcheck(args);
     mr = resolveMr(mr);
@@ -1393,8 +1396,8 @@ numkit::Value symInt(numkit::Span<const numkit::Value> args,
     }, mr, "int");
 }
 
-numkit::Value symLimit(numkit::Span<const numkit::Value> args,
-                       std::pmr::memory_resource *mr)
+numkit::Value symLimit(keel::ArrayRef<numkit::Value> args,
+                       keel::Allocator *mr)
 {
     symLimit_argcheck(args);
     mr = resolveMr(mr);
@@ -1438,8 +1441,8 @@ numkit::Value symLimit(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.value, mr);
 }
 
-numkit::Value symTaylor(numkit::Span<const numkit::Value> args,
-                        std::pmr::memory_resource *mr)
+numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
+                        keel::Allocator *mr)
 {
     symTaylor_argcheck(args);
     mr = resolveMr(mr);
@@ -1451,8 +1454,8 @@ numkit::Value symTaylor(numkit::Span<const numkit::Value> args,
     int order = 5;
 
     // Support both positional (f, [var], [x0], [order]) and Name-Value ('ExpansionPoint', x0, 'Order', n).
-    std::size_t posEnd = args.size();
-    for (std::size_t i = 1; i + 1 < args.size(); ++i) {
+    keel::usize posEnd = args.size();
+    for (keel::usize i = 1; i + 1 < args.size(); ++i) {
         if (args[i].isChar() || args[i].isString()) {
             std::string key = toLowerStr(trimStr(args[i].toString()));
             if (key == "expansionpoint" || key == "order") {
@@ -1480,7 +1483,7 @@ numkit::Value symTaylor(numkit::Span<const numkit::Value> args,
         order = static_cast<int>(args[3].toScalar());
     }
 
-    for (std::size_t i = posEnd; i + 1 < args.size(); i += 2) {
+    for (keel::usize i = posEnd; i + 1 < args.size(); i += 2) {
         std::string key = toLowerStr(trimStr(args[i].toString()));
         if (key == "expansionpoint") {
             x0 = toSymExpr(args[i + 1], c, "taylor");
@@ -1501,8 +1504,8 @@ numkit::Value symTaylor(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, out, mr);
 }
 
-numkit::Value symLaurent(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symLaurent(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symLaurent_argcheck(args);
     mr = resolveMr(mr);
@@ -1519,8 +1522,8 @@ numkit::Value symLaurent(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, out, mr);
 }
 
-numkit::Value symMtaylor(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symMtaylor(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symMtaylor_argcheck(args);
     mr = resolveMr(mr);
@@ -1547,9 +1550,9 @@ numkit::Value symMtaylor(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, out, mr);
 }
 
-void symPade(numkit::Span<const numkit::Value> args, std::size_t nargout,
-             numkit::Span<numkit::Value> outs,
-             std::pmr::memory_resource *mr)
+void symPade(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
+             keel::MutArrayRef<numkit::Value> outs,
+             keel::Allocator *mr)
 {
     symPade_argcheck(args);
     mr = resolveMr(mr);
@@ -1591,8 +1594,8 @@ void symPade(numkit::Span<const numkit::Value> args, std::size_t nargout,
     }
 }
 
-numkit::Value symResidue(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symResidue(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symResidue_argcheck(args);
     mr = resolveMr(mr);
@@ -1608,8 +1611,8 @@ numkit::Value symResidue(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, out, mr);
 }
 
-numkit::Value symSymsum(numkit::Span<const numkit::Value> args,
-                        std::pmr::memory_resource *mr)
+numkit::Value symSymsum(keel::ArrayRef<numkit::Value> args,
+                        keel::Allocator *mr)
 {
     symSymsum_argcheck(args);
     mr = resolveMr(mr);
@@ -1636,8 +1639,8 @@ numkit::Value symSymsum(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.value, mr);
 }
 
-numkit::Value symFiniteDiff(numkit::Span<const numkit::Value> args,
-                            std::pmr::memory_resource *mr)
+numkit::Value symFiniteDiff(keel::ArrayRef<numkit::Value> args,
+                            keel::Allocator *mr)
 {
     symFiniteDiff_argcheck(args);
     mr = resolveMr(mr);
@@ -1654,8 +1657,8 @@ numkit::Value symFiniteDiff(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, out, mr);
 }
 
-numkit::Value symEulerMaclaurin(numkit::Span<const numkit::Value> args,
-                                std::pmr::memory_resource *mr)
+numkit::Value symEulerMaclaurin(keel::ArrayRef<numkit::Value> args,
+                                keel::Allocator *mr)
 {
     symEulerMaclaurin_argcheck(args);
     mr = resolveMr(mr);
@@ -1673,9 +1676,9 @@ numkit::Value symEulerMaclaurin(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.approximation, mr);
 }
 
-void symSolve(numkit::Span<const numkit::Value> args, std::size_t nargout,
-              numkit::Span<numkit::Value> outs,
-              std::pmr::memory_resource *mr)
+void symSolve(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
+              keel::MutArrayRef<numkit::Value> outs,
+              keel::Allocator *mr)
 {
     symSolve_argcheck(args);
     mr = resolveMr(mr);
@@ -1704,9 +1707,9 @@ void symSolve(numkit::Span<const numkit::Value> args, std::size_t nargout,
     }
 
     std::vector<std::vector<Expr>> tuples = solveSystem(c, eqs, vars);
-    const std::size_t k = vars.size();
+    const keel::usize k = vars.size();
     if (nargout >= k && k > 1 && outs.size() >= k) {
-        for (std::size_t j = 0; j < k; ++j) {
+        for (keel::usize j = 0; j < k; ++j) {
             std::vector<Expr> colVec;
             colVec.reserve(tuples.size());
             for (const auto &t : tuples)
@@ -1718,7 +1721,7 @@ void symSolve(numkit::Span<const numkit::Value> args, std::size_t nargout,
     }
 
     Value s = Value::structure(mr);
-    for (std::size_t j = 0; j < k; ++j) {
+    for (keel::usize j = 0; j < k; ++j) {
         std::vector<Expr> colVec;
         colVec.reserve(tuples.size());
         for (const auto &t : tuples)
@@ -1732,8 +1735,8 @@ void symSolve(numkit::Span<const numkit::Value> args, std::size_t nargout,
     outs[0] = std::move(s);
 }
 
-numkit::Value symGroebner(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symGroebner(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symGroebner_argcheck(args);
     mr = resolveMr(mr);
@@ -1768,8 +1771,8 @@ numkit::Value symGroebner(numkit::Span<const numkit::Value> args,
     return fromSymVector(ctxPtr, res.basis, /*column=*/false, mr);
 }
 
-numkit::Value symPolyReduce(numkit::Span<const numkit::Value> args,
-                            std::pmr::memory_resource *mr)
+numkit::Value symPolyReduce(keel::ArrayRef<numkit::Value> args,
+                            keel::Allocator *mr)
 {
     symPolyReduce_argcheck(args);
     mr = resolveMr(mr);
@@ -1803,47 +1806,47 @@ numkit::Value symPolyReduce(numkit::Span<const numkit::Value> args,
 
 namespace {
 
-void symDsolve_argcheck(Span<const Value> args)
+void symDsolve_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 8, "dsolve");
 }
 
-void symPdsolve_argcheck(Span<const Value> args)
+void symPdsolve_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 4, 8, "pdsolve");
 }
 
-void symLaplace_argcheck(Span<const Value> args)
+void symLaplace_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "laplace");
 }
 
-void symIlaplace_argcheck(Span<const Value> args)
+void symIlaplace_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "ilaplace");
 }
 
-void symFourier_argcheck(Span<const Value> args)
+void symFourier_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "fourier");
 }
 
-void symIfourier_argcheck(Span<const Value> args)
+void symIfourier_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "ifourier");
 }
 
-void symZtrans_argcheck(Span<const Value> args)
+void symZtrans_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "ztrans");
 }
 
-void symIztrans_argcheck(Span<const Value> args)
+void symIztrans_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 3, "iztrans");
 }
 
-void symRsolve_argcheck(Span<const Value> args)
+void symRsolve_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 2, 4, "rsolve");
 }
@@ -1868,97 +1871,97 @@ void symMatrixAny_argcheck(const char *fn, const Value &A)
     }
 }
 
-void symCharpoly_argcheck(Span<const Value> args)
+void symCharpoly_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "charpoly");
     symMatrixSquare_argcheck("charpoly", args[0]);
 }
 
-void symExpm_argcheck(Span<const Value> args)
+void symExpm_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "expm");
     symMatrixSquare_argcheck("expm", args[0]);
 }
 
-void symJacobian_argcheck(Span<const Value> args)
+void symJacobian_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "jacobian");
 }
 
-void symGradient_argcheck(Span<const Value> args)
+void symGradient_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "gradient");
 }
 
-void symHessian_argcheck(Span<const Value> args)
+void symHessian_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "hessian");
 }
 
-void symLaplacian_argcheck(Span<const Value> args)
+void symLaplacian_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "laplacian");
 }
 
-void symWronskian_argcheck(Span<const Value> args)
+void symWronskian_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "wronskian");
 }
 
-void symEulerLagrange_argcheck(Span<const Value> args)
+void symEulerLagrange_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 4, 5, "eulerlagrange");
 }
 
-void symHamiltonian_argcheck(Span<const Value> args)
+void symHamiltonian_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 3, 3, "hamiltonian");
 }
 
-void symLegendreTransform_argcheck(Span<const Value> args)
+void symLegendreTransform_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 4, 4, "legendretransform");
 }
 
-void symPoissonBracket_argcheck(Span<const Value> args)
+void symPoissonBracket_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 4, 4, "poissonbracket");
 }
 
-void symLagrangeExtrema_argcheck(Span<const Value> args)
+void symLagrangeExtrema_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 2, 3, "lagrangeextrema");
 }
 
-void symFrenetSerret_argcheck(Span<const Value> args)
+void symFrenetSerret_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 1, 2, "frenetserret");
 }
 
-void symSurfaceCurvature_argcheck(Span<const Value> args)
+void symSurfaceCurvature_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 3, 3, "surfacecurvature");
 }
 
-void symGeodesic_argcheck(Span<const Value> args)
+void symGeodesic_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 2, 4, "geodesic");
 }
 
-void symLineIntegral_argcheck(Span<const Value> args)
+void symLineIntegral_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 6, 6, "lineintegral");
 }
 
-void symSurfaceIntegral_argcheck(Span<const Value> args)
+void symSurfaceIntegral_argcheck(keel::ArrayRef<Value> args)
 {
     argcheck::checkNargin(args.size(), 9, 9, "surfaceintegral");
 }
 
 } // namespace
 
-numkit::Value symDsolve(numkit::Span<const numkit::Value> args,
-                        std::pmr::memory_resource *mr)
+numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
+                        keel::Allocator *mr)
 {
     symDsolve_argcheck(args);
     mr = resolveMr(mr);
@@ -2109,8 +2112,8 @@ numkit::Value symDsolve(numkit::Span<const numkit::Value> args,
     casFail("nk:dsolve:invalidArgs", "dsolve: unsupported argument count");
 }
 
-numkit::Value symPdsolve(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symPdsolve(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symPdsolve_argcheck(args);
     mr = resolveMr(mr);
@@ -2168,8 +2171,8 @@ numkit::Value symPdsolve(numkit::Span<const numkit::Value> args,
     casFail("nk:pdsolve:invalidArgs", "pdsolve: unsupported PDE signature");
 }
 
-numkit::Value symLaplace(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symLaplace(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symLaplace_argcheck(args);
     mr = resolveMr(mr);
@@ -2184,8 +2187,8 @@ numkit::Value symLaplace(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
-numkit::Value symIlaplace(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symIlaplace(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symIlaplace_argcheck(args);
     mr = resolveMr(mr);
@@ -2200,8 +2203,8 @@ numkit::Value symIlaplace(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
-numkit::Value symFourier(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symFourier(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symFourier_argcheck(args);
     mr = resolveMr(mr);
@@ -2216,8 +2219,8 @@ numkit::Value symFourier(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
-numkit::Value symIfourier(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symIfourier(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symIfourier_argcheck(args);
     mr = resolveMr(mr);
@@ -2232,8 +2235,8 @@ numkit::Value symIfourier(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
-numkit::Value symZtrans(numkit::Span<const numkit::Value> args,
-                        std::pmr::memory_resource *mr)
+numkit::Value symZtrans(keel::ArrayRef<numkit::Value> args,
+                        keel::Allocator *mr)
 {
     symZtrans_argcheck(args);
     mr = resolveMr(mr);
@@ -2248,8 +2251,8 @@ numkit::Value symZtrans(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
-numkit::Value symIztrans(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symIztrans(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symIztrans_argcheck(args);
     mr = resolveMr(mr);
@@ -2264,8 +2267,8 @@ numkit::Value symIztrans(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
-numkit::Value symRsolve(numkit::Span<const numkit::Value> args,
-                        std::pmr::memory_resource *mr)
+numkit::Value symRsolve(keel::ArrayRef<numkit::Value> args,
+                        keel::Allocator *mr)
 {
     symRsolve_argcheck(args);
     mr = resolveMr(mr);
@@ -2287,7 +2290,7 @@ numkit::Value symRsolve(numkit::Span<const numkit::Value> args,
 }
 
 numkit::Value symDet(const numkit::Value &A,
-                     std::pmr::memory_resource *mr)
+                     keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("det", A);
     mr = resolveMr(mr);
@@ -2298,7 +2301,7 @@ numkit::Value symDet(const numkit::Value &A,
 }
 
 numkit::Value symInv(const numkit::Value &A,
-                     std::pmr::memory_resource *mr)
+                     keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("inv", A);
     mr = resolveMr(mr);
@@ -2313,7 +2316,7 @@ numkit::Value symInv(const numkit::Value &A,
 }
 
 numkit::Value symTrace(const numkit::Value &A,
-                       std::pmr::memory_resource *mr)
+                       keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("trace", A);
     mr = resolveMr(mr);
@@ -2324,7 +2327,7 @@ numkit::Value symTrace(const numkit::Value &A,
 }
 
 numkit::Value symAdjugate(const numkit::Value &A,
-                          std::pmr::memory_resource *mr)
+                          keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("adjugate", A);
     mr = resolveMr(mr);
@@ -2334,8 +2337,8 @@ numkit::Value symAdjugate(const numkit::Value &A,
     return fromSymMatrix(ctxPtr, adjugate(c, M), mr);
 }
 
-numkit::Value symCharpoly(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symCharpoly(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symCharpoly_argcheck(args);
     mr = resolveMr(mr);
@@ -2354,7 +2357,7 @@ numkit::Value symCharpoly(numkit::Span<const numkit::Value> args,
 }
 
 numkit::Value symRank(const numkit::Value &A,
-                      std::pmr::memory_resource *mr)
+                      keel::Allocator *mr)
 {
     symMatrixAny_argcheck("rank", A);
     mr = resolveMr(mr);
@@ -2364,29 +2367,29 @@ numkit::Value symRank(const numkit::Value &A,
     return Value::scalar(static_cast<double>(rank(c, M)), mr);
 }
 
-void symRref(const numkit::Value &A, std::size_t nargout,
-             numkit::Span<numkit::Value> outs,
-             std::pmr::memory_resource *mr)
+void symRref(const numkit::Value &A, keel::usize nargout,
+             keel::MutArrayRef<numkit::Value> outs,
+             keel::Allocator *mr)
 {
     symMatrixAny_argcheck("rref", A);
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix M = toSymMatrix(A, c, "rref");
-    std::vector<std::size_t> pivots;
+    std::vector<keel::usize> pivots;
     SymMatrix R = rref(c, M, &pivots);
     outs[0] = fromSymMatrix(ctxPtr, R, mr);
     if (nargout >= 2 && outs.size() >= 2) {
         Value jb = Value::matrix(1, pivots.size(), ValueType::DOUBLE, mr);
         double *jp = jb.doubleDataMut();
-        for (std::size_t i = 0; i < pivots.size(); ++i)
+        for (keel::usize i = 0; i < pivots.size(); ++i)
             jp[i] = static_cast<double>(pivots[i] + 1);
         outs[1] = std::move(jb);
     }
 }
 
 numkit::Value symNull(const numkit::Value &A,
-                      std::pmr::memory_resource *mr)
+                      keel::Allocator *mr)
 {
     symMatrixAny_argcheck("null", A);
     mr = resolveMr(mr);
@@ -2398,15 +2401,15 @@ numkit::Value symNull(const numkit::Value &A,
         return fromSymMatrix(ctxPtr, SymMatrix(M.cols(), 0), mr);
     }
     SymMatrix Z(M.cols(), basis.size(), c.zero());
-    for (std::size_t col = 0; col < basis.size(); ++col) {
-        for (std::size_t r = 0; r < M.cols(); ++r)
+    for (keel::usize col = 0; col < basis.size(); ++col) {
+        for (keel::usize r = 0; r < M.cols(); ++r)
             Z(r, col) = basis[col](r, 0);
     }
     return fromSymMatrix(ctxPtr, Z, mr);
 }
 
 numkit::Value symLinsolve(const numkit::Value &A, const numkit::Value &B,
-                          std::pmr::memory_resource *mr)
+                          keel::Allocator *mr)
 {
     symMatrixAny_argcheck("linsolve", A);
     symMatrixAny_argcheck("linsolve", B);
@@ -2425,9 +2428,9 @@ numkit::Value symLinsolve(const numkit::Value &A, const numkit::Value &B,
     return fromSymMatrix(ctxPtr, X, mr);
 }
 
-void symLu(const numkit::Value &A, std::size_t nargout,
-           numkit::Span<numkit::Value> outs,
-           std::pmr::memory_resource *mr)
+void symLu(const numkit::Value &A, keel::usize nargout,
+           keel::MutArrayRef<numkit::Value> outs,
+           keel::Allocator *mr)
 {
     symMatrixAny_argcheck("lu", A);
     mr = resolveMr(mr);
@@ -2449,9 +2452,9 @@ void symLu(const numkit::Value &A, std::size_t nargout,
     }
 }
 
-void symQr(const numkit::Value &A, std::size_t nargout,
-           numkit::Span<numkit::Value> outs,
-           std::pmr::memory_resource *mr)
+void symQr(const numkit::Value &A, keel::usize nargout,
+           keel::MutArrayRef<numkit::Value> outs,
+           keel::Allocator *mr)
 {
     symMatrixAny_argcheck("qr", A);
     mr = resolveMr(mr);
@@ -2467,9 +2470,9 @@ void symQr(const numkit::Value &A, std::size_t nargout,
         outs[1] = fromSymMatrix(ctxPtr, res.R, mr);
 }
 
-void symEig(const numkit::Value &A, std::size_t nargout,
-            numkit::Span<numkit::Value> outs,
-            std::pmr::memory_resource *mr)
+void symEig(const numkit::Value &A, keel::usize nargout,
+            keel::MutArrayRef<numkit::Value> outs,
+            keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("eig", A);
     mr = resolveMr(mr);
@@ -2491,14 +2494,14 @@ void symEig(const numkit::Value &A, std::size_t nargout,
                 cols.push_back(v);
             }
         } else {
-            for (std::size_t m = 0; m < ep.multiplicity; ++m)
+            for (keel::usize m = 0; m < ep.multiplicity; ++m)
                 diagVals.push_back(ep.lambda);
         }
     }
-    const std::size_t n = M.rows();
+    const keel::usize n = M.rows();
     SymMatrix V(n, cols.size(), c.zero());
-    for (std::size_t j = 0; j < cols.size(); ++j)
-        for (std::size_t r = 0; r < n; ++r)
+    for (keel::usize j = 0; j < cols.size(); ++j)
+        for (keel::usize r = 0; r < n; ++r)
             V(r, j) = cols[j](r, 0);
     SymMatrix D = SymMatrix::diag(c, diagVals);
     outs[0] = fromSymMatrix(ctxPtr, V, mr);
@@ -2506,9 +2509,9 @@ void symEig(const numkit::Value &A, std::size_t nargout,
         outs[1] = fromSymMatrix(ctxPtr, D, mr);
 }
 
-void symJordan(const numkit::Value &A, std::size_t nargout,
-               numkit::Span<numkit::Value> outs,
-               std::pmr::memory_resource *mr)
+void symJordan(const numkit::Value &A, keel::usize nargout,
+               keel::MutArrayRef<numkit::Value> outs,
+               keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("jordan", A);
     mr = resolveMr(mr);
@@ -2529,8 +2532,8 @@ void symJordan(const numkit::Value &A, std::size_t nargout,
     }
 }
 
-numkit::Value symExpm(numkit::Span<const numkit::Value> args,
-                      std::pmr::memory_resource *mr)
+numkit::Value symExpm(keel::ArrayRef<numkit::Value> args,
+                      keel::Allocator *mr)
 {
     symExpm_argcheck(args);
     mr = resolveMr(mr);
@@ -2551,8 +2554,8 @@ numkit::Value symExpm(numkit::Span<const numkit::Value> args,
     return fromSymMatrix(ctxPtr, Phi.subs(c, t, c.one()), mr);
 }
 
-numkit::Value symJacobian(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symJacobian(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symJacobian_argcheck(args);
     mr = resolveMr(mr);
@@ -2574,8 +2577,8 @@ numkit::Value symJacobian(numkit::Span<const numkit::Value> args,
     return fromSymMatrix(ctxPtr, jacobian(c, funcs, vars), mr);
 }
 
-numkit::Value symGradient(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symGradient(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symGradient_argcheck(args);
     mr = resolveMr(mr);
@@ -2596,8 +2599,8 @@ numkit::Value symGradient(numkit::Span<const numkit::Value> args,
     return fromSymMatrix(ctxPtr, gradient(c, f, vars), mr);
 }
 
-numkit::Value symHessian(numkit::Span<const numkit::Value> args,
-                         std::pmr::memory_resource *mr)
+numkit::Value symHessian(keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr)
 {
     symHessian_argcheck(args);
     mr = resolveMr(mr);
@@ -2619,7 +2622,7 @@ numkit::Value symHessian(numkit::Span<const numkit::Value> args,
 }
 
 numkit::Value symDivergence(const numkit::Value &F, const numkit::Value &vars,
-                            std::pmr::memory_resource *mr)
+                            keel::Allocator *mr)
 {
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
@@ -2634,7 +2637,7 @@ numkit::Value symDivergence(const numkit::Value &F, const numkit::Value &vars,
 }
 
 numkit::Value symCurl(const numkit::Value &F, const numkit::Value &vars,
-                      std::pmr::memory_resource *mr)
+                      keel::Allocator *mr)
 {
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
@@ -2648,8 +2651,8 @@ numkit::Value symCurl(const numkit::Value &F, const numkit::Value &vars,
     return fromSymMatrix(ctxPtr, curl(c, fVec, vVec), mr);
 }
 
-numkit::Value symLaplacian(numkit::Span<const numkit::Value> args,
-                           std::pmr::memory_resource *mr)
+numkit::Value symLaplacian(keel::ArrayRef<numkit::Value> args,
+                           keel::Allocator *mr)
 {
     symLaplacian_argcheck(args);
     mr = resolveMr(mr);
@@ -2670,8 +2673,8 @@ numkit::Value symLaplacian(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, laplacian(c, f, vars), mr);
 }
 
-numkit::Value symWronskian(numkit::Span<const numkit::Value> args,
-                           std::pmr::memory_resource *mr)
+numkit::Value symWronskian(keel::ArrayRef<numkit::Value> args,
+                           keel::Allocator *mr)
 {
     symWronskian_argcheck(args);
     mr = resolveMr(mr);
@@ -2684,7 +2687,7 @@ numkit::Value symWronskian(numkit::Span<const numkit::Value> args,
 }
 
 numkit::Value symPotential(const numkit::Value &F, const numkit::Value &vars,
-                           std::pmr::memory_resource *mr)
+                           keel::Allocator *mr)
 {
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
@@ -2699,8 +2702,8 @@ numkit::Value symPotential(const numkit::Value &F, const numkit::Value &vars,
     return fromSymExpr(ctxPtr, res.phi, mr);
 }
 
-numkit::Value symEulerLagrange(numkit::Span<const numkit::Value> args,
-                               std::pmr::memory_resource *mr)
+numkit::Value symEulerLagrange(keel::ArrayRef<numkit::Value> args,
+                               keel::Allocator *mr)
 {
     symEulerLagrange_argcheck(args);
     mr = resolveMr(mr);
@@ -2716,8 +2719,8 @@ numkit::Value symEulerLagrange(numkit::Span<const numkit::Value> args,
     return fromSymVector(ctxPtr, res.equations, /*column=*/true, mr);
 }
 
-numkit::Value symHamiltonian(numkit::Span<const numkit::Value> args,
-                             std::pmr::memory_resource *mr)
+numkit::Value symHamiltonian(keel::ArrayRef<numkit::Value> args,
+                             keel::Allocator *mr)
 {
     symHamiltonian_argcheck(args);
     mr = resolveMr(mr);
@@ -2737,8 +2740,8 @@ numkit::Value symHamiltonian(numkit::Span<const numkit::Value> args,
     return s;
 }
 
-numkit::Value symLegendreTransform(numkit::Span<const numkit::Value> args,
-                                   std::pmr::memory_resource *mr)
+numkit::Value symLegendreTransform(keel::ArrayRef<numkit::Value> args,
+                                   keel::Allocator *mr)
 {
     symLegendreTransform_argcheck(args);
     mr = resolveMr(mr);
@@ -2759,8 +2762,8 @@ numkit::Value symLegendreTransform(numkit::Span<const numkit::Value> args,
     return s;
 }
 
-numkit::Value symPoissonBracket(numkit::Span<const numkit::Value> args,
-                                std::pmr::memory_resource *mr)
+numkit::Value symPoissonBracket(keel::ArrayRef<numkit::Value> args,
+                                keel::Allocator *mr)
 {
     symPoissonBracket_argcheck(args);
     mr = resolveMr(mr);
@@ -2777,8 +2780,8 @@ numkit::Value symPoissonBracket(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, out, mr);
 }
 
-numkit::Value symLagrangeExtrema(numkit::Span<const numkit::Value> args,
-                                 std::pmr::memory_resource *mr)
+numkit::Value symLagrangeExtrema(keel::ArrayRef<numkit::Value> args,
+                                 keel::Allocator *mr)
 {
     symLagrangeExtrema_argcheck(args);
     mr = resolveMr(mr);
@@ -2799,8 +2802,8 @@ numkit::Value symLagrangeExtrema(numkit::Span<const numkit::Value> args,
     return fromSymVector(ctxPtr, vals, /*column=*/true, mr);
 }
 
-numkit::Value symFrenetSerret(numkit::Span<const numkit::Value> args,
-                              std::pmr::memory_resource *mr)
+numkit::Value symFrenetSerret(keel::ArrayRef<numkit::Value> args,
+                              keel::Allocator *mr)
 {
     symFrenetSerret_argcheck(args);
     mr = resolveMr(mr);
@@ -2823,8 +2826,8 @@ numkit::Value symFrenetSerret(numkit::Span<const numkit::Value> args,
     return s;
 }
 
-numkit::Value symSurfaceCurvature(numkit::Span<const numkit::Value> args,
-                                  std::pmr::memory_resource *mr)
+numkit::Value symSurfaceCurvature(keel::ArrayRef<numkit::Value> args,
+                                  keel::Allocator *mr)
 {
     symSurfaceCurvature_argcheck(args);
     mr = resolveMr(mr);
@@ -2848,7 +2851,7 @@ numkit::Value symSurfaceCurvature(numkit::Span<const numkit::Value> args,
 }
 
 numkit::Value symChristoffel(const numkit::Value &metric, const numkit::Value &coords,
-                             std::pmr::memory_resource *mr)
+                             keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("christoffel", metric);
     mr = resolveMr(mr);
@@ -2863,14 +2866,14 @@ numkit::Value symChristoffel(const numkit::Value &metric, const numkit::Value &c
     Value s = Value::structure(mr);
     s.field("inverseMetric") = fromSymMatrix(ctxPtr, res.inverseMetric, mr);
     Value gammaCell = Value::cell(1, res.secondKind.size(), mr);
-    for (std::size_t k = 0; k < res.secondKind.size(); ++k)
+    for (keel::usize k = 0; k < res.secondKind.size(); ++k)
         gammaCell.cellAt(k) = fromSymMatrix(ctxPtr, res.secondKind[k], mr);
     s.field("secondKind") = std::move(gammaCell);
     return s;
 }
 
 numkit::Value symRiemann(const numkit::Value &metric, const numkit::Value &coords,
-                         std::pmr::memory_resource *mr)
+                         keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("riemann", metric);
     mr = resolveMr(mr);
@@ -2890,7 +2893,7 @@ numkit::Value symRiemann(const numkit::Value &metric, const numkit::Value &coord
 }
 
 numkit::Value symRicci(const numkit::Value &metric, const numkit::Value &coords,
-                       std::pmr::memory_resource *mr)
+                       keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("ricci", metric);
     mr = resolveMr(mr);
@@ -2906,7 +2909,7 @@ numkit::Value symRicci(const numkit::Value &metric, const numkit::Value &coords,
 }
 
 numkit::Value symScalarCurvature(const numkit::Value &metric, const numkit::Value &coords,
-                                 std::pmr::memory_resource *mr)
+                                 keel::Allocator *mr)
 {
     symMatrixSquare_argcheck("scalarcurvature", metric);
     mr = resolveMr(mr);
@@ -2921,8 +2924,8 @@ numkit::Value symScalarCurvature(const numkit::Value &metric, const numkit::Valu
     return fromSymExpr(ctxPtr, R, mr);
 }
 
-numkit::Value symGeodesic(numkit::Span<const numkit::Value> args,
-                          std::pmr::memory_resource *mr)
+numkit::Value symGeodesic(keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr)
 {
     symGeodesic_argcheck(args);
     symMatrixSquare_argcheck("geodesic", args[0]);
@@ -2940,8 +2943,8 @@ numkit::Value symGeodesic(numkit::Span<const numkit::Value> args,
     return fromSymVector(ctxPtr, res.equations, /*column=*/true, mr);
 }
 
-numkit::Value symLineIntegral(numkit::Span<const numkit::Value> args,
-                              std::pmr::memory_resource *mr)
+numkit::Value symLineIntegral(keel::ArrayRef<numkit::Value> args,
+                              keel::Allocator *mr)
 {
     symLineIntegral_argcheck(args);
     mr = resolveMr(mr);
@@ -2966,8 +2969,8 @@ numkit::Value symLineIntegral(numkit::Span<const numkit::Value> args,
     return fromSymExpr(ctxPtr, res.value, mr);
 }
 
-numkit::Value symSurfaceIntegral(numkit::Span<const numkit::Value> args,
-                                 std::pmr::memory_resource *mr)
+numkit::Value symSurfaceIntegral(keel::ArrayRef<numkit::Value> args,
+                                 keel::Allocator *mr)
 {
     symSurfaceIntegral_argcheck(args);
     mr = resolveMr(mr);
@@ -2996,7 +2999,7 @@ numkit::Value symSurfaceIntegral(numkit::Span<const numkit::Value> args,
 }
 
 numkit::Value symElemFunc1(const std::string &fnName, const numkit::Value &v,
-                           std::pmr::memory_resource *mr)
+                           keel::Allocator *mr)
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
@@ -3010,7 +3013,7 @@ numkit::Value symElemFunc1(const std::string &fnName, const numkit::Value &v,
 
 numkit::Value symElemFunc2(const std::string &fnName, const numkit::Value &a,
                            const numkit::Value &b,
-                           std::pmr::memory_resource *mr)
+                           keel::Allocator *mr)
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
@@ -3029,8 +3032,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
     cls.name = "sym";
     cls.isHandle = false;
 
-    cls.construct = [](Span<const Value> args, CallContext &ctx) -> Value {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.construct = [](keel::ArrayRef<Value> args, CallContext &ctx) -> Value {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         return symCreate(args, mr);
     };
 
@@ -3046,8 +3049,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
     };
 
     // Binary & unary operator overloads
-    cls.ops["plus"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["plus"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
@@ -3055,8 +3058,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         }, mr, "plus");
     };
 
-    cls.ops["minus"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["minus"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
@@ -3064,19 +3067,19 @@ numkit::BuiltinClass makeSymBuiltinClass()
         }, mr, "minus");
     };
 
-    cls.ops["uminus"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["uminus"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymUnary(self, c, [&](Expr a) { return c.neg(a); }, mr, "uminus");
     };
 
-    cls.ops["uplus"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &) {
+    cls.ops["uplus"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &) {
         outs[0] = self;
     };
 
-    cls.ops["times"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["times"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
@@ -3084,8 +3087,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         }, mr, "times");
     };
 
-    cls.ops["mtimes"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["mtimes"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         SymMatrix A = toSymMatrix(args[0], c, "mtimes");
@@ -3105,8 +3108,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         outs[0] = fromSymMatrix(ctxPtr, A.mul(c, B), mr);
     };
 
-    cls.ops["rdivide"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["rdivide"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
@@ -3116,8 +3119,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         }, mr, "rdivide");
     };
 
-    cls.ops["mrdivide"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["mrdivide"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         SymMatrix B = toSymMatrix(args[1], c, "mrdivide");
@@ -3139,8 +3142,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         outs[0] = fromSymMatrix(ctxPtr, A.mul(c, Binv), mr);
     };
 
-    cls.ops["ldivide"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["ldivide"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
@@ -3150,8 +3153,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         }, mr, "ldivide");
     };
 
-    cls.ops["mldivide"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["mldivide"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         SymMatrix A = toSymMatrix(args[0], c, "mldivide");
@@ -3166,8 +3169,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         outs[0] = symLinsolve(args[0], args[1], mr);
     };
 
-    cls.ops["power"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["power"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
@@ -3175,8 +3178,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         }, mr, "power");
     };
 
-    cls.ops["mpower"] = [](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["mpower"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         SymMatrix A = toSymMatrix(args[0], c, "mpower");
@@ -3190,7 +3193,7 @@ numkit::BuiltinClass makeSymBuiltinClass()
                         "mpower: matrix power requires a square matrix and an integer scalar exponent");
         }
         const Rational &rn = c.numberValue(B(0, 0));
-        std::int64_t expI64 = 0;
+        keel::i64 expI64 = 0;
         if (!rn.fitsInt64(expI64)) {
             casFail("nk:mpower:nonIntegerMatrixPower",
                         "mpower: matrix exponent must be an integer");
@@ -3213,14 +3216,14 @@ numkit::BuiltinClass makeSymBuiltinClass()
         outs[0] = fromSymMatrix(ctxPtr, res, mr);
     };
 
-    cls.ops["transpose"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["transpose"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         outs[0] = self.objectTranspose(mr);
     };
 
     cls.ops["ctranspose"] = cls.ops["transpose"];
 
-    auto eqHelper = [](const Value &lhs, const Value &rhs, bool negate, std::pmr::memory_resource *mr) -> Value {
+    auto eqHelper = [](const Value &lhs, const Value &rhs, bool negate, keel::Allocator *mr) -> Value {
         mr = resolveMr(mr);
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
@@ -3235,15 +3238,15 @@ numkit::BuiltinClass makeSymBuiltinClass()
         if (aScalar && bScalar) {
             return Value::logicalScalar(checkPair(A(0, 0), B(0, 0)), mr);
         }
-        std::size_t rows = aScalar ? B.rows() : A.rows();
-        std::size_t cols = aScalar ? B.cols() : A.cols();
+        keel::usize rows = aScalar ? B.rows() : A.rows();
+        keel::usize cols = aScalar ? B.cols() : A.cols();
         if (!aScalar && !bScalar && (A.rows() != B.rows() || A.cols() != B.cols())) {
             casFail("nk:eq:dimMismatch", "eq: matrix dimensions must agree");
         }
         Value out = Value::matrix(rows, cols, ValueType::LOGICAL, mr);
-        uint8_t *dst = out.logicalDataMut();
-        for (std::size_t col = 0; col < cols; ++col) {
-            for (std::size_t r = 0; r < rows; ++r) {
+        keel::u8 *dst = out.logicalDataMut();
+        for (keel::usize col = 0; col < cols; ++col) {
+            for (keel::usize r = 0; r < rows; ++r) {
                 Expr ea = aScalar ? A(0, 0) : A(r, col);
                 Expr eb = bScalar ? B(0, 0) : B(r, col);
                 dst[col * rows + r] = checkPair(ea, eb);
@@ -3252,13 +3255,13 @@ numkit::BuiltinClass makeSymBuiltinClass()
         return out;
     };
 
-    cls.ops["eq"] = [eqHelper](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["eq"] = [eqHelper](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         outs[0] = eqHelper(args[0], args[1], /*negate=*/false, mr);
     };
 
-    cls.ops["ne"] = [eqHelper](Value &, Span<const Value> args, std::size_t, Span<Value> outs, CallContext &ctx) {
-        std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+    cls.ops["ne"] = [eqHelper](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         outs[0] = eqHelper(args[0], args[1], /*negate=*/true, mr);
     };
 
@@ -3271,11 +3274,11 @@ numkit::BuiltinClass makeSymBuiltinClass()
     };
     for (const char *fn : kUnaryElemFns) {
         std::string fnStr(fn);
-        cls.methods[fnStr] = [fnStr](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+        cls.methods[fnStr] = [fnStr](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
             if (!rest.empty()) {
                 casFail("nk:" + fnStr + ":tooManyInputs", fnStr + ": expected 1 input argument");
             }
-            std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+            keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
             outs[0] = symElemFunc1(fnStr, self, mr);
         };
     }
@@ -3297,230 +3300,230 @@ numkit::BuiltinClass makeSymBuiltinClass()
     for (const auto &entry : kBinarySpecFns) {
         std::string mStr(entry.mName);
         std::string cStr(entry.casName);
-        cls.methods[mStr] = [mStr, cStr](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+        cls.methods[mStr] = [mStr, cStr](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
             if (rest.size() != 1) {
                 casFail("nk:" + mStr + ":arity", mStr + ": expected 2 input arguments");
             }
-            std::pmr::memory_resource *mr = ctx.engine ? ctx.engine->resource() : nullptr;
+            keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
             outs[0] = symElemFunc2(cStr, self, rest[0], mr);
         };
     }
 
-    auto prependSelf = [](const Value &self, Span<const Value> rest) {
+    auto prependSelf = [](const Value &self, keel::ArrayRef<Value> rest) {
         std::vector<Value> all;
         all.reserve(1 + rest.size());
         all.push_back(self);
-        for (std::size_t i = 0; i < rest.size(); ++i)
+        for (keel::usize i = 0; i < rest.size(); ++i)
             all.push_back(rest[i]);
         return all;
     };
 
-    cls.methods["double"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symDouble(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["double"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symDouble(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["vpa"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["vpa"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symVpa(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symVpa(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["char"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symChar(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["char"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symChar(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["latex"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symLatex(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["latex"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symLatex(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["ccode"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symCCode(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["ccode"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symCCode(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["simplify"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symSimplify(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["simplify"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symSimplify(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["expand"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symExpand(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["expand"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symExpand(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["factor"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
+    cls.methods["factor"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        symFactor(all, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+        symFactor(all, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["collect"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["collect"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symCollect(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symCollect(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["coeffs"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
+    cls.methods["coeffs"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        symCoeffs(all, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+        symCoeffs(all, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["numden"] = [](Value &self, Span<const Value>, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
-        symNumden(self, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["numden"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        symNumden(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["partfrac"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["partfrac"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symPartfrac(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symPartfrac(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["subs"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["subs"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symSubs(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symSubs(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["symvar"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["symvar"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symSymvar(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symSymvar(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["sym2poly"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["sym2poly"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symSym2poly(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symSym2poly(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["diff"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["diff"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symDiff(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symDiff(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["int"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["int"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symInt(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symInt(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["limit"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["limit"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symLimit(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symLimit(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["taylor"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["taylor"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symTaylor(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symTaylor(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["laurent"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["laurent"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symLaurent(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symLaurent(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["mtaylor"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["mtaylor"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symMtaylor(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symMtaylor(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["pade"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
+    cls.methods["pade"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        symPade(all, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+        symPade(all, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["residue"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["residue"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symResidue(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symResidue(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["symsum"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["symsum"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symSymsum(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symSymsum(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["solve"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
+    cls.methods["solve"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        symSolve(all, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+        symSolve(all, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["dsolve"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["dsolve"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symDsolve(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symDsolve(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["laplace"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["laplace"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symLaplace(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symLaplace(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["ilaplace"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["ilaplace"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symIlaplace(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symIlaplace(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["fourier"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["fourier"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symFourier(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symFourier(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["ifourier"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["ifourier"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symIfourier(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symIfourier(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["ztrans"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["ztrans"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symZtrans(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symZtrans(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["iztrans"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["iztrans"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symIztrans(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symIztrans(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["det"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symDet(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["det"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symDet(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["inv"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symInv(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["inv"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symInv(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["trace"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symTrace(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["trace"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symTrace(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["adjugate"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symAdjugate(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["adjugate"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symAdjugate(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
     cls.methods["adjoint"] = cls.methods["adjugate"];
-    cls.methods["charpoly"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["charpoly"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symCharpoly(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symCharpoly(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["rank"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symRank(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["rank"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symRank(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["rref"] = [](Value &self, Span<const Value>, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
-        symRref(self, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["rref"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        symRref(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["null"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symNull(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["null"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symNull(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
     cls.methods["nullspace"] = cls.methods["null"];
-    cls.methods["linsolve"] = [](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["linsolve"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "linsolve");
-        outs[0] = symLinsolve(self, rest[0], ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symLinsolve(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["lu"] = [](Value &self, Span<const Value>, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
-        symLu(self, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["lu"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        symLu(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["qr"] = [](Value &self, Span<const Value>, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
-        symQr(self, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["qr"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        symQr(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["eig"] = [](Value &self, Span<const Value>, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
-        symEig(self, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["eig"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        symEig(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["jordan"] = [](Value &self, Span<const Value>, std::size_t nargout, Span<Value> outs, CallContext &ctx) {
-        symJordan(self, nargout, outs, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["jordan"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        symJordan(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["expm"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["expm"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symExpm(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symExpm(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["jacobian"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["jacobian"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symJacobian(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symJacobian(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["gradient"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["gradient"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symGradient(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symGradient(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["hessian"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["hessian"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symHessian(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symHessian(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["divergence"] = [](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["divergence"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "divergence");
-        outs[0] = symDivergence(self, rest[0], ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symDivergence(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["curl"] = [](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["curl"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "curl");
-        outs[0] = symCurl(self, rest[0], ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symCurl(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["laplacian"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["laplacian"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symLaplacian(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symLaplacian(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["wronskian"] = [prependSelf](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["wronskian"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
-        outs[0] = symWronskian(all, ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symWronskian(all, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["potential"] = [](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["potential"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "potential");
-        outs[0] = symPotential(self, rest[0], ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symPotential(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["assume"] = [](Value &self, Span<const Value> rest, std::size_t, Span<Value> outs, CallContext &ctx) {
+    cls.methods["assume"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "assume");
-        outs[0] = symAssume(self, rest[0].toString(), ctx.engine ? ctx.engine->resource() : nullptr);
+        outs[0] = symAssume(self, rest[0].toString(), ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["assumptions"] = [](Value &self, Span<const Value>, std::size_t, Span<Value> outs, CallContext &ctx) {
-        outs[0] = symAssumptions(self, ctx.engine ? ctx.engine->resource() : nullptr);
+    cls.methods["assumptions"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symAssumptions(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
 
     return cls;

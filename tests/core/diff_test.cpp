@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/core/expr.hpp>
 
 #include <gtest/gtest.h>
@@ -10,7 +11,7 @@ using numkit::cas::Expr;
 using numkit::cas::NodeKind;
 using numkit::cas::Rational;
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -20,7 +21,7 @@ std::uint64_t nextU64(std::uint64_t &state)
 
 Rational half()
 {
-    return Rational(std::int64_t{1}, BigInt(2));
+    return Rational(keel::i64{1}, BigInt(2));
 }
 
 struct DiffTest : public ::testing::Test
@@ -56,7 +57,7 @@ struct DiffTest : public ::testing::Test
         case NodeKind::Add:
         case NodeKind::Mul: {
             std::vector<Expr> cs;
-            for (std::size_t i = 0; i < c.childCount(e); ++i)
+            for (keel::usize i = 0; i < c.childCount(e); ++i)
                 cs.push_back(clone(c.child(e, i)));
             return c.kind(e) == NodeKind::Add ? c.add(cs) : c.mul(cs);
         }
@@ -66,11 +67,11 @@ struct DiffTest : public ::testing::Test
 
     Expr rnd(int depth)
     {
-        const std::uint64_t roll = nextU64(state) % 100;
+        const keel::u64 roll = nextU64(state) % 100;
         if (depth <= 0 || roll < 30) {
             if (nextU64(state) % 2)
                 return c.symbol(nextU64(state) % 2 ? "x" : "y");
-            return c.number(static_cast<std::int64_t>(nextU64(state) % 17) - 8);
+            return c.number(static_cast<keel::i64>(nextU64(state) % 17) - 8);
         }
         if (roll < 55)
             return c.add({rnd(depth - 1), rnd(depth - 1), rnd(depth - 1)});
@@ -78,11 +79,11 @@ struct DiffTest : public ::testing::Test
             return c.mul({rnd(depth - 1), rnd(depth - 1)});
         if (roll < 85)
             return c.pow(rnd(depth - 1),
-                         c.number(static_cast<std::int64_t>(nextU64(state) % 4)));
+                         c.number(static_cast<keel::i64>(nextU64(state) % 4)));
         return c.func(nextU64(state) % 2 ? "sin" : "log", rnd(depth - 1));
     }
 
-    std::uint64_t state = 0xFEEDBEEFCAFE1234ULL;
+    keel::u64 state = 0xFEEDBEEFCAFE1234ULL;
 };
 
 } // namespace
@@ -90,20 +91,20 @@ struct DiffTest : public ::testing::Test
 TEST_F(DiffTest, BasicFormulas)
 {
     EXPECT_EQ(dstr(x), "1");
-    EXPECT_EQ(dstr(c.number(std::int64_t{5})), "0");
+    EXPECT_EQ(dstr(c.number(keel::i64{5})), "0");
     EXPECT_EQ(dstr(y), "0");
-    EXPECT_EQ(dstr(c.add({x, c.number(std::int64_t{3})})), "1");
-    EXPECT_EQ(dstr(c.pow(x, c.number(std::int64_t{2}))), "2*x");
-    EXPECT_EQ(dstr(c.pow(x, c.number(std::int64_t{3}))), "3*x^2");
+    EXPECT_EQ(dstr(c.add({x, c.number(keel::i64{3})})), "1");
+    EXPECT_EQ(dstr(c.pow(x, c.number(keel::i64{2}))), "2*x");
+    EXPECT_EQ(dstr(c.pow(x, c.number(keel::i64{3}))), "3*x^2");
     EXPECT_EQ(dstr(c.pow(x, c.number(half()))), "1/2*x^(-1/2)");
     EXPECT_EQ(dstr(c.div(c.one(), x)), "-x^-2");
-    EXPECT_EQ(dstr(c.mul({c.number(std::int64_t{2}), x})), "2");
+    EXPECT_EQ(dstr(c.mul({c.number(keel::i64{2}), x})), "2");
 }
 
 TEST_F(DiffTest, TranscendentalFunctions)
 {
     EXPECT_EQ(dstr(c.func("exp", x)), "exp(x)");
-    EXPECT_EQ(dstr(c.func("exp", c.mul({c.number(std::int64_t{2}), x}))),
+    EXPECT_EQ(dstr(c.func("exp", c.mul({c.number(keel::i64{2}), x}))),
               "2*exp(2*x)");
     EXPECT_EQ(dstr(c.func("log", x)), "x^-1");
     EXPECT_EQ(dstr(c.func("sin", x)), "cos(x)");
@@ -140,7 +141,7 @@ TEST_F(DiffTest, SqrtAndNullPropagationInRelease)
 TEST_F(DiffTest, ProductAndChainRules)
 {
     EXPECT_EQ(dstr(c.mul({x, c.func("sin", x)})), "sin(x) + x*cos(x)");
-    EXPECT_EQ(dstr(c.func("sin", c.pow(x, c.number(std::int64_t{2})))),
+    EXPECT_EQ(dstr(c.func("sin", c.pow(x, c.number(keel::i64{2})))),
               "2*x*cos(x^2)");
     EXPECT_EQ(dstr(c.func("log", c.mul({x, y}))),
               "x^-1"); // d(log(x*y))/dx = (1/(x*y))*y = 1/x
@@ -149,15 +150,15 @@ TEST_F(DiffTest, ProductAndChainRules)
 
 TEST_F(DiffTest, PowGeneralCases)
 {
-    EXPECT_EQ(dstr(c.pow(c.number(std::int64_t{2}), x)), "2^x*log(2)");
+    EXPECT_EQ(dstr(c.pow(c.number(keel::i64{2}), x)), "2^x*log(2)");
     EXPECT_EQ(dstr(c.pow(x, x)), "x^x*(1 + log(x))");
-    EXPECT_EQ(dstr(c.pow(c.pow(x, y), c.number(std::int64_t{2}))),
+    EXPECT_EQ(dstr(c.pow(c.pow(x, y), c.number(keel::i64{2}))),
               "2*y*x^-1*(x^y)^2"); // (x^y)^2 stays grouped: y is not a Number
 }
 
 TEST_F(DiffTest, HigherOrderDerivatives)
 {
-    EXPECT_EQ(dstr(c.diff(c.pow(x, c.number(std::int64_t{3})), x)), "6*x");
+    EXPECT_EQ(dstr(c.diff(c.pow(x, c.number(keel::i64{3})), x)), "6*x");
     EXPECT_EQ(dstr(c.diff(c.func("sin", x), x)), "-sin(x)");
     EXPECT_EQ(dstr(c.diff(c.mul({x, x}), x)), "2");
 }
@@ -167,17 +168,17 @@ TEST_F(DiffTest, ConstantArgumentsFoldToZero)
     // Guards in the diff rules must not build singular intermediate nodes
     // (pow(0, -1), log(0) inside a zero product).
     EXPECT_EQ(dstr(c.func("log", c.zero())), "0");
-    EXPECT_EQ(dstr(c.func("log", c.number(std::int64_t{5}))), "0");
+    EXPECT_EQ(dstr(c.func("log", c.number(keel::i64{5}))), "0");
     EXPECT_EQ(dstr(c.func("log", y)), "0");
-    EXPECT_EQ(dstr(c.pow(c.number(std::int64_t{8}), c.number(half()))), "0");
-    EXPECT_EQ(dstr(c.pow(c.number(std::int64_t{2}), y)), "0");
+    EXPECT_EQ(dstr(c.pow(c.number(keel::i64{8}), c.number(half()))), "0");
+    EXPECT_EQ(dstr(c.pow(c.number(keel::i64{2}), y)), "0");
 }
 
 TEST_F(DiffTest, MemoizedAndInterned)
 {
     const Expr f = c.mul({c.add({x, c.one()}), c.func("sin", x)});
     const Expr d1 = c.diff(f, x);
-    const std::size_t before = c.nodeCount();
+    const keel::usize before = c.nodeCount();
     const Expr d2 = c.diff(f, x);
     EXPECT_EQ(d1, d2);
     EXPECT_EQ(c.nodeCount(), before);
@@ -254,7 +255,7 @@ TEST_F(DiffPropertyTest, DiffOfCloneIsIdentical)
     for (int iter = 0; iter < 3000; ++iter) {
         const Expr e = rnd(4);
         const Expr d1 = c.diff(e, x);
-        const std::size_t before = c.nodeCount();
+        const keel::usize before = c.nodeCount();
         const Expr d2 = c.diff(clone(e), x);
         ASSERT_EQ(d1, d2) << c.toString(e);
         ASSERT_EQ(c.nodeCount(), before);

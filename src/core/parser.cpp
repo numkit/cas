@@ -1,10 +1,11 @@
 // core/parser.cpp — pratt parser: source text -> Ctx constructors.
+#include <keel/core.h>
 #include <numkit/cas/core/parser.hpp>
 
 namespace numkit::cas {
 namespace {
 
-enum class Tok : std::uint8_t {
+enum class Tok : keel::u8 {
     End,
     Ident,  // [a-zA-Z_][a-zA-Z_0-9]*
     Number, // digits [. digits]
@@ -20,7 +21,7 @@ enum class Tok : std::uint8_t {
 
 struct Token {
     Tok kind = Tok::End;
-    std::size_t pos = 0; // offset of the first character
+    keel::usize pos = 0; // offset of the first character
     std::string text;    // Ident: name; Number: integer part
     std::string frac;    // Number: digits after '.' ("" if no point)
 };
@@ -40,7 +41,7 @@ bool isIdentStart(char ch)
 
 bool isIdentChar(char ch) { return isIdentStart(ch) || isDigit(ch); }
 
-Token lex(const std::string &src, std::size_t &pos)
+Token lex(const std::string &src, keel::usize &pos)
 {
     while (pos < src.size() && isSpace(src[pos]))
         ++pos;
@@ -126,7 +127,7 @@ private:
     // Any value in (50, 60) implements that; 55 is the midpoint.
     static constexpr int kUnaryBp = 55;
 
-    [[noreturn]] static void fail(std::size_t pos, const std::string &msg)
+    [[noreturn]] static void fail(keel::usize pos, const std::string &msg)
     {
         throw ParseError(pos, msg);
     }
@@ -213,7 +214,7 @@ private:
         BigInt frac;
         if (!BigInt::tryParse(frac, t.frac))
             fail(t.pos, "malformed number '0." + t.frac + "'");
-        std::size_t k = t.frac.size();
+        keel::usize k = t.frac.size();
         const BigInt five(5);
         while (k > 0) {
             BigInt q, r;
@@ -251,7 +252,7 @@ private:
 
     Ctx &c_;
     const std::string &src_;
-    std::size_t pos_ = 0;
+    keel::usize pos_ = 0;
     Token cur_;
 };
 

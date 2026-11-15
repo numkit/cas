@@ -6,6 +6,7 @@
 //   2. properties with fixed seeds: random smooth numbers factorize
 //      exactly, divisor lists satisfy divide/uniqueness/count laws;
 //   3. boundary: 0, 1, negatives, small primes, prime squares.
+#include <keel/core.h>
 #include <numkit/cas/num/bigint.hpp>
 
 #include <gtest/gtest.h>
@@ -31,7 +32,7 @@ std::vector<std::pair<BigInt, int>> F(const std::vector<const char *> &ps,
                                       const std::vector<int> &es)
 {
     std::vector<std::pair<BigInt, int>> out;
-    for (std::size_t i = 0; i < ps.size(); ++i)
+    for (keel::usize i = 0; i < ps.size(); ++i)
         out.emplace_back(N(ps[i]), es[i]);
     return out;
 }
@@ -41,13 +42,13 @@ void expectFactors(const BigInt &n,
 {
     const auto got = BigInt::factorize(n);
     ASSERT_EQ(got.size(), want.size()) << "n = " << n.toString();
-    for (std::size_t i = 0; i < want.size(); ++i) {
+    for (keel::usize i = 0; i < want.size(); ++i) {
         EXPECT_EQ(got[i].first, want[i].first) << "n = " << n.toString();
         EXPECT_EQ(got[i].second, want[i].second) << "n = " << n.toString();
     }
 }
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -108,15 +109,15 @@ TEST(FactorizeProperty, RandomSmoothNumbersExact)
 {
     // Build n from random small primes/exponents; the factorization
     // must reproduce exactly those parts (built independently).
-    static const std::uint64_t kPrimes[] = {2,  3,  5,  7,  11, 13, 17, 19,
+    static const keel::u64 kPrimes[] = {2,  3,  5,  7,  11, 13, 17, 19,
                                             23, 29, 31, 37, 41, 43, 47};
-    std::uint64_t st = 0x5EED12ACEULL;
+    keel::u64 st = 0x5EED12ACEULL;
     for (int iter = 0; iter < 3000; ++iter) {
         std::vector<std::pair<BigInt, int>> want;
         BigInt n(1);
         const int parts = 1 + static_cast<int>(nextU64(st) % 5);
         for (int i = 0; i < parts; ++i) {
-            const std::uint64_t p = kPrimes[nextU64(st) % 15];
+            const keel::u64 p = kPrimes[nextU64(st) % 15];
             const int e = 1 + static_cast<int>(nextU64(st) % 4);
             bool merged = false;
             for (auto &pe : want)
@@ -126,7 +127,7 @@ TEST(FactorizeProperty, RandomSmoothNumbersExact)
                 }
             if (!merged)
                 want.emplace_back(BigInt(p), e);
-            n = n * BigInt::powUInt(BigInt(p), static_cast<std::uint64_t>(e));
+            n = n * BigInt::powUInt(BigInt(p), static_cast<keel::u64>(e));
         }
         std::sort(want.begin(), want.end(),
                   [](const std::pair<BigInt, int> &a,
@@ -137,7 +138,7 @@ TEST(FactorizeProperty, RandomSmoothNumbersExact)
         // it fails with the number spelled out
         const auto got = BigInt::factorize(n);
         ASSERT_EQ(got.size(), want.size()) << "n = " << n.toString();
-        for (std::size_t i = 0; i < want.size(); ++i) {
+        for (keel::usize i = 0; i < want.size(); ++i) {
             EXPECT_EQ(got[i], want[i]) << "n = " << n.toString();
         }
     }
@@ -148,9 +149,9 @@ TEST(FactorizeProperty, DivisorListLaws)
     // For random u64 n: every listed divisor divides n, the list is
     // strictly ascending, contains 1 and n, is duplicate-free, and its
     // size equals prod(e_i + 1) from the matching factorization.
-    std::uint64_t st = 0xDEC0DED15EA5EULL;
+    keel::u64 st = 0xDEC0DED15EA5EULL;
     for (int iter = 0; iter < 2000; ++iter) {
-        const std::uint64_t v = nextU64(st) >> 8; // keep below 2^56
+        const keel::u64 v = nextU64(st) >> 8; // keep below 2^56
         const BigInt n(v);
         const auto f = BigInt::factorize(n);
         BigInt product(1);
@@ -159,7 +160,7 @@ TEST(FactorizeProperty, DivisorListLaws)
                 << "factor not prime for n = " << n.toString();
             product = product * BigInt::powUInt(
                                     pe.first,
-                                    static_cast<std::uint64_t>(pe.second));
+                                    static_cast<keel::u64>(pe.second));
         }
         EXPECT_EQ(product, n) << "product of parts != n for " << n.toString();
     }

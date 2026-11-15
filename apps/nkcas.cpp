@@ -10,6 +10,7 @@
 //   nkcas corpus <file>   — §7 corpus run: id<TAB>var<TAB>expr lines,
 //                           prints per-task outcomes and the summary
 //                           (pass rate, verification rate, median/p95).
+#include <keel/core.h>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/core/series.hpp>
 #include <numkit/cas/core/simplify.hpp>
@@ -40,7 +41,7 @@ bool isSpace(char ch)
 
 std::string trim(const std::string &s)
 {
-    std::size_t a = 0, b = s.size();
+    keel::usize a = 0, b = s.size();
     while (a < b && isSpace(s[a]))
         ++a;
     while (b > a && isSpace(s[b - 1]))
@@ -55,11 +56,11 @@ bool splitLine(const std::string &line, std::string &cmd,
                std::string &exprSrc, std::string &var)
 {
     std::vector<std::string> words;
-    std::size_t i = 0;
+    keel::usize i = 0;
     while (i < line.size()) {
         while (i < line.size() && isSpace(line[i]))
             ++i;
-        std::size_t start = i;
+        keel::usize start = i;
         while (i < line.size() && !isSpace(line[i]))
             ++i;
         if (i > start)
@@ -80,10 +81,10 @@ bool splitLine(const std::string &line, std::string &cmd,
         const std::string &mTok = words[words.size() - 2];
         const std::string &x0Tok = words[words.size() - 3];
         const std::string &varTok = words[words.size() - 4];
-        const std::size_t nOff = line.rfind(nTok);
-        const std::size_t mOff = line.rfind(mTok, nOff > 0 ? nOff - 1 : 0);
-        const std::size_t x0Off = line.rfind(x0Tok, mOff > 0 ? mOff - 1 : 0);
-        const std::size_t vOff = line.rfind(varTok, x0Off > 0 ? x0Off - 1 : 0);
+        const keel::usize nOff = line.rfind(nTok);
+        const keel::usize mOff = line.rfind(mTok, nOff > 0 ? nOff - 1 : 0);
+        const keel::usize x0Off = line.rfind(x0Tok, mOff > 0 ? mOff - 1 : 0);
+        const keel::usize vOff = line.rfind(varTok, x0Off > 0 ? x0Off - 1 : 0);
         exprSrc = trim(line.substr(cmd.size(), vOff - cmd.size()));
         var = varTok + "\t" + x0Tok + "\t" + mTok + "\t" + nTok;
         return !exprSrc.empty();
@@ -95,9 +96,9 @@ bool splitLine(const std::string &line, std::string &cmd,
         const std::string &bTok = words.back();
         const std::string &aTok = words[words.size() - 2];
         const std::string &varTok = words[words.size() - 3];
-        const std::size_t bOff = line.rfind(bTok);
-        const std::size_t aOff = line.rfind(aTok, bOff > 0 ? bOff - 1 : 0);
-        const std::size_t vOff = line.rfind(varTok, aOff > 0 ? aOff - 1 : 0);
+        const keel::usize bOff = line.rfind(bTok);
+        const keel::usize aOff = line.rfind(aTok, bOff > 0 ? bOff - 1 : 0);
+        const keel::usize vOff = line.rfind(varTok, aOff > 0 ? aOff - 1 : 0);
         exprSrc = trim(line.substr(cmd.size(), vOff - cmd.size()));
         var = varTok + "\t" + aTok + "\t" + bTok;
         return !exprSrc.empty();
@@ -116,8 +117,8 @@ bool splitLine(const std::string &line, std::string &cmd,
             return false;
         const std::string &to = words.back();
         const std::string &from = words[words.size() - 2];
-        const std::size_t toOff = line.rfind(to);
-        const std::size_t fromOff = line.rfind(from, toOff);
+        const keel::usize toOff = line.rfind(to);
+        const keel::usize fromOff = line.rfind(from, toOff);
         exprSrc = trim(line.substr(cmd.size(), fromOff - cmd.size()));
         var = from + "\t" + to; // caller splits on the tab
         return !exprSrc.empty();
@@ -125,7 +126,7 @@ bool splitLine(const std::string &line, std::string &cmd,
     if (words.size() < 3)
         return false;
     var = words.back();
-    const std::size_t varOff = line.rfind(var);
+    const keel::usize varOff = line.rfind(var);
     exprSrc = trim(line.substr(cmd.size(), varOff - cmd.size()));
     return !exprSrc.empty();
 }
@@ -426,17 +427,17 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
                const std::string &varName)
 {
     if (cmd == "pade") {
-        const std::size_t t1 = varName.find('\t');
-        const std::size_t t2 = varName.find('\t', t1 + 1);
-        const std::size_t t3 = varName.find('\t', t2 + 1);
+        const keel::usize t1 = varName.find('\t');
+        const keel::usize t2 = varName.find('\t', t1 + 1);
+        const keel::usize t3 = varName.find('\t', t2 + 1);
         return runPade(exprSrc, varName.substr(0, t1),
                        varName.substr(t1 + 1, t2 - t1 - 1),
                        std::atoi(varName.substr(t2 + 1, t3 - t2 - 1).c_str()),
                        std::atoi(varName.substr(t3 + 1).c_str()));
     }
     if (cmd == "defint" || cmd == "symsum") {
-        const std::size_t t1 = varName.find('\t');
-        const std::size_t t2 = varName.find('\t', t1 + 1);
+        const keel::usize t1 = varName.find('\t');
+        const keel::usize t2 = varName.find('\t', t1 + 1);
         if (cmd == "symsum") {
             return runSymSum(exprSrc, varName.substr(0, t1),
                              varName.substr(t1 + 1, t2 - t1 - 1),
@@ -448,19 +449,19 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
     }
     if (cmd == "subs") {
         // splitLine packed "from\tto" into varName
-        const std::size_t tab = varName.find('\t');
+        const keel::usize tab = varName.find('\t');
         return runSubs(exprSrc, varName.substr(0, tab), varName.substr(tab + 1));
     }
     if (cmd == "eval") {
         if (varName.empty())
             return runEval(exprSrc, "", "");
-        const std::size_t tab = varName.find('\t');
+        const keel::usize tab = varName.find('\t');
         return runEval(exprSrc, varName.substr(0, tab), varName.substr(tab + 1));
     }
     if (cmd == "residue") {
         if (varName.empty())
             return runResidue(exprSrc, "x", "0");
-        const std::size_t tab = varName.find('\t');
+        const keel::usize tab = varName.find('\t');
         if (tab == std::string::npos)
             return runResidue(exprSrc, varName, "0");
         return runResidue(exprSrc, varName.substr(0, tab), varName.substr(tab + 1));
@@ -611,7 +612,7 @@ int runCorpusFile(const char *path)
         return 1;
     }
     std::vector<nkcorpus::CorpusTask> tasks;
-    std::size_t lineNo = 0, malformed = 0;
+    keel::usize lineNo = 0, malformed = 0;
     std::string line;
     while (std::getline(in, line)) {
         ++lineNo;

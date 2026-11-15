@@ -1,6 +1,7 @@
 // linalg/symmatrix.hpp — symbolic matrices, multivariable calculus, and exact linear algebra.
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 
@@ -15,30 +16,30 @@ class SymMatrix
 {
 public:
     SymMatrix() = default;
-    SymMatrix(std::size_t rows, std::size_t cols, Expr fill = Expr{});
-    SymMatrix(std::size_t rows, std::size_t cols, std::vector<Expr> entries);
+    SymMatrix(keel::usize rows, keel::usize cols, Expr fill = Expr{});
+    SymMatrix(keel::usize rows, keel::usize cols, std::vector<Expr> entries);
 
-    static SymMatrix zeros(Ctx &c, std::size_t rows, std::size_t cols);
-    static SymMatrix eye(Ctx &c, std::size_t n);
+    static SymMatrix zeros(Ctx &c, keel::usize rows, keel::usize cols);
+    static SymMatrix eye(Ctx &c, keel::usize n);
     static SymMatrix diag(Ctx &c, const std::vector<Expr> &d);
     static SymMatrix column(const std::vector<Expr> &v);
     static SymMatrix row(const std::vector<Expr> &v);
 
-    std::size_t rows() const { return rows_; }
-    std::size_t cols() const { return cols_; }
+    keel::usize rows() const { return rows_; }
+    keel::usize cols() const { return cols_; }
     bool empty() const { return rows_ == 0 || cols_ == 0; }
     bool isSquare() const { return rows_ == cols_; }
 
-    Expr &at(std::size_t r, std::size_t c)
+    Expr &at(keel::usize r, keel::usize c)
     {
         return data_[r * cols_ + c];
     }
-    const Expr &at(std::size_t r, std::size_t c) const
+    const Expr &at(keel::usize r, keel::usize c) const
     {
         return data_[r * cols_ + c];
     }
-    Expr &operator()(std::size_t r, std::size_t c) { return at(r, c); }
-    const Expr &operator()(std::size_t r, std::size_t c) const { return at(r, c); }
+    Expr &operator()(keel::usize r, keel::usize c) { return at(r, c); }
+    const Expr &operator()(keel::usize r, keel::usize c) const { return at(r, c); }
 
     const std::vector<Expr> &data() const { return data_; }
 
@@ -61,8 +62,8 @@ public:
     std::string toString(const Ctx &c) const;
 
 private:
-    std::size_t rows_ = 0;
-    std::size_t cols_ = 0;
+    keel::usize rows_ = 0;
+    keel::usize cols_ = 0;
     std::vector<Expr> data_;
 };
 
@@ -144,7 +145,7 @@ std::vector<SymMatrix> nullspace(Ctx &c, const SymMatrix &A,
 struct EigenPair
 {
     Expr lambda;                    // eigenvalue
-    std::size_t multiplicity = 1;   // algebraic multiplicity in charpoly(A)
+    keel::usize multiplicity = 1;   // algebraic multiplicity in charpoly(A)
     std::vector<SymMatrix> vectors; // geometric eigenspace basis: n x 1 columns v with (A - lambda*I)*v = 0
 };
 
@@ -171,12 +172,12 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t,
 // 0-based indices of the pivot columns. Returns an empty (0x0) SymMatrix if
 // the budget is exhausted.
 SymMatrix rref(Ctx &c, const SymMatrix &A,
-               std::vector<std::size_t> *pivotColsOut = nullptr,
+               std::vector<keel::usize> *pivotColsOut = nullptr,
                Budget *budget = nullptr);
 
 // Compute the exact rank of an m x n symbolic matrix A (number of pivot
 // columns in its RREF; 0 for an empty matrix).
-std::size_t rank(Ctx &c, const SymMatrix &A, Budget *budget = nullptr);
+keel::usize rank(Ctx &c, const SymMatrix &A, Budget *budget = nullptr);
 
 struct LUDecomposition
 {
@@ -186,7 +187,7 @@ struct LUDecomposition
     SymMatrix L;                    // m x m unit lower-triangular matrix (L(i, i) == 1)
     SymMatrix U;                    // m x n upper-triangular (row-echelon) matrix
     SymMatrix P;                    // m x m row-permutation matrix: P * A == L * U
-    std::vector<std::size_t> perm;  // row permutation indices (P(i, perm[i]) == 1)
+    std::vector<keel::usize> perm;  // row permutation indices (P(i, perm[i]) == 1)
     int sign = 1;                   // determinant sign of P (+1 or -1)
     std::string reason;
 

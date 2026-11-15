@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/fppoly.hpp>
 
 #include <algorithm>
@@ -7,24 +8,24 @@ namespace numkit::cas {
 
 namespace {
 
-std::uint64_t addMod(std::uint64_t a, std::uint64_t b, std::uint64_t p)
+keel::u64 addMod(keel::u64 a, keel::u64 b, keel::u64 p)
 {
-    const std::uint64_t s = a + b;
+    const keel::u64 s = a + b;
     return s >= p ? s - p : s;
 }
 
-std::uint64_t subMod(std::uint64_t a, std::uint64_t b, std::uint64_t p)
+keel::u64 subMod(keel::u64 a, keel::u64 b, keel::u64 p)
 {
     return a >= b ? a - b : a + p - b;
 }
 
-std::uint64_t mulMod(std::uint64_t a, std::uint64_t b, std::uint64_t p)
+keel::u64 mulMod(keel::u64 a, keel::u64 b, keel::u64 p)
 {
     return (a * b) % p;
 }
 
 // Deterministic PRNG for Cantor-Zassenhaus (fixed seed per call chain).
-std::uint64_t fpNext(std::uint64_t &state)
+keel::u64 fpNext(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -45,17 +46,17 @@ FpPoly FpPoly::derivative() const
     out.p_ = p_;
     if (c_.size() <= 1)
         return out;
-    for (std::size_t i = 1; i < c_.size(); ++i)
+    for (keel::usize i = 1; i < c_.size(); ++i)
         out.c_.push_back(mulMod(c_[i], i % p_, p_));
     out.trim();
     return out;
 }
 
-FpPoly::FpPoly(std::uint64_t p, std::vector<std::uint64_t> coeffs)
+FpPoly::FpPoly(keel::u64 p, std::vector<keel::u64> coeffs)
     : p_(p), c_(std::move(coeffs))
 {
-    assert(p >= 3 && p < (std::uint64_t{1} << 31));
-    for (std::uint64_t &c : c_)
+    assert(p >= 3 && p < (keel::u64{1} << 31));
+    for (keel::u64 &c : c_)
         c %= p;
     trim();
 }
@@ -66,24 +67,24 @@ void FpPoly::trim()
         c_.pop_back();
 }
 
-FpPoly FpPoly::constant(std::uint64_t p, std::uint64_t c)
+FpPoly FpPoly::constant(keel::u64 p, keel::u64 c)
 {
-    return FpPoly(p, std::vector<std::uint64_t>{c});
+    return FpPoly(p, std::vector<keel::u64>{c});
 }
 
-FpPoly FpPoly::monomial(std::uint64_t p, std::uint64_t c, std::size_t exp)
+FpPoly FpPoly::monomial(keel::u64 p, keel::u64 c, keel::usize exp)
 {
-    std::vector<std::uint64_t> cs(exp + 1, 0);
+    std::vector<keel::u64> cs(exp + 1, 0);
     cs[exp] = c % p;
     return FpPoly(p, std::move(cs));
 }
 
-FpPoly FpPoly::x(std::uint64_t p)
+FpPoly FpPoly::x(keel::u64 p)
 {
     return monomial(p, 1, 1);
 }
 
-std::uint64_t FpPoly::lc() const
+keel::u64 FpPoly::lc() const
 {
     assert(!isZero());
     return c_.back();
@@ -92,11 +93,11 @@ std::uint64_t FpPoly::lc() const
 FpPoly operator+(const FpPoly &a, const FpPoly &b)
 {
     FpPoly::checkSameField(a, b);
-    const std::uint64_t p = a.hasP() ? a.p_ : b.p_;
+    const keel::u64 p = a.hasP() ? a.p_ : b.p_;
     FpPoly out;
     out.p_ = p;
     out.c_.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (std::size_t i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
         out.c_.push_back(addMod(a.coeff(i), b.coeff(i), p));
     out.trim();
     return out;
@@ -105,11 +106,11 @@ FpPoly operator+(const FpPoly &a, const FpPoly &b)
 FpPoly operator-(const FpPoly &a, const FpPoly &b)
 {
     FpPoly::checkSameField(a, b);
-    const std::uint64_t p = a.hasP() ? a.p_ : b.p_;
+    const keel::u64 p = a.hasP() ? a.p_ : b.p_;
     FpPoly out;
     out.p_ = p;
     out.c_.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (std::size_t i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
         out.c_.push_back(subMod(a.coeff(i), b.coeff(i), p));
     out.trim();
     return out;
@@ -120,7 +121,7 @@ FpPoly FpPoly::operator-() const
     FpPoly out;
     out.p_ = p_;
     out.c_.reserve(c_.size());
-    for (std::uint64_t v : c_)
+    for (keel::u64 v : c_)
         out.c_.push_back(v == 0 ? 0 : p_ - v);
     return out;
 }
@@ -130,39 +131,39 @@ FpPoly operator*(const FpPoly &a, const FpPoly &b)
     FpPoly::checkSameField(a, b);
     if (a.isZero() || b.isZero())
         return FpPoly();
-    const std::uint64_t p = a.p_;
+    const keel::u64 p = a.p_;
     FpPoly out;
     out.p_ = p;
     out.c_.assign(a.c_.size() + b.c_.size() - 1, 0);
-    for (std::size_t i = 0; i < a.c_.size(); ++i)
-        for (std::size_t j = 0; j < b.c_.size(); ++j) {
-            const std::uint64_t v = mulMod(a.c_[i], b.c_[j], p);
+    for (keel::usize i = 0; i < a.c_.size(); ++i)
+        for (keel::usize j = 0; j < b.c_.size(); ++j) {
+            const keel::u64 v = mulMod(a.c_[i], b.c_[j], p);
             out.c_[i + j] = addMod(out.c_[i + j], v, p);
         }
     out.trim();
     return out;
 }
 
-FpPoly FpPoly::operator*(std::uint64_t k) const
+FpPoly FpPoly::operator*(keel::u64 k) const
 {
     FpPoly out;
     out.p_ = p_;
     out.c_.reserve(c_.size());
-    const std::uint64_t kk = k % p_;
-    for (std::uint64_t v : c_)
+    const keel::u64 kk = k % p_;
+    for (keel::u64 v : c_)
         out.c_.push_back(mulMod(v, kk, p_));
     out.trim();
     return out;
 }
 
-std::uint64_t FpPoly::invModP(std::uint64_t a, std::uint64_t p)
+keel::u64 FpPoly::invModP(keel::u64 a, keel::u64 p)
 {
     assert(a % p != 0);
-    std::int64_t t = 0, newt = 1;
-    std::int64_t r = static_cast<std::int64_t>(p), newr = static_cast<std::int64_t>(a % p);
+    keel::i64 t = 0, newt = 1;
+    keel::i64 r = static_cast<keel::i64>(p), newr = static_cast<keel::i64>(a % p);
     while (newr != 0) {
-        const std::int64_t q = r / newr;
-        std::int64_t tmp = t - q * newt;
+        const keel::i64 q = r / newr;
+        keel::i64 tmp = t - q * newt;
         t = newt;
         newt = tmp;
         tmp = r - q * newr;
@@ -170,32 +171,32 @@ std::uint64_t FpPoly::invModP(std::uint64_t a, std::uint64_t p)
         newr = tmp;
     }
     assert(r == 1 && "inverse of a non-invertible element");
-    std::int64_t result = t;
+    keel::i64 result = t;
     if (result < 0)
-        result += static_cast<std::int64_t>(p);
-    return static_cast<std::uint64_t>(result);
+        result += static_cast<keel::i64>(p);
+    return static_cast<keel::u64>(result);
 }
 
 void FpPoly::divMod(const FpPoly &a, const FpPoly &b, FpPoly &q, FpPoly &r)
 {
     FpPoly::checkSameField(a, b);
     assert(!b.isZero() && b.hasP());
-    const std::uint64_t p = b.p_;
+    const keel::u64 p = b.p_;
     r = a;
     r.p_ = p;
     q = FpPoly();
     q.p_ = p;
     if (a.isZero() || a.deg() < b.deg())
         return;
-    q.c_.assign(static_cast<std::size_t>(a.deg() - b.deg()) + 1, 0);
-    const std::uint64_t blcInv = invModP(b.lc(), p);
+    q.c_.assign(static_cast<keel::usize>(a.deg() - b.deg()) + 1, 0);
+    const keel::u64 blcInv = invModP(b.lc(), p);
     while (!r.isZero() && r.deg() >= b.deg()) {
         const int shift = r.deg() - b.deg();
-        const std::uint64_t f = mulMod(r.lc(), blcInv, p);
-        q.c_[static_cast<std::size_t>(shift)] = addMod(q.c_[static_cast<std::size_t>(shift)], f, p);
-        for (std::size_t j = 0; j < b.c_.size(); ++j)
-            r.c_[j + static_cast<std::size_t>(shift)] =
-                subMod(r.c_[j + static_cast<std::size_t>(shift)], mulMod(f, b.c_[j], p), p);
+        const keel::u64 f = mulMod(r.lc(), blcInv, p);
+        q.c_[static_cast<keel::usize>(shift)] = addMod(q.c_[static_cast<keel::usize>(shift)], f, p);
+        for (keel::usize j = 0; j < b.c_.size(); ++j)
+            r.c_[j + static_cast<keel::usize>(shift)] =
+                subMod(r.c_[j + static_cast<keel::usize>(shift)], mulMod(f, b.c_[j], p), p);
         r.trim();
     }
 }
@@ -210,7 +211,7 @@ FpPoly operator%(const FpPoly &a, const FpPoly &b)
 FpPoly FpPoly::gcd(const FpPoly &a, const FpPoly &b)
 {
     FpPoly::checkSameField(a, b);
-    const std::uint64_t p = a.hasP() ? a.p_ : b.p_;
+    const keel::u64 p = a.hasP() ? a.p_ : b.p_;
     FpPoly x = a, y = b;
     x.p_ = p;
     y.p_ = p;
@@ -228,7 +229,7 @@ FpPoly FpPoly::gcd(const FpPoly &a, const FpPoly &b)
 void FpPoly::extGcd(const FpPoly &a, const FpPoly &b, FpPoly &s, FpPoly &t)
 {
     checkSameField(a, b);
-    const std::uint64_t p = a.hasP() ? a.p_ : b.p_;
+    const keel::u64 p = a.hasP() ? a.p_ : b.p_;
     FpPoly r0 = a, r1 = b;
     r0.p_ = p;
     r1.p_ = p;
@@ -249,7 +250,7 @@ void FpPoly::extGcd(const FpPoly &a, const FpPoly &b, FpPoly &s, FpPoly &t)
         t1 = t2;
     }
     assert(!r0.isZero());
-    const std::uint64_t inv = invModP(r0.lc(), p);
+    const keel::u64 inv = invModP(r0.lc(), p);
     s = s0 * inv;
     t = t0 * inv;
 }
@@ -273,10 +274,10 @@ FpPoly FpPoly::powMod(const BigInt &e, const FpPoly &m) const
     return result;
 }
 
-std::uint64_t FpPoly::eval(std::uint64_t x0) const
+keel::u64 FpPoly::eval(keel::u64 x0) const
 {
-    std::uint64_t acc = 0;
-    for (std::size_t i = c_.size(); i-- > 0;)
+    keel::u64 acc = 0;
+    for (keel::usize i = c_.size(); i-- > 0;)
         acc = addMod(mulMod(acc, x0 % p_, p_), c_[i], p_);
     return acc;
 }
@@ -299,7 +300,7 @@ namespace {
 
 // Cantor-Zassenhaus equal-degree splitting: all irreducible factors of
 // g have degree d. Deterministic via the fixed-seed PRNG.
-void edf(const FpPoly &g, int d, std::vector<FpPoly> &out, std::uint64_t &rng)
+void edf(const FpPoly &g, int d, std::vector<FpPoly> &out, keel::u64 &rng)
 {
     assert(!g.isZero());
     if (g.deg() < d) {
@@ -310,18 +311,18 @@ void edf(const FpPoly &g, int d, std::vector<FpPoly> &out, std::uint64_t &rng)
         out.push_back(g);
         return;
     }
-    const std::uint64_t p = g.p();
+    const keel::u64 p = g.p();
     while (true) {
         // random poly of degree < deg(g), not constant
-        const int degA = 1 + static_cast<int>(fpNext(rng) % static_cast<std::uint64_t>(g.deg()));
-        std::vector<std::uint64_t> cs;
+        const int degA = 1 + static_cast<int>(fpNext(rng) % static_cast<keel::u64>(g.deg()));
+        std::vector<keel::u64> cs;
         for (int i = 0; i <= degA; ++i)
             cs.push_back(fpNext(rng) % p);
         const FpPoly a(p, cs);
         if (a.isZero() || a.deg() == 0)
             continue;
         // exponent (p^d - 1)/2
-        BigInt e = BigInt::powUInt(BigInt(p), static_cast<std::uint64_t>(d));
+        BigInt e = BigInt::powUInt(BigInt(p), static_cast<keel::u64>(d));
         e = (e - BigInt(1)) >> 1;
         const FpPoly b = a.powMod(e, g);
         const FpPoly h = FpPoly::gcd(b - FpPoly::constant(p, 1), g);
@@ -341,7 +342,7 @@ void edf(const FpPoly &g, int d, std::vector<FpPoly> &out, std::uint64_t &rng)
 std::vector<FpPoly> FpPoly::factor(const FpPoly &f)
 {
     assert(f.hasP() && !f.isZero());
-    const std::uint64_t p = f.p();
+    const keel::u64 p = f.p();
     std::vector<FpPoly> out;
     if (f.deg() < 1)
         return out;
@@ -363,7 +364,7 @@ std::vector<FpPoly> FpPoly::factor(const FpPoly &f)
     sf = sf * invModP(sf.lc(), p); // monic
 
     // Distinct-degree factorization: h tracks x^(p^k) mod sf.
-    std::uint64_t rng = 0x9E3779B97F4A7C15ULL;
+    keel::u64 rng = 0x9E3779B97F4A7C15ULL;
     FpPoly h = FpPoly::x(p) % sf;
     FpPoly rest = sf;
     int degd = 0;
@@ -388,7 +389,7 @@ std::vector<FpPoly> FpPoly::factor(const FpPoly &f)
     std::sort(out.begin(), out.end(), [](const FpPoly &a, const FpPoly &b) {
         if (a.deg() != b.deg())
             return a.deg() < b.deg();
-        for (std::size_t i = a.size(); i-- > 0;)
+        for (keel::usize i = a.size(); i-- > 0;)
             if (a.coeff(i) != b.coeff(i))
                 return a.coeff(i) < b.coeff(i);
         return false;
@@ -404,7 +405,7 @@ bool FpPoly::isIrreducible() const
     if (m.lc() != 1)
         m = m * invModP(m.lc(), p_);
     // x^(p^d) == x (mod g)?
-    const BigInt pd = BigInt::powUInt(BigInt(p_), static_cast<std::uint64_t>(deg()));
+    const BigInt pd = BigInt::powUInt(BigInt(p_), static_cast<keel::u64>(deg()));
     const FpPoly h = FpPoly::x(p_).powMod(pd, m);
     if ((h - FpPoly::x(p_)) % m != FpPoly())
         return false;
@@ -415,13 +416,13 @@ bool FpPoly::isIrreducible() const
             continue;
         while (dd % q == 0)
             dd /= q;
-        const BigInt pk = BigInt::powUInt(BigInt(p_), static_cast<std::uint64_t>(deg() / q));
+        const BigInt pk = BigInt::powUInt(BigInt(p_), static_cast<keel::u64>(deg() / q));
         const FpPoly hq = FpPoly::x(p_).powMod(pk, m);
         if (!(FpPoly::gcd(hq - FpPoly::x(p_), m)).isOne())
             return false;
     }
     if (dd > 1) {
-        const BigInt pk = BigInt::powUInt(BigInt(p_), static_cast<std::uint64_t>(deg() / dd));
+        const BigInt pk = BigInt::powUInt(BigInt(p_), static_cast<keel::u64>(deg() / dd));
         const FpPoly hq = FpPoly::x(p_).powMod(pk, m);
         if (!(FpPoly::gcd(hq - FpPoly::x(p_), m)).isOne())
             return false;

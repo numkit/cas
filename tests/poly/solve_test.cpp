@@ -5,6 +5,7 @@
 //      exactly and in order; every irrational bracket is a sign
 //      change of the squarefree carrier (or an exact zero);
 //   3. boundary: linear, constant, near-double roots.
+#include <keel/core.h>
 #include <numkit/cas/poly/solve.hpp>
 
 #include <gtest/gtest.h>
@@ -19,12 +20,12 @@ using numkit::cas::BigInt;
 using numkit::cas::Rational;
 using numkit::cas::UPoly;
 
-Rational R(std::int64_t p, std::int64_t q = 1)
+Rational R(keel::i64 p, keel::i64 q = 1)
 {
     return Rational(BigInt(p), BigInt(q));
 }
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -89,7 +90,7 @@ TEST(SolveVector, ClassicShapes)
 
 TEST(SolveProperty, BuiltRationalRootsFoundExactly)
 {
-    std::uint64_t st = 0x501FE5A17ULL;
+    keel::u64 st = 0x501FE5A17ULL;
     for (int iter = 0; iter < 500; ++iter) {
         // p = prod (x - r_i) with random distinct-ish rational r_i
         // times a random irreducible quadratic x^2 + b x + c.
@@ -97,8 +98,8 @@ TEST(SolveProperty, BuiltRationalRootsFoundExactly)
         std::vector<Rational> roots;
         UPoly p(R(1));
         for (int i = 0; i < nr; ++i) {
-            Rational r = R(static_cast<std::int64_t>(nextU64(st) % 19) - 9,
-                           1 + static_cast<std::int64_t>(nextU64(st) % 3));
+            Rational r = R(static_cast<keel::i64>(nextU64(st) % 19) - 9,
+                           1 + static_cast<keel::i64>(nextU64(st) % 3));
             // skip duplicates: multiplicity would reduce the root count
             bool dup = false;
             for (const Rational &q : roots)
@@ -111,8 +112,8 @@ TEST(SolveProperty, BuiltRationalRootsFoundExactly)
         }
         std::sort(roots.begin(), roots.end());
         // irreducible quadratic (no rational root among small p/q)
-        const Rational b = R(static_cast<std::int64_t>(nextU64(st) % 9) - 4);
-        Rational c = R(static_cast<std::int64_t>(nextU64(st) % 9) - 4);
+        const Rational b = R(static_cast<keel::i64>(nextU64(st) % 9) - 4);
+        Rational c = R(static_cast<keel::i64>(nextU64(st) % 9) - 4);
         while (b * b - R(4) * c >= R(0)) // force D < 0
             c = c + R(1);
         p = p * UPoly({c, b, R(1)});
@@ -120,7 +121,7 @@ TEST(SolveProperty, BuiltRationalRootsFoundExactly)
         const auto rs = numkit::cas::solveRealRoots(p);
         ASSERT_EQ(rs.size(), roots.size()) << "iter " << iter;
         // every rational root is present, exactly once, ascending
-        for (std::size_t k = 0; k < rs.size(); ++k) {
+        for (keel::usize k = 0; k < rs.size(); ++k) {
             ASSERT_TRUE(rs[k].isRational)
                 << "iter " << iter << " root " << k << " want "
                 << roots[k].toString() << " got interval ("

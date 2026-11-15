@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/modcpoly.hpp>
 
 #include <algorithm>
@@ -10,12 +11,12 @@ namespace {
 
 const Rational R0()
 {
-    return Rational(std::int64_t{0});
+    return Rational(keel::i64{0});
 }
 
 const Rational R1()
 {
-    return Rational(std::int64_t{1});
+    return Rational(keel::i64{1});
 }
 
 } // namespace
@@ -117,7 +118,7 @@ UPoly ModCRing::inv(const UPoly &a) const
         const Rational n = a0 * a0 - p * a0 * a1 + q * a1 * a1;
         assert(!n.isZero() && "nonzero element has zero norm: c reducible?");
         const Rational i0 = (a0 - p * a1) / n;
-        const Rational i1 = Rational(std::int64_t{-1}) * a1 / n;
+        const Rational i1 = Rational(keel::i64{-1}) * a1 / n;
         return UPoly(std::vector<Rational>{i0, i1});
     }
     return UPoly::invMod(a, c_);
@@ -157,7 +158,7 @@ ModCPoly ModCPoly::constant(const ModCRing &ring, UPoly c0)
     return ModCPoly(ring, std::vector<UPoly>{std::move(c0)});
 }
 
-ModCPoly ModCPoly::monomial(const ModCRing &ring, UPoly c0, std::size_t exp)
+ModCPoly ModCPoly::monomial(const ModCRing &ring, UPoly c0, keel::usize exp)
 {
     std::vector<UPoly> cs(exp + 1, ring.zero());
     cs[exp] = std::move(c0);
@@ -177,7 +178,7 @@ ModCPoly operator+(const ModCPoly &a, const ModCPoly &b)
     assert(rg != nullptr);
     std::vector<UPoly> cs;
     cs.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (std::size_t i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
         cs.push_back(rg->add(a.coeff(i), b.coeff(i)));
     return ModCPoly(*rg, std::move(cs));
 }
@@ -189,7 +190,7 @@ ModCPoly operator-(const ModCPoly &a, const ModCPoly &b)
     assert(rg != nullptr);
     std::vector<UPoly> cs;
     cs.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (std::size_t i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
         cs.push_back(rg->sub(a.coeff(i), b.coeff(i)));
     return ModCPoly(*rg, std::move(cs));
 }
@@ -213,8 +214,8 @@ ModCPoly operator*(const ModCPoly &a, const ModCPoly &b)
         return ModCPoly();
     const ModCRing &r = a.ring();
     std::vector<UPoly> cs(a.c_.size() + b.c_.size() - 1, r.zero());
-    for (std::size_t i = 0; i < a.c_.size(); ++i)
-        for (std::size_t j = 0; j < b.c_.size(); ++j)
+    for (keel::usize i = 0; i < a.c_.size(); ++i)
+        for (keel::usize j = 0; j < b.c_.size(); ++j)
             cs[i + j] = r.add(cs[i + j], r.mul(a.c_[i], b.c_[j]));
     return ModCPoly(r, std::move(cs));
 }
@@ -230,15 +231,15 @@ void ModCPoly::divMod(const ModCPoly &a, const ModCPoly &b,
     q.ring_ = &ring;
     if (a.isZero() || a.deg() < b.deg())
         return;
-    q.c_.assign(static_cast<std::size_t>(a.deg() - b.deg()) + 1, ring.zero());
+    q.c_.assign(static_cast<keel::usize>(a.deg() - b.deg()) + 1, ring.zero());
     const UPoly blcInv = ring.inv(b.lc());
     while (!r.isZero() && r.deg() >= b.deg()) {
         const int shift = r.deg() - b.deg();
         const UPoly f = ring.mul(r.lc(), blcInv);
-        q.c_[static_cast<std::size_t>(shift)] = ring.add(q.c_[static_cast<std::size_t>(shift)], f);
-        for (std::size_t j = 0; j < b.c_.size(); ++j)
-            r.c_[j + static_cast<std::size_t>(shift)] =
-                ring.sub(r.c_[j + static_cast<std::size_t>(shift)],
+        q.c_[static_cast<keel::usize>(shift)] = ring.add(q.c_[static_cast<keel::usize>(shift)], f);
+        for (keel::usize j = 0; j < b.c_.size(); ++j)
+            r.c_[j + static_cast<keel::usize>(shift)] =
+                ring.sub(r.c_[j + static_cast<keel::usize>(shift)],
                          ring.mul(f, b.c_[j]));
         r.trim();
     }

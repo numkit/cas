@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <algorithm>
@@ -16,13 +17,13 @@ UPoly::UPoly(std::vector<Rational> coeffs) : c_(std::move(coeffs))
     trim();
 }
 
-UPoly UPoly::monomial(Rational c, std::uint64_t exp)
+UPoly UPoly::monomial(Rational c, keel::u64 exp)
 {
     UPoly out;
     if (!c.isZero()) {
-        out.c_.assign(static_cast<std::size_t>(exp) + 1,
-                      Rational(std::int64_t{0}));
-        out.c_[static_cast<std::size_t>(exp)] = std::move(c);
+        out.c_.assign(static_cast<keel::usize>(exp) + 1,
+                      Rational(keel::i64{0}));
+        out.c_[static_cast<keel::usize>(exp)] = std::move(c);
     }
     return out;
 }
@@ -36,7 +37,7 @@ void UPoly::trim()
 void UPoly::makeMonic()
 {
     assert(!isZero());
-    const Rational inv = Rational(std::int64_t{1}) / lc();
+    const Rational inv = Rational(keel::i64{1}) / lc();
     for (Rational &c : c_)
         c *= inv;
     trim();
@@ -50,8 +51,8 @@ const Rational &UPoly::lc() const
 
 Rational UPoly::eval(const Rational &x) const
 {
-    Rational acc(std::int64_t{0});
-    for (std::size_t i = c_.size(); i-- > 0;)
+    Rational acc(keel::i64{0});
+    for (keel::usize i = c_.size(); i-- > 0;)
         acc = acc * x + c_[i];
     return acc;
 }
@@ -60,7 +61,7 @@ UPoly operator+(const UPoly &a, const UPoly &b)
 {
     UPoly out;
     out.c_.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (std::size_t i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
         out.c_.push_back(a.coeff(i) + b.coeff(i));
     out.trim();
     return out;
@@ -70,7 +71,7 @@ UPoly operator-(const UPoly &a, const UPoly &b)
 {
     UPoly out;
     out.c_.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (std::size_t i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
         out.c_.push_back(a.coeff(i) - b.coeff(i));
     out.trim();
     return out;
@@ -90,9 +91,9 @@ UPoly operator*(const UPoly &a, const UPoly &b)
     if (a.isZero() || b.isZero())
         return UPoly();
     UPoly out;
-    out.c_.assign(a.c_.size() + b.c_.size() - 1, Rational(std::int64_t{0}));
-    for (std::size_t i = 0; i < a.c_.size(); ++i)
-        for (std::size_t j = 0; j < b.c_.size(); ++j)
+    out.c_.assign(a.c_.size() + b.c_.size() - 1, Rational(keel::i64{0}));
+    for (keel::usize i = 0; i < a.c_.size(); ++i)
+        for (keel::usize j = 0; j < b.c_.size(); ++j)
             out.c_[i + j] += a.c_[i] * b.c_[j];
     out.trim();
     return out;
@@ -123,15 +124,15 @@ void UPoly::divMod(const UPoly &a, const UPoly &b, UPoly &q, UPoly &r)
     q = UPoly();
     if (aCopy.isZero() || aCopy.deg() < bCopy.deg())
         return;
-    q.c_.assign(static_cast<std::size_t>(aCopy.deg() - bCopy.deg()) + 1,
-                Rational(std::int64_t{0}));
-    const Rational blcInv = Rational(std::int64_t{1}) / bCopy.lc();
+    q.c_.assign(static_cast<keel::usize>(aCopy.deg() - bCopy.deg()) + 1,
+                Rational(keel::i64{0}));
+    const Rational blcInv = Rational(keel::i64{1}) / bCopy.lc();
     while (!r.isZero() && r.deg() >= bCopy.deg()) {
         const int shift = r.deg() - bCopy.deg();
         const Rational f = r.lc() * blcInv;
-        q.c_[static_cast<std::size_t>(shift)] += f;
-        for (std::size_t j = 0; j < bCopy.c_.size(); ++j)
-            r.c_[j + static_cast<std::size_t>(shift)] -= f * bCopy.c_[j];
+        q.c_[static_cast<keel::usize>(shift)] += f;
+        for (keel::usize j = 0; j < bCopy.c_.size(); ++j)
+            r.c_[j + static_cast<keel::usize>(shift)] -= f * bCopy.c_[j];
         r.trim();
     }
 }
@@ -157,9 +158,9 @@ UPoly UPoly::invMod(const UPoly &u, const UPoly &m)
     mm.makeMonic();
     UPoly r0 = mm;
     UPoly r1 = u % mm;
-    UPoly s0, s1(Rational(std::int64_t{1}));
+    UPoly s0, s1(Rational(keel::i64{1}));
     if (!r1.isZero()) {
-        s1 = s1 * (Rational(std::int64_t{1}) / r1.lc());
+        s1 = s1 * (Rational(keel::i64{1}) / r1.lc());
         r1.makeMonic();
     }
     while (!r1.isZero()) {
@@ -170,7 +171,7 @@ UPoly UPoly::invMod(const UPoly &u, const UPoly &m)
         s0 = s1;
         s1 = s2;
         if (!r.isZero()) {
-            s1 = s1 * (Rational(std::int64_t{1}) / r.lc());
+            s1 = s1 * (Rational(keel::i64{1}) / r.lc());
             r.makeMonic();
         }
         r1 = r;
@@ -185,15 +186,15 @@ UPoly UPoly::derivative() const
     if (c_.size() <= 1)
         return out;
     out.c_.reserve(c_.size() - 1);
-    for (std::size_t i = 1; i < c_.size(); ++i)
-        out.c_.push_back(c_[i] * Rational(static_cast<std::int64_t>(i)));
+    for (keel::usize i = 1; i < c_.size(); ++i)
+        out.c_.push_back(c_[i] * Rational(static_cast<keel::i64>(i)));
     out.trim();
     return out;
 }
 
-UPoly UPoly::powUInt(std::uint64_t n) const
+UPoly UPoly::powUInt(keel::u64 n) const
 {
-    UPoly result(Rational(std::int64_t{1}));
+    UPoly result(Rational(keel::i64{1}));
     UPoly base = *this;
     while (n != 0) {
         if (n & 1)
@@ -257,7 +258,7 @@ std::vector<UPoly> UPoly::squarefreeDecomposition() const
     UPoly v = q;
 
     std::vector<UPoly> out;
-    const UPoly one(Rational(std::int64_t{1}));
+    const UPoly one(Rational(keel::i64{1}));
     while (!(w == one)) {
         const UPoly z = v - w.derivative();
         const UPoly f = gcd(w, z);
@@ -279,7 +280,7 @@ std::vector<UPoly> UPoly::squarefreeDecomposition() const
 Rational UPoly::resultant(const UPoly &a, const UPoly &b)
 {
     if (a.isZero() || b.isZero())
-        return Rational(std::int64_t{0});
+        return Rational(keel::i64{0});
 
     const UPoly *hi = &a, *lo = &b;
     if (hi->deg() < lo->deg()) {
@@ -292,14 +293,14 @@ Rational UPoly::resultant(const UPoly &a, const UPoly &b)
     }
 
     if (lo->deg() == 0)
-        return Rational::powUInt(lo->lc(), static_cast<std::uint64_t>(hi->deg()));
+        return Rational::powUInt(lo->lc(), static_cast<keel::u64>(hi->deg()));
 
     UPoly q, r;
     divMod(*hi, *lo, q, r);
     if (r.isZero())
-        return Rational(std::int64_t{0});
+        return Rational(keel::i64{0});
     const Rational factor = Rational::powUInt(
-        lo->lc(), static_cast<std::uint64_t>(hi->deg() - r.deg()));
+        lo->lc(), static_cast<keel::u64>(hi->deg() - r.deg()));
     return factor * resultant(r, *lo);
 }
 
@@ -318,7 +319,7 @@ std::string UPoly::toString(const char *var) const
     if (isZero())
         return "0";
     std::string out;
-    for (std::size_t k = c_.size(); k-- > 0;) {
+    for (keel::usize k = c_.size(); k-- > 0;) {
         if (c_[k].isZero())
             continue;
         const bool negative = c_[k].signum() < 0;
@@ -327,7 +328,7 @@ std::string UPoly::toString(const char *var) const
             out = negative ? "-" : "";
         else
             out += negative ? " - " : " + ";
-        const bool isOne = mag == Rational(std::int64_t{1});
+        const bool isOne = mag == Rational(keel::i64{1});
         if (k == 0 || !isOne)
             out += mag.toString();
         if (k > 0) {

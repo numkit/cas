@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/ode/dsolve.hpp>
 
 #include <numkit/cas/core/parser.hpp>
@@ -463,7 +464,7 @@ TEST(DsolveTest, PropertyRandom2x2LinearOdeSystems)
         ASSERT_TRUE(res.proved())
             << "iter " << iter << " A=" << A.toString(c) << ": " << res.reason;
         ASSERT_EQ(res.y.size(), 2u);
-        for (std::size_t i = 0; i < 2; ++i) {
+        for (keel::usize i = 0; i < 2; ++i) {
             const Expr dy = c.diff(res.y[i], x);
             const Expr rhs = c.add(
                 {c.mul({A.at(i, 0), res.y[0]}), c.mul({A.at(i, 1), res.y[1]})});

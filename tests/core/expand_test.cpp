@@ -1,4 +1,5 @@
 // core/expand_test.cpp — three layers per AGENTS.md for Ctx::expand.
+#include <keel/core.h>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/core/parser.hpp>
 
@@ -16,7 +17,7 @@ using numkit::cas::Expr;
 using numkit::cas::parseExpr;
 using numkit::cas::Rational;
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -53,22 +54,22 @@ TEST(ExpandProperty, EvaluationInvariant)
     // evalExact(e) at random rational points.
     Ctx c;
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0xE9F0A1D5EEDULL;
+    keel::u64 st = 0xE9F0A1D5EEDULL;
     for (int iter = 0; iter < 2000; ++iter) {
         const int nf = 1 + static_cast<int>(nextU64(st) % 3);
         std::vector<Expr> factors;
         for (int i = 0; i < nf; ++i) {
-            const std::int64_t a =
-                static_cast<std::int64_t>(nextU64(st) % 11) - 5;
+            const keel::i64 a =
+                static_cast<keel::i64>(nextU64(st) % 11) - 5;
             factors.push_back(
                 c.add({x, c.number(Rational(BigInt(a), BigInt(3)))}));
         }
         Expr e = factors[0];
-        for (std::size_t i = 1; i < factors.size(); ++i)
+        for (keel::usize i = 1; i < factors.size(); ++i)
             e = c.mul({e, factors[i]});
         const Rational q(
-            BigInt(static_cast<std::int64_t>(nextU64(st) % 9) - 4),
-            BigInt(1 + static_cast<std::int64_t>(nextU64(st) % 3)));
+            BigInt(static_cast<keel::i64>(nextU64(st) % 9) - 4),
+            BigInt(1 + static_cast<keel::i64>(nextU64(st) % 3)));
         const std::vector<std::pair<std::string, Rational>> env{{"x", q}};
         Rational v1, v2;
         ASSERT_TRUE(c.evalExact(e, env, v1));

@@ -1,4 +1,7 @@
 // src/register/cas_reg.cpp — Registration hub for Symbolic Math Toolbox (numkit::cas).
+#include <keel/core.h>
+#include <keel/memory.h>
+#include <keel/ref.h>
 #include <numkit/cas/library.hpp>
 #include <numkit/cas/sym_value.hpp>
 #include <numkit/sys/plugin.hpp>
@@ -10,18 +13,18 @@
 
 namespace numkit::cas::detail {
 
-inline std::pmr::memory_resource *mrOf(const CallContext &ctx) noexcept
+inline keel::Allocator *mrOf(const CallContext &ctx) noexcept
 {
-    return ctx.engine ? ctx.engine->resource() : nullptr;
+    return ctx.engine ? ctx.engine->allocator() : nullptr;
 }
 
-void sym_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void sym_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 0, 2, "sym");
     outs[0] = symCreate(args, mrOf(ctx));
 }
 
-void syms_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void syms_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 64, "syms");
     std::vector<std::pair<std::string, Value>> bindings;
@@ -37,7 +40,7 @@ void syms_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, Call
     }
 }
 
-void assume_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void assume_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "assume");
     if (!(args[1].isChar() || args[1].isString())) {
@@ -47,427 +50,427 @@ void assume_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, Ca
     outs[0] = symAssume(args[0], dom, mrOf(ctx));
 }
 
-void assumptions_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void assumptions_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "assumptions");
     outs[0] = symAssumptions(args[0], mrOf(ctx));
 }
 
-void vpa_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void vpa_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "vpa");
     outs[0] = symVpa(args, mrOf(ctx));
 }
 
-void poly2sym_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void poly2sym_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "poly2sym");
     outs[0] = symPoly2sym(args, mrOf(ctx));
 }
 
-void sym2poly_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void sym2poly_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "sym2poly");
     outs[0] = symSym2poly(args, mrOf(ctx));
 }
 
-void symvar_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void symvar_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "symvar");
     outs[0] = symSymvar(args, mrOf(ctx));
 }
 
-void simplify_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void simplify_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "simplify");
     outs[0] = symSimplify(args[0], mrOf(ctx));
 }
 
-void expand_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void expand_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "expand");
     outs[0] = symExpand(args[0], mrOf(ctx));
 }
 
-void factor_reg(Span<const Value> args, size_t nargout, Span<Value> outs, CallContext &ctx)
+void factor_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "factor");
     symFactor(args, nargout, outs, mrOf(ctx));
 }
 
-void collect_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void collect_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "collect");
     outs[0] = symCollect(args, mrOf(ctx));
 }
 
-void coeffs_reg(Span<const Value> args, size_t nargout, Span<Value> outs, CallContext &ctx)
+void coeffs_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "coeffs");
     symCoeffs(args, nargout, outs, mrOf(ctx));
 }
 
-void numden_reg(Span<const Value> args, size_t nargout, Span<Value> outs, CallContext &ctx)
+void numden_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "numden");
     symNumden(args[0], nargout, outs, mrOf(ctx));
 }
 
-void partfrac_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void partfrac_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "partfrac");
     outs[0] = symPartfrac(args, mrOf(ctx));
 }
 
-void subs_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void subs_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 3, "subs");
     outs[0] = symSubs(args, mrOf(ctx));
 }
 
-void int_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void int_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 4, "int");
     outs[0] = symInt(args, mrOf(ctx));
 }
 
-void limit_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void limit_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 4, "limit");
     outs[0] = symLimit(args, mrOf(ctx));
 }
 
-void taylor_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void taylor_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 4, "taylor");
     outs[0] = symTaylor(args, mrOf(ctx));
 }
 
-void laurent_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void laurent_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 5, "laurent");
     outs[0] = symLaurent(args, mrOf(ctx));
 }
 
-void mtaylor_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void mtaylor_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 4, "mtaylor");
     outs[0] = symMtaylor(args, mrOf(ctx));
 }
 
-void pade_reg(Span<const Value> args, size_t nargout, Span<Value> outs, CallContext &ctx)
+void pade_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 3, 5, "pade");
     symPade(args, nargout, outs, mrOf(ctx));
 }
 
-void symsum_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void symsum_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 4, "symsum");
     outs[0] = symSymsum(args, mrOf(ctx));
 }
 
-void finitediff_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void finitediff_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 3, "finitediff");
     outs[0] = symFiniteDiff(args, mrOf(ctx));
 }
 
-void eulermaclaurin_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void eulermaclaurin_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 4, 5, "eulermaclaurin");
     outs[0] = symEulerMaclaurin(args, mrOf(ctx));
 }
 
-void solve_reg(Span<const Value> args, size_t nargout, Span<Value> outs, CallContext &ctx)
+void solve_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "solve");
     symSolve(args, nargout, outs, mrOf(ctx));
 }
 
-void groebner_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void groebner_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 3, "groebner");
     outs[0] = symGroebner(args, mrOf(ctx));
 }
 
-void polyreduce_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void polyreduce_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 4, "polyreduce");
     outs[0] = symPolyReduce(args, mrOf(ctx));
 }
 
-void dsolve_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void dsolve_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 8, "dsolve");
     outs[0] = symDsolve(args, mrOf(ctx));
 }
 
-void pdsolve_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void pdsolve_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 4, 8, "pdsolve");
     outs[0] = symPdsolve(args, mrOf(ctx));
 }
 
-void laplace_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void laplace_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 3, "laplace");
     outs[0] = symLaplace(args, mrOf(ctx));
 }
 
-void ilaplace_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void ilaplace_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 3, "ilaplace");
     outs[0] = symIlaplace(args, mrOf(ctx));
 }
 
-void fourier_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void fourier_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 3, "fourier");
     outs[0] = symFourier(args, mrOf(ctx));
 }
 
-void ifourier_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void ifourier_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 3, "ifourier");
     outs[0] = symIfourier(args, mrOf(ctx));
 }
 
-void ztrans_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void ztrans_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 3, "ztrans");
     outs[0] = symZtrans(args, mrOf(ctx));
 }
 
-void iztrans_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void iztrans_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 3, "iztrans");
     outs[0] = symIztrans(args, mrOf(ctx));
 }
 
-void rsolve_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void rsolve_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 4, "rsolve");
     outs[0] = symRsolve(args, mrOf(ctx));
 }
 
-void latex_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void latex_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "latex");
     outs[0] = symLatex(args[0], mrOf(ctx));
 }
 
-void ccode_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void ccode_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "ccode");
     outs[0] = symCCode(args[0], mrOf(ctx));
 }
 
-void charpoly_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void charpoly_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "charpoly");
     outs[0] = symCharpoly(args, mrOf(ctx));
 }
 
-void adjugate_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void adjugate_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "adjugate");
     outs[0] = symAdjugate(args[0], mrOf(ctx));
 }
 
-void jordan_reg(Span<const Value> args, size_t nargout, Span<Value> outs, CallContext &ctx)
+void jordan_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "jordan");
     symJordan(args[0], nargout, outs, mrOf(ctx));
 }
 
-void jacobian_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void jacobian_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "jacobian");
     outs[0] = symJacobian(args, mrOf(ctx));
 }
 
-void gradient_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void gradient_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "gradient");
     outs[0] = symGradient(args, mrOf(ctx));
 }
 
-void hessian_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void hessian_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "hessian");
     outs[0] = symHessian(args, mrOf(ctx));
 }
 
-void divergence_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void divergence_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "divergence");
     outs[0] = symDivergence(args[0], args[1], mrOf(ctx));
 }
 
-void curl_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void curl_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "curl");
     outs[0] = symCurl(args[0], args[1], mrOf(ctx));
 }
 
-void laplacian_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void laplacian_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "laplacian");
     outs[0] = symLaplacian(args, mrOf(ctx));
 }
 
-void wronskian_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void wronskian_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "wronskian");
     outs[0] = symWronskian(args, mrOf(ctx));
 }
 
-void potential_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void potential_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "potential");
     outs[0] = symPotential(args[0], args[1], mrOf(ctx));
 }
 
-void eulerlagrange_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void eulerlagrange_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 4, 4, "eulerlagrange");
     outs[0] = symEulerLagrange(args, mrOf(ctx));
 }
 
-void hamiltonian_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void hamiltonian_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 3, 3, "hamiltonian");
     outs[0] = symHamiltonian(args, mrOf(ctx));
 }
 
-void legendretransform_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void legendretransform_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 3, 3, "legendretransform");
     outs[0] = symLegendreTransform(args, mrOf(ctx));
 }
 
-void poissonbracket_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void poissonbracket_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 4, 4, "poissonbracket");
     outs[0] = symPoissonBracket(args, mrOf(ctx));
 }
 
-void lagrangeextrema_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void lagrangeextrema_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 3, 3, "lagrangeextrema");
     outs[0] = symLagrangeExtrema(args, mrOf(ctx));
 }
 
-void frenetserret_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void frenetserret_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "frenetserret");
     outs[0] = symFrenetSerret(args, mrOf(ctx));
 }
 
-void surfacecurvature_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void surfacecurvature_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 3, 3, "surfacecurvature");
     outs[0] = symSurfaceCurvature(args, mrOf(ctx));
 }
 
-void christoffel_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void christoffel_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "christoffel");
     outs[0] = symChristoffel(args[0], args[1], mrOf(ctx));
 }
 
-void riemann_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void riemann_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "riemann");
     outs[0] = symRiemann(args[0], args[1], mrOf(ctx));
 }
 
-void ricci_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void ricci_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "ricci");
     outs[0] = symRicci(args[0], args[1], mrOf(ctx));
 }
 
-void scalarcurvature_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void scalarcurvature_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "scalarcurvature");
     outs[0] = symScalarCurvature(args[0], args[1], mrOf(ctx));
 }
 
-void geodesic_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void geodesic_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 4, 4, "geodesic");
     outs[0] = symGeodesic(args, mrOf(ctx));
 }
 
-void lineintegral_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void lineintegral_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 5, 5, "lineintegral");
     outs[0] = symLineIntegral(args, mrOf(ctx));
 }
 
-void surfaceintegral_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void surfaceintegral_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 8, 8, "surfaceintegral");
     outs[0] = symSurfaceIntegral(args, mrOf(ctx));
 }
 
-void airyAi_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void airyAi_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "airyAi");
     outs[0] = symElemFunc1("airyAi", args[0], mrOf(ctx));
 }
 
-void airyBi_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void airyBi_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "airyBi");
     outs[0] = symElemFunc1("airyBi", args[0], mrOf(ctx));
 }
 
-void legendreP_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void legendreP_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "legendreP");
     outs[0] = symElemFunc2("legendreP", args[0], args[1], mrOf(ctx));
 }
 
-void chebyshevT_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void chebyshevT_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "chebyshevT");
     outs[0] = symElemFunc2("chebyshevT", args[0], args[1], mrOf(ctx));
 }
 
-void chebyshevU_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void chebyshevU_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "chebyshevU");
     outs[0] = symElemFunc2("chebyshevU", args[0], args[1], mrOf(ctx));
 }
 
-void hermiteH_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void hermiteH_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "hermiteH");
     outs[0] = symElemFunc2("hermiteH", args[0], args[1], mrOf(ctx));
 }
 
-void laguerreL_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void laguerreL_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 2, 2, "laguerreL");
     outs[0] = symElemFunc2("laguerreL", args[0], args[1], mrOf(ctx));
 }
 
-void heaviside_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void heaviside_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "heaviside");
     outs[0] = symElemFunc1("heaviside", args[0], mrOf(ctx));
 }
 
-void dirac_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void dirac_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "dirac");
     outs[0] = symElemFunc1("dirac", args[0], mrOf(ctx));
 }
 
-void zeta_reg(Span<const Value> args, size_t /*nargout*/, Span<Value> outs, CallContext &ctx)
+void zeta_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 1, "zeta");
     outs[0] = symElemFunc1("zeta", args[0], mrOf(ctx));

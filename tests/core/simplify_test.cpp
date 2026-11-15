@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/core/simplify.hpp>
 
@@ -202,10 +203,10 @@ TEST(SimplifyTest, PropertyZeroIdentitiesAndCostMonotonicity)
 {
     Ctx c;
     const Expr x = c.symbol("x");
-    const Expr sin2 = c.pow(c.func("sin", x), c.number(std::int64_t{2}));
-    const Expr cos2 = c.pow(c.func("cos", x), c.number(std::int64_t{2}));
-    const Expr sinh2 = c.pow(c.func("sinh", x), c.number(std::int64_t{2}));
-    const Expr cosh2 = c.pow(c.func("cosh", x), c.number(std::int64_t{2}));
+    const Expr sin2 = c.pow(c.func("sin", x), c.number(keel::i64{2}));
+    const Expr cos2 = c.pow(c.func("cos", x), c.number(keel::i64{2}));
+    const Expr sinh2 = c.pow(c.func("sinh", x), c.number(keel::i64{2}));
+    const Expr cosh2 = c.pow(c.func("cosh", x), c.number(keel::i64{2}));
 
     std::mt19937 rng(0x514911F1u);
     std::uniform_int_distribution<int> cDist(-10, 10);
@@ -220,10 +221,10 @@ TEST(SimplifyTest, PropertyZeroIdentitiesAndCostMonotonicity)
         if (b1 == 0)
             b1 = 2;
 
-        const Expr P = c.add({c.number(static_cast<std::int64_t>(a0)),
-                              c.mul({c.number(static_cast<std::int64_t>(a1)), x})});
-        const Expr Q = c.add({c.number(static_cast<std::int64_t>(b0)),
-                              c.mul({c.number(static_cast<std::int64_t>(b1)), x})});
+        const Expr P = c.add({c.number(static_cast<keel::i64>(a0)),
+                              c.mul({c.number(static_cast<keel::i64>(a1)), x})});
+        const Expr Q = c.add({c.number(static_cast<keel::i64>(b0)),
+                              c.mul({c.number(static_cast<keel::i64>(b1)), x})});
 
         // 1. (P * Q) / Q - P == 0
         const Expr ratId = c.add({c.div(c.expand(c.mul({P, Q})), Q), c.neg(P)});

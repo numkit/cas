@@ -6,6 +6,7 @@
 // stays free of corpus concerns.
 #pragma once
 
+#include <keel/core.h>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -36,22 +37,22 @@ struct TaskOutcome {
     std::string id;
     TaskStatus status = TaskStatus::MalformedLine;
     std::string detail;           // reason / error message
-    std::uint64_t micros = 0;     // parse+integrate wall time
-    std::size_t answerNodes = 0;  // Ctx node count after a proved run
-    std::size_t answerLeaves = 0; // Ctx::leafCount(F) after a proved run
-    std::size_t refLeaves = 0;    // Ctx::leafCount(ref) when ref is provided
+    keel::u64 micros = 0;     // parse+integrate wall time
+    keel::usize answerNodes = 0;  // Ctx node count after a proved run
+    keel::usize answerLeaves = 0; // Ctx::leafCount(F) after a proved run
+    keel::usize refLeaves = 0;    // Ctx::leafCount(ref) when ref is provided
     double leafRatio = 0.0;       // answerLeaves / refLeaves when refLeaves > 0
 };
 
 struct CorpusReport {
-    std::size_t total = 0;
-    std::size_t proved = 0;
-    std::size_t unevaluated = 0;
-    std::size_t parseErrors = 0;
-    std::size_t malformedLines = 0;
-    std::uint64_t medianMicros = 0;
-    std::uint64_t p95Micros = 0;
-    std::size_t withReference = 0;
+    keel::usize total = 0;
+    keel::usize proved = 0;
+    keel::usize unevaluated = 0;
+    keel::usize parseErrors = 0;
+    keel::usize malformedLines = 0;
+    keel::u64 medianMicros = 0;
+    keel::u64 p95Micros = 0;
+    keel::usize withReference = 0;
     double meanLeafRatio = 0.0;
 
     // proved / total, in percent (0 when total == 0).
@@ -76,8 +77,8 @@ LineKind lineKind(const std::string &line);
 // Deterministic order statistics. medianOf: middle value; for an even
 // count the mean of the two middle values rounded up. percentileOf:
 // nearest-rank, p in (0, 1].
-std::uint64_t medianOf(std::vector<std::uint64_t> vals);
-std::uint64_t percentileOf(std::vector<std::uint64_t> vals, double p);
+keel::u64 medianOf(std::vector<keel::u64> vals);
+keel::u64 percentileOf(std::vector<keel::u64> vals, double p);
 
 // Run one task end to end: parse -> integrate -> certificate check.
 TaskOutcome runTask(const CorpusTask &t);

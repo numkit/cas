@@ -1,3 +1,5 @@
+#include <keel/core.h>
+#include <keel/math.h>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/core/simplify.hpp>
 #include <numkit/cas/core/symsolve.hpp>
@@ -91,7 +93,7 @@ TEST(SymSolveTest, ParametricPolynomialEquations)
         const auto roots =
             solveSymbolic(c, parseExpr(c, "(x^2 - 1)/(x - 1)"), x);
         ASSERT_EQ(roots.size(), 1u);
-        EXPECT_TRUE(containsRoot(c, roots, c.number(std::int64_t{-1})));
+        EXPECT_TRUE(containsRoot(c, roots, c.number(keel::i64{-1})));
     }
 }
 
@@ -105,7 +107,7 @@ TEST(SymSolveTest, UnivariateRationalAndRootOf)
         const auto roots =
             solveSymbolic(c, parseExpr(c, "x^3 - 2*x^2 - 3*x + 6"), x);
         ASSERT_EQ(roots.size(), 3u);
-        EXPECT_TRUE(containsRoot(c, roots, c.number(std::int64_t{2})));
+        EXPECT_TRUE(containsRoot(c, roots, c.number(keel::i64{2})));
         EXPECT_TRUE(containsRoot(c, roots, parseExpr(c, "-3^(1/2)")));
         EXPECT_TRUE(containsRoot(c, roots, parseExpr(c, "3^(1/2)")));
     }
@@ -156,7 +158,7 @@ TEST(SymSolveTest, InvertibleTranscendentalEquations)
         const auto roots =
             solveSymbolic(c, parseExpr(c, "sqrt(3*x + 1) - 4"), x);
         ASSERT_EQ(roots.size(), 1u);
-        EXPECT_TRUE(containsRoot(c, roots, c.number(std::int64_t{5})));
+        EXPECT_TRUE(containsRoot(c, roots, c.number(keel::i64{5})));
     }
 }
 
@@ -269,7 +271,7 @@ TEST(SymSolveTest, PropertyQuadraticAndSystemResidualsVanish)
     // 1. Random quadratics with rational or quadratic-irrational roots
     for (int iter = 0; iter < 100; ++iter) {
         const int p = rDist(rng);
-        const int q = std::abs(rDist(rng)) + 1; // (x - p)^2 - q = 0
+        const int q = keel::abs(rDist(rng)) + 1; // (x - p)^2 - q = 0
         const Expr eqn = c.expand(c.add(
             {c.pow(c.add({x, c.number(-p)}), c.number(2)), c.number(-q)}));
         const auto roots = solveSymbolic(c, eqn, x);

@@ -1,4 +1,5 @@
 // poly/solve.cpp — exact real-root solving over the Sturm machinery.
+#include <keel/core.h>
 #include <numkit/cas/poly/solve.hpp>
 
 #include <numkit/cas/poly/zassenhaus.hpp>
@@ -25,12 +26,12 @@ std::vector<RealRootSolution> solveRealRoots(const UPoly &p)
     std::vector<Rational> rationals;
     for (const UPoly &f : factorOverQ(sq))
         if (f.deg() == 1)
-            rationals.push_back(f.coeff(0) * Rational(std::int64_t{-1}));
+            rationals.push_back(f.coeff(0) * Rational(keel::i64{-1}));
     std::sort(rationals.begin(), rationals.end());
 
     out.reserve(ivs.size());
-    std::size_t nextRational = 0;
-    for (std::size_t k = 0; k < ivs.size(); ++k) {
+    keel::usize nextRational = 0;
+    for (keel::usize k = 0; k < ivs.size(); ++k) {
         RealRootSolution s;
         s.carrier = sq;
         s.realIndex = static_cast<int>(k);

@@ -1,6 +1,7 @@
 // poly/sturm.hpp — real root isolation over Q via Sturm sequences.
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <utility>
@@ -33,7 +34,7 @@ Rational cauchyRootBound(const UPoly &p);
 // HALF-OPEN interval (a, b] (skip-zero variations: V(a) - V(b)).
 // Endpoints may be roots; a strict count needs the a/b root status
 // tracked by the caller.
-std::size_t countRealRoots(const std::vector<UPoly> &sturm,
+keel::usize countRealRoots(const std::vector<UPoly> &sturm,
                            const Rational &a, const Rational &b);
 
 // Isolate all distinct real roots of p (multiplicities ignored; p is

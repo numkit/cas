@@ -5,6 +5,7 @@
 //      always selects rule 4 (index 3) and binds a, b, x, m;
 //   3. boundary: shapes outside the slice decline (-1), arity
 //      mismatches decline, no bindings leak on failure.
+#include <keel/core.h>
 #include <numkit/cas/rubi/rules.hpp>
 #include <numkit/cas/core/parser.hpp>
 
@@ -23,7 +24,7 @@ using numkit::cas::NodeKind;
 using numkit::cas::Rational;
 using namespace numkit::cas::rubi;
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -40,20 +41,20 @@ TEST(RubiMatcher, FixedVectors)
     // x^7: pattern x_^m_. -> bindings m = 7.
     {
         std::vector<Binding> b;
-        const int r = matchFirst(t, c, c.pow(x, c.number(std::int64_t{7})), b);
+        const int r = matchFirst(t, c, c.pow(x, c.number(keel::i64{7})), b);
         ASSERT_GE(r, 0);
         ASSERT_EQ(b.size(), 1u);
         EXPECT_EQ(b[0].name, "m");
-        EXPECT_EQ(b[0].value, c.number(std::int64_t{7}));
+        EXPECT_EQ(b[0].value, c.number(keel::i64{7}));
     }
     // (2 + 3*x)^4: SPECIFICITY ordering (step 3b) prefers the
     // structural (a_.+b_.*x_)^m_ shape over the bare x_^m_. - the
     // Add base binds a, b, x individually.
     {
         const Expr e = c.pow(
-            c.add({c.number(std::int64_t{2}),
-                   c.mul({c.number(std::int64_t{3}), x})}),
-            c.number(std::int64_t{4}));
+            c.add({c.number(keel::i64{2}),
+                   c.mul({c.number(keel::i64{3}), x})}),
+            c.number(keel::i64{4}));
         std::vector<Binding> b;
         const int r = matchFirst(t, c, e, b);
         ASSERT_GE(r, 0); // the (a+b x)^m rule leads among linear ^-shapes
@@ -62,8 +63,8 @@ TEST(RubiMatcher, FixedVectors)
         EXPECT_EQ(b[0].name, "a");
         EXPECT_EQ(b[1].name, "b");
         EXPECT_EQ(b[2].name, "m");
-        EXPECT_EQ(b[0].value, c.number(std::int64_t{2}));
-        EXPECT_EQ(b[2].value, c.number(std::int64_t{4}));
+        EXPECT_EQ(b[0].value, c.number(keel::i64{2}));
+        EXPECT_EQ(b[2].value, c.number(keel::i64{4}));
     }
 }
 
@@ -76,7 +77,7 @@ TEST(RubiMatcher, BoundaryDeclines)
 
     // 1/x canonicalizes to Pow(x,-1): the div-twin of 1/x_ (Pow[x_, -1])
     // beats x_^m_.
-    const Expr oneOver = c.pow(x, c.number(std::int64_t{-1}));
+    const Expr oneOver = c.pow(x, c.number(keel::i64{-1}));
     EXPECT_GE(matchFirst(t, c, oneOver, b), 0);
     // x_-literals bind NOTHING by design (Symbol edges) - only the
     // rule identity remains.
@@ -95,7 +96,7 @@ TEST(RubiMatcher, BoundaryDeclines)
 
     // Arity mismatch: a 5-factor Mul exceeds the maximum 4-factor
     // binomial product arity in 1.1.x and declines at the trie level.
-    const Expr fiveMul = c.mul({c.number(std::int64_t{2}), x,
+    const Expr fiveMul = c.mul({c.number(keel::i64{2}), x,
                                 c.symbol("y"), c.symbol("z"),
                                 c.symbol("w")});
     b.clear();
@@ -112,16 +113,16 @@ TEST(RubiMatcher, Property)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0x2B1B4E5EEDULL;
+    keel::u64 st = 0x2B1B4E5EEDULL;
     for (int iter = 0; iter < 3000; ++iter) {
-        std::int64_t a = static_cast<std::int64_t>(nextU64(st) % 13) - 6;
-        std::int64_t b = static_cast<std::int64_t>(nextU64(st) % 13) - 6;
+        keel::i64 a = static_cast<keel::i64>(nextU64(st) % 13) - 6;
+        keel::i64 b = static_cast<keel::i64>(nextU64(st) % 13) - 6;
         if (a == 0)
             a = 1; // a=0 collapses the two-term Add away; b=3 makes
         if (b == 0 || b == 3)
             b = 2; // the coefficient b/3 fold to 1*x = x; both leave
                    // the bare x_^m_. rule the legitimate winner
-        std::int64_t m = static_cast<std::int64_t>(nextU64(st) % 9) - 4;
+        keel::i64 m = static_cast<keel::i64>(nextU64(st) % 9) - 4;
         // m/3 must stay fractional: an integer exponent folds
         // Number^m away entirely, leaving no Pow for the ^-rules.
         while (m % 3 == 0)
@@ -151,10 +152,10 @@ TEST(RubiApply, FirstCertifiedApplication)
     const Expr x = c.symbol("x");
 
     // int x^7 dx = x^8/8 via x_^m_. with NeQ[m, -1] holding.
-    const Expr F = rubiApply(t, c, c.pow(x, c.number(std::int64_t{7})), x);
+    const Expr F = rubiApply(t, c, c.pow(x, c.number(keel::i64{7})), x);
     ASSERT_FALSE(F.isNull());
     EXPECT_EQ(c.toString(F), "1/8*x^8");
-    EXPECT_EQ(c.diff(F, x), c.pow(x, c.number(std::int64_t{7})));
+    EXPECT_EQ(c.diff(F, x), c.pow(x, c.number(keel::i64{7})));
 }
 
 TEST(RubiApply, BoundaryAndGuards)
@@ -168,9 +169,9 @@ TEST(RubiApply, BoundaryAndGuards)
     {
         const Expr F = rubiApply(
             t, c,
-            c.mul({c.pow(c.add({c.one(), x}), c.number(std::int64_t{-1})),
+            c.mul({c.pow(c.add({c.one(), x}), c.number(keel::i64{-1})),
                    c.pow(c.add({c.one(), c.neg(x)}),
-                         c.number(std::int64_t{-1}))}),
+                         c.number(keel::i64{-1}))}),
             x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "atanh(x)");
@@ -181,9 +182,9 @@ TEST(RubiApply, BoundaryAndGuards)
     {
         const Expr F = rubiApply(
             t, c,
-            c.mul({c.pow(c.add({c.one(), x}), c.number(std::int64_t{-1})),
-                   c.pow(c.add({c.number(std::int64_t{2}), c.neg(x)}),
-                         c.number(std::int64_t{-1}))}),
+            c.mul({c.pow(c.add({c.one(), x}), c.number(keel::i64{-1})),
+                   c.pow(c.add({c.number(keel::i64{2}), c.neg(x)}),
+                         c.number(keel::i64{-1}))}),
             x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "-1/3*log(2 + -x) + 1/3*log(1 + x)");
@@ -193,8 +194,8 @@ TEST(RubiApply, BoundaryAndGuards)
     // arctangent integral, straight from Rubi (Rt[1,2] folds to 1).
     {
         const Expr F = rubiApply(
-            t, c, c.pow(c.add({c.one(), c.pow(x, c.number(std::int64_t{2}))}),
-                        c.number(std::int64_t{-1})), x);
+            t, c, c.pow(c.add({c.one(), c.pow(x, c.number(keel::i64{2}))}),
+                        c.number(keel::i64{-1})), x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "atan(x)");
     }
@@ -203,9 +204,9 @@ TEST(RubiApply, BoundaryAndGuards)
     // replacement Log[RemoveContent[...]]/b executes with content 1.
     {
         const Expr F = rubiApply(
-            t, c, c.pow(c.add({c.number(std::int64_t{2}),
-                               c.mul({c.number(std::int64_t{3}), x})}),
-                        c.number(std::int64_t{-1})), x);
+            t, c, c.pow(c.add({c.number(keel::i64{2}),
+                               c.mul({c.number(keel::i64{3}), x})}),
+                        c.number(keel::i64{-1})), x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "1/3*log(2 + 3*x)");
     }
@@ -214,9 +215,9 @@ TEST(RubiApply, BoundaryAndGuards)
     // 1/(2+4x) only in Q(x): the POLYNOMIAL-grade gate.
     {
         const Expr F = rubiApply(
-            t, c, c.pow(c.add({c.number(std::int64_t{2}),
-                               c.mul({c.number(std::int64_t{4}), x})}),
-                        c.number(std::int64_t{-1})), x);
+            t, c, c.pow(c.add({c.number(keel::i64{2}),
+                               c.mul({c.number(keel::i64{4}), x})}),
+                        c.number(keel::i64{-1})), x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "1/4*log(1 + 2*x)");
     }
@@ -224,8 +225,8 @@ TEST(RubiApply, BoundaryAndGuards)
     // fallback of the gate certifies (2/9)(2+3x)^(3/2).
     {
         const Expr e = c.pow(
-            c.add({c.number(std::int64_t{2}),
-                   c.mul({c.number(std::int64_t{3}), x})}),
+            c.add({c.number(keel::i64{2}),
+                   c.mul({c.number(keel::i64{3}), x})}),
             c.number(Rational(BigInt(1), BigInt(2))));
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
@@ -237,8 +238,8 @@ TEST(RubiApply, BoundaryAndGuards)
     // rule certifies (2+x)^5/5.
     {
         const Expr e = c.pow(
-            c.add({c.number(std::int64_t{2}), x}),
-            c.number(std::int64_t{4}));
+            c.add({c.number(keel::i64{2}), x}),
+            c.number(keel::i64{4}));
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "1/5*(2 + x)^5");
@@ -250,10 +251,10 @@ TEST(RubiApply, BoundaryAndGuards)
     // integral of 1/x, straight from Rubi.
     {
         const Expr F =
-            rubiApply(t, c, c.pow(x, c.number(std::int64_t{-1})), x);
+            rubiApply(t, c, c.pow(x, c.number(keel::i64{-1})), x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "log(x)");
-        EXPECT_EQ(c.diff(F, x), c.pow(x, c.number(std::int64_t{-1})));
+        EXPECT_EQ(c.diff(F, x), c.pow(x, c.number(keel::i64{-1})));
     }
 
     // besselj(x): nothing in the slice matches.
@@ -263,9 +264,9 @@ TEST(RubiApply, BoundaryAndGuards)
     // the certificate PASSES: (2+3x)^5/15 differentiates back to
     // (2+3x)^4 exactly.
     const Expr e = c.pow(
-        c.add({c.number(std::int64_t{2}),
-               c.mul({c.number(std::int64_t{3}), x})}),
-        c.number(std::int64_t{4}));
+        c.add({c.number(keel::i64{2}),
+               c.mul({c.number(keel::i64{3}), x})}),
+        c.number(keel::i64{4}));
     const Expr F = rubiApply(t, c, e, x);
     ASSERT_FALSE(F.isNull());
     EXPECT_EQ(c.toString(F), "1/15*(2 + 3*x)^5");
@@ -280,9 +281,9 @@ TEST(RubiApply, PropertyIntegerPowers)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0x3A3A5EEDULL;
+    keel::u64 st = 0x3A3A5EEDULL;
     for (int iter = 0; iter < 2000; ++iter) {
-        std::int64_t m = static_cast<std::int64_t>(nextU64(st) % 15) - 6;
+        keel::i64 m = static_cast<keel::i64>(nextU64(st) % 15) - 6;
         // m = 0, 1 canonicalize the power away (x^0 = 1, x^1 = x);
         // m = -1 is declined by the rule's own NeQ.
         if (m >= -1 && m <= 1)
@@ -314,10 +315,10 @@ TEST(RubiApply, PositivePowersQuadratic)
     // IntSum mirror splits it into the 9.1 constant rule and the
     // factor pull-out onto x^m.
     {
-        const Expr e = c.add({c.number(std::int64_t{2}),
-                              c.mul({c.number(std::int64_t{1}),
-                                     c.pow(x, c.number(std::int64_t{2}))})});
-        const Expr e2 = c.add({c.number(std::int64_t{2}), c.pow(x, c.number(std::int64_t{2}))});
+        const Expr e = c.add({c.number(keel::i64{2}),
+                              c.mul({c.number(keel::i64{1}),
+                                     c.pow(x, c.number(keel::i64{2}))})});
+        const Expr e2 = c.add({c.number(keel::i64{2}), c.pow(x, c.number(keel::i64{2}))});
         EXPECT_EQ(e, e2); // 1*x^2 folds - the two spellings agree
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
@@ -329,10 +330,10 @@ TEST(RubiApply, PositivePowersQuadratic)
     // this cascade was blocked on before item 30.
     {
         const Expr e = c.pow(
-            c.add({c.number(std::int64_t{6}),
-                   c.mul({c.number(std::int64_t{4}),
-                          c.pow(x, c.number(std::int64_t{2}))})}),
-            c.number(std::int64_t{2}));
+            c.add({c.number(keel::i64{6}),
+                   c.mul({c.number(keel::i64{4}),
+                          c.pow(x, c.number(keel::i64{2}))})}),
+            c.number(keel::i64{2}));
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
         // the reduction form: x(6+4x²)²/5 + (24/5)(4/3x³ + 6x)
@@ -346,8 +347,8 @@ TEST(RubiApply, PositivePowersQuadratic)
     // the exact cascade form and its round-trip.
     {
         const Expr e = c.pow(
-            c.add({c.one(), c.pow(x, c.number(std::int64_t{2}))}),
-            c.number(std::int64_t{4}));
+            c.add({c.one(), c.pow(x, c.number(keel::i64{2}))}),
+            c.number(keel::i64{4}));
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F),
@@ -365,7 +366,7 @@ TEST(RubiApply, LinearityFallbacks)
     // Rubi 9.1 constant rule: Int[5, x] = 5*x - no table rule can
     // match a Number; the utility mirror carries it.
     {
-        const Expr F = rubiApply(t, c, c.number(std::int64_t{5}), x);
+        const Expr F = rubiApply(t, c, c.number(keel::i64{5}), x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "5*x");
     }
@@ -373,15 +374,15 @@ TEST(RubiApply, LinearityFallbacks)
     // sorts its numeric factor first; the rest lands on x^m.
     {
         const Expr F = rubiApply(
-            t, c, c.mul({c.number(std::int64_t{4}),
-                         c.pow(x, c.number(std::int64_t{2}))}), x);
+            t, c, c.mul({c.number(keel::i64{4}),
+                         c.pow(x, c.number(keel::i64{2}))}), x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "4/3*x^3");
     }
     // Negative factor: -x^2 -> -(x^3/3).
     {
         const Expr F = rubiApply(
-            t, c, c.neg(c.pow(x, c.number(std::int64_t{2}))), x);
+            t, c, c.neg(c.pow(x, c.number(keel::i64{2}))), x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "-1/3*x^3");
     }
@@ -389,7 +390,7 @@ TEST(RubiApply, LinearityFallbacks)
     // 2 + besselj(x) stays Unevaluated rather than half-integrating.
     EXPECT_TRUE(rubiApply(
                     t, c,
-                    c.add({c.number(std::int64_t{2}), c.func("besselj", x)}), x)
+                    c.add({c.number(keel::i64{2}), c.func("besselj", x)}), x)
                     .isNull());
     // Bare linear monomials x and c*x (OneIdentity m=1 mirror):
     {
@@ -398,7 +399,7 @@ TEST(RubiApply, LinearityFallbacks)
         EXPECT_EQ(c.toString(F1), "1/2*x^2");
         EXPECT_EQ(c.diff(F1, x), x);
 
-        const Expr cx = c.mul({c.number(std::int64_t{4}), x});
+        const Expr cx = c.mul({c.number(keel::i64{4}), x});
         const Expr F2 = rubiApply(t, c, cx, x);
         ASSERT_FALSE(F2.isNull());
         EXPECT_EQ(c.toString(F2), "2*x^2");
@@ -407,9 +408,9 @@ TEST(RubiApply, LinearityFallbacks)
     // Three-term Add (arity 3) including a linear term: every term integrates.
     {
         const Expr e = c.add(
-            {c.number(std::int64_t{3}), c.pow(x, c.number(std::int64_t{2})),
-             c.mul({c.number(std::int64_t{2}),
-                    c.pow(x, c.number(std::int64_t{5}))})});
+            {c.number(keel::i64{3}), c.pow(x, c.number(keel::i64{2})),
+             c.mul({c.number(keel::i64{2}),
+                    c.pow(x, c.number(keel::i64{5}))})});
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
         EXPECT_EQ(c.toString(F), "1/3*x^3 + 1/3*x^6 + 3*x");
@@ -426,18 +427,18 @@ TEST(RubiApply, PropertyPositivePowers)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0x5EED30A11ULL;
+    keel::u64 st = 0x5EED30A11ULL;
     for (int iter = 0; iter < 2000; ++iter) {
-        std::int64_t a = static_cast<std::int64_t>(nextU64(st) % 13) - 6;
-        std::int64_t b = static_cast<std::int64_t>(nextU64(st) % 13) - 6;
-        std::int64_t p = static_cast<std::int64_t>(nextU64(st) % 6) + 1;
+        keel::i64 a = static_cast<keel::i64>(nextU64(st) % 13) - 6;
+        keel::i64 b = static_cast<keel::i64>(nextU64(st) % 13) - 6;
+        keel::i64 p = static_cast<keel::i64>(nextU64(st) % 6) + 1;
         if (a == 0)
             a = 7; // a=0 collapses the Add; b=0 collapses the Mul -
         if (b == 0)  // both degeneracies are OTHER (still passing)
             b = 5;  // shapes: keep the two-term binomial here.
         const Expr e = c.pow(
             c.add({c.number(a),
-                   c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
+                   c.mul({c.number(b), c.pow(x, c.number(keel::i64{2}))})}),
             c.number(p));
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull()) << "a=" << a << " b=" << b << " p=" << p;
@@ -462,8 +463,8 @@ TEST(RubiMatcher, NonlinearPatternRequiresEqualBindings)
     // beats fresh wildcard "n"), with a single binding for "m".
     {
         const Expr e = c.mul({
-            c.pow(c.add({c.one(), x}), c.number(std::int64_t{2})),
-            c.pow(c.add({c.one(), c.neg(x)}), c.number(std::int64_t{2})),
+            c.pow(c.add({c.one(), x}), c.number(keel::i64{2})),
+            c.pow(c.add({c.one(), c.neg(x)}), c.number(keel::i64{2})),
         });
         std::vector<Binding> b;
         const int r = matchFirst(t, c, e, b);
@@ -481,8 +482,8 @@ TEST(RubiMatcher, NonlinearPatternRequiresEqualBindings)
     // leaf; falls through to (a+b*x)^m_ * (c+d*x)^n_ and binds m=2, n=3.
     {
         const Expr e = c.mul({
-            c.pow(c.add({c.one(), x}), c.number(std::int64_t{2})),
-            c.pow(c.add({c.one(), c.neg(x)}), c.number(std::int64_t{3})),
+            c.pow(c.add({c.one(), x}), c.number(keel::i64{2})),
+            c.pow(c.add({c.one(), c.neg(x)}), c.number(keel::i64{3})),
         });
         std::vector<Binding> b;
         const int r = matchFirst(t, c, e, b);
@@ -491,11 +492,11 @@ TEST(RubiMatcher, NonlinearPatternRequiresEqualBindings)
         for (const Binding &bi : b) {
             if (bi.name == "m") {
                 ++mCount;
-                EXPECT_EQ(bi.value, c.number(std::int64_t{2}));
+                EXPECT_EQ(bi.value, c.number(keel::i64{2}));
             }
             if (bi.name == "n") {
                 ++nCount;
-                EXPECT_EQ(bi.value, c.number(std::int64_t{3}));
+                EXPECT_EQ(bi.value, c.number(keel::i64{3}));
             }
         }
         EXPECT_EQ(mCount, 1);
@@ -601,8 +602,8 @@ TEST(RubiApply, R1aFractionalAndNegativePowers)
     // (3*x^2)^(3/2): IntPart / FracPart rule in 1.1.2.1
     {
         const Expr e = c.pow(
-            c.mul({c.number(std::int64_t{3}), c.pow(x, c.number(std::int64_t{2}))}),
-            c.number(Rational(std::int64_t{3}, BigInt(2))));
+            c.mul({c.number(keel::i64{3}), c.pow(x, c.number(keel::i64{2}))}),
+            c.number(Rational(keel::i64{3}, BigInt(2))));
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
     }
@@ -626,34 +627,34 @@ TEST(RubiApply, PropertyR1aShapes)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0x71A2026ULL;
+    keel::u64 st = 0x71A2026ULL;
     for (int iter = 0; iter < 1000; ++iter) {
-        const std::int64_t a = 1 + static_cast<std::int64_t>(nextU64(st) % 6);
-        const std::int64_t bMag = 1 + static_cast<std::int64_t>(nextU64(st) % 6);
-        const std::int64_t b = (nextU64(st) % 2 == 0) ? bMag : -bMag;
+        const keel::i64 a = 1 + static_cast<keel::i64>(nextU64(st) % 6);
+        const keel::i64 bMag = 1 + static_cast<keel::i64>(nextU64(st) % 6);
+        const keel::i64 b = (nextU64(st) % 2 == 0) ? bMag : -bMag;
         const int shape = static_cast<int>(nextU64(st) % 4);
         Expr e;
         if (shape == 0) {
             // 1/(a + b*x^2) with both positive and negative b (atan & atanh)
             e = c.pow(c.add({c.number(a),
-                             c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
-                      c.number(std::int64_t{-1}));
+                             c.mul({c.number(b), c.pow(x, c.number(keel::i64{2}))})}),
+                      c.number(keel::i64{-1}));
         } else if (shape == 1) {
             // 1/sqrt(a + b*x^2) with a > 0 and both signs of b (asinh & asin)
             e = c.pow(c.add({c.number(a),
-                             c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
-                      c.number(Rational(std::int64_t{-1}, BigInt(2))));
+                             c.mul({c.number(b), c.pow(x, c.number(keel::i64{2}))})}),
+                      c.number(Rational(keel::i64{-1}, BigInt(2))));
         } else if (shape == 2) {
             // (a + b*x^2)^(-3/2) and (-5/2)
-            const std::int64_t num = (nextU64(st) % 2 == 0) ? -3 : -5;
+            const keel::i64 num = (nextU64(st) % 2 == 0) ? -3 : -5;
             e = c.pow(c.add({c.number(a),
-                             c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
+                             c.mul({c.number(b), c.pow(x, c.number(keel::i64{2}))})}),
                       c.number(Rational(num, BigInt(2))));
         } else {
             // 1/(a + b*x^2)^2
             e = c.pow(c.add({c.number(a),
-                             c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})}),
-                      c.number(std::int64_t{-2}));
+                             c.mul({c.number(b), c.pow(x, c.number(keel::i64{2}))})}),
+                      c.number(keel::i64{-2}));
         }
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull())
@@ -772,51 +773,51 @@ TEST(RubiApply, PropertyR1bR2Shapes)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0x52B2026ULL;
+    keel::u64 st = 0x52B2026ULL;
     for (int iter = 0; iter < 500; ++iter) {
-        const std::int64_t a = 1 + static_cast<std::int64_t>(nextU64(st) % 5);
-        const std::int64_t b = 1 + static_cast<std::int64_t>(nextU64(st) % 5);
-        const std::int64_t d = a + 1 + static_cast<std::int64_t>(nextU64(st) % 4);
+        const keel::i64 a = 1 + static_cast<keel::i64>(nextU64(st) % 5);
+        const keel::i64 b = 1 + static_cast<keel::i64>(nextU64(st) % 5);
+        const keel::i64 d = a + 1 + static_cast<keel::i64>(nextU64(st) % 4);
         const int shape = static_cast<int>(nextU64(st) % 5);
         Expr e;
         if (shape == 0) {
             // 1.1.2.2: x^m * (a + b*x^2)^(1/2), m in {1, 3}
-            const std::int64_t m = (nextU64(st) % 2 == 0) ? 1 : 3;
+            const keel::i64 m = (nextU64(st) % 2 == 0) ? 1 : 3;
             e = c.mul({c.pow(x, c.number(m)),
                        c.pow(c.add({c.number(a),
                                     c.mul({c.number(b),
-                                           c.pow(x, c.number(std::int64_t{2}))})}),
-                             c.number(Rational(std::int64_t{1}, BigInt(2))))});
+                                           c.pow(x, c.number(keel::i64{2}))})}),
+                             c.number(Rational(keel::i64{1}, BigInt(2))))});
         } else if (shape == 1) {
             // 1.1.2.3: 1/((a + x^2)*(d + x^2))
             e = c.mul({c.pow(c.add({c.number(a),
-                                    c.pow(x, c.number(std::int64_t{2}))}),
-                             c.number(std::int64_t{-1})),
+                                    c.pow(x, c.number(keel::i64{2}))}),
+                             c.number(keel::i64{-1})),
                        c.pow(c.add({c.number(d),
-                                    c.pow(x, c.number(std::int64_t{2}))}),
-                             c.number(std::int64_t{-1}))});
+                                    c.pow(x, c.number(keel::i64{2}))}),
+                             c.number(keel::i64{-1}))});
         } else if (shape == 2) {
             // 1.1.1.3: 1/((a + x)*(d + x)*(d + b + x))
-            e = c.mul({c.pow(c.add({c.number(a), x}), c.number(std::int64_t{-1})),
-                       c.pow(c.add({c.number(d), x}), c.number(std::int64_t{-1})),
+            e = c.mul({c.pow(c.add({c.number(a), x}), c.number(keel::i64{-1})),
+                       c.pow(c.add({c.number(d), x}), c.number(keel::i64{-1})),
                        c.pow(c.add({c.number(d + b), x}),
-                             c.number(std::int64_t{-1}))});
+                             c.number(keel::i64{-1}))});
         } else if (shape == 3) {
             // 1.1.2.10: (a + b*x + d*x^2)/(a + b*x^2)
             const Expr poly = c.add(
                 {c.number(a), c.mul({c.number(b), x}),
-                 c.mul({c.number(d), c.pow(x, c.number(std::int64_t{2}))})});
+                 c.mul({c.number(d), c.pow(x, c.number(keel::i64{2}))})});
             const Expr quad = c.add(
                 {c.number(a),
-                 c.mul({c.number(b), c.pow(x, c.number(std::int64_t{2}))})});
-            e = c.mul({poly, c.pow(quad, c.number(std::int64_t{-1}))});
+                 c.mul({c.number(b), c.pow(x, c.number(keel::i64{2}))})});
+            e = c.mul({poly, c.pow(quad, c.number(keel::i64{-1}))});
         } else {
             // 1.1.3.2: x^(n-1) * (a + b*x^n)^(-1/2), n in {3, 4}
-            const std::int64_t n = (nextU64(st) % 2 == 0) ? 3 : 4;
+            const keel::i64 n = (nextU64(st) % 2 == 0) ? 3 : 4;
             e = c.mul({c.pow(x, c.number(n - 1)),
                        c.pow(c.add({c.number(a),
                                     c.mul({c.number(b), c.pow(x, c.number(n))})}),
-                             c.number(Rational(std::int64_t{-1}, BigInt(2))))});
+                             c.number(Rational(keel::i64{-1}, BigInt(2))))});
         }
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull())
@@ -989,18 +990,18 @@ TEST(RubiApply, PropertyR3R4R5Shapes)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
-    std::uint64_t st = 0x402026ULL;
+    keel::u64 st = 0x402026ULL;
     for (int iter = 0; iter < 300; ++iter) {
-        const std::int64_t a = 1 + static_cast<std::int64_t>(nextU64(st) % 4);
-        const std::int64_t b = 1 + static_cast<std::int64_t>(nextU64(st) % 4);
+        const keel::i64 a = 1 + static_cast<keel::i64>(nextU64(st) % 4);
+        const keel::i64 b = 1 + static_cast<keel::i64>(nextU64(st) % 4);
         const int shape = static_cast<int>(nextU64(st) % 5);
         Expr e;
         if (shape == 0) {
             // R3: 1/(a + b*x + a*b*x^2) (positive 4ac - b^2 when 4a^2b > b^2)
             const Expr trinom = c.add(
                 {c.number(a + b), c.mul({c.number(b), x}),
-                 c.mul({c.number(a), c.pow(x, c.number(std::int64_t{2}))})});
-            e = c.pow(trinom, c.number(std::int64_t{-1}));
+                 c.mul({c.number(a), c.pow(x, c.number(keel::i64{2}))})});
+            e = c.pow(trinom, c.number(keel::i64{-1}));
         } else if (shape == 1) {
             // R4: x * exp(a + b*x)
             e = c.mul({x, c.func("exp", c.add({c.number(a),
@@ -1013,7 +1014,7 @@ TEST(RubiApply, PropertyR3R4R5Shapes)
             // R5: sin(a + b*x)^3
             e = c.pow(c.func("sin", c.add({c.number(a),
                                            c.mul({c.number(b), x})})),
-                      c.number(std::int64_t{3}));
+                      c.number(keel::i64{3}));
         } else {
             // R5: x * cos(a + b*x)
             e = c.mul({x, c.func("cos", c.add({c.number(a),

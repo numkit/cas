@@ -1,6 +1,7 @@
 // core/expr.hpp — hash-consed immutable expression DAG.
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/num/rational.hpp>
 
 #include <cassert>
@@ -14,7 +15,7 @@
 
 namespace numkit::cas {
 
-enum class NodeKind : std::uint8_t {
+enum class NodeKind : keel::u8 {
     Number, // Rational atom
     Symbol, // named variable / named constant later
     Pow,    // Pow(base, exp); canonical rules fold numeric cases
@@ -24,7 +25,7 @@ enum class NodeKind : std::uint8_t {
     RootOf, // algebraic number atom: root #index of a monic polynomial
 };
 
-enum class AssumeDomain : std::uint8_t {
+enum class AssumeDomain : keel::u8 {
     Any = 0,     // unconstrained symbol (default)
     Real,        // x in R
     Positive,    // x in R, x > 0
@@ -64,19 +65,19 @@ public:
 
 private:
     friend class Ctx;
-    Expr(Ctx *ctx, std::uint32_t id) : ctx_(ctx), id_(id) {}
+    Expr(Ctx *ctx, keel::u32 id) : ctx_(ctx), id_(id) {}
 
     Ctx *ctx_ = nullptr;
-    std::uint32_t id_ = 0;
+    keel::u32 id_ = 0;
 };
 
 struct Node
 {
     NodeKind kind = NodeKind::Number;
-    std::uint32_t aux = 0;      // symbol id or func id (name tables in Ctx)
-    std::uint32_t childOff = 0; // offset into Ctx child arena
-    std::uint32_t childCount = 0;
-    std::uint32_t hash = 0;
+    keel::u32 aux = 0;      // symbol id or func id (name tables in Ctx)
+    keel::u32 childOff = 0; // offset into Ctx child arena
+    keel::u32 childCount = 0;
+    keel::u32 hash = 0;
     Rational num; // Number kind only
 };
 
@@ -95,10 +96,10 @@ class Ctx
 {
 public:
     // ── construction ──────────────────────────────────────────
-    Expr number(std::int64_t v);
+    Expr number(keel::i64 v);
     Expr number(Rational v);
-    Expr zero() { return number(std::int64_t{0}); }
-    Expr one() { return number(std::int64_t{1}); }
+    Expr zero() { return number(keel::i64{0}); }
+    Expr one() { return number(keel::i64{1}); }
 
     Expr symbol(const std::string &name);
 
@@ -126,8 +127,8 @@ public:
     const Rational &numberValue(Expr e) const { return node(e).num; }
     const std::string &symbolName(Expr e) const;
     const std::string &funcName(Expr e) const;
-    std::size_t childCount(Expr e) const { return node(e).childCount; }
-    Expr child(Expr e, std::size_t i) const;
+    keel::usize childCount(Expr e) const { return node(e).childCount; }
+    Expr child(Expr e, keel::usize i) const;
 
     // Total structural order, consistent with == (identical => 0).
     // Kind rank: Number < Symbol < Pow < Func < Add < Mul; then
@@ -187,26 +188,26 @@ public:
     // values, poles, or non-finite overflow.
     bool evalDouble(
         Expr e,
-        const std::vector<std::pair<std::string, double>> &vals,
-        double &out) const;
+        const std::vector<std::pair<std::string, keel::f64>> &vals,
+        keel::f64 &out) const;
 
     std::string toString(Expr e) const;
 
     // Tree-based leaf/head count (Mathematica/Rubi LeafCount convention):
     // 1 for atoms (Number, Symbol, RootOf), 1 + sum(child leafCounts) for
     // compound nodes (Pow, Func, Add, Mul), 0 for a null Expr.
-    std::size_t leafCount(Expr e) const;
+    keel::usize leafCount(Expr e) const;
 
     // Section 6 discrete DAG cost functional C(F) = sum_{v in DAG(F)} NodeCost(v)
     // over unique reachable DAG nodes (1 for Number/Symbol/RootOf/Add/Mul/Pow,
     // 3 for elementary transcendental Func, 5 for abs inside log, 10 for
     // special functions).
-    std::size_t exprCost(Expr e) const;
+    keel::usize exprCost(Expr e) const;
 
-    std::size_t nodeCount() const { return nodes_.size(); }
+    keel::usize nodeCount() const { return nodes_.size(); }
 
     // Stable per-Ctx node identity (1-based; matches insertion order).
-    std::uint32_t id(Expr e) const
+    keel::u32 id(Expr e) const
     {
         assert(e.ctx_ == this && !e.isNull());
         return e.id_;
@@ -234,29 +235,29 @@ private:
         return nodes_[e.id_ - 1];
     }
 
-    std::uint32_t internName(const std::string &name,
-                             std::unordered_map<std::string, std::uint32_t> &ids,
+    keel::u32 internName(const std::string &name,
+                             std::unordered_map<std::string, keel::u32> &ids,
                              std::deque<std::string> &names);
 
-    Expr makeNode(NodeKind kind, std::uint32_t aux,
+    Expr makeNode(NodeKind kind, keel::u32 aux,
                   const std::vector<Expr> &children, const Rational &num);
-    bool equalNode(const Node &n, NodeKind kind, std::uint32_t aux,
+    bool equalNode(const Node &n, NodeKind kind, keel::u32 aux,
                    const std::vector<Expr> &children, const Rational &num) const;
 
     Expr makeAdd(const std::vector<Expr> &children);
     Expr makeMul(const std::vector<Expr> &children);
-    bool smallInteger(const Rational &e, std::int64_t &n) const;
-    Expr diffRec(Expr e, Expr var, std::unordered_map<std::uint32_t, Expr> &memo);
+    bool smallInteger(const Rational &e, keel::i64 &n) const;
+    Expr diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo);
 
     void print(Expr e, std::string &out) const;
     void printPrec(Expr e, std::string &out, int parentPrec) const;
     static int kindRank(NodeKind k);
 
     std::deque<Node> nodes_;
-    std::vector<std::uint32_t> childArena_;
-    std::unordered_multimap<std::uint32_t, std::uint32_t> intern_;
-    std::unordered_map<std::string, std::uint32_t> symbolIds_;
-    std::unordered_map<std::string, std::uint32_t> funcIds_;
+    std::vector<keel::u32> childArena_;
+    std::unordered_multimap<keel::u32, keel::u32> intern_;
+    std::unordered_map<std::string, keel::u32> symbolIds_;
+    std::unordered_map<std::string, keel::u32> funcIds_;
     std::deque<std::string> symbolNames_;
     std::deque<std::string> funcNames_;
     // RootOf payload table (index by node aux). Coefficients ascending;
@@ -266,7 +267,7 @@ private:
     {
         std::vector<Rational> poly;
         int index;
-        std::uint32_t nodeId = 0; // id of the interning node (filled after makeNode)
+        keel::u32 nodeId = 0; // id of the interning node (filled after makeNode)
     };
     std::deque<RootOfDesc> rootofs_;
     std::unordered_map<std::string, AssumeDomain> assumptions_;

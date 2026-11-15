@@ -1,6 +1,7 @@
 // num/rational.hpp — canonical exact rational numbers over BigInt.
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/num/bigint.hpp>
 
 #include <cstdint>
@@ -20,9 +21,9 @@ class Rational
 {
 public:
     Rational() = default;
-    Rational(std::int64_t v);
-    Rational(std::uint64_t v);
-    Rational(int v) : Rational(static_cast<std::int64_t>(v)) {}
+    Rational(keel::i64 v);
+    Rational(keel::u64 v);
+    Rational(int v) : Rational(static_cast<keel::i64>(v)) {}
 
     // q must be non-zero (assert in debug). The constructor moves the sign
     // into the numerator and reduces by the gcd.
@@ -37,23 +38,23 @@ public:
     // lossless by construction. User-facing decimals that are not
     // dyadic (0.1) route through the string constructor instead -
     // the sym() layer contract in notes/integration-model.md.
-    static Rational fromDoubleBits(double v);
+    static Rational fromDoubleBits(keel::f64 v);
 
     // Correctly rounded IEEE-754 double (scale-invariant for arbitrary
     // numerator/denominator bit-lengths).
-    double toDouble() const;
+    keel::f64 toDouble() const;
 
     bool isZero() const { return num_.isZero(); }
     int signum() const { return num_.signum(); }
     const BigInt &num() const { return num_; }
     const BigInt &den() const { return den_; }
 
-    bool fitsInt64(std::int64_t &out) const; // denominator 1, numerator fits
+    bool fitsInt64(keel::i64 &out) const; // denominator 1, numerator fits
 
     // Content hash mixing both parts (for hash-consing; collisions are fine).
-    std::uint64_t hashBits() const;
+    keel::u64 hashBits() const;
 
-    static Rational powUInt(const Rational &base, std::uint64_t exp);
+    static Rational powUInt(const Rational &base, keel::u64 exp);
 
     std::string toString() const; // "p" if den == 1, else "p/q"
 

@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/transform/laplace.hpp>
 
 #include <numkit/cas/core/parser.hpp>
@@ -151,13 +152,13 @@ TEST(LaplaceTest, PropertyLaplaceIlaplaceRoundTrip)
 
         // f(t) = c1 * t^d * exp(r1*t) + c2 * exp(alpha*t) * cos(w*t)
         const Expr term1 = c.mul(
-            {c.number(static_cast<std::int64_t>(c1)),
-             c.pow(t, c.number(static_cast<std::int64_t>(d))),
-             c.func("exp", c.mul({c.number(static_cast<std::int64_t>(r1)), t}))});
+            {c.number(static_cast<keel::i64>(c1)),
+             c.pow(t, c.number(static_cast<keel::i64>(d))),
+             c.func("exp", c.mul({c.number(static_cast<keel::i64>(r1)), t}))});
         const Expr term2 = c.mul(
-            {c.number(static_cast<std::int64_t>(c2)),
-             c.func("exp", c.mul({c.number(static_cast<std::int64_t>(alpha)), t})),
-             c.func("cos", c.mul({c.number(static_cast<std::int64_t>(w)), t}))});
+            {c.number(static_cast<keel::i64>(c2)),
+             c.func("exp", c.mul({c.number(static_cast<keel::i64>(alpha)), t})),
+             c.func("cos", c.mul({c.number(static_cast<keel::i64>(w)), t}))});
         const Expr f = c.add({term1, term2});
 
         const LaplaceResult fwd = laplace(c, f, t, s);

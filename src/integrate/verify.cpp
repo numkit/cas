@@ -1,4 +1,5 @@
 // integrate/verify.cpp — Tier-2a certified interval evaluation.
+#include <keel/core.h>
 #include <numkit/cas/integrate/verify.hpp>
 
 #include <numkit/cas/poly/sturm.hpp>
@@ -43,43 +44,43 @@ RIval iMul(const RIval &a, const RIval &b)
 
 bool containsZero(const RIval &a)
 {
-    return a.lo <= Rational(std::int64_t{0}) && a.hi >= Rational(std::int64_t{0});
+    return a.lo <= Rational(keel::i64{0}) && a.hi >= Rational(keel::i64{0});
 }
 
 RIval iDiv(const RIval &a, const RIval &b)
 {
     assert(!containsZero(b));
-    return iMul(a, RIval{Rational(std::int64_t{1}) / b.hi,
-                         Rational(std::int64_t{1}) / b.lo});
+    return iMul(a, RIval{Rational(keel::i64{1}) / b.hi,
+                         Rational(keel::i64{1}) / b.lo});
 }
 
-RIval iPowInt(const RIval &a, std::int64_t n)
+RIval iPowInt(const RIval &a, keel::i64 n)
 {
     if (n == 0)
-        return {Rational(std::int64_t{1}), Rational(std::int64_t{1})};
+        return {Rational(keel::i64{1}), Rational(keel::i64{1})};
     RIval r = a;
-    const std::int64_t mag = n < 0 ? -n : n;
-    for (std::int64_t i = 1; i < mag; ++i)
+    const keel::i64 mag = n < 0 ? -n : n;
+    for (keel::i64 i = 1; i < mag; ++i)
         r = iMul(r, a);
     if (n > 0)
         return r;
-    return iDiv({Rational(std::int64_t{1}), Rational(std::int64_t{1})}, r);
+    return iDiv({Rational(keel::i64{1}), Rational(keel::i64{1})}, r);
 }
 
 // q-th root of a NON-NEGATIVE rational by bisection; the returned
 // enclosure satisfies lo^q <= r <= hi^q.
-RIval qRoot(const Rational &r, std::int64_t q)
+RIval qRoot(const Rational &r, keel::i64 q)
 {
     assert(q >= 2);
-    assert(r >= Rational(std::int64_t{0}));
+    assert(r >= Rational(keel::i64{0}));
     const Rational one(1);
     Rational lo(0), hi = r < one ? one : r;
-    const std::uint64_t qe = static_cast<std::uint64_t>(q);
+    const keel::u64 qe = static_cast<keel::u64>(q);
     // 24 bisection steps: width <= max(1, r)/2^24 - far finer than
     // any genuine value difference the check needs to separate
     // (real form bugs differ by >= 2x, not in the 7th decimal).
     for (int i = 0; i < 24; ++i) {
-        const Rational mid = (lo + hi) * Rational(std::int64_t{1}, BigInt(2));
+        const Rational mid = (lo + hi) * Rational(keel::i64{1}, BigInt(2));
         // mid^q <= r  <=>  mid.num^q * r.den <= r.num * mid.den^q
         // (r.den to the FIRST power - r.den^q here would bisect
         // toward the root of r/r.den^(q-1), wrong for every
@@ -101,13 +102,13 @@ RIval qRoot(const Rational &r, std::int64_t q)
 // bisection resolution, and dividing by that enclosure would be a
 // division by a zero-containing interval - the caller must skip
 // the sample point (the honest-decline flow), not assert/UB.
-bool iPowRatPos(const RIval &a, std::int64_t p, std::int64_t q, RIval &out)
+bool iPowRatPos(const RIval &a, keel::i64 p, keel::i64 q, RIval &out)
 {
-    const std::uint64_t pe = static_cast<std::uint64_t>(p < 0 ? -p : p);
-    const bool zeroLo = a.lo == Rational(std::int64_t{0});
+    const keel::u64 pe = static_cast<keel::u64>(p < 0 ? -p : p);
+    const bool zeroLo = a.lo == Rational(keel::i64{0});
     const RIval rl = zeroLo ? RIval{Rational(0), Rational(0)} : qRoot(a.lo, q);
     const RIval rh = qRoot(a.hi, q);
-    auto fracPow = [](const Rational &x, std::uint64_t e) {
+    auto fracPow = [](const Rational &x, keel::u64 e) {
         return Rational(BigInt::powUInt(x.num(), e),
                         BigInt::powUInt(x.den(), e));
     };
@@ -116,9 +117,9 @@ bool iPowRatPos(const RIval &a, std::int64_t p, std::int64_t q, RIval &out)
         out = base;
         return true;
     }
-    if (base.lo == Rational(std::int64_t{0}))
+    if (base.lo == Rational(keel::i64{0}))
         return false;
-    out = iDiv({Rational(std::int64_t{1}), Rational(std::int64_t{1})}, base);
+    out = iDiv({Rational(keel::i64{1}), Rational(keel::i64{1})}, base);
     return true;
 }
 
@@ -127,7 +128,7 @@ bool iPowRatPos(const RIval &a, std::int64_t p, std::int64_t q, RIval &out)
 // sample points; refine once. SUCCESSFUL enclosures only - a failed
 // lookup (complex root) must keep failing, never turn into a
 // cached [0,0] that would silently null the whole form.
-using RootOfCache = std::unordered_map<std::uint32_t, RIval>;
+using RootOfCache = std::unordered_map<keel::u32, RIval>;
 
 bool evalRootOf(const Ctx &c, Expr e, RootOfCache &cache, RIval &out)
 {
@@ -151,8 +152,8 @@ bool evalRootOf(const Ctx &c, Expr e, RootOfCache &cache, RIval &out)
     // coefficient errors); polynomial-cascade overestimation stays
     // orders of magnitude below any true difference.
     const RootInterval iv =
-        refineRoot(p, ivs[static_cast<std::size_t>(index)],
-                   Rational(std::int64_t{1}, BigInt(1) << 24));
+        refineRoot(p, ivs[static_cast<keel::usize>(index)],
+                   Rational(keel::i64{1}, BigInt(1) << 24));
     out = {iv.lo, iv.hi};
     cache.emplace(c.id(e), out);
     return true;
@@ -182,29 +183,29 @@ bool evalIval(const Ctx &c, Expr e, Expr var, const Rational &x0,
         if (c.kind(c.child(e, 1)) != NodeKind::Number)
             return false;
         const Rational &v = c.numberValue(c.child(e, 1));
-        std::int64_t p = 0;
+        keel::i64 p = 0;
         if (v.den() == BigInt(1) && v.num().fitsInt64(p)) {
             if (p < 0 && containsZero(base))
                 return false;
             out = iPowInt(base, p);
             return true;
         }
-        std::int64_t q = 0;
+        keel::i64 q = 0;
         if (!v.den().fitsInt64(q) || q <= 0 || !v.num().fitsInt64(p))
             return false;
-        if (base.lo < Rational(std::int64_t{0}) ||
-            (base.lo == Rational(std::int64_t{0}) && p < 0))
+        if (base.lo < Rational(keel::i64{0}) ||
+            (base.lo == Rational(keel::i64{0}) && p < 0))
             return false; // fractional power needs x >= 0 here
         return iPowRatPos(base, p, q, out);
     }
     case NodeKind::Add:
     case NodeKind::Mul: {
         const bool isAdd = c.kind(e) == NodeKind::Add;
-        RIval acc = isAdd ? RIval{Rational(std::int64_t{0}),
-                                  Rational(std::int64_t{0})}
-                          : RIval{Rational(std::int64_t{1}),
-                                  Rational(std::int64_t{1})};
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        RIval acc = isAdd ? RIval{Rational(keel::i64{0}),
+                                  Rational(keel::i64{0})}
+                          : RIval{Rational(keel::i64{1}),
+                                  Rational(keel::i64{1})};
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             RIval v;
             if (!evalIval(c, c.child(e, i), var, x0, cache, v))
                 return false;
@@ -237,12 +238,12 @@ Tier2aStatus tier2aFormCheck(Ctx &c, Expr F, Expr f, Expr var)
     // fractional power of a negative, complex RootOf) just reduces
     // the compatible count - it can never turn into Mismatch.
     const std::array<Rational, 6> kSamples = {{
-        Rational(std::int64_t{1}, BigInt(2)),
-        Rational(std::int64_t{5}, BigInt(4)),
-        Rational(std::int64_t{3}, BigInt(2)),
-        Rational(std::int64_t{3}),
-        Rational(std::int64_t{17}, BigInt(6)),
-        Rational(std::int64_t{9}, BigInt(2)),
+        Rational(keel::i64{1}, BigInt(2)),
+        Rational(keel::i64{5}, BigInt(4)),
+        Rational(keel::i64{3}, BigInt(2)),
+        Rational(keel::i64{3}),
+        Rational(keel::i64{17}, BigInt(6)),
+        Rational(keel::i64{9}, BigInt(2)),
     }};
 
     RootOfCache cache;

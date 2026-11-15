@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/num/rational.hpp>
 
 #include <cassert>
@@ -12,17 +13,17 @@ Rational Rational::fromDoubleBits(double v)
     const double f = std::frexp(v, &e); // v == f * 2^e, f in [0.5, 1)
     // f has at most 53 significand bits (incl. the hidden one), so
     // f * 2^53 is an exact integer that itself fits a double.
-    const std::int64_t m = static_cast<std::int64_t>(f * 9007199254740992.0);
+    const keel::i64 m = static_cast<keel::i64>(f * 9007199254740992.0);
     if (m == 0)
         return Rational(); // +-0.0
     const int shift = e - 53;
     if (shift >= 0)
         return Rational(BigInt(m) * BigInt::powUInt(BigInt(2),
-                                                    static_cast<std::uint64_t>(shift)),
+                                                    static_cast<keel::u64>(shift)),
                         BigInt(1));
     return Rational(BigInt(m),
                     BigInt::powUInt(BigInt(2),
-                                    static_cast<std::uint64_t>(-shift)));
+                                    static_cast<keel::u64>(-shift)));
 }
 
 double Rational::toDouble() const
@@ -31,8 +32,8 @@ double Rational::toDouble() const
         return 0.0;
     if (den_ == BigInt(1))
         return num_.toDouble();
-    const std::size_t bn = num_.bitLength();
-    const std::size_t bd = den_.bitLength();
+    const keel::usize bn = num_.bitLength();
+    const keel::usize bd = den_.bitLength();
     if (bn <= 53 && bd <= 53) {
         const double v = static_cast<double>(num_.lowLimb()) /
                          static_cast<double>(den_.lowLimb());
@@ -41,8 +42,8 @@ double Rational::toDouble() const
     const BigInt N = num_.abs();
     const BigInt &D = den_;
     int shift = 54 - (static_cast<int>(bn) - static_cast<int>(bd));
-    BigInt Ns = shift >= 0 ? (N << static_cast<std::size_t>(shift)) : N;
-    BigInt Ds = shift < 0 ? (D << static_cast<std::size_t>(-shift)) : D;
+    BigInt Ns = shift >= 0 ? (N << static_cast<keel::usize>(shift)) : N;
+    BigInt Ds = shift < 0 ? (D << static_cast<keel::usize>(-shift)) : D;
     if (Ns < (Ds << 54)) {
         Ns = Ns << 1;
         ++shift;
@@ -52,8 +53,8 @@ double Rational::toDouble() const
     }
     BigInt Q, R;
     BigInt::divMod(Ns, Ds, Q, R);
-    const std::uint64_t q64 = Q.lowLimb();
-    std::uint64_t mant53 = q64 >> 2;
+    const keel::u64 q64 = Q.lowLimb();
+    keel::u64 mant53 = q64 >> 2;
     const bool guard = ((q64 >> 1) & 1ULL) != 0;
     const bool sticky = ((q64 & 1ULL) != 0) || !R.isZero();
     if (guard && (sticky || (mant53 & 1ULL) != 0))
@@ -62,9 +63,9 @@ double Rational::toDouble() const
     return num_.isNegative() ? -scaled : scaled;
 }
 
-Rational::Rational(std::int64_t v) : num_(v), den_(1) {}
+Rational::Rational(keel::i64 v) : num_(v), den_(1) {}
 
-Rational::Rational(std::uint64_t v) : num_(v), den_(1) {}
+Rational::Rational(keel::u64 v) : num_(v), den_(1) {}
 
 Rational::Rational(BigInt p, BigInt q) : num_(std::move(p)), den_(std::move(q))
 {
@@ -157,9 +158,9 @@ bool operator>=(const Rational &a, const Rational &b)
     return !(a < b);
 }
 
-Rational Rational::powUInt(const Rational &base, std::uint64_t exp)
+Rational Rational::powUInt(const Rational &base, keel::u64 exp)
 {
-    Rational result(std::int64_t{1});
+    Rational result(keel::i64{1});
     Rational b = base;
     while (exp != 0) {
         if (exp & 1)
@@ -171,13 +172,13 @@ Rational Rational::powUInt(const Rational &base, std::uint64_t exp)
     return result;
 }
 
-std::uint64_t Rational::hashBits() const
+keel::u64 Rational::hashBits() const
 {
     return (num().hashBits() * 0x9E3779B97F4A7C15ULL) ^
            (den().hashBits() + 0x165667B19E3779F9ULL);
 }
 
-bool Rational::fitsInt64(std::int64_t &out) const
+bool Rational::fitsInt64(keel::i64 &out) const
 {
     if (!(den() == BigInt(1)))
         return false;
@@ -194,7 +195,7 @@ std::string Rational::toString() const
 bool Rational::tryParse(Rational &out, const std::string &s)
 {
     out = Rational();
-    const std::size_t slash = s.find('/');
+    const keel::usize slash = s.find('/');
     if (slash == std::string::npos) {
         BigInt v;
         if (!BigInt::tryParse(v, s))

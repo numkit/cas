@@ -1,6 +1,7 @@
 // poly/algebraic.hpp — real algebraic numbers (exact).
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/poly/sturm.hpp>
 
 #include <vector>
@@ -44,7 +45,7 @@ public:
     void refineTo(const Rational &width);
 
     // Approximation for diagnostics/tests only.
-    double approx() const;
+    keel::f64 approx() const;
 
 private:
     static bool containsRoot(const UPoly &g, const std::vector<UPoly> &sturmG,

@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/core/expr.hpp>
 
 #include <algorithm>
@@ -12,7 +13,7 @@ using numkit::cas::Expr;
 using numkit::cas::NodeKind;
 using numkit::cas::Rational;
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -22,7 +23,7 @@ std::uint64_t nextU64(std::uint64_t &state)
 
 Rational half()
 {
-    return Rational(std::int64_t{1}, BigInt(2));
+    return Rational(keel::i64{1}, BigInt(2));
 }
 
 struct ExprTest : public ::testing::Test
@@ -53,7 +54,7 @@ struct ExprTest : public ::testing::Test
         case NodeKind::Add:
         case NodeKind::Mul: {
             std::vector<Expr> cs;
-            for (std::size_t i = 0; i < c.childCount(e); ++i)
+            for (keel::usize i = 0; i < c.childCount(e); ++i)
                 cs.push_back(clone(c.child(e, i)));
             return c.kind(e) == NodeKind::Add ? c.add(cs) : c.mul(cs);
         }
@@ -66,11 +67,11 @@ struct ExprTest : public ::testing::Test
 
 TEST_F(ExprTest, AtomBasics)
 {
-    EXPECT_EQ(str(c.number(std::int64_t{7})), "7");
+    EXPECT_EQ(str(c.number(keel::i64{7})), "7");
     EXPECT_EQ(str(c.number(half())), "1/2");
     EXPECT_EQ(str(x), "x");
     EXPECT_EQ(c.kind(x), NodeKind::Symbol);
-    EXPECT_EQ(c.kind(c.number(std::int64_t{0})), NodeKind::Number);
+    EXPECT_EQ(c.kind(c.number(keel::i64{0})), NodeKind::Number);
     EXPECT_TRUE(Expr().isNull());
     EXPECT_FALSE(x.isNull());
     EXPECT_EQ(c.symbolName(x), "x");
@@ -87,25 +88,25 @@ TEST_F(ExprTest, AddCanonicalFolding)
     EXPECT_EQ(str(c.add({})), "0");
     EXPECT_EQ(str(c.add({x})), "x");
     EXPECT_EQ(str(c.add({x, c.zero()})), "x");
-    EXPECT_EQ(str(c.add({c.number(std::int64_t{1}), c.number(std::int64_t{2})})),
+    EXPECT_EQ(str(c.add({c.number(keel::i64{1}), c.number(keel::i64{2})})),
               "3");
-    EXPECT_EQ(str(c.add({c.number(std::int64_t{1}), c.number(std::int64_t{2}), x})),
+    EXPECT_EQ(str(c.add({c.number(keel::i64{1}), c.number(keel::i64{2}), x})),
               "3 + x");
     EXPECT_EQ(str(c.add({x, x})), "2*x");
     EXPECT_EQ(str(c.add({x, x, x})), "3*x");
     EXPECT_EQ(str(c.add({x, y, x, y, y})), "2*x + 3*y");
-    EXPECT_EQ(str(c.add({c.add({c.number(std::int64_t{1}), x}), y})), "1 + x + y");
+    EXPECT_EQ(str(c.add({c.add({c.number(keel::i64{1}), x}), y})), "1 + x + y");
     EXPECT_EQ(str(c.add({c.add({x, y}), c.add({z, x})})), "y + z + 2*x");
-    EXPECT_EQ(str(c.add({c.number(std::int64_t{1}), c.number(std::int64_t{-1})})),
+    EXPECT_EQ(str(c.add({c.number(keel::i64{1}), c.number(keel::i64{-1})})),
               "0");
     // Like-term collection merges coefficient forms, not only equal runs.
-    EXPECT_EQ(str(c.add({y, y, c.mul({c.number(std::int64_t{2}), y})})), "4*y");
-    EXPECT_EQ(str(c.add({c.mul({c.number(std::int64_t{3}), x}),
-                         c.mul({c.number(std::int64_t{5}), x})})),
+    EXPECT_EQ(str(c.add({y, y, c.mul({c.number(keel::i64{2}), y})})), "4*y");
+    EXPECT_EQ(str(c.add({c.mul({c.number(keel::i64{3}), x}),
+                         c.mul({c.number(keel::i64{5}), x})})),
               "8*x");
     EXPECT_EQ(str(c.add({x, c.neg(x)})), "0");
     EXPECT_EQ(str(c.add({x, c.neg(x), y})), "y");
-    EXPECT_EQ(str(c.add({c.mul({c.number(std::int64_t{2}), x, y}), x, y})),
+    EXPECT_EQ(str(c.add({c.mul({c.number(keel::i64{2}), x, y}), x, y})),
               "x + y + 2*x*y");
 }
 
@@ -115,24 +116,24 @@ TEST_F(ExprTest, MulCanonicalFolding)
     EXPECT_EQ(str(c.mul({x})), "x");
     EXPECT_EQ(str(c.mul({x, c.one()})), "x");
     EXPECT_EQ(str(c.mul({x, c.zero()})), "0");
-    EXPECT_EQ(str(c.mul({c.number(std::int64_t{2}), c.number(std::int64_t{3}), x})),
+    EXPECT_EQ(str(c.mul({c.number(keel::i64{2}), c.number(keel::i64{3}), x})),
               "6*x");
     EXPECT_EQ(str(c.mul({c.number(half()), x})), "1/2*x");
     EXPECT_EQ(str(c.mul({x, x})), "x^2");
     EXPECT_EQ(str(c.mul({x, x, x})), "x^3");
     EXPECT_EQ(str(c.mul({x, y, x, y, y})), "x^2*y^3");
-    EXPECT_EQ(str(c.mul({c.mul({c.number(std::int64_t{2}), x}),
-                         c.number(std::int64_t{3})})),
+    EXPECT_EQ(str(c.mul({c.mul({c.number(keel::i64{2}), x}),
+                         c.number(keel::i64{3})})),
               "6*x");
     EXPECT_EQ(str(c.mul({x, y, z})), "x*y*z");
     // Like-base collection merges exponent forms, not only equal runs.
-    EXPECT_EQ(str(c.mul({x, x, c.pow(x, c.number(std::int64_t{2}))})), "x^4");
-    EXPECT_EQ(str(c.mul({c.pow(x, c.number(std::int64_t{3})),
-                         c.pow(x, c.number(std::int64_t{5}))})),
+    EXPECT_EQ(str(c.mul({x, x, c.pow(x, c.number(keel::i64{2}))})), "x^4");
+    EXPECT_EQ(str(c.mul({c.pow(x, c.number(keel::i64{3})),
+                         c.pow(x, c.number(keel::i64{5}))})),
               "x^8");
     EXPECT_EQ(str(c.mul({x, c.div(c.one(), x)})), "1");
-    EXPECT_EQ(str(c.mul({c.mul({c.number(std::int64_t{2}), x}),
-                         c.mul({c.number(std::int64_t{3}), x})})),
+    EXPECT_EQ(str(c.mul({c.mul({c.number(keel::i64{2}), x}),
+                         c.mul({c.number(keel::i64{3}), x})})),
               "6*x^2");
     // Rational exponents of equal bases combine exactly.
     EXPECT_EQ(str(c.mul({c.pow(x, c.number(half())), c.pow(x, c.number(half()))})),
@@ -142,10 +143,10 @@ TEST_F(ExprTest, MulCanonicalFolding)
 TEST_F(ExprTest, NegAndDiv)
 {
     EXPECT_EQ(str(c.neg(x)), "-x");
-    EXPECT_EQ(str(c.neg(c.number(std::int64_t{2}))), "-2");
+    EXPECT_EQ(str(c.neg(c.number(keel::i64{2}))), "-2");
     EXPECT_EQ(str(c.div(c.one(), x)), "x^-1");
-    EXPECT_EQ(str(c.div(x, c.number(std::int64_t{2}))), "1/2*x");
-    EXPECT_EQ(str(c.div(c.one(), c.number(std::int64_t{4}))), "1/4");
+    EXPECT_EQ(str(c.div(x, c.number(keel::i64{2}))), "1/2*x");
+    EXPECT_EQ(str(c.div(c.one(), c.number(keel::i64{4}))), "1/4");
     EXPECT_EQ(str(c.mul({c.neg(c.one()), x, y})), "-x*y");
 }
 
@@ -153,56 +154,56 @@ TEST_F(ExprTest, PowNumericFolding)
 {
     EXPECT_EQ(str(c.pow(x, c.zero())), "1");
     EXPECT_EQ(str(c.pow(x, c.one())), "x");
-    EXPECT_EQ(str(c.pow(c.number(std::int64_t{2}), c.number(std::int64_t{10}))),
+    EXPECT_EQ(str(c.pow(c.number(keel::i64{2}), c.number(keel::i64{10}))),
               "1024");
-    EXPECT_EQ(str(c.pow(c.number(std::int64_t{2}), c.number(std::int64_t{100}))),
+    EXPECT_EQ(str(c.pow(c.number(keel::i64{2}), c.number(keel::i64{100}))),
               "1267650600228229401496703205376");
-    EXPECT_EQ(str(c.pow(c.number(std::int64_t{2}), c.number(std::int64_t{-2}))),
+    EXPECT_EQ(str(c.pow(c.number(keel::i64{2}), c.number(keel::i64{-2}))),
               "1/4");
-    EXPECT_EQ(str(c.pow(c.number(half()), c.number(std::int64_t{-1}))), "2");
-    EXPECT_EQ(str(c.pow(c.number(half()), c.number(std::int64_t{3}))), "1/8");
+    EXPECT_EQ(str(c.pow(c.number(half()), c.number(keel::i64{-1}))), "2");
+    EXPECT_EQ(str(c.pow(c.number(half()), c.number(keel::i64{3}))), "1/8");
     // Beyond the folding bound the Pow stays symbolic, deterministically.
-    EXPECT_EQ(str(c.pow(c.number(std::int64_t{2}),
-                        c.number(std::int64_t{1000000}))),
+    EXPECT_EQ(str(c.pow(c.number(keel::i64{2}),
+                        c.number(keel::i64{1000000}))),
               "2^1000000");
-    EXPECT_EQ(c.kind(c.pow(c.number(std::int64_t{2}),
-                           c.number(std::int64_t{1000000}))),
+    EXPECT_EQ(c.kind(c.pow(c.number(keel::i64{2}),
+                           c.number(keel::i64{1000000}))),
               NodeKind::Pow);
     // Rational (non-integer) exponents stay symbolic even on numbers.
-    EXPECT_EQ(str(c.pow(c.number(std::int64_t{8}), c.number(half()))), "8^(1/2)");
+    EXPECT_EQ(str(c.pow(c.number(keel::i64{8}), c.number(half()))), "8^(1/2)");
 }
 
 TEST_F(ExprTest, PowStructuralRules)
 {
-    EXPECT_EQ(str(c.pow(x, c.number(std::int64_t{2}))), "x^2");
-    EXPECT_EQ(str(c.pow(c.pow(x, c.number(std::int64_t{2})),
-                        c.number(std::int64_t{3}))),
+    EXPECT_EQ(str(c.pow(x, c.number(keel::i64{2}))), "x^2");
+    EXPECT_EQ(str(c.pow(c.pow(x, c.number(keel::i64{2})),
+                        c.number(keel::i64{3}))),
               "x^6");
-    EXPECT_EQ(str(c.pow(c.mul({x, y}), c.number(std::int64_t{2}))), "x^2*y^2");
-    EXPECT_EQ(str(c.pow(c.mul({c.number(std::int64_t{2}), x}),
-                        c.number(std::int64_t{-1}))),
+    EXPECT_EQ(str(c.pow(c.mul({x, y}), c.number(keel::i64{2}))), "x^2*y^2");
+    EXPECT_EQ(str(c.pow(c.mul({c.number(keel::i64{2}), x}),
+                        c.number(keel::i64{-1}))),
               "1/2*x^-1");
-    EXPECT_EQ(str(c.pow(c.add({x, c.one()}), c.number(std::int64_t{2}))),
+    EXPECT_EQ(str(c.pow(c.add({x, c.one()}), c.number(keel::i64{2}))),
               "(1 + x)^2");
     EXPECT_EQ(str(c.pow(c.add({x, y}), c.one())), "x + y");
-    EXPECT_EQ(str(c.pow(c.pow(x, c.number(half())), c.number(std::int64_t{2}))),
+    EXPECT_EQ(str(c.pow(c.pow(x, c.number(half())), c.number(keel::i64{2}))),
               "x");
 }
 
 TEST_F(ExprTest, PrintingPrecedence)
 {
-    EXPECT_EQ(str(c.mul({x, c.pow(c.add({x, c.one()}), c.number(std::int64_t{2}))})),
+    EXPECT_EQ(str(c.mul({x, c.pow(c.add({x, c.one()}), c.number(keel::i64{2}))})),
               "x*(1 + x)^2");
     EXPECT_EQ(str(c.pow(c.number(half()), x)), "(1/2)^x");
-    EXPECT_EQ(str(c.add({c.mul({c.number(std::int64_t{2}), x}),
-                         c.pow(x, c.number(std::int64_t{2}))})),
+    EXPECT_EQ(str(c.add({c.mul({c.number(keel::i64{2}), x}),
+                         c.pow(x, c.number(keel::i64{2}))})),
               "x^2 + 2*x");
     EXPECT_EQ(str(c.func("sin", c.add({x, c.one()}))), "sin(1 + x)");
-    EXPECT_EQ(str(c.pow(c.func("sin", x), c.number(std::int64_t{2}))),
+    EXPECT_EQ(str(c.pow(c.func("sin", x), c.number(keel::i64{2}))),
               "sin(x)^2");
-    EXPECT_EQ(str(c.mul({c.pow(x, c.number(std::int64_t{2})), y})), "y*x^2");
-    EXPECT_EQ(str(c.pow(c.pow(x, c.number(std::int64_t{2})),
-                        c.number(std::int64_t{3}))),
+    EXPECT_EQ(str(c.mul({c.pow(x, c.number(keel::i64{2})), y})), "y*x^2");
+    EXPECT_EQ(str(c.pow(c.pow(x, c.number(keel::i64{2})),
+                        c.number(keel::i64{3}))),
               "x^6");
 }
 
@@ -211,19 +212,19 @@ TEST_F(ExprTest, PrintingPrecedence)
 // -(base^exp) under the parser's precedence, a different branch.
 TEST_F(ExprTest, NegativePowBaseKeepsParens)
 {
-    const Expr e = c.pow(c.number(Rational(std::int64_t{-9})),
+    const Expr e = c.pow(c.number(Rational(keel::i64{-9})),
                          c.number(Rational(BigInt(-1), BigInt(2))));
     EXPECT_EQ(str(e), "(-9)^(-1/2)");
     // Positive numeric bases and negative exponents are unaffected.
-    EXPECT_EQ(str(c.pow(c.number(std::int64_t{9}), c.number(half()))),
+    EXPECT_EQ(str(c.pow(c.number(keel::i64{9}), c.number(half()))),
               "9^(1/2)");
-    EXPECT_EQ(str(c.pow(x, c.number(std::int64_t{-2}))), "x^-2");
+    EXPECT_EQ(str(c.pow(x, c.number(keel::i64{-2}))), "x^-2");
 }
 
 TEST_F(ExprTest, InterningAndDeterminism)
 {
     const Expr a = c.mul({c.add({x, c.one()}), c.add({x, c.one()})});
-    const std::size_t nodesBefore = c.nodeCount();
+    const keel::usize nodesBefore = c.nodeCount();
     const Expr b = c.mul({c.add({x, c.one()}), c.add({x, c.one()})});
     EXPECT_EQ(a, b);
     EXPECT_EQ(c.nodeCount(), nodesBefore);
@@ -239,23 +240,23 @@ TEST_F(ExprTest, CompareIsTotalOrder)
 {
     const Expr a = c.add({x, c.one()});
     const Expr b = c.mul({x, y});
-    const Expr d = c.pow(x, c.number(std::int64_t{2}));
+    const Expr d = c.pow(x, c.number(keel::i64{2}));
     const Expr f = c.func("sin", x);
 
     EXPECT_EQ(c.compare(a, a), 0);
     EXPECT_EQ(c.compare(a, b), -c.compare(b, a));
-    EXPECT_EQ(c.compare(c.number(std::int64_t{5}), c.number(std::int64_t{6})), -1);
-    EXPECT_EQ(c.compare(c.number(std::int64_t{5}), x), -1); // Number < Symbol
+    EXPECT_EQ(c.compare(c.number(keel::i64{5}), c.number(keel::i64{6})), -1);
+    EXPECT_EQ(c.compare(c.number(keel::i64{5}), x), -1); // Number < Symbol
     EXPECT_EQ(c.compare(x, y), -1);                          // by name
 
     std::vector<Expr> v = {a, b, d, f, x, y, c.zero(), c.one(), c.add({x, y}),
-                           c.mul({x, c.number(std::int64_t{3})})};
+                           c.mul({x, c.number(keel::i64{3})})};
     std::sort(v.begin(), v.end(),
               [this](Expr p, Expr q) { return c.compare(p, q) < 0; });
     EXPECT_TRUE(std::is_sorted(v.begin(), v.end(), [this](Expr p, Expr q) {
         return c.compare(p, q) < 0;
     }));
-    for (std::size_t i = 0; i + 1 < v.size(); ++i)
+    for (keel::usize i = 0; i + 1 < v.size(); ++i)
         EXPECT_LE(c.compare(v[i], v[i + 1]), 0);
 }
 
@@ -264,15 +265,15 @@ namespace {
 struct RandomExprTest : public ::testing::Test
 {
     Ctx c;
-    std::uint64_t state = 0xABCDEF0123456789ULL;
+    keel::u64 state = 0xABCDEF0123456789ULL;
 
     Expr rnd(int depth)
     {
-        const std::uint64_t roll = nextU64(state) % 100;
+        const keel::u64 roll = nextU64(state) % 100;
         if (depth <= 0 || roll < 30) {
             if (nextU64(state) % 2)
                 return c.symbol(nextU64(state) % 2 ? "x" : "y");
-            return c.number(static_cast<std::int64_t>(nextU64(state) % 17) - 8);
+            return c.number(static_cast<keel::i64>(nextU64(state) % 17) - 8);
         }
         if (roll < 55)
             return c.add({rnd(depth - 1), rnd(depth - 1), rnd(depth - 1)});
@@ -280,7 +281,7 @@ struct RandomExprTest : public ::testing::Test
             return c.mul({rnd(depth - 1), rnd(depth - 1)});
         if (roll < 85)
             return c.pow(rnd(depth - 1),
-                         c.number(static_cast<std::int64_t>(nextU64(state) % 4)));
+                         c.number(static_cast<keel::i64>(nextU64(state) % 4)));
         if (roll < 93)
             return c.func(nextU64(state) % 2 ? "sin" : "log", rnd(depth - 1));
         return c.neg(rnd(depth - 1));
@@ -300,7 +301,7 @@ struct RandomExprTest : public ::testing::Test
         case NodeKind::Add:
         case NodeKind::Mul: {
             std::vector<Expr> cs;
-            for (std::size_t i = 0; i < c.childCount(e); ++i)
+            for (keel::usize i = 0; i < c.childCount(e); ++i)
                 cs.push_back(clone(c.child(e, i)));
             return c.kind(e) == NodeKind::Add ? c.add(cs) : c.mul(cs);
         }
@@ -315,7 +316,7 @@ TEST_F(RandomExprTest, CloneRebuildIsIdentical)
 {
     for (int iter = 0; iter < 5000; ++iter) {
         const Expr e = rnd(4);
-        const std::size_t before = c.nodeCount();
+        const keel::usize before = c.nodeCount();
         const Expr again = clone(e);
         ASSERT_EQ(again, e) << "iter " << iter << ": " << c.toString(e)
                             << " vs " << c.toString(again);
@@ -367,7 +368,7 @@ TEST_F(ExprTest, ZeroDenominatorIsNullInRelease)
 #ifdef NDEBUG
     const Expr e = c.div(x, c.zero());
     EXPECT_TRUE(e.isNull());
-    const Expr p = c.pow(c.zero(), c.number(std::int64_t{-2}));
+    const Expr p = c.pow(c.zero(), c.number(keel::i64{-2}));
     EXPECT_TRUE(p.isNull());
 #else
     GTEST_SKIP() << "Debug: the assert is the contract";
@@ -383,11 +384,11 @@ TEST_F(ExprTest, LeafCountAndExprCostMetrics)
     // Atoms (Number, Symbol, RootOf) have leafCount = 1, exprCost = 1.
     EXPECT_EQ(c.leafCount(x), 1u);
     EXPECT_EQ(c.exprCost(x), 1u);
-    EXPECT_EQ(c.leafCount(c.number(std::int64_t{42})), 1u);
-    EXPECT_EQ(c.exprCost(c.number(std::int64_t{42})), 1u);
+    EXPECT_EQ(c.leafCount(c.number(keel::i64{42})), 1u);
+    EXPECT_EQ(c.exprCost(c.number(keel::i64{42})), 1u);
 
     // Compound tree: Pow(x, 2) -> 1 (Pow) + 1 (x) + 1 (2) = 3 leaves, 3 DAG nodes.
-    const Expr x2 = c.pow(x, c.number(std::int64_t{2}));
+    const Expr x2 = c.pow(x, c.number(keel::i64{2}));
     EXPECT_EQ(c.leafCount(x2), 3u);
     EXPECT_EQ(c.exprCost(x2), 3u);
 

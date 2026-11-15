@@ -1,4 +1,5 @@
 // apps/corpus_runner.cpp — corpus machinery implementation.
+#include <keel/core.h>
 #include "corpus_runner.hpp"
 
 #include <numkit/cas/core/parser.hpp>
@@ -19,7 +20,7 @@ bool isSpace(char ch)
 
 std::string trim(const std::string &s)
 {
-    std::size_t a = 0, b = s.size();
+    keel::usize a = 0, b = s.size();
     while (a < b && isSpace(s[a]))
         ++a;
     while (b > a && isSpace(s[b - 1]))
@@ -50,13 +51,13 @@ bool parseCorpusLine(const std::string &line, CorpusTask &out)
     // Two TABs: id<TAB>var<TAB>expr; three TABs:
     // id<TAB>var<TAB>op<TAB>expr (op: integrate | rubi). The expr
     // may contain spaces, but never a TAB.
-    const std::size_t t1 = line.find('\t');
+    const keel::usize t1 = line.find('\t');
     if (t1 == std::string::npos)
         return false;
-    const std::size_t t2 = line.find('\t', t1 + 1);
+    const keel::usize t2 = line.find('\t', t1 + 1);
     if (t2 == std::string::npos)
         return false;
-    const std::size_t t3 = line.find('\t', t2 + 1);
+    const keel::usize t3 = line.find('\t', t2 + 1);
     if (t3 == std::string::npos) {
         out.id = trim(line.substr(0, t1));
         out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
@@ -64,7 +65,7 @@ bool parseCorpusLine(const std::string &line, CorpusTask &out)
         out.op.clear();
         out.ref.clear();
     } else {
-        const std::size_t t4 = line.find('\t', t3 + 1);
+        const keel::usize t4 = line.find('\t', t3 + 1);
         if (t4 == std::string::npos) {
             out.id = trim(line.substr(0, t1));
             out.var = trim(line.substr(t1 + 1, t2 - t1 - 1));
@@ -86,25 +87,25 @@ bool parseCorpusLine(const std::string &line, CorpusTask &out)
     return !out.id.empty() && !out.var.empty() && !out.expr.empty();
 }
 
-std::uint64_t medianOf(std::vector<std::uint64_t> vals)
+keel::u64 medianOf(std::vector<keel::u64> vals)
 {
     if (vals.empty())
         return 0;
     std::sort(vals.begin(), vals.end());
-    const std::size_t n = vals.size();
+    const keel::usize n = vals.size();
     if (n % 2 == 1)
         return vals[n / 2];
     // even: mean of the two middle values, rounded up
     return (vals[n / 2 - 1] + vals[n / 2] + 1) / 2;
 }
 
-std::uint64_t percentileOf(std::vector<std::uint64_t> vals, double p)
+keel::u64 percentileOf(std::vector<keel::u64> vals, double p)
 {
     if (vals.empty() || p <= 0.0 || p > 1.0)
         return 0;
     std::sort(vals.begin(), vals.end());
     // nearest-rank: the ceil(p*n)-th smallest
-    const std::size_t rank = static_cast<std::size_t>(
+    const keel::usize rank = static_cast<keel::usize>(
         std::ceil(p * static_cast<double>(vals.size())));
     return vals[std::min(rank, vals.size()) - 1];
 }
@@ -144,7 +145,7 @@ TaskOutcome runTask(const CorpusTask &t)
             reason = r.reason;
         }
         const auto stop = Clock::now();
-        o.micros = static_cast<std::uint64_t>(
+        o.micros = static_cast<keel::u64>(
             std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
                 .count());
         if (proved) {
@@ -166,7 +167,7 @@ TaskOutcome runTask(const CorpusTask &t)
         }
     } catch (const numkit::cas::ParseError &e) {
         const auto stop = Clock::now();
-        o.micros = static_cast<std::uint64_t>(
+        o.micros = static_cast<keel::u64>(
             std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
                 .count());
         o.status = TaskStatus::ParseError;
@@ -184,7 +185,7 @@ double CorpusReport::passRatePct() const
 
 double CorpusReport::verificationRatePct() const
 {
-    const std::size_t denom = proved + unevaluated;
+    const keel::usize denom = proved + unevaluated;
     if (denom == 0)
         return 0.0;
     return 100.0 * static_cast<double>(proved) / static_cast<double>(denom);
@@ -195,7 +196,7 @@ CorpusReport runCorpus(const std::vector<CorpusTask> &tasks,
 {
     CorpusReport rep;
     rep.total = tasks.size();
-    std::vector<std::uint64_t> times;
+    std::vector<keel::u64> times;
     times.reserve(tasks.size());
     double leafRatioSum = 0.0;
     for (const CorpusTask &t : tasks) {

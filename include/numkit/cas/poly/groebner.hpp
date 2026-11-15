@@ -1,6 +1,7 @@
 // poly/groebner.hpp — multivariate Groebner bases (Buchberger's algorithm) over Q[x_1, ..., x_k].
 #pragma once
 
+#include <keel/core.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 
@@ -76,7 +77,7 @@ struct FactorMultiResult
     };
 
     Status status = Status::Unevaluated;
-    Rational content{std::int64_t{1}};    // rational leading/content scalar
+    Rational content{keel::i64{1}};    // rational leading/content scalar
     std::vector<FactorMultiItem> factors; // monic irreducible factors with multiplicities
     Expr expr;                            // reconstructed factored Expr
     std::string reason;

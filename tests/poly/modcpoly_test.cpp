@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/poly/modcpoly.hpp>
 
 #include <gtest/gtest.h>
@@ -10,7 +11,7 @@ using numkit::cas::ModCRing;
 using numkit::cas::Rational;
 using numkit::cas::UPoly;
 
-std::uint64_t nextU64(std::uint64_t &state)
+keel::u64 nextU64(keel::u64 &state)
 {
     state ^= state >> 12;
     state ^= state << 25;
@@ -18,11 +19,11 @@ std::uint64_t nextU64(std::uint64_t &state)
     return state * 0x2545F4914F6CDD1DULL;
 }
 
-Rational rr(std::uint64_t &state, int range)
+Rational rr(keel::u64 &state, int range)
 {
-    const std::int64_t n = static_cast<std::int64_t>(nextU64(state) % (2 * range + 1)) - range;
-    const std::int64_t d =
-        nextU64(state) % 3 == 0 ? static_cast<std::int64_t>(nextU64(state) % 4 + 1) : 1;
+    const keel::i64 n = static_cast<keel::i64>(nextU64(state) % (2 * range + 1)) - range;
+    const keel::i64 d =
+        nextU64(state) % 3 == 0 ? static_cast<keel::i64>(nextU64(state) % 4 + 1) : 1;
     return Rational(BigInt(n), BigInt(d));
 }
 
@@ -30,9 +31,9 @@ Rational rr(std::uint64_t &state, int range)
 UPoly P(const std::string &csv)
 {
     std::vector<Rational> cs;
-    std::size_t pos = 0;
+    keel::usize pos = 0;
     while (pos <= csv.size()) {
-        const std::size_t comma = csv.find(',', pos);
+        const keel::usize comma = csv.find(',', pos);
         const std::string tok =
             csv.substr(pos, comma == std::string::npos ? std::string::npos
                                                        : comma - pos);
@@ -62,9 +63,9 @@ ModCPoly MP(const ModCRing &ring, const std::string &spec)
 {
     // "p0|p1|..." with each pi an ascending rational csv ("-" = zero poly).
     std::vector<UPoly> cs;
-    std::size_t pos = 0;
+    keel::usize pos = 0;
     while (pos <= spec.size()) {
-        const std::size_t bar = spec.find('|', pos);
+        const keel::usize bar = spec.find('|', pos);
         const std::string tok =
             spec.substr(pos, bar == std::string::npos ? std::string::npos
                                                       : bar - pos);
@@ -141,15 +142,15 @@ TEST(ModCRingBoundary, LinearModulusIsQ)
     // c = t - 3: the ring degenerates to Q.
     const ModCRing ring(P("-3,1"));
     const UPoly a = ring.reduce(P("7,2")); // 7 + 2t = 13
-    EXPECT_EQ(a, UPoly(Rational(std::int64_t{13})));
-    EXPECT_EQ(ring.mul(a, ring.inv(a)), UPoly(Rational(std::int64_t{1})));
+    EXPECT_EQ(a, UPoly(Rational(keel::i64{13})));
+    EXPECT_EQ(ring.mul(a, ring.inv(a)), UPoly(Rational(keel::i64{1})));
     // Reduction of a higher polynomial: t^2 = 3t = 9.
-    EXPECT_EQ(ring.reduce(P("0,0,1")), UPoly(Rational(std::int64_t{9})));
+    EXPECT_EQ(ring.reduce(P("0,0,1")), UPoly(Rational(keel::i64{9})));
 }
 
 TEST(ModCRingProperty, FieldAxioms)
 {
-    std::uint64_t state = 0x5EEDC0FFEE15A11ULL;
+    keel::u64 state = 0x5EEDC0FFEE15A11ULL;
     const ModCRing ring(P("1,0,1")); // t^2 + 1, irreducible over Q
     for (int iter = 0; iter < 3000; ++iter) {
         const UPoly a = ring.reduce(P(std::to_string(static_cast<int>(nextU64(state) % 13) - 6) + "," +
@@ -178,7 +179,7 @@ TEST(ModCRingProperty, QuadraticFastPathsMatchGenericReduction)
     // random rational elements of BOTH oracle rings and require the
     // fast results to agree with the generic division-based reduce()
     // everywhere, plus the inverse identity with fractional entries.
-    std::uint64_t state = 0x20C0FFEE0DD5EEDULL;
+    keel::u64 state = 0x20C0FFEE0DD5EEDULL;
     const char *mods[] = {"-2,0,1", "1,1,1"};
     for (const char *mc : mods) {
         const ModCRing ring(P(mc));
@@ -212,7 +213,7 @@ TEST(ModCRingProperty, QuadraticFastPathsMatchGenericReduction)
 
 TEST(ModCPolyProperty, RingAndDivision)
 {
-    std::uint64_t state = 0xABCDEF0123456789ULL;
+    keel::u64 state = 0xABCDEF0123456789ULL;
     const ModCRing ring(P("1,0,1"));
 
     const auto rndElem = [&]() {
@@ -269,7 +270,7 @@ TEST(ModCPolyFixed, GcdOverQuadraticField)
     const ModCPoly x1 = ModCPoly(ring, std::vector<UPoly>{
                                 ring.one(), ring.one()});
     const ModCPoly x2 = ModCPoly(ring, std::vector<UPoly>{
-                                UPoly(Rational(std::int64_t{2})), ring.one()});
+                                UPoly(Rational(keel::i64{2})), ring.one()});
     const ModCPoly f = xt * x1;
     const ModCPoly g = xt * x2;
     const ModCPoly gg = ModCPoly::gcd(f, g);

@@ -1,3 +1,5 @@
+#include <keel/core.h>
+#include <keel/math.h>
 #include <numkit/cas/linalg/symmatrix.hpp>
 
 #include <numkit/cas/core/simplify.hpp>
@@ -53,7 +55,7 @@ void collectSymbolsAndCheckPureRat(const Ctx &c, Expr e,
     }
     case NodeKind::Add:
     case NodeKind::Mul:
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             collectSymbolsAndCheckPureRat(c, c.child(e, i), syms, pureRat);
         return;
     }
@@ -64,7 +66,7 @@ Expr upolyToExpr(Ctx &c, const UPoly &p, Expr var)
     if (p.isZero())
         return c.zero();
     std::vector<Expr> terms;
-    for (std::size_t i = 0; i < p.coeffs().size(); ++i) {
+    for (keel::usize i = 0; i < p.coeffs().size(); ++i) {
         const Rational &k = p.coeff(i);
         if (k.isZero())
             continue;
@@ -74,7 +76,7 @@ Expr upolyToExpr(Ctx &c, const UPoly &p, Expr var)
             terms.push_back(c.mul({c.number(k), var}));
         } else {
             terms.push_back(c.mul(
-                {c.number(k), c.pow(var, c.number(static_cast<std::int64_t>(i)))}));
+                {c.number(k), c.pow(var, c.number(static_cast<keel::i64>(i)))}));
         }
     }
     return terms.empty() ? c.zero() : c.add(terms);
@@ -98,7 +100,7 @@ FormalFrac toFormalFrac(Ctx &c, Expr e, bool splitFracPow = false)
     case NodeKind::Func: {
         std::vector<Expr> args;
         args.reserve(c.childCount(e));
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr arg = simplifyRationalExpr(c, c.child(e, i));
             if (arg.isNull())
                 return {Expr(), Expr()};
@@ -115,9 +117,9 @@ FormalFrac toFormalFrac(Ctx &c, Expr e, bool splitFracPow = false)
         const Expr ex = c.child(e, 1);
         if (c.kind(ex) == NodeKind::Number) {
             const Rational &rv = c.numberValue(ex);
-            std::int64_t k = 0;
+            keel::i64 k = 0;
             if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) &&
-                std::abs(k) <= 64) {
+                keel::abs(k) <= 64) {
                 const FormalFrac bf = toFormalFrac(c, b, splitFracPow);
                 if (bf.num.isNull() || bf.den.isNull())
                     return {Expr(), Expr()};
@@ -141,8 +143,8 @@ FormalFrac toFormalFrac(Ctx &c, Expr e, bool splitFracPow = false)
                     kBig = kBig - BigInt(1);
                     rBig = rBig + rv.den();
                 }
-                std::int64_t kFloor = 0;
-                if (kBig.fitsInt64(kFloor) && std::abs(kFloor) <= 16) {
+                keel::i64 kFloor = 0;
+                if (kBig.fitsInt64(kFloor) && keel::abs(kFloor) <= 16) {
                     const Expr sb = simplifyRationalExpr(c, b);
                     if (sb.isNull() || c.isZero(sb))
                         return {Expr(), Expr()};
@@ -174,7 +176,7 @@ FormalFrac toFormalFrac(Ctx &c, Expr e, bool splitFracPow = false)
     case NodeKind::Mul: {
         Expr numAcc = c.one();
         Expr denAcc = c.one();
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const FormalFrac cf = toFormalFrac(c, c.child(e, i), splitFracPow);
             if (cf.num.isNull() || cf.den.isNull())
                 return {Expr(), Expr()};
@@ -186,7 +188,7 @@ FormalFrac toFormalFrac(Ctx &c, Expr e, bool splitFracPow = false)
     case NodeKind::Add: {
         Expr numAcc = c.zero();
         Expr denAcc = c.one();
-        for (std::size_t i = 0; i < c.childCount(e); ++i) {
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const FormalFrac cf = toFormalFrac(c, c.child(e, i), splitFracPow);
             if (cf.num.isNull() || cf.den.isNull())
                 return {Expr(), Expr()};
@@ -228,21 +230,21 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
 {
     std::vector<Expr> terms;
     if (c.kind(e) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(e); ++i)
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
             terms.push_back(c.child(e, i));
     } else {
         terms.push_back(e);
     }
 
     auto decomposeTerm = [&](Expr t,
-                             std::vector<std::pair<Expr, std::int64_t>> &facs) {
+                             std::vector<std::pair<Expr, keel::i64>> &facs) {
         auto inspect = [&](Expr f) {
             if (c.kind(f) == NodeKind::Number)
                 return;
             if (c.kind(f) == NodeKind::Pow &&
                 c.kind(c.child(f, 1)) == NodeKind::Number) {
                 const Rational &rv = c.numberValue(c.child(f, 1));
-                std::int64_t k = 0;
+                keel::i64 k = 0;
                 if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 1) {
                     facs.emplace_back(c.child(f, 0), k);
                     return;
@@ -251,19 +253,19 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
             facs.emplace_back(f, 1);
         };
         if (c.kind(t) == NodeKind::Mul) {
-            for (std::size_t i = 0; i < c.childCount(t); ++i)
+            for (keel::usize i = 0; i < c.childCount(t); ++i)
                 inspect(c.child(t, i));
         } else {
             inspect(t);
         }
     };
 
-    std::vector<std::pair<Expr, std::int64_t>> common;
+    std::vector<std::pair<Expr, keel::i64>> common;
     decomposeTerm(terms[0], common);
-    for (std::size_t i = 1; i < terms.size() && !common.empty(); ++i) {
-        std::vector<std::pair<Expr, std::int64_t>> cur;
+    for (keel::usize i = 1; i < terms.size() && !common.empty(); ++i) {
+        std::vector<std::pair<Expr, keel::i64>> cur;
         decomposeTerm(terms[i], cur);
-        std::vector<std::pair<Expr, std::int64_t>> nextCommon;
+        std::vector<std::pair<Expr, keel::i64>> nextCommon;
         for (const auto & cf : common) {
             for (const auto &tf : cur) {
                 if (cf.first == tf.first) {
@@ -293,7 +295,7 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
         (c.kind(rawPrim) == NodeKind::Add && c.childCount(rawPrim) > 0)
             ? c.child(rawPrim, 0)
             : rawPrim;
-    Rational leadCoef(std::int64_t{1});
+    Rational leadCoef(keel::i64{1});
     if (c.kind(firstTerm) == NodeKind::Number) {
         leadCoef = c.numberValue(firstTerm);
     } else if (c.kind(firstTerm) == NodeKind::Mul &&
@@ -302,13 +304,13 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
         leadCoef = c.numberValue(c.child(firstTerm, 0));
     }
     if (leadCoef.isZero())
-        leadCoef = Rational(std::int64_t{1});
+        leadCoef = Rational(keel::i64{1});
 
     scaleMonomOut = c.mul({c.number(leadCoef), monom});
-    primOut = (leadCoef == Rational(std::int64_t{1}))
+    primOut = (leadCoef == Rational(keel::i64{1}))
                   ? rawPrim
                   : c.expand(c.mul(
-                        {c.number(Rational(std::int64_t{1}) / leadCoef),
+                        {c.number(Rational(keel::i64{1}) / leadCoef),
                          rawPrim}));
 }
 
@@ -318,7 +320,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
     const Expr expd = c.expand(e);
     std::vector<Expr> terms;
     if (c.kind(expd) == NodeKind::Add) {
-        for (std::size_t i = 0; i < c.childCount(expd); ++i)
+        for (keel::usize i = 0; i < c.childCount(expd); ++i)
             terms.push_back(c.child(expd, i));
     } else {
         terms.push_back(expd);
@@ -340,7 +342,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
             if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == var &&
                 c.kind(c.child(f, 1)) == NodeKind::Number) {
                 const Rational &rv = c.numberValue(c.child(f, 1));
-                std::int64_t k = 0;
+                keel::i64 k = 0;
                 if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 0 &&
                     k <= 24) {
                     deg += static_cast<int>(k);
@@ -352,7 +354,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
             return true;
         };
         if (c.kind(t) == NodeKind::Mul) {
-            for (std::size_t i = 0; i < c.childCount(t); ++i) {
+            for (keel::usize i = 0; i < c.childCount(t); ++i) {
                 if (!inspect(c.child(t, i)))
                     return false;
             }
@@ -366,9 +368,9 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
         parsed.emplace_back(deg, rest.empty() ? c.one() : c.mul(rest));
     }
 
-    coeffsOut.assign(static_cast<std::size_t>(maxDeg + 1), c.zero());
+    coeffsOut.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
     for (const auto &pr : parsed) {
-        const std::size_t idx = static_cast<std::size_t>(pr.first);
+        const keel::usize idx = static_cast<keel::usize>(pr.first);
         coeffsOut[idx] = c.expand(c.add({coeffsOut[idx], pr.second}));
     }
     while (!coeffsOut.empty() && c.isZero(coeffsOut.back()))
@@ -377,7 +379,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
 }
 
 bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, const std::vector<Expr> &syms,
-                       std::size_t symIdx, Expr &quotOut)
+                       keel::usize symIdx, Expr &quotOut)
 {
     if (c.isZero(Q))
         return false;
@@ -416,10 +418,10 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, const std::vector<Expr> &syms,
     if (degQ == 0) {
         std::vector<Expr> terms;
         for (int k = 0; k <= degP; ++k) {
-            if (c.isZero(pCoeffs[static_cast<std::size_t>(k)]))
+            if (c.isZero(pCoeffs[static_cast<keel::usize>(k)]))
                 continue;
             Expr qk;
-            if (!polyDivExactMulti(c, pCoeffs[static_cast<std::size_t>(k)],
+            if (!polyDivExactMulti(c, pCoeffs[static_cast<keel::usize>(k)],
                                    qCoeffs[0], syms, symIdx + 1, qk))
                 return false;
             const Expr vPow =
@@ -427,7 +429,7 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, const std::vector<Expr> &syms,
                     ? c.one()
                     : (k == 1
                            ? var
-                           : c.pow(var, c.number(static_cast<std::int64_t>(k))));
+                           : c.pow(var, c.number(static_cast<keel::i64>(k))));
             terms.push_back(c.mul({qk, vPow}));
         }
         quotOut = terms.empty() ? c.zero() : c.expand(c.add(terms));
@@ -448,8 +450,8 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, const std::vector<Expr> &syms,
         if (degR < degQ)
             return false;
         Expr lcQuot;
-        if (!polyDivExactMulti(c, rCoeffs[static_cast<std::size_t>(degR)],
-                               qCoeffs[static_cast<std::size_t>(degQ)], syms,
+        if (!polyDivExactMulti(c, rCoeffs[static_cast<keel::usize>(degR)],
+                               qCoeffs[static_cast<keel::usize>(degQ)], syms,
                                symIdx + 1, lcQuot))
             return false;
         const int dDiff = degR - degQ;
@@ -459,7 +461,7 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, const std::vector<Expr> &syms,
                 : (dDiff == 1
                        ? var
                        : c.pow(var,
-                               c.number(static_cast<std::int64_t>(dDiff))));
+                               c.number(static_cast<keel::i64>(dDiff))));
         const Expr term = c.expand(c.mul({lcQuot, vPow}));
         qTerms.push_back(term);
         R = c.expand(c.add({R, c.neg(c.mul({term, Q}))}));
@@ -487,10 +489,10 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
     if (f.num == f.den)
         return c.one();
     if (c.isZero(c.expand(c.add({f.num, f.den}))))
-        return c.number(std::int64_t{-1});
+        return c.number(keel::i64{-1});
     if (c.kind(f.den) == NodeKind::Number) {
         return c.expand(
-            c.mul({c.number(Rational(std::int64_t{1}) / c.numberValue(f.den)),
+            c.mul({c.number(Rational(keel::i64{1}) / c.numberValue(f.den)),
                    f.num}));
     }
 
@@ -530,7 +532,7 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
                 UPoly::divMod(upD, g, upD, remG);
             }
             const Rational lcD = upD.lc();
-            upN = upN * (Rational(std::int64_t{1}) / lcD);
+            upN = upN * (Rational(keel::i64{1}) / lcD);
             upD.makeMonic();
             const Expr rN = upolyToExpr(c, upN, syms[0]);
             if (upD.isConst())
@@ -544,7 +546,7 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
             return quot;
         if (polyDivExactMulti(c, f.den, f.num, syms, 0, quot) &&
             !c.isZero(quot))
-            return c.pow(quot, c.number(std::int64_t{-1}));
+            return c.pow(quot, c.number(keel::i64{-1}));
     } else if (!pureRat && c.kind(e) == NodeKind::Add) {
         const FormalFrac fRad = toFormalFrac(c, e, true);
         if (!fRad.num.isNull() && !fRad.den.isNull() &&
@@ -560,37 +562,37 @@ Expr simplifyRationalExpr(Ctx &c, Expr e)
 // SymMatrix methods
 // ============================================================================
 
-SymMatrix::SymMatrix(std::size_t rows, std::size_t cols, Expr fill)
+SymMatrix::SymMatrix(keel::usize rows, keel::usize cols, Expr fill)
     : rows_(rows), cols_(cols), data_(rows * cols, fill)
 {
 }
 
-SymMatrix::SymMatrix(std::size_t rows, std::size_t cols,
+SymMatrix::SymMatrix(keel::usize rows, keel::usize cols,
                      std::vector<Expr> entries)
     : rows_(rows), cols_(cols), data_(std::move(entries))
 {
     assert(data_.size() == rows_ * cols_);
 }
 
-SymMatrix SymMatrix::zeros(Ctx &c, std::size_t rows, std::size_t cols)
+SymMatrix SymMatrix::zeros(Ctx &c, keel::usize rows, keel::usize cols)
 {
     return SymMatrix(rows, cols, c.zero());
 }
 
-SymMatrix SymMatrix::eye(Ctx &c, std::size_t n)
+SymMatrix SymMatrix::eye(Ctx &c, keel::usize n)
 {
     SymMatrix m = zeros(c, n, n);
     const Expr one = c.one();
-    for (std::size_t i = 0; i < n; ++i)
+    for (keel::usize i = 0; i < n; ++i)
         m.at(i, i) = one;
     return m;
 }
 
 SymMatrix SymMatrix::diag(Ctx &c, const std::vector<Expr> &d)
 {
-    const std::size_t n = d.size();
+    const keel::usize n = d.size();
     SymMatrix m = zeros(c, n, n);
-    for (std::size_t i = 0; i < n; ++i)
+    for (keel::usize i = 0; i < n; ++i)
         m.at(i, i) = d[i];
     return m;
 }
@@ -608,8 +610,8 @@ SymMatrix SymMatrix::row(const std::vector<Expr> &v)
 SymMatrix SymMatrix::transpose() const
 {
     SymMatrix out(cols_, rows_);
-    for (std::size_t r = 0; r < rows_; ++r)
-        for (std::size_t col = 0; col < cols_; ++col)
+    for (keel::usize r = 0; r < rows_; ++r)
+        for (keel::usize col = 0; col < cols_; ++col)
             out.at(col, r) = at(r, col);
     return out;
 }
@@ -619,7 +621,7 @@ SymMatrix SymMatrix::add(Ctx &c, const SymMatrix &other) const
     if (rows_ != other.rows_ || cols_ != other.cols_)
         return SymMatrix();
     SymMatrix out(rows_, cols_);
-    for (std::size_t i = 0; i < data_.size(); ++i)
+    for (keel::usize i = 0; i < data_.size(); ++i)
         out.data_[i] = simplifyRationalExpr(c, c.add({data_[i], other.data_[i]}));
     return out;
 }
@@ -629,7 +631,7 @@ SymMatrix SymMatrix::sub(Ctx &c, const SymMatrix &other) const
     if (rows_ != other.rows_ || cols_ != other.cols_)
         return SymMatrix();
     SymMatrix out(rows_, cols_);
-    for (std::size_t i = 0; i < data_.size(); ++i)
+    for (keel::usize i = 0; i < data_.size(); ++i)
         out.data_[i] =
             simplifyRationalExpr(c, c.add({data_[i], c.neg(other.data_[i])}));
     return out;
@@ -640,10 +642,10 @@ SymMatrix SymMatrix::mul(Ctx &c, const SymMatrix &other) const
     if (cols_ != other.rows_)
         return SymMatrix();
     SymMatrix out(rows_, other.cols_, c.zero());
-    for (std::size_t i = 0; i < rows_; ++i) {
-        for (std::size_t j = 0; j < other.cols_; ++j) {
+    for (keel::usize i = 0; i < rows_; ++i) {
+        for (keel::usize j = 0; j < other.cols_; ++j) {
             std::vector<Expr> terms;
-            for (std::size_t k = 0; k < cols_; ++k) {
+            for (keel::usize k = 0; k < cols_; ++k) {
                 const Expr a = at(i, k);
                 const Expr b = other.at(k, j);
                 if (!c.isZero(a) && !c.isZero(b))
@@ -660,7 +662,7 @@ SymMatrix SymMatrix::mul(Ctx &c, const SymMatrix &other) const
 SymMatrix SymMatrix::scale(Ctx &c, Expr scalar) const
 {
     SymMatrix out(rows_, cols_);
-    for (std::size_t i = 0; i < data_.size(); ++i)
+    for (keel::usize i = 0; i < data_.size(); ++i)
         out.data_[i] = simplifyRationalExpr(c, c.mul({scalar, data_[i]}));
     return out;
 }
@@ -668,7 +670,7 @@ SymMatrix SymMatrix::scale(Ctx &c, Expr scalar) const
 SymMatrix SymMatrix::expand(Ctx &c) const
 {
     SymMatrix out(rows_, cols_);
-    for (std::size_t i = 0; i < data_.size(); ++i)
+    for (keel::usize i = 0; i < data_.size(); ++i)
         out.data_[i] = simplifyRationalExpr(c, data_[i]);
     return out;
 }
@@ -676,7 +678,7 @@ SymMatrix SymMatrix::expand(Ctx &c) const
 SymMatrix SymMatrix::diff(Ctx &c, Expr var) const
 {
     SymMatrix out(rows_, cols_);
-    for (std::size_t i = 0; i < data_.size(); ++i)
+    for (keel::usize i = 0; i < data_.size(); ++i)
         out.data_[i] = simplifyRationalExpr(c, c.diff(data_[i], var));
     return out;
 }
@@ -684,7 +686,7 @@ SymMatrix SymMatrix::diff(Ctx &c, Expr var) const
 SymMatrix SymMatrix::subs(Ctx &c, Expr from, Expr to) const
 {
     SymMatrix out(rows_, cols_);
-    for (std::size_t i = 0; i < data_.size(); ++i)
+    for (keel::usize i = 0; i < data_.size(); ++i)
         out.data_[i] = simplifyRationalExpr(c, c.subs(data_[i], from, to));
     return out;
 }
@@ -697,7 +699,7 @@ Expr SymMatrix::trace(Ctx &c) const
         return c.zero();
     std::vector<Expr> diagTerms;
     diagTerms.reserve(rows_);
-    for (std::size_t i = 0; i < rows_; ++i)
+    for (keel::usize i = 0; i < rows_; ++i)
         diagTerms.push_back(at(i, i));
     return simplifyRationalExpr(c, c.add(diagTerms));
 }
@@ -705,10 +707,10 @@ Expr SymMatrix::trace(Ctx &c) const
 std::string SymMatrix::toString(const Ctx &c) const
 {
     std::string out = "[";
-    for (std::size_t r = 0; r < rows_; ++r) {
+    for (keel::usize r = 0; r < rows_; ++r) {
         if (r > 0)
             out += "; ";
-        for (std::size_t col = 0; col < cols_; ++col) {
+        for (keel::usize col = 0; col < cols_; ++col) {
             if (col > 0)
                 out += ", ";
             out += c.toString(at(r, col));
@@ -726,8 +728,8 @@ SymMatrix jacobian(Ctx &c, const std::vector<Expr> &funcs,
                    const std::vector<Expr> &vars)
 {
     SymMatrix J(funcs.size(), vars.size());
-    for (std::size_t i = 0; i < funcs.size(); ++i) {
-        for (std::size_t j = 0; j < vars.size(); ++j) {
+    for (keel::usize i = 0; i < funcs.size(); ++i) {
+        for (keel::usize j = 0; j < vars.size(); ++j) {
             J.at(i, j) = simplifyRationalExpr(c, c.diff(funcs[i], vars[j]));
         }
     }
@@ -737,21 +739,21 @@ SymMatrix jacobian(Ctx &c, const std::vector<Expr> &funcs,
 SymMatrix gradient(Ctx &c, Expr f, const std::vector<Expr> &vars)
 {
     SymMatrix g(vars.size(), 1);
-    for (std::size_t i = 0; i < vars.size(); ++i)
+    for (keel::usize i = 0; i < vars.size(); ++i)
         g.at(i, 0) = simplifyRationalExpr(c, c.diff(f, vars[i]));
     return g;
 }
 
 SymMatrix hessian(Ctx &c, Expr f, const std::vector<Expr> &vars)
 {
-    const std::size_t n = vars.size();
+    const keel::usize n = vars.size();
     SymMatrix H(n, n);
     std::vector<Expr> df(n);
-    for (std::size_t i = 0; i < n; ++i)
+    for (keel::usize i = 0; i < n; ++i)
         df[i] = c.diff(f, vars[i]);
 
-    for (std::size_t i = 0; i < n; ++i) {
-        for (std::size_t j = i; j < n; ++j) {
+    for (keel::usize i = 0; i < n; ++i) {
+        for (keel::usize j = i; j < n; ++j) {
             const Expr d2 = simplifyRationalExpr(c, c.diff(df[i], vars[j]));
             H.at(i, j) = d2;
             H.at(j, i) = d2;
@@ -767,7 +769,7 @@ Expr divergence(Ctx &c, const std::vector<Expr> &F,
         return Expr{};
     std::vector<Expr> terms;
     terms.reserve(F.size());
-    for (std::size_t i = 0; i < F.size(); ++i) {
+    for (keel::usize i = 0; i < F.size(); ++i) {
         if (F[i].isNull() || vars[i].isNull() ||
             c.kind(vars[i]) != NodeKind::Symbol) {
             return Expr{};
@@ -785,7 +787,7 @@ SymMatrix curl(Ctx &c, const std::vector<Expr> &F,
 {
     if (F.size() != 3 || vars.size() != 3)
         return SymMatrix{};
-    for (std::size_t i = 0; i < 3; ++i) {
+    for (keel::usize i = 0; i < 3; ++i) {
         if (F[i].isNull() || vars[i].isNull() ||
             c.kind(vars[i]) != NodeKind::Symbol) {
             return SymMatrix{};
@@ -835,14 +837,14 @@ SymMatrix wronskianMatrix(Ctx &c, const std::vector<Expr> &funcs, Expr var)
 {
     if (funcs.empty() || var.isNull() || c.kind(var) != NodeKind::Symbol)
         return SymMatrix{};
-    const std::size_t n = funcs.size();
+    const keel::usize n = funcs.size();
     SymMatrix W(n, n);
-    for (std::size_t j = 0; j < n; ++j) {
+    for (keel::usize j = 0; j < n; ++j) {
         if (funcs[j].isNull())
             return SymMatrix{};
         Expr cur = funcs[j];
         W.at(0, j) = cur;
-        for (std::size_t i = 1; i < n; ++i) {
+        for (keel::usize i = 1; i < n; ++i) {
             cur = c.diff(cur, var);
             if (cur.isNull())
                 return SymMatrix{};
@@ -872,7 +874,7 @@ bool mentionsVarLinalg(const Ctx &c, Expr e, Expr var)
         return false;
     if (e == var)
         return true;
-    for (std::size_t i = 0; i < c.childCount(e); ++i) {
+    for (keel::usize i = 0; i < c.childCount(e); ++i) {
         if (mentionsVarLinalg(c, c.child(e, i), var))
             return true;
     }
@@ -906,8 +908,8 @@ PotentialResult scalarPotential(Ctx &c, const std::vector<Expr> &F,
         out.reason = "invalid vector field or variable dimensions";
         return out;
     }
-    const std::size_t n = F.size();
-    for (std::size_t i = 0; i < n; ++i) {
+    const keel::usize n = F.size();
+    for (keel::usize i = 0; i < n; ++i) {
         if (F[i].isNull() || vars[i].isNull() ||
             c.kind(vars[i]) != NodeKind::Symbol) {
             out.reason = "invalid component or variable symbol";
@@ -921,8 +923,8 @@ PotentialResult scalarPotential(Ctx &c, const std::vector<Expr> &F,
 
     // 1. Check conservative / curl-free integrability conditions:
     //    dF_i / dx_j == dF_j / dx_i for all 0 <= i < j < n.
-    for (std::size_t i = 0; i < n; ++i) {
-        for (std::size_t j = i + 1; j < n; ++j) {
+    for (keel::usize i = 0; i < n; ++i) {
+        for (keel::usize j = i + 1; j < n; ++j) {
             const Expr dFi = c.diff(F[i], vars[j]);
             const Expr dFj = c.diff(F[j], vars[i]);
             if (dFi.isNull() || dFj.isNull() ||
@@ -936,7 +938,7 @@ PotentialResult scalarPotential(Ctx &c, const std::vector<Expr> &F,
 
     // 2. Sequential line integration along coordinate axes.
     Expr phi = c.zero();
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         if (!checkLinalgBudget(c, budget)) {
             out.reason = "budget exhausted";
             return out;
@@ -947,7 +949,7 @@ PotentialResult scalarPotential(Ctx &c, const std::vector<Expr> &F,
             return out;
         }
         Expr rem = simplify(c, c.add({F[i], c.neg(dPhi)}), budget);
-        for (std::size_t k = 0; k < i; ++k) {
+        for (keel::usize k = 0; k < i; ++k) {
             if (mentionsVarLinalg(c, rem, vars[k])) {
                 const Expr ratRem = simplifyRationalExpr(c, rem);
                 if (!ratRem.isNull())
@@ -970,7 +972,7 @@ PotentialResult scalarPotential(Ctx &c, const std::vector<Expr> &F,
     }
 
     // 3. Proof-carrying certificate: verify gradient(phi) == F componentwise.
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         const Expr dPhi = c.diff(phi, vars[i]);
         if (dPhi.isNull() || !isZeroLinalg(c, c.add({dPhi, c.neg(F[i])}))) {
             out.reason = "scalar potential failed gradient certificate";
@@ -998,7 +1000,7 @@ bool faddeevLeVerrier(Ctx &c, const SymMatrix &A, Budget *budget,
 {
     if (!A.isSquare())
         return false;
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     coeffs.assign(n + 1, c.zero());
     coeffs[n] = c.one();
     if (n == 0) {
@@ -1008,7 +1010,7 @@ bool faddeevLeVerrier(Ctx &c, const SymMatrix &A, Budget *budget,
 
     const SymMatrix I = SymMatrix::eye(c, n);
     SymMatrix B = SymMatrix::zeros(c, n, n);
-    for (std::size_t k = 1; k <= n; ++k) {
+    for (keel::usize k = 1; k <= n; ++k) {
         if (!checkLinalgBudget(c, budget))
             return false;
         if (k == 1) {
@@ -1022,12 +1024,12 @@ bool faddeevLeVerrier(Ctx &c, const SymMatrix &A, Budget *budget,
         if (tr.isNull())
             return false;
         const Expr ck = simplifyRationalExpr(
-            c, c.mul({c.number(Rational(std::int64_t{-1}, BigInt(k))), tr}));
+            c, c.mul({c.number(Rational(keel::i64{-1}, BigInt(k))), tr}));
         if (ck.isNull())
             return false;
         coeffs[n - k] = ck;
         if (k == n) {
-            adjOut = ((n - 1) % 2 == 0) ? B : B.scale(c, c.number(std::int64_t{-1}));
+            adjOut = ((n - 1) % 2 == 0) ? B : B.scale(c, c.number(keel::i64{-1}));
         }
     }
     return true;
@@ -1045,7 +1047,7 @@ Expr charpoly(Ctx &c, const SymMatrix &A, Expr lambda, Budget *budget)
         return Expr();
 
     std::vector<Expr> terms;
-    for (std::size_t j = 0; j < coeffs.size(); ++j) {
+    for (keel::usize j = 0; j < coeffs.size(); ++j) {
         if (c.isZero(coeffs[j]))
             continue;
         if (j == 0) {
@@ -1054,7 +1056,7 @@ Expr charpoly(Ctx &c, const SymMatrix &A, Expr lambda, Budget *budget)
             terms.push_back(c.mul({coeffs[j], lambda}));
         } else {
             terms.push_back(c.mul(
-                {coeffs[j], c.pow(lambda, c.number(static_cast<std::int64_t>(j)))}));
+                {coeffs[j], c.pow(lambda, c.number(static_cast<keel::i64>(j)))}));
         }
     }
     return terms.empty() ? c.zero() : simplifyRationalExpr(c, c.add(terms));
@@ -1073,7 +1075,7 @@ Expr det(Ctx &c, const SymMatrix &A, Budget *budget)
 {
     if (!A.isSquare())
         return Expr();
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     if (n == 0)
         return c.one();
     if (n == 1)
@@ -1097,7 +1099,7 @@ SymMatrix inv(Ctx &c, const SymMatrix &A, Budget *budget)
 {
     if (!A.isSquare() || A.empty())
         return SymMatrix();
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     std::vector<Expr> coeffs;
     SymMatrix adj;
     if (!faddeevLeVerrier(c, A, budget, coeffs, adj))
@@ -1108,7 +1110,7 @@ SymMatrix inv(Ctx &c, const SymMatrix &A, Budget *budget)
     if (detA.isNull() || isZeroSymbolic(c, detA))
         return SymMatrix(); // singular matrix
 
-    const Expr invDet = c.pow(detA, c.number(std::int64_t{-1}));
+    const Expr invDet = c.pow(detA, c.number(keel::i64{-1}));
     return adj.scale(c, invDet);
 }
 
@@ -1121,9 +1123,9 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
 {
     if (A.empty() || B.empty() || A.rows() != B.rows())
         return SymMatrix();
-    const std::size_t m = A.rows();
-    const std::size_t n = A.cols();
-    const std::size_t rhsCols = B.cols();
+    const keel::usize m = A.rows();
+    const keel::usize n = A.cols();
+    const keel::usize rhsCols = B.cols();
     if (m < n)
         return SymMatrix(); // underdetermined
 
@@ -1140,7 +1142,7 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
             if (detA.isNull() || isZeroSymbolic(c, detA))
                 return SymMatrix(); // singular matrix
             const SymMatrix Y = adj.mul(c, B);
-            const Expr invDet = c.pow(detA, c.number(std::int64_t{-1}));
+            const Expr invDet = c.pow(detA, c.number(keel::i64{-1}));
             return Y.scale(c, invDet);
         }
         if (budget && !budget->ok())
@@ -1153,16 +1155,16 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
 
     // Forward Gaussian elimination with partial pivot selection (preferring
     // constant / low-cost non-zero pivots to keep intermediate expressions small).
-    for (std::size_t col = 0; col < n; ++col) {
+    for (keel::usize col = 0; col < n; ++col) {
         if (!checkLinalgBudget(c, budget))
             return SymMatrix();
 
-        std::size_t pivotRow = m;
-        std::size_t bestCost = static_cast<std::size_t>(-1);
-        for (std::size_t r = col; r < m; ++r) {
+        keel::usize pivotRow = m;
+        keel::usize bestCost = static_cast<keel::usize>(-1);
+        for (keel::usize r = col; r < m; ++r) {
             const Expr cand = M.at(r, col);
             if (!isZeroSymbolic(c, cand)) {
-                const std::size_t cost = c.exprCost(cand);
+                const keel::usize cost = c.exprCost(cand);
                 if (cost < bestCost) {
                     bestCost = cost;
                     pivotRow = r;
@@ -1173,16 +1175,16 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
             return SymMatrix(); // rank < n (singular / underdetermined)
 
         if (pivotRow != col) {
-            for (std::size_t j = col; j < n; ++j)
+            for (keel::usize j = col; j < n; ++j)
                 std::swap(M.at(col, j), M.at(pivotRow, j));
-            for (std::size_t j = 0; j < rhsCols; ++j)
+            for (keel::usize j = 0; j < rhsCols; ++j)
                 std::swap(R.at(col, j), R.at(pivotRow, j));
         }
 
         const Expr pivot = M.at(col, col);
-        const Expr invPivot = c.pow(pivot, c.number(std::int64_t{-1}));
+        const Expr invPivot = c.pow(pivot, c.number(keel::i64{-1}));
 
-        for (std::size_t r = col + 1; r < m; ++r) {
+        for (keel::usize r = col + 1; r < m; ++r) {
             if (!checkLinalgBudget(c, budget))
                 return SymMatrix();
             const Expr entry = M.at(r, col);
@@ -1193,11 +1195,11 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
             const Expr factor =
                 simplifyRationalExpr(c, c.mul({entry, invPivot}));
             M.at(r, col) = c.zero();
-            for (std::size_t j = col + 1; j < n; ++j) {
+            for (keel::usize j = col + 1; j < n; ++j) {
                 M.at(r, j) = simplifyRationalExpr(
                     c, c.add({M.at(r, j), c.neg(c.mul({factor, M.at(col, j)}))}));
             }
-            for (std::size_t j = 0; j < rhsCols; ++j) {
+            for (keel::usize j = 0; j < rhsCols; ++j) {
                 R.at(r, j) = simplifyRationalExpr(
                     c, c.add({R.at(r, j), c.neg(c.mul({factor, R.at(col, j)}))}));
             }
@@ -1205,8 +1207,8 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
     }
 
     // For overdetermined systems (m > n), verify consistency of residual rows.
-    for (std::size_t r = n; r < m; ++r) {
-        for (std::size_t j = 0; j < rhsCols; ++j) {
+    for (keel::usize r = n; r < m; ++r) {
+        for (keel::usize j = 0; j < rhsCols; ++j) {
             if (!isZeroSymbolic(c, R.at(r, j)))
                 return SymMatrix(); // inconsistent system
         }
@@ -1214,15 +1216,15 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
 
     // Back-substitution for the n x rhsCols solution X.
     SymMatrix X(n, rhsCols, c.zero());
-    for (std::size_t idx = n; idx > 0; --idx) {
+    for (keel::usize idx = n; idx > 0; --idx) {
         if (!checkLinalgBudget(c, budget))
             return SymMatrix();
-        const std::size_t i = idx - 1;
-        const Expr invDiag = c.pow(M.at(i, i), c.number(std::int64_t{-1}));
-        for (std::size_t j = 0; j < rhsCols; ++j) {
+        const keel::usize i = idx - 1;
+        const Expr invDiag = c.pow(M.at(i, i), c.number(keel::i64{-1}));
+        for (keel::usize j = 0; j < rhsCols; ++j) {
             std::vector<Expr> sumTerms;
             sumTerms.push_back(R.at(i, j));
-            for (std::size_t k = i + 1; k < n; ++k) {
+            for (keel::usize k = i + 1; k < n; ++k) {
                 if (!c.isZero(M.at(i, k)) && !c.isZero(X.at(k, j))) {
                     sumTerms.push_back(c.neg(c.mul({M.at(i, k), X.at(k, j)})));
                 }
@@ -1285,28 +1287,28 @@ Expr normLinalg(Ctx &c, Expr e, Budget *budget)
 // Compute Reduced Row Echelon Form (RREF) of an m x cols matrix M, pivoting on
 // the first `pivotColLimit` columns. Populates `pivotCols` with the column index
 // of each pivot row.
-bool computeRREF(Ctx &c, SymMatrix &M, std::size_t pivotColLimit,
-                 std::vector<std::size_t> &pivotCols, Budget *budget)
+bool computeRREF(Ctx &c, SymMatrix &M, keel::usize pivotColLimit,
+                 std::vector<keel::usize> &pivotCols, Budget *budget)
 {
-    const std::size_t m = M.rows();
-    const std::size_t cols = M.cols();
+    const keel::usize m = M.rows();
+    const keel::usize cols = M.cols();
     pivotCols.clear();
 
-    for (std::size_t r = 0; r < m; ++r)
-        for (std::size_t j = 0; j < cols; ++j)
+    for (keel::usize r = 0; r < m; ++r)
+        for (keel::usize j = 0; j < cols; ++j)
             M.at(r, j) = normLinalg(c, M.at(r, j), budget);
 
-    std::size_t curRow = 0;
-    for (std::size_t col = 0; col < pivotColLimit && curRow < m; ++col) {
+    keel::usize curRow = 0;
+    for (keel::usize col = 0; col < pivotColLimit && curRow < m; ++col) {
         if (!checkLinalgBudget(c, budget))
             return false;
 
-        std::size_t pivotRow = m;
-        std::size_t bestCost = static_cast<std::size_t>(-1);
-        for (std::size_t r = curRow; r < m; ++r) {
+        keel::usize pivotRow = m;
+        keel::usize bestCost = static_cast<keel::usize>(-1);
+        for (keel::usize r = curRow; r < m; ++r) {
             const Expr cand = M.at(r, col);
             if (!isZeroLinalg(c, cand, budget)) {
-                const std::size_t cost = c.exprCost(cand);
+                const keel::usize cost = c.exprCost(cand);
                 if (cost < bestCost) {
                     bestCost = cost;
                     pivotRow = r;
@@ -1319,17 +1321,17 @@ bool computeRREF(Ctx &c, SymMatrix &M, std::size_t pivotColLimit,
             continue;
 
         if (pivotRow != curRow) {
-            for (std::size_t j = 0; j < cols; ++j)
+            for (keel::usize j = 0; j < cols; ++j)
                 std::swap(M.at(curRow, j), M.at(pivotRow, j));
         }
 
         const Expr pivot = M.at(curRow, col);
-        const Expr invPivot = c.pow(pivot, c.number(std::int64_t{-1}));
+        const Expr invPivot = c.pow(pivot, c.number(keel::i64{-1}));
 
         // Eliminate column `col` in all other rows r != curRow using
         // cross-multiplied numerator (pivot * M(r, j) - M(r, col) * M(curRow, j))
         // first so conjugate radical products cancel to 0 before dividing by pivot.
-        for (std::size_t r = 0; r < m; ++r) {
+        for (keel::usize r = 0; r < m; ++r) {
             if (r == curRow)
                 continue;
             if (!checkLinalgBudget(c, budget))
@@ -1340,7 +1342,7 @@ bool computeRREF(Ctx &c, SymMatrix &M, std::size_t pivotColLimit,
                 continue;
             }
             M.at(r, col) = c.zero();
-            for (std::size_t j = col + 1; j < cols; ++j) {
+            for (keel::usize j = col + 1; j < cols; ++j) {
                 const Expr crossNum = c.expand(
                     c.add({c.mul({pivot, M.at(r, j)}),
                            c.neg(c.mul({entry, M.at(curRow, j)}))}));
@@ -1355,7 +1357,7 @@ bool computeRREF(Ctx &c, SymMatrix &M, std::size_t pivotColLimit,
 
         // Normalize the pivot row so M(curRow, col) == 1.
         M.at(curRow, col) = c.one();
-        for (std::size_t j = col + 1; j < cols; ++j) {
+        for (keel::usize j = col + 1; j < cols; ++j) {
             if (!c.isZero(M.at(curRow, j))) {
                 M.at(curRow, j) =
                     normLinalg(c, c.mul({M.at(curRow, j), invPivot}), budget);
@@ -1375,39 +1377,39 @@ SymMatrix linsolveParticular(Ctx &c, const SymMatrix &A, const SymMatrix &b,
 {
     if (A.empty() || b.empty() || A.rows() != b.rows() || b.cols() != 1)
         return SymMatrix();
-    const std::size_t m = A.rows();
-    const std::size_t n = A.cols();
+    const keel::usize m = A.rows();
+    const keel::usize n = A.cols();
 
     SymMatrix aug(m, n + 1, c.zero());
-    for (std::size_t r = 0; r < m; ++r) {
-        for (std::size_t j = 0; j < n; ++j)
+    for (keel::usize r = 0; r < m; ++r) {
+        for (keel::usize j = 0; j < n; ++j)
             aug.at(r, j) = A.at(r, j);
         aug.at(r, n) = b.at(r, 0);
     }
 
-    std::vector<std::size_t> pivotCols;
+    std::vector<keel::usize> pivotCols;
     if (!computeRREF(c, aug, n, pivotCols, budget))
         return SymMatrix();
 
     // Check consistency on non-pivot rows
-    for (std::size_t r = pivotCols.size(); r < m; ++r) {
+    for (keel::usize r = pivotCols.size(); r < m; ++r) {
         if (!isZeroLinalg(c, aug.at(r, n), budget))
             return SymMatrix();
     }
 
     SymMatrix x = SymMatrix::zeros(c, n, 1);
-    for (std::size_t k = 0; k < pivotCols.size(); ++k)
+    for (keel::usize k = 0; k < pivotCols.size(); ++k)
         x.at(pivotCols[k], 0) = aug.at(k, n);
     return x;
 }
 
 bool isTriangularMatrix(Ctx &c, const SymMatrix &A, Budget *budget)
 {
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     bool upper = true;
     bool lower = true;
-    for (std::size_t r = 0; r < n; ++r) {
-        for (std::size_t col = 0; col < n; ++col) {
+    for (keel::usize r = 0; r < n; ++r) {
+        for (keel::usize col = 0; col < n; ++col) {
             if (r > col && !isZeroLinalg(c, A.at(r, col), budget))
                 upper = false;
             if (r < col && !isZeroLinalg(c, A.at(r, col), budget))
@@ -1420,14 +1422,14 @@ bool isTriangularMatrix(Ctx &c, const SymMatrix &A, Budget *budget)
 bool verifyMatrixExp(Ctx &c, const SymMatrix &A, const SymMatrix &Phi, Expr t,
                      Budget *budget)
 {
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     if (Phi.rows() != n || Phi.cols() != n)
         return false;
     const SymMatrix dPhi = Phi.diff(c, t);
     const SymMatrix APhi = A.mul(c, Phi);
     const SymMatrix Phi0 = Phi.subs(c, t, c.zero());
-    for (std::size_t r = 0; r < n; ++r) {
-        for (std::size_t col = 0; col < n; ++col) {
+    for (keel::usize r = 0; r < n; ++r) {
+        for (keel::usize col = 0; col < n; ++col) {
             if (!checkLinalgBudget(c, budget))
                 return false;
             const Expr diffEntry =
@@ -1450,23 +1452,23 @@ std::vector<SymMatrix> nullspace(Ctx &c, const SymMatrix &A, Budget *budget)
 {
     if (A.empty())
         return {};
-    const std::size_t n = A.cols();
+    const keel::usize n = A.cols();
     SymMatrix M = A;
-    std::vector<std::size_t> pivotCols;
+    std::vector<keel::usize> pivotCols;
     if (!computeRREF(c, M, n, pivotCols, budget))
         return {};
 
     std::vector<bool> isPivot(n, false);
-    for (std::size_t pc : pivotCols)
+    for (keel::usize pc : pivotCols)
         isPivot[pc] = true;
 
     std::vector<SymMatrix> basis;
-    for (std::size_t freeCol = 0; freeCol < n; ++freeCol) {
+    for (keel::usize freeCol = 0; freeCol < n; ++freeCol) {
         if (isPivot[freeCol])
             continue;
         SymMatrix v = SymMatrix::zeros(c, n, 1);
         v.at(freeCol, 0) = c.one();
-        for (std::size_t k = 0; k < pivotCols.size(); ++k) {
+        for (keel::usize k = 0; k < pivotCols.size(); ++k) {
             const Expr coef = M.at(k, freeCol);
             if (!c.isZero(coef))
                 v.at(pivotCols[k], 0) = normLinalg(c, c.neg(coef), budget);
@@ -1480,12 +1482,12 @@ std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
 {
     if (!A.isSquare() || A.empty())
         return {};
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     if (!checkLinalgBudget(c, budget))
         return {};
 
-    std::vector<std::pair<Expr, std::size_t>> distinctLams;
-    auto addEigenvalue = [&](Expr lam, std::size_t mult) {
+    std::vector<std::pair<Expr, keel::usize>> distinctLams;
+    auto addEigenvalue = [&](Expr lam, keel::usize mult) {
         lam = normLinalg(c, lam, budget);
         for (auto &kv : distinctLams) {
             if (isZeroLinalg(c, c.add({kv.first, c.neg(lam)}), budget)) {
@@ -1499,7 +1501,7 @@ std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
     if (n == 1) {
         addEigenvalue(A.at(0, 0), 1);
     } else if (isTriangularMatrix(c, A, budget)) {
-        for (std::size_t i = 0; i < n; ++i)
+        for (keel::usize i = 0; i < n; ++i)
             addEigenvalue(A.at(i, i), 1);
     } else {
         const Expr lamSym = c.symbol("_numkit_eigen_lambda");
@@ -1513,7 +1515,7 @@ std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
             const std::vector<UPoly> factors = factorOverQ(up, budget);
             if (budget && !budget->ok())
                 return {};
-            std::vector<std::pair<UPoly, std::size_t>> grouped;
+            std::vector<std::pair<UPoly, keel::usize>> grouped;
             for (UPoly f : factors) {
                 f.makeMonic();
                 bool found = false;
@@ -1528,21 +1530,21 @@ std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
                     grouped.push_back({f, 1});
             }
 
-            const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+            const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
             for (const auto &fe : grouped) {
                 const UPoly &P = fe.first;
-                const std::size_t mult = fe.second;
+                const keel::usize mult = fe.second;
                 if (P.deg() == 1) {
                     addEigenvalue(c.number(-P.coeff(0)), mult);
                 } else if (P.deg() == 2) {
                     const Rational b = P.coeff(1);
                     const Rational c0 = P.coeff(0);
-                    const Rational disc = b * b - Rational(std::int64_t{4}) * c0;
+                    const Rational disc = b * b - Rational(keel::i64{4}) * c0;
                     if (disc.signum() > 0) {
                         const Expr sqrtDisc =
                             simplify(c, c.pow(c.number(disc), half), budget);
                         const Expr negHalfB =
-                            c.number(-b / Rational(std::int64_t{2}));
+                            c.number(-b / Rational(keel::i64{2}));
                         const Expr halfSqrt = c.mul({half, sqrtDisc});
                         addEigenvalue(c.add({negHalfB, c.neg(halfSqrt)}), mult);
                         addEigenvalue(c.add({negHalfB, halfSqrt}), mult);
@@ -1560,9 +1562,9 @@ std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
                 solveSymbolic(c, cp, lamSym, budget);
             for (const Expr &r : roots) {
                 // Determine algebraic multiplicity by derivative vanishing order
-                std::size_t mult = 0;
+                keel::usize mult = 0;
                 Expr deriv = cp;
-                for (std::size_t k = 0; k < n; ++k) {
+                for (keel::usize k = 0; k < n; ++k) {
                     const Expr val = c.subs(deriv, lamSym, r);
                     if (isZeroLinalg(c, val, budget)) {
                         ++mult;
@@ -1578,8 +1580,8 @@ std::vector<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
 
     // Sort eigenvalues deterministically (by numeric value when evaluable, else by string)
     std::sort(distinctLams.begin(), distinctLams.end(),
-              [&](const std::pair<Expr, std::size_t> &a,
-                  const std::pair<Expr, std::size_t> &b) {
+              [&](const std::pair<Expr, keel::usize> &a,
+                  const std::pair<Expr, keel::usize> &b) {
                   double va = 0.0, vb = 0.0;
                   const bool okA = c.evalDouble(a.first, {}, va);
                   const bool okB = c.evalDouble(b.first, {}, vb);
@@ -1609,7 +1611,7 @@ std::vector<Expr> eigenvalues(Ctx &c, const SymMatrix &A, Budget *budget)
     const std::vector<EigenPair> pairs = eigenvectors(c, A, budget);
     std::vector<Expr> out;
     for (const auto &ep : pairs) {
-        for (std::size_t k = 0; k < ep.multiplicity; ++k)
+        for (keel::usize k = 0; k < ep.multiplicity; ++k)
             out.push_back(ep.lambda);
     }
     return out;
@@ -1621,7 +1623,7 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
         c.kind(t) != NodeKind::Symbol) {
         return SymMatrix();
     }
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     if (!checkLinalgBudget(c, budget))
         return SymMatrix();
 
@@ -1644,8 +1646,8 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
         if (!resolvent.empty()) {
             SymMatrix Phi(n, n, c.zero());
             bool allOk = true;
-            for (std::size_t r = 0; r < n && allOk; ++r) {
-                for (std::size_t col = 0; col < n && allOk; ++col) {
+            for (keel::usize r = 0; r < n && allOk; ++r) {
+                for (keel::usize col = 0; col < n && allOk; ++col) {
                     const LaplaceResult lr =
                         ilaplace(c, resolvent.at(r, col), s, t, budget);
                     if (!lr.proved()) {
@@ -1663,12 +1665,12 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
     // Path 2: Direct Putzer / Cayley-Hamilton closed form for 2x2 symbolic matrices.
     if (n == 2) {
         const SymMatrix I = SymMatrix::eye(c, 2);
-        const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+        const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
         const Expr alpha =
             normLinalg(c, c.mul({half, A.trace(c)}), budget);
         const Expr detA = det(c, A, budget);
         const Expr delta = normLinalg(
-            c, c.add({c.pow(alpha, c.number(std::int64_t{2})), c.neg(detA)}),
+            c, c.add({c.pow(alpha, c.number(keel::i64{2})), c.neg(detA)}),
             budget);
         const SymMatrix B = A.sub(c, I.scale(c, alpha));
         const Expr expAlphaT = c.func("exp", c.mul({alpha, t}));
@@ -1677,7 +1679,7 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
             // Defective/repeated eigenvalue lambda = alpha:
             // exp(A*t) = exp(alpha*t) * (I + t*(A - alpha*I))
             SymMatrix Phi = I.add(c, B.scale(c, t)).scale(c, expAlphaT);
-            for (std::size_t i = 0; i < 4; ++i)
+            for (keel::usize i = 0; i < 4; ++i)
                 Phi.at(i / 2, i % 2) =
                     simplify(c, Phi.at(i / 2, i % 2), budget);
             if (verifyMatrixExp(c, A, Phi, t, budget))
@@ -1690,7 +1692,7 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
             const SymMatrix term2 =
                 B.scale(c, c.div(c.func("sin", wt), w));
             SymMatrix Phi = term1.add(c, term2).scale(c, expAlphaT);
-            for (std::size_t i = 0; i < 4; ++i)
+            for (keel::usize i = 0; i < 4; ++i)
                 Phi.at(i / 2, i % 2) =
                     simplify(c, Phi.at(i / 2, i % 2), budget);
             if (verifyMatrixExp(c, A, Phi, t, budget))
@@ -1702,14 +1704,14 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
             const Expr e1 = c.func("exp", c.mul({lam1, t}));
             const Expr e2 = c.func("exp", c.mul({lam2, t}));
             const Expr inv2Mu =
-                c.pow(c.mul({c.number(std::int64_t{2}), mu}),
-                      c.number(std::int64_t{-1}));
+                c.pow(c.mul({c.number(keel::i64{2}), mu}),
+                      c.number(keel::i64{-1}));
             const Expr c0 =
                 c.mul({c.add({e1, e2}), half});
             const Expr c1 =
                 c.mul({c.add({e2, c.neg(e1)}), inv2Mu});
             SymMatrix Phi = I.scale(c, c0).add(c, B.scale(c, c1));
-            for (std::size_t i = 0; i < 4; ++i)
+            for (keel::usize i = 0; i < 4; ++i)
                 Phi.at(i / 2, i % 2) =
                     simplify(c, Phi.at(i / 2, i % 2), budget);
             if (verifyMatrixExp(c, A, Phi, t, budget))
@@ -1739,19 +1741,19 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
                     chain.push_back(w);
                     prev = w;
                     // Column is exp(lam*t) * sum_{j=0}^{k} t^(k-j)/(k-j)! * chain[j]
-                    const std::size_t k = chain.size() - 1;
+                    const keel::usize k = chain.size() - 1;
                     SymMatrix colSum = SymMatrix::zeros(c, n, 1);
-                    std::int64_t fact = 1;
-                    for (std::size_t d = 0; d <= k; ++d) {
+                    keel::i64 fact = 1;
+                    for (keel::usize d = 0; d <= k; ++d) {
                         if (d > 1)
-                            fact *= static_cast<std::int64_t>(d);
+                            fact *= static_cast<keel::i64>(d);
                         const Expr tFactor =
                             (d == 0)
                                 ? c.one()
-                                : c.mul({c.number(Rational(std::int64_t{1},
+                                : c.mul({c.number(Rational(keel::i64{1},
                                                            BigInt(fact))),
                                          c.pow(t, c.number(
-                                                      static_cast<std::int64_t>(
+                                                      static_cast<keel::i64>(
                                                           d)))});
                         colSum = colSum.add(
                             c, chain[k - d].scale(c, tFactor));
@@ -1762,15 +1764,15 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
         }
         if (cols.size() == n) {
             SymMatrix Y(n, n, c.zero());
-            for (std::size_t r = 0; r < n; ++r)
-                for (std::size_t col = 0; col < n; ++col)
+            for (keel::usize r = 0; r < n; ++r)
+                for (keel::usize col = 0; col < n; ++col)
                     Y.at(r, col) = cols[col].at(r, 0);
             const SymMatrix Y0 = Y.subs(c, t, c.zero());
             const SymMatrix Y0Inv = inv(c, Y0, budget);
             if (!Y0Inv.empty()) {
                 SymMatrix Phi = Y.mul(c, Y0Inv);
-                for (std::size_t r = 0; r < n; ++r)
-                    for (std::size_t col = 0; col < n; ++col)
+                for (keel::usize r = 0; r < n; ++r)
+                    for (keel::usize col = 0; col < n; ++col)
                         Phi.at(r, col) = simplify(c, Phi.at(r, col), budget);
                 if (verifyMatrixExp(c, A, Phi, t, budget))
                     return Phi;
@@ -1782,7 +1784,7 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
 }
 
 SymMatrix rref(Ctx &c, const SymMatrix &A,
-               std::vector<std::size_t> *pivotColsOut, Budget *budget)
+               std::vector<keel::usize> *pivotColsOut, Budget *budget)
 {
     if (A.empty()) {
         if (pivotColsOut)
@@ -1790,7 +1792,7 @@ SymMatrix rref(Ctx &c, const SymMatrix &A,
         return SymMatrix();
     }
     SymMatrix M = A;
-    std::vector<std::size_t> pivotCols;
+    std::vector<keel::usize> pivotCols;
     if (!computeRREF(c, M, A.cols(), pivotCols, budget))
         return SymMatrix();
     if (pivotColsOut)
@@ -1798,12 +1800,12 @@ SymMatrix rref(Ctx &c, const SymMatrix &A,
     return M;
 }
 
-std::size_t rank(Ctx &c, const SymMatrix &A, Budget *budget)
+keel::usize rank(Ctx &c, const SymMatrix &A, Budget *budget)
 {
     if (A.empty())
         return 0;
     SymMatrix M = A;
-    std::vector<std::size_t> pivotCols;
+    std::vector<keel::usize> pivotCols;
     if (!computeRREF(c, M, A.cols(), pivotCols, budget))
         return 0;
     return pivotCols.size();
@@ -1816,36 +1818,36 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
         out.reason = "empty matrix in lu";
         return out;
     }
-    const std::size_t m = A.rows();
-    const std::size_t n = A.cols();
+    const keel::usize m = A.rows();
+    const keel::usize n = A.cols();
     if (!checkLinalgBudget(c, budget)) {
         out.reason = "budget exhausted in lu";
         return out;
     }
 
     SymMatrix U = A;
-    for (std::size_t r = 0; r < m; ++r)
-        for (std::size_t j = 0; j < n; ++j)
+    for (keel::usize r = 0; r < m; ++r)
+        for (keel::usize j = 0; j < n; ++j)
             U.at(r, j) = normLinalg(c, U.at(r, j), budget);
 
     SymMatrix L = SymMatrix::zeros(c, m, m);
-    std::vector<std::size_t> perm(m);
-    for (std::size_t i = 0; i < m; ++i)
+    std::vector<keel::usize> perm(m);
+    for (keel::usize i = 0; i < m; ++i)
         perm[i] = i;
     int sign = 1;
 
-    const std::size_t steps = std::min(m, n);
-    for (std::size_t k = 0; k < steps; ++k) {
+    const keel::usize steps = std::min(m, n);
+    for (keel::usize k = 0; k < steps; ++k) {
         if (!checkLinalgBudget(c, budget)) {
             out.reason = "budget exhausted in lu";
             return out;
         }
-        std::size_t pivotRow = m;
-        std::size_t bestCost = static_cast<std::size_t>(-1);
-        for (std::size_t r = k; r < m; ++r) {
+        keel::usize pivotRow = m;
+        keel::usize bestCost = static_cast<keel::usize>(-1);
+        for (keel::usize r = k; r < m; ++r) {
             const Expr cand = U.at(r, k);
             if (!isZeroLinalg(c, cand, budget)) {
-                const std::size_t cost = c.exprCost(cand);
+                const keel::usize cost = c.exprCost(cand);
                 if (cost < bestCost) {
                     bestCost = cost;
                     pivotRow = r;
@@ -1858,18 +1860,18 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
             continue;
 
         if (pivotRow != k) {
-            for (std::size_t j = 0; j < n; ++j)
+            for (keel::usize j = 0; j < n; ++j)
                 std::swap(U.at(k, j), U.at(pivotRow, j));
-            for (std::size_t j = 0; j < k; ++j)
+            for (keel::usize j = 0; j < k; ++j)
                 std::swap(L.at(k, j), L.at(pivotRow, j));
             std::swap(perm[k], perm[pivotRow]);
             sign = -sign;
         }
 
         const Expr pivot = U.at(k, k);
-        const Expr invPivot = c.pow(pivot, c.number(std::int64_t{-1}));
+        const Expr invPivot = c.pow(pivot, c.number(keel::i64{-1}));
 
-        for (std::size_t r = k + 1; r < m; ++r) {
+        for (keel::usize r = k + 1; r < m; ++r) {
             if (!checkLinalgBudget(c, budget)) {
                 out.reason = "budget exhausted in lu";
                 return out;
@@ -1882,7 +1884,7 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
             }
             L.at(r, k) = normLinalg(c, c.mul({entry, invPivot}), budget);
             U.at(r, k) = c.zero();
-            for (std::size_t j = k + 1; j < n; ++j) {
+            for (keel::usize j = k + 1; j < n; ++j) {
                 const Expr crossNum = c.expand(
                     c.add({c.mul({pivot, U.at(r, j)}),
                            c.neg(c.mul({entry, U.at(k, j)}))}));
@@ -1896,18 +1898,18 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
         }
     }
 
-    for (std::size_t i = 0; i < m; ++i)
+    for (keel::usize i = 0; i < m; ++i)
         L.at(i, i) = c.one();
 
     SymMatrix P = SymMatrix::zeros(c, m, m);
-    for (std::size_t i = 0; i < m; ++i)
+    for (keel::usize i = 0; i < m; ++i)
         P.at(i, perm[i]) = c.one();
 
     // Certificate: verify P * A == L * U, L unit lower-triangular, U upper-triangular.
     const SymMatrix PA = P.mul(c, A);
     const SymMatrix LU = L.mul(c, U);
-    for (std::size_t r = 0; r < m; ++r) {
-        for (std::size_t j = 0; j < m; ++j) {
+    for (keel::usize r = 0; r < m; ++r) {
+        for (keel::usize j = 0; j < m; ++j) {
             if (r < j && !isZeroLinalg(c, L.at(r, j), budget)) {
                 out.reason = "L is not lower triangular";
                 return out;
@@ -1918,7 +1920,7 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
                 return out;
             }
         }
-        for (std::size_t j = 0; j < n; ++j) {
+        for (keel::usize j = 0; j < n; ++j) {
             if (!checkLinalgBudget(c, budget)) {
                 out.reason = "budget exhausted during lu verification";
                 return out;
@@ -1950,7 +1952,7 @@ Expr dotCols(Ctx &c, const SymMatrix &u, const SymMatrix &v, Budget *budget)
 {
     std::vector<Expr> terms;
     terms.reserve(u.rows());
-    for (std::size_t r = 0; r < u.rows(); ++r)
+    for (keel::usize r = 0; r < u.rows(); ++r)
         terms.push_back(c.mul({u.at(r, 0), v.at(r, 0)}));
     return normLinalg(c, terms.empty() ? c.zero() : c.add(terms), budget);
 }
@@ -1962,7 +1964,7 @@ std::vector<SymMatrix> gramSchmidt(Ctx &c, const std::vector<SymMatrix> &cols,
 {
     if (cols.empty())
         return {};
-    const std::size_t m = cols[0].rows();
+    const keel::usize m = cols[0].rows();
     if (m == 0)
         return {};
     for (const auto &v : cols) {
@@ -1976,7 +1978,7 @@ std::vector<SymMatrix> gramSchmidt(Ctx &c, const std::vector<SymMatrix> &cols,
         if (!checkLinalgBudget(c, budget))
             return {};
         SymMatrix u = a;
-        for (std::size_t i = 0; i < orthoCols.size(); ++i) {
+        for (keel::usize i = 0; i < orthoCols.size(); ++i) {
             const Expr projNum = dotCols(c, orthoCols[i], a, budget);
             if (isZeroLinalg(c, projNum, budget))
                 continue;
@@ -1984,7 +1986,7 @@ std::vector<SymMatrix> gramSchmidt(Ctx &c, const std::vector<SymMatrix> &cols,
                 normLinalg(c, c.div(projNum, normSq[i]), budget);
             u = u.sub(c, orthoCols[i].scale(c, coeff));
         }
-        for (std::size_t r = 0; r < m; ++r)
+        for (keel::usize r = 0; r < m; ++r)
             u.at(r, 0) = normLinalg(c, u.at(r, 0), budget);
         const Expr d = dotCols(c, u, u, budget);
         if (isZeroLinalg(c, d, budget))
@@ -1996,16 +1998,16 @@ std::vector<SymMatrix> gramSchmidt(Ctx &c, const std::vector<SymMatrix> &cols,
     if (!normalize)
         return orthoCols;
 
-    const Expr negHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+    const Expr negHalf = c.number(Rational(keel::i64{-1}, BigInt(2)));
     std::vector<SymMatrix> out;
     out.reserve(orthoCols.size());
-    for (std::size_t i = 0; i < orthoCols.size(); ++i) {
+    for (keel::usize i = 0; i < orthoCols.size(); ++i) {
         if (c.isAssumedNegative(normSq[i]))
             return {};
         const Expr invNorm =
             simplify(c, c.pow(normSq[i], negHalf), budget);
         SymMatrix q = orthoCols[i].scale(c, invNorm);
-        for (std::size_t r = 0; r < m; ++r)
+        for (keel::usize r = 0; r < m; ++r)
             q.at(r, 0) = simplify(c, q.at(r, 0), budget);
         out.push_back(std::move(q));
     }
@@ -2019,12 +2021,12 @@ QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
         out.reason = "qr requires non-empty matrix with rows >= cols";
         return out;
     }
-    const std::size_t m = A.rows();
-    const std::size_t n = A.cols();
+    const keel::usize m = A.rows();
+    const keel::usize n = A.cols();
 
     std::vector<SymMatrix> aCols(n, SymMatrix(m, 1, c.zero()));
-    for (std::size_t j = 0; j < n; ++j)
-        for (std::size_t r = 0; r < m; ++r)
+    for (keel::usize j = 0; j < n; ++j)
+        for (keel::usize r = 0; r < m; ++r)
             aCols[j].at(r, 0) = normLinalg(c, A.at(r, j), budget);
 
     // Unnormalized Gram-Schmidt basis u_0, ..., u_{n-1} and squared norms d_i = <u_i, u_i>.
@@ -2032,13 +2034,13 @@ QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
     std::vector<Expr> dNorms;
     SymMatrix projMat = SymMatrix::zeros(c, n, n); // projMat(i, j) = <u_i, a_j> for i < j
 
-    for (std::size_t j = 0; j < n; ++j) {
+    for (keel::usize j = 0; j < n; ++j) {
         if (!checkLinalgBudget(c, budget)) {
             out.reason = "budget exhausted in qr";
             return out;
         }
         SymMatrix u = aCols[j];
-        for (std::size_t i = 0; i < j; ++i) {
+        for (keel::usize i = 0; i < j; ++i) {
             const Expr ip = dotCols(c, uCols[i], aCols[j], budget);
             projMat.at(i, j) = ip;
             if (!isZeroLinalg(c, ip, budget)) {
@@ -2046,7 +2048,7 @@ QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
                 u = u.sub(c, uCols[i].scale(c, coeff));
             }
         }
-        for (std::size_t r = 0; r < m; ++r)
+        for (keel::usize r = 0; r < m; ++r)
             u.at(r, 0) = normLinalg(c, u.at(r, 0), budget);
         const Expr d = dotCols(c, u, u, budget);
         if (isZeroLinalg(c, d, budget) || c.isAssumedNegative(d)) {
@@ -2057,18 +2059,18 @@ QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
         dNorms.push_back(d);
     }
 
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
-    const Expr negHalf = c.number(Rational(std::int64_t{-1}, BigInt(2)));
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
+    const Expr negHalf = c.number(Rational(keel::i64{-1}, BigInt(2)));
     SymMatrix Q = SymMatrix::zeros(c, m, n);
     SymMatrix R = SymMatrix::zeros(c, n, n);
 
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         const Expr sqrtDi = simplify(c, c.pow(dNorms[i], half), budget);
         const Expr invSqrtDi = simplify(c, c.pow(dNorms[i], negHalf), budget);
         R.at(i, i) = sqrtDi;
-        for (std::size_t r = 0; r < m; ++r)
+        for (keel::usize r = 0; r < m; ++r)
             Q.at(r, i) = simplify(c, c.mul({uCols[i].at(r, 0), invSqrtDi}), budget);
-        for (std::size_t j = i + 1; j < n; ++j) {
+        for (keel::usize j = i + 1; j < n; ++j) {
             if (!c.isZero(projMat.at(i, j))) {
                 R.at(i, j) =
                     simplify(c, c.mul({projMat.at(i, j), invSqrtDi}), budget);
@@ -2078,8 +2080,8 @@ QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
 
     // Certificate: verify Q * R == A and Q^T * Q == I_n.
     const SymMatrix QR = Q.mul(c, R);
-    for (std::size_t r = 0; r < m; ++r) {
-        for (std::size_t j = 0; j < n; ++j) {
+    for (keel::usize r = 0; r < m; ++r) {
+        for (keel::usize j = 0; j < n; ++j) {
             if (!checkLinalgBudget(c, budget)) {
                 out.reason = "budget exhausted during qr verification";
                 return out;
@@ -2092,8 +2094,8 @@ QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
         }
     }
     const SymMatrix QtQ = Q.transpose().mul(c, Q);
-    for (std::size_t i = 0; i < n; ++i) {
-        for (std::size_t j = 0; j < n; ++j) {
+    for (keel::usize i = 0; i < n; ++i) {
+        for (keel::usize j = 0; j < n; ++j) {
             const Expr want = (i == j) ? c.one() : c.zero();
             if (!isZeroLinalg(c, c.add({QtQ.at(i, j), c.neg(want)}), budget)) {
                 out.reason = "QR decomposition certificate Q^T*Q == I failed";
@@ -2113,9 +2115,9 @@ namespace {
 bool isColIndependentOf(Ctx &c, const std::vector<SymMatrix> &existingCols,
                         const SymMatrix &cand, Budget *budget)
 {
-    const std::size_t n = cand.rows();
+    const keel::usize n = cand.rows();
     bool allZero = true;
-    for (std::size_t r = 0; r < n; ++r) {
+    for (keel::usize r = 0; r < n; ++r) {
         if (!isZeroLinalg(c, cand.at(r, 0), budget)) {
             allZero = false;
             break;
@@ -2126,15 +2128,15 @@ bool isColIndependentOf(Ctx &c, const std::vector<SymMatrix> &existingCols,
     if (existingCols.empty())
         return true;
 
-    const std::size_t k = existingCols.size();
+    const keel::usize k = existingCols.size();
     SymMatrix M(n, k + 1, c.zero());
-    for (std::size_t j = 0; j < k; ++j)
-        for (std::size_t r = 0; r < n; ++r)
+    for (keel::usize j = 0; j < k; ++j)
+        for (keel::usize r = 0; r < n; ++r)
             M.at(r, j) = existingCols[j].at(r, 0);
-    for (std::size_t r = 0; r < n; ++r)
+    for (keel::usize r = 0; r < n; ++r)
         M.at(r, k) = cand.at(r, 0);
 
-    std::vector<std::size_t> pivs;
+    std::vector<keel::usize> pivs;
     if (!computeRREF(c, M, k + 1, pivs, budget))
         return false;
     return !pivs.empty() && pivs.back() == k;
@@ -2149,14 +2151,14 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
         out.reason = "jordanForm requires a non-empty square matrix";
         return out;
     }
-    const std::size_t n = A.rows();
+    const keel::usize n = A.rows();
     if (!checkLinalgBudget(c, budget)) {
         out.reason = "budget exhausted in jordanForm";
         return out;
     }
 
     const std::vector<EigenPair> pairs = eigenvectors(c, A, budget);
-    std::size_t totalMult = 0;
+    keel::usize totalMult = 0;
     for (const auto &ep : pairs)
         totalMult += ep.multiplicity;
     if (totalMult != n) {
@@ -2171,8 +2173,8 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
 
     for (const auto &ep : pairs) {
         const Expr lam = ep.lambda;
-        const std::size_t algMult = ep.multiplicity;
-        const std::size_t geomMult = ep.vectors.size();
+        const keel::usize algMult = ep.multiplicity;
+        const keel::usize geomMult = ep.vectors.size();
         if (geomMult == 0) {
             out.reason = "empty eigenspace for eigenvalue in jordanForm";
             return out;
@@ -2181,7 +2183,7 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
         // Fast path: non-defective eigenvalue (geometric == algebraic multiplicity).
         if (geomMult == algMult) {
             for (const SymMatrix &v : ep.vectors) {
-                const std::size_t idx = pCols.size();
+                const keel::usize idx = pCols.size();
                 J.at(idx, idx) = lam;
                 pCols.push_back(v);
             }
@@ -2198,7 +2200,7 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
         std::vector<std::vector<SymMatrix>> kerBases(2);
         kerBases[1] = ep.vectors;
 
-        std::size_t maxK = 1;
+        keel::usize maxK = 1;
         while (kerBases[maxK].size() < algMult && maxK < algMult) {
             if (!checkLinalgBudget(c, budget)) {
                 out.reason = "budget exhausted computing nilpotent powers";
@@ -2215,9 +2217,9 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
         }
 
         std::vector<SymMatrix> bottomVecs; // linearly independent cycle bottoms in ker(N)
-        std::size_t collectedForLam = 0;
+        keel::usize collectedForLam = 0;
 
-        for (std::size_t k = maxK; k >= 1 && collectedForLam < algMult; --k) {
+        for (keel::usize k = maxK; k >= 1 && collectedForLam < algMult; --k) {
             for (const SymMatrix &w : kerBases[k]) {
                 if (collectedForLam + k > algMult)
                     break;
@@ -2230,13 +2232,13 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
                 // Emit the k-vector Jordan chain:
                 // v_1 = N^(k-1)*w, v_2 = N^(k-2)*w, ..., v_k = w
                 // satisfying (A - lam*I)*v_1 = 0 and (A - lam*I)*v_j = v_{j-1}.
-                const std::size_t blockStart = pCols.size();
-                for (std::size_t step = 0; step < k; ++step) {
-                    const std::size_t powIdx = k - 1 - step;
+                const keel::usize blockStart = pCols.size();
+                for (keel::usize step = 0; step < k; ++step) {
+                    const keel::usize powIdx = k - 1 - step;
                     SymMatrix vj = (powIdx == 0) ? w : nPows[powIdx].mul(c, w);
-                    for (std::size_t r = 0; r < n; ++r)
+                    for (keel::usize r = 0; r < n; ++r)
                         vj.at(r, 0) = normLinalg(c, vj.at(r, 0), budget);
-                    const std::size_t colIdx = blockStart + step;
+                    const keel::usize colIdx = blockStart + step;
                     J.at(colIdx, colIdx) = lam;
                     if (step + 1 < k)
                         J.at(colIdx, colIdx + 1) = c.one();
@@ -2258,8 +2260,8 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
     }
 
     SymMatrix P(n, n, c.zero());
-    for (std::size_t j = 0; j < n; ++j)
-        for (std::size_t r = 0; r < n; ++r)
+    for (keel::usize j = 0; j < n; ++j)
+        for (keel::usize r = 0; r < n; ++r)
             P.at(r, j) = pCols[j].at(r, 0);
 
     SymMatrix PInv = inv(c, P, budget);
@@ -2272,8 +2274,8 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
     const SymMatrix AP = A.mul(c, P);
     const SymMatrix PJ = P.mul(c, J);
     const SymMatrix PPInv = P.mul(c, PInv);
-    for (std::size_t r = 0; r < n; ++r) {
-        for (std::size_t j = 0; j < n; ++j) {
+    for (keel::usize r = 0; r < n; ++r) {
+        for (keel::usize j = 0; j < n; ++j) {
             if (!checkLinalgBudget(c, budget)) {
                 out.reason = "budget exhausted during jordanForm verification";
                 return out;
@@ -2313,7 +2315,7 @@ Expr extractRationalNumerator(Ctx &c, Expr e)
     }
     if (c.kind(norm) == NodeKind::Mul) {
         std::vector<Expr> numFactors;
-        for (std::size_t i = 0; i < c.childCount(norm); ++i) {
+        for (keel::usize i = 0; i < c.childCount(norm); ++i) {
             const Expr ch = c.child(norm, i);
             if (c.kind(ch) == NodeKind::Pow &&
                 c.kind(c.child(ch, 1)) == NodeKind::Number &&
@@ -2335,12 +2337,12 @@ Expr subsSimultaneousLinalg(Ctx &c, Expr e, const std::vector<Expr> &vars,
     std::vector<Expr> tmps;
     tmps.reserve(vars.size());
     Expr cur = e;
-    for (std::size_t i = 0; i < vars.size(); ++i) {
+    for (keel::usize i = 0; i < vars.size(); ++i) {
         const Expr tmp = c.symbol("$kkt_tmp_" + std::to_string(i));
         tmps.push_back(tmp);
         cur = c.subs(cur, vars[i], tmp);
     }
-    for (std::size_t i = 0; i < vars.size(); ++i)
+    for (keel::usize i = 0; i < vars.size(); ++i)
         cur = c.subs(cur, tmps[i], vals[i]);
     return cur;
 }
@@ -2368,12 +2370,12 @@ bool evalExprSign(Ctx &c, Expr e, int &signOut)
     return false;
 }
 
-int leadingMinorSign(Ctx &c, const SymMatrix &M, std::size_t k, Budget *budget,
+int leadingMinorSign(Ctx &c, const SymMatrix &M, keel::usize k, Budget *budget,
                      bool &okOut)
 {
     SymMatrix subM(k, k, c.zero());
-    for (std::size_t r = 0; r < k; ++r)
-        for (std::size_t col = 0; col < k; ++col)
+    for (keel::usize r = 0; r < k; ++r)
+        for (keel::usize col = 0; col < k; ++col)
             subM.at(r, col) = M.at(r, col);
     const Expr d = det(c, subM, budget);
     int s = 0;
@@ -2400,14 +2402,14 @@ LagrangeExtremaResult lagrangeExtrema(
         out.reason = "empty variable list";
         return out;
     }
-    const std::size_t n = vars.size();
-    const std::size_t m = constraints.size();
-    for (std::size_t i = 0; i < n; ++i) {
+    const keel::usize n = vars.size();
+    const keel::usize m = constraints.size();
+    for (keel::usize i = 0; i < n; ++i) {
         if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol) {
             out.reason = "decision variables must be symbols";
             return out;
         }
-        for (std::size_t j = i + 1; j < n; ++j) {
+        for (keel::usize j = i + 1; j < n; ++j) {
             if (vars[i] == vars[j]) {
                 out.reason = "duplicate decision variable";
                 return out;
@@ -2423,7 +2425,7 @@ LagrangeExtremaResult lagrangeExtrema(
 
     std::vector<Expr> lamVars;
     lamVars.reserve(m);
-    for (std::size_t j = 0; j < m; ++j)
+    for (keel::usize j = 0; j < m; ++j)
         lamVars.push_back(c.symbol("$lam_" + std::to_string(j)));
 
     // Build KKT stationarity equations dL/dx_i = df/dx_i - sum_j lam_j * dg_j/dx_i = 0
@@ -2433,13 +2435,13 @@ LagrangeExtremaResult lagrangeExtrema(
     kktResiduals.reserve(n + m);
     polyEqs.reserve(n + m);
 
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         std::vector<Expr> terms{c.diff(f, vars[i])};
         if (terms[0].isNull()) {
             out.reason = "failed to differentiate objective function";
             return out;
         }
-        for (std::size_t j = 0; j < m; ++j) {
+        for (keel::usize j = 0; j < m; ++j) {
             const Expr dgj = c.diff(constraints[j], vars[i]);
             if (dgj.isNull()) {
                 out.reason = "failed to differentiate constraint";
@@ -2451,7 +2453,7 @@ LagrangeExtremaResult lagrangeExtrema(
         kktResiduals.push_back(kktEq);
         polyEqs.push_back(extractRationalNumerator(c, kktEq));
     }
-    for (std::size_t j = 0; j < m; ++j) {
+    for (keel::usize j = 0; j < m; ++j) {
         kktResiduals.push_back(constraints[j]);
         polyEqs.push_back(extractRationalNumerator(c, constraints[j]));
     }
@@ -2487,7 +2489,7 @@ LagrangeExtremaResult lagrangeExtrema(
     // Precompute symbolic Hessian of Lagrangian L(x, lam) = f(x) - sum_j lam_j * g_j(x)
     // and constraint gradients for second-order classification.
     std::vector<Expr> lagTerms{f};
-    for (std::size_t j = 0; j < m; ++j)
+    for (keel::usize j = 0; j < m; ++j)
         lagTerms.push_back(c.neg(c.mul({lamVars[j], constraints[j]})));
     const Expr lagrangian = c.add(lagTerms);
     const SymMatrix hessL = hessian(c, lagrangian, vars);
@@ -2507,14 +2509,14 @@ LagrangeExtremaResult lagrangeExtrema(
         std::vector<Expr> xStar(n);
         std::vector<Expr> lamStar(m);
         if (lamFirst) {
-            for (std::size_t j = 0; j < m; ++j)
+            for (keel::usize j = 0; j < m; ++j)
                 lamStar[j] = c.simplify(sol[j]);
-            for (std::size_t i = 0; i < n; ++i)
+            for (keel::usize i = 0; i < n; ++i)
                 xStar[i] = c.simplify(sol[m + i]);
         } else {
-            for (std::size_t i = 0; i < n; ++i)
+            for (keel::usize i = 0; i < n; ++i)
                 xStar[i] = c.simplify(sol[i]);
-            for (std::size_t j = 0; j < m; ++j)
+            for (keel::usize j = 0; j < m; ++j)
                 lamStar[j] = c.simplify(sol[n + j]);
         }
 
@@ -2551,8 +2553,8 @@ LagrangeExtremaResult lagrangeExtrema(
 
         // Second-order classification when Hessian entries evaluate numerically
         SymMatrix HStar(n, n, c.zero());
-        for (std::size_t r = 0; r < n; ++r) {
-            for (std::size_t col = 0; col < n; ++col) {
+        for (keel::usize r = 0; r < n; ++r) {
+            for (keel::usize col = 0; col < n; ++col) {
                 HStar.at(r, col) = c.simplify(subsSimultaneousLinalg(
                     c, hessL.at(r, col), allSyms, allVals));
             }
@@ -2563,7 +2565,7 @@ LagrangeExtremaResult lagrangeExtrema(
             bool allPos = true;
             bool altNegPos = true;
             int lastSign = 0;
-            for (std::size_t k = 1; k <= n; ++k) {
+            for (keel::usize k = 1; k <= n; ++k) {
                 bool okM = false;
                 const int s = leadingMinorSign(c, HStar, k, budget, okM);
                 if (!okM || s == 0) {
@@ -2588,14 +2590,14 @@ LagrangeExtremaResult lagrangeExtrema(
             }
         } else if (m == 1 && n >= 2) {
             std::vector<Expr> gGrad(n);
-            for (std::size_t i = 0; i < n; ++i) {
+            for (keel::usize i = 0; i < n; ++i) {
                 gGrad[i] = c.simplify(
                     subsSimultaneousLinalg(c, gradG0.at(i, 0), vars, xStar));
             }
-            std::vector<std::size_t> perm(n);
-            for (std::size_t i = 0; i < n; ++i)
+            std::vector<keel::usize> perm(n);
+            for (keel::usize i = 0; i < n; ++i)
                 perm[i] = i;
-            for (std::size_t i = 0; i < n; ++i) {
+            for (keel::usize i = 0; i < n; ++i) {
                 int sG = 0;
                 if (evalExprSign(c, gGrad[i], sG) && sG != 0) {
                     std::swap(perm[0], perm[i]);
@@ -2604,10 +2606,10 @@ LagrangeExtremaResult lagrangeExtrema(
             }
 
             SymMatrix B(n + 1, n + 1, c.zero());
-            for (std::size_t i = 0; i < n; ++i) {
+            for (keel::usize i = 0; i < n; ++i) {
                 B.at(0, i + 1) = gGrad[perm[i]];
                 B.at(i + 1, 0) = gGrad[perm[i]];
-                for (std::size_t j = 0; j < n; ++j)
+                for (keel::usize j = 0; j < n; ++j)
                     B.at(i + 1, j + 1) = HStar.at(perm[i], perm[j]);
             }
 
@@ -2615,7 +2617,7 @@ LagrangeExtremaResult lagrangeExtrema(
             bool allNeg = true;
             bool altSigns = true;
             int lastSign = 0;
-            for (std::size_t k = 2; k <= n; ++k) {
+            for (keel::usize k = 2; k <= n; ++k) {
                 bool okB = false;
                 const int s = leadingMinorSign(c, B, k + 1, budget, okB);
                 if (!okB || s == 0) {
@@ -2659,7 +2661,7 @@ LagrangeExtremaResult lagrangeExtrema(
 
     std::sort(out.points.begin(), out.points.end(),
               [&c](const ExtremumPoint &a, const ExtremumPoint &b) {
-                  for (std::size_t i = 0; i < a.point.size(); ++i) {
+                  for (keel::usize i = 0; i < a.point.size(); ++i) {
                       const int cmp = c.compare(a.point[i], b.point[i]);
                       if (cmp != 0)
                           return cmp < 0;
@@ -2679,7 +2681,7 @@ Expr poissonBracket(Ctx &c, Expr f, Expr g, const std::vector<Expr> &q,
         return Expr{};
     std::vector<Expr> terms;
     terms.reserve(2 * q.size());
-    for (std::size_t i = 0; i < q.size(); ++i) {
+    for (keel::usize i = 0; i < q.size(); ++i) {
         if (q[i].isNull() || p[i].isNull() || c.kind(q[i]) != NodeKind::Symbol ||
             c.kind(p[i]) != NodeKind::Symbol) {
             return Expr{};
@@ -2698,7 +2700,7 @@ namespace {
 
 Expr synthesizeNextDerivSymbol(Ctx &c, Expr qSym,
                                const std::vector<Expr> &existing,
-                               std::size_t nextOrder)
+                               keel::usize nextOrder)
 {
     const std::string &qName = c.symbolName(qSym);
     if (!existing.empty() && c.kind(existing[0]) == NodeKind::Symbol) {
@@ -2742,8 +2744,8 @@ Expr totalTimeDerivative(Ctx &c, Expr expr, Expr t,
         if (!c.isZero(dq))
             terms.push_back(c.mul({dq, fld.derivatives[0]}));
 
-        const std::size_t curLen = fld.derivatives.size();
-        for (std::size_t k = 0; k < curLen; ++k) {
+        const keel::usize curLen = fld.derivatives.size();
+        for (keel::usize k = 0; k < curLen; ++k) {
             const Expr dSym = fld.derivatives[k];
             if (dSym.isNull() || c.kind(dSym) != NodeKind::Symbol)
                 continue;
@@ -2789,7 +2791,7 @@ EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t,
     out.equations.reserve(fields.size());
     out.momenta.reserve(fields.size());
 
-    for (std::size_t i = 0; i < fields.size(); ++i) {
+    for (keel::usize i = 0; i < fields.size(); ++i) {
         const VariationalField &origFld = fields[i];
         const Expr dLdq = c.simplify(c.diff(L, origFld.q));
         Expr p_i = c.zero();
@@ -2800,7 +2802,7 @@ EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t,
         out.momenta.push_back(p_i);
 
         bool dependsHigher = false;
-        for (std::size_t k = 1; k < origFld.derivatives.size(); ++k) {
+        for (keel::usize k = 1; k < origFld.derivatives.size(); ++k) {
             if (!isZeroLinalg(c, c.diff(L, origFld.derivatives[k]), nullptr)) {
                 dependsHigher = true;
                 break;
@@ -2812,11 +2814,11 @@ EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t,
         }
 
         std::vector<Expr> elTerms{dLdq};
-        for (std::size_t k = 0; k < origFld.derivatives.size(); ++k) {
+        for (keel::usize k = 0; k < origFld.derivatives.size(); ++k) {
             Expr term = c.simplify(c.diff(L, origFld.derivatives[k]));
             if (c.isZero(term))
                 continue;
-            for (std::size_t step = 0; step <= k; ++step)
+            for (keel::usize step = 0; step <= k; ++step)
                 term = totalTimeDerivative(c, term, t, workFields);
             if ((k + 1) % 2 != 0)
                 term = c.neg(term);
@@ -2840,7 +2842,7 @@ EulerLagrangeResult eulerLagrange(Ctx &c, Expr L, Expr t,
         return EulerLagrangeResult{};
     }
     std::vector<VariationalField> fields(q.size());
-    for (std::size_t i = 0; i < q.size(); ++i) {
+    for (keel::usize i = 0; i < q.size(); ++i) {
         fields[i].q = q[i];
         fields[i].derivatives.push_back(dq[i]);
         if (!ddq.empty() && !ddq[i].isNull())
@@ -2858,7 +2860,7 @@ HamiltonEquationsResult hamiltonEquations(Ctx &c, Expr H,
         out.reason = "invalid Hamiltonian or phase-space variables";
         return out;
     }
-    for (std::size_t i = 0; i < q.size(); ++i) {
+    for (keel::usize i = 0; i < q.size(); ++i) {
         if (q[i].isNull() || p[i].isNull() || c.kind(q[i]) != NodeKind::Symbol ||
             c.kind(p[i]) != NodeKind::Symbol) {
             out.reason = "phase-space coordinates and momenta must be symbols";
@@ -2870,7 +2872,7 @@ HamiltonEquationsResult hamiltonEquations(Ctx &c, Expr H,
     out.dqdt.resize(q.size());
     out.dpdt.resize(p.size());
     bool allCert = true;
-    for (std::size_t i = 0; i < q.size(); ++i) {
+    for (keel::usize i = 0; i < q.size(); ++i) {
         out.dqdt[i] = c.simplify(c.diff(out.H, p[i]));
         out.dpdt[i] = c.simplify(c.neg(c.diff(out.H, q[i])));
         const Expr pbQ = poissonBracket(c, q[i], out.H, q, p);
@@ -2894,13 +2896,13 @@ HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
                                           Budget *budget)
 {
     HamiltonEquationsResult out;
-    const std::size_t n = q.size();
+    const keel::usize n = q.size();
     if (L.isNull() || n == 0 || dq.size() != n || p.size() != n) {
         out.reason =
             "legendreTransform requires non-empty matching q, dq, and p vectors";
         return out;
     }
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         if (q[i].isNull() || dq[i].isNull() || p[i].isNull() ||
             c.kind(q[i]) != NodeKind::Symbol ||
             c.kind(dq[i]) != NodeKind::Symbol ||
@@ -2911,16 +2913,16 @@ HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
     }
 
     std::vector<Expr> pOfDq(n);
-    for (std::size_t i = 0; i < n; ++i)
+    for (keel::usize i = 0; i < n; ++i)
         pOfDq[i] = c.simplify(c.diff(L, dq[i]));
 
     // 1. Fast path: affine momentum map P(q, dq) = M(q) * dq + b(q)
     //    (covers all natural and gyroscopic mechanical systems quadratic in dq).
     SymMatrix M = jacobian(c, pOfDq, dq);
     bool isAffineInDq = true;
-    for (std::size_t i = 0; i < n && isAffineInDq; ++i) {
-        for (std::size_t j = 0; j < n; ++j) {
-            for (std::size_t k = 0; k < n; ++k) {
+    for (keel::usize i = 0; i < n && isAffineInDq; ++i) {
+        for (keel::usize j = 0; j < n; ++j) {
+            for (keel::usize k = 0; k < n; ++k) {
                 if (!isZeroLinalg(c, c.diff(M.at(i, j), dq[k]), budget)) {
                     isAffineInDq = false;
                     break;
@@ -2933,14 +2935,14 @@ HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
     if (isAffineInDq) {
         std::vector<Expr> zeroDq(n, c.zero());
         SymMatrix rhs(n, 1, c.zero());
-        for (std::size_t i = 0; i < n; ++i) {
+        for (keel::usize i = 0; i < n; ++i) {
             const Expr b_i = subsSimultaneousLinalg(c, pOfDq[i], dq, zeroDq);
             rhs.at(i, 0) = c.simplify(c.add({p[i], c.neg(b_i)}));
         }
         const SymMatrix solMat = linsolve(c, M, rhs, budget);
         if (solMat.rows() == n && solMat.cols() == 1) {
             dqSol.resize(n);
-            for (std::size_t i = 0; i < n; ++i)
+            for (keel::usize i = 0; i < n; ++i)
                 dqSol[i] = c.simplify(solMat.at(i, 0));
         }
     }
@@ -2948,7 +2950,7 @@ HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
     // 2. Fallback: nonlinear algebraic system solveSystem(P_i(q, dq) - p_i == 0, dq).
     if (dqSol.empty()) {
         std::vector<Expr> eqs(n);
-        for (std::size_t i = 0; i < n; ++i)
+        for (keel::usize i = 0; i < n; ++i)
             eqs[i] = c.add({pOfDq[i], c.neg(p[i])});
         const std::vector< std::vector<Expr> > sols =
             solveSystem(c, eqs, dq, budget);
@@ -2964,7 +2966,7 @@ HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
 
     std::vector<Expr> hTerms;
     hTerms.reserve(n + 1);
-    for (std::size_t i = 0; i < n; ++i)
+    for (keel::usize i = 0; i < n; ++i)
         hTerms.push_back(c.mul({p[i], dqSol[i]}));
     const Expr lSub = subsSimultaneousLinalg(c, L, dq, dqSol);
     hTerms.push_back(c.neg(lSub));
@@ -2974,7 +2976,7 @@ HamiltonEquationsResult legendreTransform(Ctx &c, Expr L,
     out.qDotFromP = dqSol;
 
     // Certify Legendre involution: dH/dp_i == dqSol[i].
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         if (!isZeroLinalg(c, c.add({out.dqdt[i], c.neg(dqSol[i])}), budget)) {
             out.certified = false;
             out.reason = "Legendre involution certificate dH/dp_i == dq_i(q, p) failed";
@@ -3024,12 +3026,12 @@ Expr positiveSqrtLinalg(Ctx &c, Expr sqExpr, const std::vector<Expr> &vars)
         }
     }
 
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
     auto sqrtFactor = [&](Expr f) -> Expr {
         if (c.kind(f) == NodeKind::Pow &&
             c.kind(c.child(f, 1)) == NodeKind::Number) {
             const Rational &re = c.numberValue(c.child(f, 1));
-            std::int64_t expInt = 0;
+            keel::i64 expInt = 0;
             if (re.den() == BigInt(1) && re.num().fitsInt64(expInt) &&
                 expInt % 2 == 0) {
                 Expr base = c.child(f, 0);
@@ -3052,7 +3054,7 @@ Expr positiveSqrtLinalg(Ctx &c, Expr sqExpr, const std::vector<Expr> &vars)
 
     if (c.kind(s) == NodeKind::Mul) {
         std::vector<Expr> parts;
-        for (std::size_t i = 0; i < c.childCount(s); ++i)
+        for (keel::usize i = 0; i < c.childCount(s); ++i)
             parts.push_back(sqrtFactor(c.child(s, i)));
         return c.simplify(c.mul(parts));
     }
@@ -3076,7 +3078,7 @@ FrenetSerretResult frenetSerret(Ctx &c, const std::vector<Expr> &curve,
     }
 
     std::vector<Expr> r(3, c.zero());
-    for (std::size_t i = 0; i < curve.size(); ++i) {
+    for (keel::usize i = 0; i < curve.size(); ++i) {
         if (curve[i].isNull()) {
             out.reason = "null curve component";
             return out;
@@ -3204,15 +3206,15 @@ SurfaceCurvatureResult surfaceCurvature(Ctx &c,
         return out;
     }
     out.shapeOperator = invI.mul(c, out.secondForm);
-    for (std::size_t r = 0; r < 2; ++r)
-        for (std::size_t col = 0; col < 2; ++col)
+    for (keel::usize r = 0; r < 2; ++r)
+        for (keel::usize col = 0; col < 2; ++col)
             out.shapeOperator.at(r, col) =
                 normLinalg(c, out.shapeOperator.at(r, col), budget);
 
     const Expr detII = c.add({c.mul({out.L, out.N}), c.neg(c.mul({out.M, out.M}))});
     out.gaussianCurvature = normLinalg(c, c.div(detII, detI), budget);
 
-    const Expr two = c.number(std::int64_t{2});
+    const Expr two = c.number(keel::i64{2});
     const Expr numH = c.add({c.mul({out.E, out.N}),
                              c.neg(c.mul({two, out.F, out.M})),
                              c.mul({out.G, out.L})});
@@ -3240,12 +3242,12 @@ ChristoffelResult christoffelSymbols(Ctx &c, const SymMatrix &metric,
                                      Budget *budget)
 {
     ChristoffelResult out;
-    const std::size_t n = coords.size();
+    const keel::usize n = coords.size();
     if (!metric.isSquare() || metric.rows() != n || n == 0) {
         out.reason = "christoffelSymbols requires an n x n metric and n coordinate symbols";
         return out;
     }
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         if (coords[i].isNull() || c.kind(coords[i]) != NodeKind::Symbol) {
             out.reason = "coordinate entries must be symbols";
             return out;
@@ -3262,18 +3264,18 @@ ChristoffelResult christoffelSymbols(Ctx &c, const SymMatrix &metric,
         out.reason = "metric tensor is singular";
         return out;
     }
-    for (std::size_t i = 0; i < n; ++i)
-        for (std::size_t j = 0; j < n; ++j)
+    for (keel::usize i = 0; i < n; ++i)
+        for (keel::usize j = 0; j < n; ++j)
             out.inverseMetric.at(i, j) =
                 normLinalg(c, out.inverseMetric.at(i, j), budget);
 
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
     out.firstKind.assign(n, SymMatrix::zeros(c, n, n));
     out.secondKind.assign(n, SymMatrix::zeros(c, n, n));
 
-    for (std::size_t k = 0; k < n; ++k) {
-        for (std::size_t i = 0; i < n; ++i) {
-            for (std::size_t j = i; j < n; ++j) {
+    for (keel::usize k = 0; k < n; ++k) {
+        for (keel::usize i = 0; i < n; ++i) {
+            for (keel::usize j = i; j < n; ++j) {
                 const Expr di_gkj = c.diff(metric.at(k, j), coords[i]);
                 const Expr dj_gki = c.diff(metric.at(k, i), coords[j]);
                 const Expr dk_gij = c.diff(metric.at(i, j), coords[k]);
@@ -3286,11 +3288,11 @@ ChristoffelResult christoffelSymbols(Ctx &c, const SymMatrix &metric,
         }
     }
 
-    for (std::size_t k = 0; k < n; ++k) {
-        for (std::size_t i = 0; i < n; ++i) {
-            for (std::size_t j = i; j < n; ++j) {
+    for (keel::usize k = 0; k < n; ++k) {
+        for (keel::usize i = 0; i < n; ++i) {
+            for (keel::usize j = i; j < n; ++j) {
                 std::vector<Expr> sumTerms;
-                for (std::size_t m = 0; m < n; ++m) {
+                for (keel::usize m = 0; m < n; ++m) {
                     const Expr gkm = out.inverseMetric.at(k, m);
                     const Expr gmij = out.firstKind[m].at(i, j);
                     if (!c.isZero(gkm) && !c.isZero(gmij))
@@ -3307,11 +3309,11 @@ ChristoffelResult christoffelSymbols(Ctx &c, const SymMatrix &metric,
 
     // Certify metric compatibility: nabla_k g_{ij} = d_k g_{ij} - g_{mj} Gamma^m_{ki} - g_{im} Gamma^m_{kj} == 0
     bool compatOk = true;
-    for (std::size_t k = 0; k < n && compatOk; ++k) {
-        for (std::size_t i = 0; i < n && compatOk; ++i) {
-            for (std::size_t j = i; j < n && compatOk; ++j) {
+    for (keel::usize k = 0; k < n && compatOk; ++k) {
+        for (keel::usize i = 0; i < n && compatOk; ++i) {
+            for (keel::usize j = i; j < n && compatOk; ++j) {
                 std::vector<Expr> terms{c.diff(metric.at(i, j), coords[k])};
-                for (std::size_t m = 0; m < n; ++m) {
+                for (keel::usize m = 0; m < n; ++m) {
                     terms.push_back(c.neg(
                         c.mul({metric.at(m, j), out.secondKind[m].at(k, i)})));
                     terms.push_back(c.neg(
@@ -3340,18 +3342,18 @@ RiemannCurvatureResult riemannTensor(Ctx &c, const SymMatrix &metric,
         return out;
     }
 
-    const std::size_t n = coords.size();
+    const keel::usize n = coords.size();
     const auto &G = out.christoffel.secondKind;
     out.riemann.assign(n, std::vector<SymMatrix>(n, SymMatrix::zeros(c, n, n)));
 
-    for (std::size_t rho = 0; rho < n; ++rho) {
-        for (std::size_t sigma = 0; sigma < n; ++sigma) {
-            for (std::size_t mu = 0; mu < n; ++mu) {
-                for (std::size_t nu = mu + 1; nu < n; ++nu) {
+    for (keel::usize rho = 0; rho < n; ++rho) {
+        for (keel::usize sigma = 0; sigma < n; ++sigma) {
+            for (keel::usize mu = 0; mu < n; ++mu) {
+                for (keel::usize nu = mu + 1; nu < n; ++nu) {
                     std::vector<Expr> terms{
                         c.diff(G[rho].at(nu, sigma), coords[mu]),
                         c.neg(c.diff(G[rho].at(mu, sigma), coords[nu]))};
-                    for (std::size_t lam = 0; lam < n; ++lam) {
+                    for (keel::usize lam = 0; lam < n; ++lam) {
                         terms.push_back(
                             c.mul({G[rho].at(mu, lam), G[lam].at(nu, sigma)}));
                         terms.push_back(c.neg(
@@ -3368,10 +3370,10 @@ RiemannCurvatureResult riemannTensor(Ctx &c, const SymMatrix &metric,
 
     // Ricci tensor: R_{sigma, nu} = sum_rho R^rho_{sigma, rho, nu}
     out.ricci = SymMatrix::zeros(c, n, n);
-    for (std::size_t sigma = 0; sigma < n; ++sigma) {
-        for (std::size_t nu = 0; nu < n; ++nu) {
+    for (keel::usize sigma = 0; sigma < n; ++sigma) {
+        for (keel::usize nu = 0; nu < n; ++nu) {
             std::vector<Expr> terms;
-            for (std::size_t rho = 0; rho < n; ++rho) {
+            for (keel::usize rho = 0; rho < n; ++rho) {
                 const Expr rVal = out.riemann[rho][sigma].at(rho, nu);
                 if (!c.isZero(rVal))
                     terms.push_back(rVal);
@@ -3383,8 +3385,8 @@ RiemannCurvatureResult riemannTensor(Ctx &c, const SymMatrix &metric,
 
     // Scalar curvature: R = sum_{sigma, nu} g^{sigma, nu} R_{sigma, nu}
     std::vector<Expr> scalarTerms;
-    for (std::size_t sigma = 0; sigma < n; ++sigma) {
-        for (std::size_t nu = 0; nu < n; ++nu) {
+    for (keel::usize sigma = 0; sigma < n; ++sigma) {
+        for (keel::usize nu = 0; nu < n; ++nu) {
             const Expr gInv = out.christoffel.inverseMetric.at(sigma, nu);
             const Expr ric = out.ricci.at(sigma, nu);
             if (!c.isZero(gInv) && !c.isZero(ric))
@@ -3396,10 +3398,10 @@ RiemannCurvatureResult riemannTensor(Ctx &c, const SymMatrix &metric,
                               : normLinalg(c, c.add(scalarTerms), budget);
 
     // Einstein tensor: G_{mu, nu} = R_{mu, nu} - 1/2 * R * g_{mu, nu}
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
     out.einstein = SymMatrix::zeros(c, n, n);
-    for (std::size_t mu = 0; mu < n; ++mu) {
-        for (std::size_t nu = 0; nu < n; ++nu) {
+    for (keel::usize mu = 0; mu < n; ++mu) {
+        for (keel::usize nu = 0; nu < n; ++nu) {
             out.einstein.at(mu, nu) = normLinalg(
                 c, c.add({out.ricci.at(mu, nu),
                           c.neg(c.mul({half, out.scalarCurvature,
@@ -3411,10 +3413,10 @@ RiemannCurvatureResult riemannTensor(Ctx &c, const SymMatrix &metric,
     // Certify first algebraic Bianchi identity:
     //   R^rho_{sigma, mu, nu} + R^rho_{mu, nu, sigma} + R^rho_{nu, sigma, mu} == 0
     bool bianchiOk = true;
-    for (std::size_t rho = 0; rho < n && bianchiOk; ++rho) {
-        for (std::size_t s = 0; s < n && bianchiOk; ++s) {
-            for (std::size_t mu = 0; mu < n && bianchiOk; ++mu) {
-                for (std::size_t nu = 0; nu < n && bianchiOk; ++nu) {
+    for (keel::usize rho = 0; rho < n && bianchiOk; ++rho) {
+        for (keel::usize s = 0; s < n && bianchiOk; ++s) {
+            for (keel::usize mu = 0; mu < n && bianchiOk; ++mu) {
+                for (keel::usize nu = 0; nu < n && bianchiOk; ++nu) {
                     const Expr cyc = c.add({out.riemann[rho][s].at(mu, nu),
                                             out.riemann[rho][mu].at(nu, s),
                                             out.riemann[rho][nu].at(s, mu)});
@@ -3458,9 +3460,9 @@ GeodesicResult geodesicEquations(Ctx &c, const SymMatrix &metric,
         return out;
     }
 
-    const std::size_t n = coords.size();
+    const keel::usize n = coords.size();
     std::vector<Expr> vel(n), acc(n);
-    for (std::size_t i = 0; i < n; ++i) {
+    for (keel::usize i = 0; i < n; ++i) {
         vel[i] = (i < velocities.size() && !velocities[i].isNull())
                      ? velocities[i]
                      : c.symbol("d" + std::string(c.symbolName(coords[i])));
@@ -3471,10 +3473,10 @@ GeodesicResult geodesicEquations(Ctx &c, const SymMatrix &metric,
 
     out.equations.resize(n);
     out.rhs.resize(n);
-    for (std::size_t k = 0; k < n; ++k) {
+    for (keel::usize k = 0; k < n; ++k) {
         std::vector<Expr> quadTerms;
-        for (std::size_t i = 0; i < n; ++i) {
-            for (std::size_t j = 0; j < n; ++j) {
+        for (keel::usize i = 0; i < n; ++i) {
+            for (keel::usize j = 0; j < n; ++j) {
                 const Expr gkij = ch.secondKind[k].at(i, j);
                 if (!c.isZero(gkij))
                     quadTerms.push_back(c.mul({gkij, vel[i], vel[j]}));
@@ -3487,10 +3489,10 @@ GeodesicResult geodesicEquations(Ctx &c, const SymMatrix &metric,
     }
 
     // Certify equivalence with Euler-Lagrange equations of L = 1/2 * g_{ij} * vel^i * vel^j
-    const Expr half = c.number(Rational(std::int64_t{1}, BigInt(2)));
+    const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
     std::vector<Expr> lTerms;
-    for (std::size_t i = 0; i < n; ++i)
-        for (std::size_t j = 0; j < n; ++j)
+    for (keel::usize i = 0; i < n; ++i)
+        for (keel::usize j = 0; j < n; ++j)
             if (!c.isZero(metric.at(i, j)))
                 lTerms.push_back(c.mul({half, metric.at(i, j), vel[i], vel[j]}));
     const Expr L = lTerms.empty() ? c.zero() : c.add(lTerms);
@@ -3498,10 +3500,10 @@ GeodesicResult geodesicEquations(Ctx &c, const SymMatrix &metric,
         eulerLagrange(c, L, Expr{}, coords, vel, acc);
 
     bool elOk = (el.equations.size() == n);
-    for (std::size_t k = 0; k < n && elOk; ++k) {
+    for (keel::usize k = 0; k < n && elOk; ++k) {
         // Raised Euler-Lagrange equation: -g^{km} E_m(L) == d2x^k + Gamma^k_{ij} dx^i dx^j
         std::vector<Expr> raisedTerms;
-        for (std::size_t m = 0; m < n; ++m) {
+        for (keel::usize m = 0; m < n; ++m) {
             const Expr gkm = ch.inverseMetric.at(k, m);
             if (!c.isZero(gkm) && !c.isZero(el.equations[m]))
                 raisedTerms.push_back(c.neg(c.mul({gkm, el.equations[m]})));

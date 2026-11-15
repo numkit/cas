@@ -1,3 +1,4 @@
+#include <keel/core.h>
 #include <numkit/cas/transform/fourier.hpp>
 
 #include <numkit/cas/core/parser.hpp>
@@ -160,7 +161,7 @@ TEST(FourierTest, LinearityAndRoundTripProperty)
     };
 
     std::mt19937_64 rng(0xF00E1EULL);
-    std::uniform_int_distribution<std::size_t> idxDist(0, basis.size() - 1);
+    std::uniform_int_distribution<keel::usize> idxDist(0, basis.size() - 1);
     std::uniform_int_distribution<int> coefDist(-4, 4);
 
     for (int iter = 0; iter < 40; ++iter) {

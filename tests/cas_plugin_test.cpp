@@ -38,8 +38,8 @@ public:
 
     void expectString(const std::string &expr, const std::string &expected)
     {
-        std::string sTw = tw.eval(expr).toString();
-        std::string sVm = vm.eval(expr).toString();
+        std::string sTw(tw.eval(expr).toString().as_ref());
+        std::string sVm(vm.eval(expr).toString().as_ref());
         EXPECT_EQ(sTw, expected) << "TreeWalker failed on: " << expr;
         EXPECT_EQ(sVm, expected) << "Bytecode VM failed on: " << expr;
     }

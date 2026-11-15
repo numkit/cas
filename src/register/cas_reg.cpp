@@ -46,8 +46,7 @@ void assume_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutAr
     if (!(args[1].isChar() || args[1].isString())) {
         argcheck::detail::fail("assume: input 2 (domain) must be a string or character vector.", "assume", "numkit:assume:invalidDomain");
     }
-    std::string dom = args[1].toString();
-    outs[0] = symAssume(args[0], dom, mrOf(ctx));
+    outs[0] = symAssume(args[0], args[1].toString(), mrOf(ctx));
 }
 
 void assumptions_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)

@@ -4,6 +4,7 @@
 #include <keel/core.h>
 #include <keel/memory.h>
 #include <keel/ref.h>
+#include <keel/string.h>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/linalg/symmatrix.hpp>
 #include <numkit/value/object.hpp>
@@ -28,9 +29,10 @@ struct SymPayload : public numkit::NativePayload
     {
     }
 
-    std::shared_ptr<numkit::NativePayload> clone() const override;
+    keel::Arc<numkit::NativePayload> clone(keel::Allocator *alloc = nullptr) const override;
     keel::f64 asDouble() const override;
-    std::shared_ptr<numkit::NativePayload> fromScalarDouble(keel::f64 v) const override;
+    keel::Arc<numkit::NativePayload> fromScalarDouble(keel::f64 v,
+                                                      keel::Allocator *alloc = nullptr) const override;
 };
 
 // Shared symbolic context for the current session.
@@ -59,7 +61,7 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
 void symsCommand(keel::ArrayRef<numkit::Value> args,
                  std::vector<std::pair<std::string, numkit::Value>> &bindingsOut,
                  keel::Allocator *mr = nullptr);
-numkit::Value symAssume(const numkit::Value &symVal, const std::string &domainStr,
+numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
                         keel::Allocator *mr = nullptr);
 numkit::Value symAssumptions(const numkit::Value &symVal,
                              keel::Allocator *mr = nullptr);
@@ -223,9 +225,9 @@ numkit::Value symLineIntegral(keel::ArrayRef<numkit::Value> args,
                               keel::Allocator *mr = nullptr);
 numkit::Value symSurfaceIntegral(keel::ArrayRef<numkit::Value> args,
                                  keel::Allocator *mr = nullptr);
-numkit::Value symElemFunc1(const std::string &fnName, const numkit::Value &v,
+numkit::Value symElemFunc1(keel::StringRef fnName, const numkit::Value &v,
                            keel::Allocator *mr = nullptr);
-numkit::Value symElemFunc2(const std::string &fnName, const numkit::Value &a,
+numkit::Value symElemFunc2(keel::StringRef fnName, const numkit::Value &a,
                            const numkit::Value &b,
                            keel::Allocator *mr = nullptr);
 

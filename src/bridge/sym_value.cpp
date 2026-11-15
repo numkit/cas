@@ -1,7 +1,9 @@
 // src/bridge/sym_value.cpp — Value bridge and BuiltinClass for numkit::cas.
+#include <keel/array.h>
 #include <keel/core.h>
 #include <keel/memory.h>
 #include <keel/ref.h>
+#include <keel/string.h>
 #include <numkit/cas/sym_value.hpp>
 
 #include <numkit/cas/core/parser.hpp>
@@ -56,14 +58,14 @@ keel::Allocator *resolveMr(keel::Allocator *mr) noexcept
     return mr ? mr : keel::default_allocator();
 }
 
-std::string trimStr(const std::string &s)
+std::string trimStr(keel::StringRef s)
 {
     keel::usize a = 0, b = s.size();
-    while (a < b && std::isspace(static_cast<unsigned char>(s[a])))
+    while (a < b && std::isspace(static_cast<unsigned char>(s.data()[a])))
         ++a;
-    while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1])))
+    while (b > a && std::isspace(static_cast<unsigned char>(s.data()[b - 1])))
         --b;
-    return s.substr(a, b - a);
+    return std::string(s.data() + a, b - a);
 }
 
 std::string toLowerStr(std::string s)
@@ -135,9 +137,10 @@ Rational doubleToRational(double v)
     return Rational(BigInt(sign * p1), BigInt(q1));
 }
 
-Expr parseExprFlexible(Ctx &c, const std::string &raw, const char *fnName)
+Expr parseExprFlexible(Ctx &c, keel::StringRef rawRef, const char *fnName)
 {
-    std::string s = trimStr(raw);
+    std::string raw(rawRef.data(), rawRef.size());
+    std::string s = trimStr(rawRef);
     if (s.empty())
         casFail(std::string("nk:") + fnName + ":emptyExpr",
                     std::string(fnName) + ": symbolic expression string must not be empty");
@@ -252,7 +255,7 @@ Expr defaultSymVar(Ctx &c, const Value &v, const char *fallback = "x")
     return c.symbol(best);
 }
 
-bool parseAssumeDomain(const std::string &raw, AssumeDomain &domOut, bool &isClearOut)
+bool parseAssumeDomain(keel::StringRef raw, AssumeDomain &domOut, bool &isClearOut)
 {
     isClearOut = false;
     const std::string s = toLowerStr(trimStr(raw));
@@ -298,15 +301,16 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
             Expr in = toSymExpr(v, c, fnName);
             return fromSymExpr(ctxPtr, fn(in), mr);
         }
-        std::vector<std::shared_ptr<ObjectState>> states(n);
+        keel::Array<keel::Arc<ObjectState>> states(mr);
+        states.reserve(n);
         for (keel::usize i = 0; i < n; ++i) {
             const ObjectState *st = v.objectStateAt(i);
             Expr in = (st && st->native)
                           ? static_cast<const SymPayload *>(st->native.get())->expr
                           : c.zero();
-            auto nst = std::make_shared<ObjectState>(mr);
-            nst->native = std::make_shared<SymPayload>(ctxPtr, fn(in));
-            states[i] = std::move(nst);
+            auto nst = keel::make_arc_in<ObjectState>(mr, mr);
+            nst->native = keel::make_arc_in<SymPayload>(mr, ctxPtr, fn(in));
+            states.push_back(std::move(nst));
         }
         return Value::objectArray("sym", v.dims(), std::move(states), /*isHandle=*/false, mr);
     }
@@ -316,12 +320,13 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
             return fromSymExpr(ctxPtr, fn(in), mr);
         }
         const keel::usize n = v.numel();
-        std::vector<std::shared_ptr<ObjectState>> states(n);
+        keel::Array<keel::Arc<ObjectState>> states(mr);
+        states.reserve(n);
         for (keel::usize i = 0; i < n; ++i) {
             Expr in = doubleToSymExpr(c, (v.elemAt(i).toScalar()));
-            auto nst = std::make_shared<ObjectState>(mr);
-            nst->native = std::make_shared<SymPayload>(ctxPtr, fn(in));
-            states[i] = std::move(nst);
+            auto nst = keel::make_arc_in<ObjectState>(mr, mr);
+            nst->native = keel::make_arc_in<SymPayload>(mr, ctxPtr, fn(in));
+            states.push_back(std::move(nst));
         }
         return Value::objectArray("sym", v.dims(), std::move(states), /*isHandle=*/false, mr);
     }
@@ -383,9 +388,9 @@ std::shared_ptr<Ctx> defaultCtx()
     return instance;
 }
 
-std::shared_ptr<numkit::NativePayload> SymPayload::clone() const
+keel::Arc<numkit::NativePayload> SymPayload::clone(keel::Allocator *alloc) const
 {
-    return std::make_shared<SymPayload>(ctx, expr);
+    return keel::make_arc_in<SymPayload>(resolveMr(alloc), ctx, expr);
 }
 
 double SymPayload::asDouble() const
@@ -401,15 +406,15 @@ double SymPayload::asDouble() const
     return out;
 }
 
-std::shared_ptr<numkit::NativePayload> SymPayload::fromScalarDouble(double v) const
+keel::Arc<numkit::NativePayload> SymPayload::fromScalarDouble(double v, keel::Allocator *alloc) const
 {
     auto c = ctx ? ctx : defaultCtx();
-    return std::make_shared<SymPayload>(c, doubleToSymExpr(*c, v));
+    return keel::make_arc_in<SymPayload>(resolveMr(alloc), c, doubleToSymExpr(*c, v));
 }
 
 bool isSymValue(const numkit::Value &v) noexcept
 {
-    return v.isObject() && v.objectClassName() == "sym";
+    return v.isObject() && v.objectClassName().as_ref() == "sym";
 }
 
 Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName)
@@ -537,8 +542,8 @@ numkit::Value fromSymExpr(const std::shared_ptr<Ctx> &c, Expr e,
                           keel::Allocator *mr)
 {
     mr = resolveMr(mr);
-    auto st = std::make_shared<ObjectState>(mr);
-    st->native = std::make_shared<SymPayload>(c, e);
+    auto st = keel::make_arc_in<ObjectState>(mr, mr);
+    st->native = keel::make_arc_in<SymPayload>(mr, c, e);
     return Value::object("sym", std::move(st), /*isHandle=*/false, mr);
 }
 
@@ -550,12 +555,13 @@ numkit::Value fromSymMatrix(const std::shared_ptr<Ctx> &c, const SymMatrix &M,
     const keel::usize cols = M.cols();
     if (rows == 1 && cols == 1)
         return fromSymExpr(c, M(0, 0), mr);
-    std::vector<std::shared_ptr<ObjectState>> states(rows * cols);
+    keel::Array<keel::Arc<ObjectState>> states(mr);
+    states.reserve(rows * cols);
     for (keel::usize col = 0; col < cols; ++col) {
         for (keel::usize r = 0; r < rows; ++r) {
-            auto st = std::make_shared<ObjectState>(mr);
-            st->native = std::make_shared<SymPayload>(c, M(r, col));
-            states[col * rows + r] = std::move(st);
+            auto st = keel::make_arc_in<ObjectState>(mr, mr);
+            st->native = keel::make_arc_in<SymPayload>(mr, c, M(r, col));
+            states.push_back(std::move(st));
         }
     }
     return Value::objectArray("sym", Dims(rows, cols), std::move(states), /*isHandle=*/false, mr);
@@ -569,11 +575,12 @@ numkit::Value fromSymVector(const std::shared_ptr<Ctx> &c, const std::vector<Exp
         return fromSymExpr(c, vec[0], mr);
     const keel::usize rows = column ? vec.size() : (vec.empty() ? 0 : 1);
     const keel::usize cols = column ? (vec.empty() ? 0 : 1) : vec.size();
-    std::vector<std::shared_ptr<ObjectState>> states(vec.size());
+    keel::Array<keel::Arc<ObjectState>> states(mr);
+    states.reserve(vec.size());
     for (keel::usize i = 0; i < vec.size(); ++i) {
-        auto st = std::make_shared<ObjectState>(mr);
-        st->native = std::make_shared<SymPayload>(c, vec[i]);
-        states[i] = std::move(st);
+        auto st = keel::make_arc_in<ObjectState>(mr, mr);
+        st->native = keel::make_arc_in<SymPayload>(mr, c, vec[i]);
+        states.push_back(std::move(st));
     }
     return Value::objectArray("sym", Dims(rows, cols), std::move(states), /*isHandle=*/false, mr);
 }
@@ -594,7 +601,7 @@ void symsCommand_argcheck(keel::ArrayRef<Value> args)
     argcheck::checkNargin(args.size(), 0, 64, "syms");
 }
 
-void symAssume_argcheck(const Value &symVal, const std::string &domainStr)
+void symAssume_argcheck(const Value &symVal, keel::StringRef domainStr)
 {
     if (!isSymValue(symVal) && !symVal.isChar() && !symVal.isString()) {
         casFail("nk:assume:invalidTarget",
@@ -604,7 +611,7 @@ void symAssume_argcheck(const Value &symVal, const std::string &domainStr)
     bool isClr = false;
     if (!parseAssumeDomain(domainStr, dom, isClr)) {
         casFail("nk:assume:invalidDomain",
-                    "assume: unknown assumption domain '" + domainStr
+                    "assume: unknown assumption domain '" + std::string(domainStr.data(), domainStr.size())
                         + "' (expected 'real', 'positive', 'negative', 'nonnegative', 'integer', or 'clear')");
     }
 }
@@ -762,12 +769,12 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
     if (args.size() == 2) {
         const Value &a1 = args[1];
         if (a1.isChar() || a1.isString()) {
-            std::string domStr = a1.toString();
+            keel::String domStr = a1.toString();
             AssumeDomain dom = AssumeDomain::Any;
             bool isClr = false;
             if (!parseAssumeDomain(domStr, dom, isClr)) {
                 casFail("nk:sym:invalidAssumption",
-                            "sym: unknown assumption '" + domStr + "'");
+                            "sym: unknown assumption '" + std::string(domStr.as_ref()) + "'");
             }
             Value out = symCreate(keel::ArrayRef<Value>(&a0, 1), mr);
             std::set<std::string> syms;
@@ -889,7 +896,7 @@ void symsCommand(keel::ArrayRef<numkit::Value> args,
     }
 }
 
-numkit::Value symAssume(const numkit::Value &symVal, const std::string &domainStr,
+numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
                         keel::Allocator *mr)
 {
     symAssume_argcheck(symVal, domainStr);
@@ -1493,7 +1500,7 @@ numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
                 casFail("nk:taylor:invalidOrder", "taylor: 'Order' must be a positive integer");
             order = ordArg - 1;
         } else {
-            casFail("nk:taylor:unknownOption", "taylor: unknown option '" + args[i].toString() + "'");
+            casFail("nk:taylor:unknownOption", "taylor: unknown option '" + std::string(args[i].toString().as_ref()) + "'");
         }
     }
 
@@ -2998,28 +3005,30 @@ numkit::Value symSurfaceIntegral(keel::ArrayRef<numkit::Value> args,
     return fromSymExpr(ctxPtr, res.value, mr);
 }
 
-numkit::Value symElemFunc1(const std::string &fnName, const numkit::Value &v,
+numkit::Value symElemFunc1(keel::StringRef fnName, const numkit::Value &v,
                            keel::Allocator *mr)
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
+    std::string fnStr(fnName.data(), fnName.size());
     return mapSymUnary(v, c, [&](Expr e) {
-        if (fnName == "sqrt") {
+        if (fnStr == "sqrt") {
             return c.pow(e, c.number(Rational(1, 2)));
         }
-        return c.func(fnName, e);
-    }, mr, fnName.c_str());
+        return c.func(fnStr, e);
+    }, mr, fnStr.c_str());
 }
 
-numkit::Value symElemFunc2(const std::string &fnName, const numkit::Value &a,
+numkit::Value symElemFunc2(keel::StringRef fnName, const numkit::Value &a,
                            const numkit::Value &b,
                            keel::Allocator *mr)
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
+    std::string fnStr(fnName.data(), fnName.size());
     return mapSymElementwiseBinary(a, b, c, [&](Expr x, Expr y) {
-        return c.func(fnName, x, y);
-    }, mr, fnName.c_str());
+        return c.func(fnStr, x, y);
+    }, mr, fnStr.c_str());
 }
 
 // ============================================================================
@@ -3029,7 +3038,7 @@ numkit::Value symElemFunc2(const std::string &fnName, const numkit::Value &a,
 numkit::BuiltinClass makeSymBuiltinClass()
 {
     BuiltinClass cls;
-    cls.name = "sym";
+    cls.name = keel::String::from("sym");
     cls.isHandle = false;
 
     cls.construct = [](keel::ArrayRef<Value> args, CallContext &ctx) -> Value {
@@ -3037,57 +3046,57 @@ numkit::BuiltinClass makeSymBuiltinClass()
         return symCreate(args, mr);
     };
 
-    cls.dispText = [](const Value &self) -> std::string {
+    cls.dispText = [](const Value &self) -> keel::String {
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         if (self.objectCount() == 0)
-            return "  [empty sym]\n";
-        if (self.objectCount() == 1 && self.dims().rows() == 1 && self.dims().cols() == 1) {
-            return "  " + c.toString(toSymExpr(self, c, "disp")) + "\n";
-        }
-        return "  " + toSymMatrix(self, c, "disp").toString(c) + "\n";
+            return keel::String::from("  [empty sym]\n");
+        std::string body = (self.objectCount() == 1 && self.dims().rows() == 1 && self.dims().cols() == 1)
+                               ? ("  " + c.toString(toSymExpr(self, c, "disp")) + "\n")
+                               : ("  " + toSymMatrix(self, c, "disp").toString(c) + "\n");
+        return keel::String::from(body);
     };
 
     // Binary & unary operator overloads
-    cls.ops["plus"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("plus"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
             return c.add({a, b});
         }, mr, "plus");
-    };
+    });
 
-    cls.ops["minus"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("minus"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
             return c.add({a, c.neg(b)});
         }, mr, "minus");
-    };
+    });
 
-    cls.ops["uminus"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("uminus"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymUnary(self, c, [&](Expr a) { return c.neg(a); }, mr, "uminus");
-    };
+    });
 
-    cls.ops["uplus"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &) {
+    cls.ops.put(keel::String::from("uplus"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &) {
         outs[0] = self;
-    };
+    });
 
-    cls.ops["times"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("times"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
             return c.mul({a, b});
         }, mr, "times");
-    };
+    });
 
-    cls.ops["mtimes"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("mtimes"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
@@ -3106,9 +3115,9 @@ numkit::BuiltinClass makeSymBuiltinClass()
                         "mtimes: inner matrix dimensions must agree");
         }
         outs[0] = fromSymMatrix(ctxPtr, A.mul(c, B), mr);
-    };
+    });
 
-    cls.ops["rdivide"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("rdivide"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
@@ -3117,9 +3126,9 @@ numkit::BuiltinClass makeSymBuiltinClass()
                 casFail("nk:rdivide:divByZero", "rdivide: symbolic division by zero");
             return c.div(a, b);
         }, mr, "rdivide");
-    };
+    });
 
-    cls.ops["mrdivide"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("mrdivide"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
@@ -3140,9 +3149,9 @@ numkit::BuiltinClass makeSymBuiltinClass()
         if (Binv.empty())
             casFail("nk:mrdivide:singular", "mrdivide: divisor matrix is singular");
         outs[0] = fromSymMatrix(ctxPtr, A.mul(c, Binv), mr);
-    };
+    });
 
-    cls.ops["ldivide"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("ldivide"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
@@ -3151,9 +3160,9 @@ numkit::BuiltinClass makeSymBuiltinClass()
                 casFail("nk:ldivide:divByZero", "ldivide: symbolic division by zero");
             return c.div(b, a);
         }, mr, "ldivide");
-    };
+    });
 
-    cls.ops["mldivide"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("mldivide"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
@@ -3167,18 +3176,18 @@ numkit::BuiltinClass makeSymBuiltinClass()
             return;
         }
         outs[0] = symLinsolve(args[0], args[1], mr);
-    };
+    });
 
-    cls.ops["power"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("power"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
         outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
             return c.pow(a, b);
         }, mr, "power");
-    };
+    });
 
-    cls.ops["mpower"] = [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("mpower"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         auto ctxPtr = defaultCtx();
         Ctx &c = *ctxPtr;
@@ -3214,14 +3223,14 @@ numkit::BuiltinClass makeSymBuiltinClass()
             n >>= 1;
         }
         outs[0] = fromSymMatrix(ctxPtr, res, mr);
-    };
+    });
 
-    cls.ops["transpose"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    auto transposeOp = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         outs[0] = self.objectTranspose(mr);
     };
-
-    cls.ops["ctranspose"] = cls.ops["transpose"];
+    cls.ops.put(keel::String::from("transpose"), transposeOp);
+    cls.ops.put(keel::String::from("ctranspose"), transposeOp);
 
     auto eqHelper = [](const Value &lhs, const Value &rhs, bool negate, keel::Allocator *mr) -> Value {
         mr = resolveMr(mr);
@@ -3255,15 +3264,15 @@ numkit::BuiltinClass makeSymBuiltinClass()
         return out;
     };
 
-    cls.ops["eq"] = [eqHelper](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("eq"), [eqHelper](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         outs[0] = eqHelper(args[0], args[1], /*negate=*/false, mr);
-    };
+    });
 
-    cls.ops["ne"] = [eqHelper](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.ops.put(keel::String::from("ne"), [eqHelper](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
         outs[0] = eqHelper(args[0], args[1], /*negate=*/true, mr);
-    };
+    });
 
     // Elementary & special 1-argument functions on sym
     const char *kUnaryElemFns[] = {
@@ -3273,14 +3282,14 @@ numkit::BuiltinClass makeSymBuiltinClass()
         "gamma", "airyAi", "airyBi", "heaviside", "dirac", "zeta", "Ei"
     };
     for (const char *fn : kUnaryElemFns) {
-        std::string fnStr(fn);
-        cls.methods[fnStr] = [fnStr](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        cls.methods.put(keel::String::from(fn), [fn](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
             if (!rest.empty()) {
+                std::string fnStr(fn);
                 casFail("nk:" + fnStr + ":tooManyInputs", fnStr + ": expected 1 input argument");
             }
             keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
-            outs[0] = symElemFunc1(fnStr, self, mr);
-        };
+            outs[0] = symElemFunc1(fn, self, mr);
+        });
     }
 
     // Two-argument special functions when first arg is sym
@@ -3298,15 +3307,16 @@ numkit::BuiltinClass makeSymBuiltinClass()
         {"hermiteH", "hermiteH"}, {"laguerreL", "laguerreL"}
     };
     for (const auto &entry : kBinarySpecFns) {
-        std::string mStr(entry.mName);
-        std::string cStr(entry.casName);
-        cls.methods[mStr] = [mStr, cStr](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        const char *mName = entry.mName;
+        const char *casName = entry.casName;
+        cls.methods.put(keel::String::from(mName), [mName, casName](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
             if (rest.size() != 1) {
+                std::string mStr(mName);
                 casFail("nk:" + mStr + ":arity", mStr + ": expected 2 input arguments");
             }
             keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
-            outs[0] = symElemFunc2(cStr, self, rest[0], mr);
-        };
+            outs[0] = symElemFunc2(casName, self, rest[0], mr);
+        });
     }
 
     auto prependSelf = [](const Value &self, keel::ArrayRef<Value> rest) {
@@ -3318,213 +3328,215 @@ numkit::BuiltinClass makeSymBuiltinClass()
         return all;
     };
 
-    cls.methods["double"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.methods.put(keel::String::from("double"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symDouble(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["vpa"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("vpa"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symVpa(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["char"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("char"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symChar(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["latex"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("latex"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symLatex(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["ccode"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("ccode"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symCCode(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["simplify"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("simplify"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symSimplify(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["expand"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("expand"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symExpand(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["factor"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("factor"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         symFactor(all, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["collect"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("collect"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symCollect(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["coeffs"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("coeffs"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         symCoeffs(all, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["numden"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("numden"), [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         symNumden(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["partfrac"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("partfrac"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symPartfrac(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["subs"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("subs"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symSubs(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["symvar"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("symvar"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symSymvar(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["sym2poly"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("sym2poly"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symSym2poly(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["diff"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("diff"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symDiff(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["int"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("int"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symInt(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["limit"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("limit"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symLimit(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["taylor"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("taylor"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symTaylor(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["laurent"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("laurent"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symLaurent(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["mtaylor"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("mtaylor"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symMtaylor(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["pade"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("pade"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         symPade(all, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["residue"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("residue"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symResidue(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["symsum"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("symsum"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symSymsum(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["solve"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("solve"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         symSolve(all, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["dsolve"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("dsolve"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symDsolve(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["laplace"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("laplace"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symLaplace(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["ilaplace"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("ilaplace"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symIlaplace(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["fourier"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("fourier"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symFourier(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["ifourier"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("ifourier"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symIfourier(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["ztrans"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("ztrans"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symZtrans(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["iztrans"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("iztrans"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symIztrans(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["det"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("det"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symDet(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["inv"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("inv"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symInv(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["trace"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("trace"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symTrace(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["adjugate"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    auto adjugateMethod = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symAdjugate(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["adjoint"] = cls.methods["adjugate"];
-    cls.methods["charpoly"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.methods.put(keel::String::from("adjugate"), adjugateMethod);
+    cls.methods.put(keel::String::from("adjoint"), adjugateMethod);
+    cls.methods.put(keel::String::from("charpoly"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symCharpoly(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["rank"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("rank"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symRank(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["rref"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("rref"), [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         symRref(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["null"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    auto nullMethod = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symNull(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     };
-    cls.methods["nullspace"] = cls.methods["null"];
-    cls.methods["linsolve"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    cls.methods.put(keel::String::from("null"), nullMethod);
+    cls.methods.put(keel::String::from("nullspace"), nullMethod);
+    cls.methods.put(keel::String::from("linsolve"), [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "linsolve");
         outs[0] = symLinsolve(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["lu"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("lu"), [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         symLu(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["qr"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("qr"), [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         symQr(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["eig"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("eig"), [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         symEig(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["jordan"] = [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("jordan"), [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         symJordan(self, nargout, outs, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["expm"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("expm"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symExpm(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["jacobian"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("jacobian"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symJacobian(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["gradient"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("gradient"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symGradient(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["hessian"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("hessian"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symHessian(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["divergence"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("divergence"), [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "divergence");
         outs[0] = symDivergence(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["curl"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("curl"), [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "curl");
         outs[0] = symCurl(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["laplacian"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("laplacian"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symLaplacian(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["wronskian"] = [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("wronskian"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         outs[0] = symWronskian(all, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["potential"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("potential"), [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "potential");
         outs[0] = symPotential(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["assume"] = [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("assume"), [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         argcheck::checkNargin(rest.size() + 1, 2, 2, "assume");
         outs[0] = symAssume(self, rest[0].toString(), ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
-    cls.methods["assumptions"] = [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+    });
+    cls.methods.put(keel::String::from("assumptions"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symAssumptions(self, ctx.engine ? ctx.engine->allocator() : nullptr);
-    };
+    });
 
     return cls;
 }

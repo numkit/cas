@@ -3,6 +3,7 @@
 // Self-contained C-ABI implementation for `numkit/cas`.
 #include <keel/core.h>
 #include <keel/ref.h>
+#include <keel/string.h>
 #include <numkit/cas/c_api.h>
 #include <numkit/cas/library.hpp>
 #include <numkit/sys/lite_context.hpp>
@@ -199,7 +200,7 @@ keel::usize numkit_cas_format(const numkit_cas_ctx *ctx,
         return 0;
     }
     try {
-        std::string s = ctx->ctx.formatValue(numkit::c_abi::unboxValue(v));
+        keel::String s = ctx->ctx.formatValue(numkit::c_abi::unboxValue(v));
         if (!buf || buf_cap == 0) return s.size();
         keel::usize n = std::min(s.size(), buf_cap - 1);
         if (n > 0) std::memcpy(buf, s.data(), n);

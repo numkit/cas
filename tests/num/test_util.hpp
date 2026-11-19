@@ -14,12 +14,12 @@ namespace numkit::cas {
 
 inline void PrintTo(const BigInt &v, std::ostream *os)
 {
-    *os << v.toString();
+    *os << v.toString().c_str();
 }
 
 inline void PrintTo(const Rational &v, std::ostream *os)
 {
-    *os << v.toString();
+    *os << v.toString().c_str();
 }
 
 } // namespace numkit::cas

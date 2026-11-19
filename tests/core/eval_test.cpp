@@ -91,7 +91,7 @@ TEST(EvalExact, FixedVectors)
 {
     Ctx c;
     const Expr x = c.symbol("x");
-    const std::vector<std::pair<std::string, Rational>> env{{"x", Rational(keel::i64{3})}};
+    const keel::Array<std::pair<keel::StringRef, Rational>> env{{"x", Rational(keel::i64{3})}};
     Rational out;
 
     ASSERT_TRUE(c.evalExact(c.add({c.pow(x, c.number(keel::i64{2})),
@@ -141,7 +141,7 @@ TEST(EvalExact, ZeroNegativePowerDeclines)
     Ctx c;
     Rational out;
     const Expr y = c.symbol("y");
-    const std::vector<std::pair<std::string, Rational>> env{
+    const keel::Array<std::pair<keel::StringRef, Rational>> env{
         {"y", Rational(keel::i64{-1})}};
     EXPECT_FALSE(c.evalExact(c.pow(c.zero(), y), env, out));
 }
@@ -162,13 +162,13 @@ TEST(EvalExact, MatchesUpolyEval)
     const Expr x = c.symbol("x");
     keel::u64 st = 0xE9A1C0DE5EEDULL;
     for (int iter = 0; iter < 3000; ++iter) {
-        std::vector<Rational> cs;
+        keel::Array<Rational> cs;
         const int deg = static_cast<int>(nextU64(st) % 5);
         for (int i = 0; i <= deg; ++i)
             cs.emplace_back(
                 BigInt(static_cast<keel::i64>(nextU64(st) % 17) - 8),
                 BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
-        const UPoly p(cs);
+        const UPoly p(std::move(cs));
         const Rational q(
             BigInt(static_cast<keel::i64>(nextU64(st) % 13) - 6),
             BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
@@ -283,13 +283,13 @@ TEST(EvalDouble, PropertyAgreesWithEvalExact)
     const Expr x = c.symbol("x");
     keel::u64 st = 0xD00B1EC0DEULL;
     for (int iter = 0; iter < 1000; ++iter) {
-        std::vector<Rational> cs;
+        keel::Array<Rational> cs;
         const int deg = static_cast<int>(nextU64(st) % 5);
         for (int i = 0; i <= deg; ++i)
             cs.emplace_back(
                 BigInt(static_cast<keel::i64>(nextU64(st) % 17) - 8),
                 BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
-        const UPoly p(cs);
+        const UPoly p(std::move(cs));
         const Rational q(
             BigInt(static_cast<keel::i64>(nextU64(st) % 13) - 6),
             BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));

@@ -10,7 +10,11 @@
 //   nkcas corpus <file>   — §7 corpus run: id<TAB>var<TAB>expr lines,
 //                           prints per-task outcomes and the summary
 //                           (pass rate, verification rate, median/p95).
+#include <keel/array.h>
 #include <keel/core.h>
+#include <keel/format.h>
+#include <keel/fs.h>
+#include <keel/string.h>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/core/series.hpp>
 #include <numkit/cas/core/simplify.hpp>
@@ -25,12 +29,9 @@
 
 #include "corpus_runner.hpp"
 
+#include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <iomanip>
-#include <iostream>
-#include <string>
-#include <vector>
+#include <cstring>
 
 namespace {
 
@@ -39,7 +40,7 @@ bool isSpace(char ch)
     return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
 }
 
-std::string trim(const std::string &s)
+keel::StringRef trimRef(keel::StringRef s)
 {
     keel::usize a = 0, b = s.size();
     while (a < b && isSpace(s[a]))
@@ -49,13 +50,32 @@ std::string trim(const std::string &s)
     return s.substr(a, b - a);
 }
 
+bool readStdinLine(keel::String &out)
+{
+    out.clear();
+    char buf[1024];
+    bool any = false;
+    while (std::fgets(buf, sizeof(buf), stdin) != nullptr) {
+        any = true;
+        const keel::usize len = std::strlen(buf);
+        if (len > 0 && buf[len - 1] == '\n') {
+            out.append(keel::StringRef(buf, len - 1));
+            if (!out.empty() && out.back() == '\r')
+                out.pop_back();
+            return true;
+        }
+        out.append(keel::StringRef(buf, len));
+    }
+    return any;
+}
+
 // Split "<command> <expr...> <var>" / "<command> <expr>": the variable
 // is the last whitespace-separated token, the expression everything
 // between (so expressions may contain spaces).
-bool splitLine(const std::string &line, std::string &cmd,
-               std::string &exprSrc, std::string &var)
+bool splitLine(keel::StringRef line, keel::String &cmd,
+               keel::String &exprSrc, keel::String &var)
 {
-    std::vector<std::string> words;
+    keel::Array<keel::StringRef> words;
     keel::usize i = 0;
     while (i < line.size()) {
         while (i < line.size() && isSpace(line[i]))
@@ -68,44 +88,44 @@ bool splitLine(const std::string &line, std::string &cmd,
     }
     if (words.empty())
         return false;
-    cmd = words.front();
+    cmd.assign(words.front());
     if (cmd == "print" || cmd == "expand" || cmd == "simplify") {
-        exprSrc = trim(line.substr(cmd.size()));
+        exprSrc.assign(trimRef(line.substr(cmd.size())));
         return !exprSrc.empty();
     }
     if (cmd == "pade") {
         // "pade <expr...> <var> <x0> <m> <n>": last four tokens are var, x0, m, n.
         if (words.size() < 6)
             return false;
-        const std::string &nTok = words.back();
-        const std::string &mTok = words[words.size() - 2];
-        const std::string &x0Tok = words[words.size() - 3];
-        const std::string &varTok = words[words.size() - 4];
+        const keel::StringRef nTok = words.back();
+        const keel::StringRef mTok = words[words.size() - 2];
+        const keel::StringRef x0Tok = words[words.size() - 3];
+        const keel::StringRef varTok = words[words.size() - 4];
         const keel::usize nOff = line.rfind(nTok);
-        const keel::usize mOff = line.rfind(mTok, nOff > 0 ? nOff - 1 : 0);
-        const keel::usize x0Off = line.rfind(x0Tok, mOff > 0 ? mOff - 1 : 0);
-        const keel::usize vOff = line.rfind(varTok, x0Off > 0 ? x0Off - 1 : 0);
-        exprSrc = trim(line.substr(cmd.size(), vOff - cmd.size()));
-        var = varTok + "\t" + x0Tok + "\t" + mTok + "\t" + nTok;
+        const keel::usize mOff = line.substr(0, nOff).rfind(mTok);
+        const keel::usize x0Off = line.substr(0, mOff).rfind(x0Tok);
+        const keel::usize vOff = line.substr(0, x0Off).rfind(varTok);
+        exprSrc.assign(trimRef(line.substr(cmd.size(), vOff - cmd.size())));
+        var = keel::format("{}\t{}\t{}\t{}", varTok, x0Tok, mTok, nTok);
         return !exprSrc.empty();
     }
     if (cmd == "defint" || cmd == "symsum") {
         // "defint/symsum <expr...> <var> <a> <b>": last three tokens are var, a, b.
         if (words.size() < 5)
             return false;
-        const std::string &bTok = words.back();
-        const std::string &aTok = words[words.size() - 2];
-        const std::string &varTok = words[words.size() - 3];
+        const keel::StringRef bTok = words.back();
+        const keel::StringRef aTok = words[words.size() - 2];
+        const keel::StringRef varTok = words[words.size() - 3];
         const keel::usize bOff = line.rfind(bTok);
-        const keel::usize aOff = line.rfind(aTok, bOff > 0 ? bOff - 1 : 0);
-        const keel::usize vOff = line.rfind(varTok, aOff > 0 ? aOff - 1 : 0);
-        exprSrc = trim(line.substr(cmd.size(), vOff - cmd.size()));
-        var = varTok + "\t" + aTok + "\t" + bTok;
+        const keel::usize aOff = line.substr(0, bOff).rfind(aTok);
+        const keel::usize vOff = line.substr(0, aOff).rfind(varTok);
+        exprSrc.assign(trimRef(line.substr(cmd.size(), vOff - cmd.size())));
+        var = keel::format("{}\t{}\t{}", varTok, aTok, bTok);
         return !exprSrc.empty();
     }
     if (cmd == "subs" || cmd == "eval" || cmd == "residue") {
         if ((cmd == "eval" || cmd == "residue") && words.size() == 2) {
-            exprSrc = trim(line.substr(cmd.size()));
+            exprSrc.assign(trimRef(line.substr(cmd.size())));
             var.clear();
             return !exprSrc.empty();
         }
@@ -115,24 +135,24 @@ bool splitLine(const std::string &line, std::string &cmd,
         // expression.
         if (words.size() < 4)
             return false;
-        const std::string &to = words.back();
-        const std::string &from = words[words.size() - 2];
+        const keel::StringRef to = words.back();
+        const keel::StringRef from = words[words.size() - 2];
         const keel::usize toOff = line.rfind(to);
-        const keel::usize fromOff = line.rfind(from, toOff);
-        exprSrc = trim(line.substr(cmd.size(), fromOff - cmd.size()));
-        var = from + "\t" + to; // caller splits on the tab
+        const keel::usize fromOff = line.substr(0, toOff).rfind(from);
+        exprSrc.assign(trimRef(line.substr(cmd.size(), fromOff - cmd.size())));
+        var = keel::format("{}\t{}", from, to); // caller splits on the tab
         return !exprSrc.empty();
     }
     if (words.size() < 3)
         return false;
-    var = words.back();
+    var.assign(words.back());
     const keel::usize varOff = line.rfind(var);
-    exprSrc = trim(line.substr(cmd.size(), varOff - cmd.size()));
+    exprSrc.assign(trimRef(line.substr(cmd.size(), varOff - cmd.size())));
     return !exprSrc.empty();
 }
 
-int runSubs(const std::string &exprSrc, const std::string &fromSrc,
-            const std::string &toSrc)
+int runSubs(keel::StringRef exprSrc, keel::StringRef fromSrc,
+            keel::StringRef toSrc)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f, from, to;
@@ -141,54 +161,51 @@ int runSubs(const std::string &exprSrc, const std::string &fromSrc,
         from = numkit::cas::parseExpr(ctx, fromSrc);
         to = numkit::cas::parseExpr(ctx, toSrc);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    std::cout << ctx.toString(ctx.subs(f, from, to)) << "\n";
+    keel::println("{}", ctx.toString(ctx.subs(f, from, to)));
     return 0;
 }
 
-int runEval(const std::string &exprSrc, const std::string &varName,
-            const std::string &valSrc)
+int runEval(keel::StringRef exprSrc, keel::StringRef varName,
+            keel::StringRef valSrc)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    std::vector<std::pair<std::string, double>> env;
+    keel::Array<std::pair<keel::StringRef, double>> env;
     if (!varName.empty()) {
         numkit::cas::Expr valExpr;
         try {
             valExpr = numkit::cas::parseExpr(ctx, valSrc);
         } catch (const numkit::cas::ParseError &e) {
-            std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                      << "\n";
+            keel::println("parse error at offset {}: {}", e.pos(), e.what());
             return 1;
         }
         double valDbl = 0.0;
         if (!ctx.evalDouble(valExpr, {}, valDbl)) {
-            std::cout << "cannot evaluate point: " << valSrc << "\n";
+            keel::println("cannot evaluate point: {}", valSrc);
             return 1;
         }
         env.emplace_back(varName, valDbl);
     }
     double out = 0.0;
     if (!ctx.evalDouble(f, env, out)) {
-        std::cout << "Unevaluated (domain error, pole, or unresolved symbol)\n";
+        keel::println("Unevaluated (domain error, pole, or unresolved symbol)");
         return 2;
     }
-    std::cout << std::setprecision(16) << out << "\n";
+    std::printf("%.16g\n", out);
     return 0;
 }
 
-int runTaylor(const std::string &exprSrc, const std::string &varName,
-              const std::string &x0Src, int order)
+int runTaylor(keel::StringRef exprSrc, keel::StringRef varName,
+              keel::StringRef x0Src, int order)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f, x0;
@@ -196,22 +213,21 @@ int runTaylor(const std::string &exprSrc, const std::string &varName,
         f = numkit::cas::parseExpr(ctx, exprSrc);
         x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     const numkit::cas::Expr var = ctx.symbol(varName);
     const numkit::cas::Expr out = numkit::cas::taylor(ctx, f, var, x0, order);
     if (out.isNull()) {
-        std::cout << "Unevaluated (pole, branch point, or beyond series domain)\n";
+        keel::println("Unevaluated (pole, branch point, or beyond series domain)");
         return 2;
     }
-    std::cout << ctx.toString(out) << "\n";
+    keel::println("{}", ctx.toString(out));
     return 0;
 }
 
-int runLimit(const std::string &exprSrc, const std::string &varName,
-             const std::string &x0Src)
+int runLimit(keel::StringRef exprSrc, keel::StringRef varName,
+             keel::StringRef x0Src)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f, x0;
@@ -219,26 +235,25 @@ int runLimit(const std::string &exprSrc, const std::string &varName,
         f = numkit::cas::parseExpr(ctx, exprSrc);
         x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     const numkit::cas::Expr var = ctx.symbol(varName);
     const numkit::cas::LimitResult r = numkit::cas::limit(ctx, f, var, x0);
     if (r.proved()) {
-        std::cout << ctx.toString(r.value) << "\n";
+        keel::println("{}", ctx.toString(r.value));
         return 0;
     }
     if (r.status == numkit::cas::LimitResult::Status::Divergent) {
-        std::cout << "Divergent (pole of order " << r.poleOrder << ")\n";
+        keel::println("Divergent (pole of order {})", r.poleOrder);
         return 2;
     }
-    std::cout << "Unevaluated: " << r.reason << "\n";
+    keel::println("Unevaluated: {}", r.reason);
     return 2;
 }
 
-int runResidue(const std::string &exprSrc, const std::string &varName,
-               const std::string &z0Src)
+int runResidue(keel::StringRef exprSrc, keel::StringRef varName,
+               keel::StringRef z0Src)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f, z0;
@@ -246,22 +261,21 @@ int runResidue(const std::string &exprSrc, const std::string &varName,
         f = numkit::cas::parseExpr(ctx, exprSrc);
         z0 = z0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, z0Src);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr var = ctx.symbol(varName.empty() ? "x" : varName);
+    const numkit::cas::Expr var = ctx.symbol(varName.empty() ? keel::StringRef("x") : varName);
     const numkit::cas::Expr res = numkit::cas::residue(ctx, f, var, z0);
     if (res.isNull()) {
-        std::cout << "Unevaluated (essential singularity, branch point, or beyond domain)\n";
+        keel::println("Unevaluated (essential singularity, branch point, or beyond domain)");
         return 2;
     }
-    std::cout << ctx.toString(res) << "\n";
+    keel::println("{}", ctx.toString(res));
     return 0;
 }
 
-int runDefInt(const std::string &exprSrc, const std::string &varName,
-              const std::string &aSrc, const std::string &bSrc)
+int runDefInt(keel::StringRef exprSrc, keel::StringRef varName,
+              keel::StringRef aSrc, keel::StringRef bSrc)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f, a, b;
@@ -270,28 +284,27 @@ int runDefInt(const std::string &exprSrc, const std::string &varName,
         a = numkit::cas::parseExpr(ctx, aSrc);
         b = numkit::cas::parseExpr(ctx, bSrc);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     const numkit::cas::Expr var = ctx.symbol(varName);
     const numkit::cas::DefiniteIntegral r =
         numkit::cas::definiteIntegrate(ctx, f, var, a, b);
     if (r.proved()) {
-        std::cout << ctx.toString(r.value) << "\n";
-        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        keel::println("{}", ctx.toString(r.value));
+        keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
     if (r.status == numkit::cas::DefiniteIntegral::Status::Divergent) {
-        std::cout << "Divergent: " << r.reason << "\n";
+        keel::println("Divergent: {}", r.reason);
         return 2;
     }
-    std::cout << "Unevaluated: " << r.reason << "\n";
+    keel::println("Unevaluated: {}", r.reason);
     return 2;
 }
 
-int runSymSum(const std::string &exprSrc, const std::string &varName,
-              const std::string &aSrc, const std::string &bSrc)
+int runSymSum(keel::StringRef exprSrc, keel::StringRef varName,
+              keel::StringRef aSrc, keel::StringRef bSrc)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f, a, b;
@@ -300,28 +313,27 @@ int runSymSum(const std::string &exprSrc, const std::string &varName,
         a = numkit::cas::parseExpr(ctx, aSrc);
         b = numkit::cas::parseExpr(ctx, bSrc);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     const numkit::cas::Expr var = ctx.symbol(varName);
     const numkit::cas::SymSumResult r =
         numkit::cas::symsum(ctx, f, var, a, b);
     if (r.proved()) {
-        std::cout << ctx.toString(r.value) << "\n";
-        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        keel::println("{}", ctx.toString(r.value));
+        keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
     if (r.status == numkit::cas::SymSumResult::Status::Divergent) {
-        std::cout << "Divergent: " << r.reason << "\n";
+        keel::println("Divergent: {}", r.reason);
         return 2;
     }
-    std::cout << "Unevaluated: " << r.reason << "\n";
+    keel::println("Unevaluated: {}", r.reason);
     return 2;
 }
 
-int runPade(const std::string &exprSrc, const std::string &varName,
-            const std::string &x0Src, int m, int n)
+int runPade(keel::StringRef exprSrc, keel::StringRef varName,
+            keel::StringRef x0Src, int m, int n)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f, x0;
@@ -329,32 +341,30 @@ int runPade(const std::string &exprSrc, const std::string &varName,
         f = numkit::cas::parseExpr(ctx, exprSrc);
         x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     const numkit::cas::Expr var = ctx.symbol(varName);
     const numkit::cas::PadeResult r =
         numkit::cas::pade(ctx, f, var, x0, m, n);
     if (r.proved()) {
-        std::cout << ctx.toString(r.value) << "\n";
-        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        keel::println("{}", ctx.toString(r.value));
+        keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
-    std::cout << "Unevaluated: " << r.reason << "\n";
+    keel::println("Unevaluated: {}", r.reason);
     return 2;
 }
 
-int runLaplace(const std::string &exprSrc, const std::string &inVarName,
-               const std::string &outVarName, bool inverse)
+int runLaplace(keel::StringRef exprSrc, keel::StringRef inVarName,
+               keel::StringRef outVarName, bool inverse)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     const numkit::cas::Expr vIn = ctx.symbol(inVarName);
@@ -363,24 +373,23 @@ int runLaplace(const std::string &exprSrc, const std::string &inVarName,
         inverse ? numkit::cas::ilaplace(ctx, f, vIn, vOut)
                 : numkit::cas::laplace(ctx, f, vIn, vOut);
     if (r.proved()) {
-        std::cout << ctx.toString(r.F) << "\n";
-        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        keel::println("{}", ctx.toString(r.F));
+        keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
-    std::cout << "Unevaluated: " << r.reason << "\n";
+    keel::println("Unevaluated: {}", r.reason);
     return 2;
 }
 
-int runZTrans(const std::string &exprSrc, const std::string &inVarName,
-              const std::string &outVarName, bool inverse)
+int runZTrans(keel::StringRef exprSrc, keel::StringRef inVarName,
+              keel::StringRef outVarName, bool inverse)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     const numkit::cas::Expr vIn = ctx.symbol(inVarName);
@@ -389,24 +398,23 @@ int runZTrans(const std::string &exprSrc, const std::string &inVarName,
         inverse ? numkit::cas::iztrans(ctx, f, vIn, vOut)
                 : numkit::cas::ztrans(ctx, f, vIn, vOut);
     if (r.proved()) {
-        std::cout << ctx.toString(r.F) << "\n";
-        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        keel::println("{}", ctx.toString(r.F));
+        keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
-    std::cout << "Unevaluated: " << r.reason << "\n";
+    keel::println("Unevaluated: {}", r.reason);
     return 2;
 }
 
-int runFourier(const std::string &exprSrc, const std::string &inVarName,
-               const std::string &outVarName, bool inverse)
+int runFourier(keel::StringRef exprSrc, keel::StringRef inVarName,
+               keel::StringRef outVarName, bool inverse)
 {
     numkit::cas::Ctx ctx;
     numkit::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     const numkit::cas::Expr vIn = ctx.symbol(inVarName);
@@ -415,25 +423,27 @@ int runFourier(const std::string &exprSrc, const std::string &inVarName,
         inverse ? numkit::cas::ifourier(ctx, f, vIn, vOut)
                 : numkit::cas::fourier(ctx, f, vIn, vOut);
     if (r.proved()) {
-        std::cout << ctx.toString(r.F) << "\n";
-        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        keel::println("{}", ctx.toString(r.F));
+        keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
-    std::cout << "Unevaluated: " << r.reason << "\n";
+    keel::println("Unevaluated: {}", r.reason);
     return 2;
 }
 
-int runCommand(const std::string &cmd, const std::string &exprSrc,
-               const std::string &varName)
+int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
+               keel::StringRef varName)
 {
     if (cmd == "pade") {
         const keel::usize t1 = varName.find('\t');
         const keel::usize t2 = varName.find('\t', t1 + 1);
         const keel::usize t3 = varName.find('\t', t2 + 1);
+        const keel::String mStr = keel::String::from(varName.substr(t2 + 1, t3 - t2 - 1));
+        const keel::String nStr = keel::String::from(varName.substr(t3 + 1));
         return runPade(exprSrc, varName.substr(0, t1),
                        varName.substr(t1 + 1, t2 - t1 - 1),
-                       std::atoi(varName.substr(t2 + 1, t3 - t2 - 1).c_str()),
-                       std::atoi(varName.substr(t3 + 1).c_str()));
+                       std::atoi(mStr.c_str()),
+                       std::atoi(nStr.c_str()));
     }
     if (cmd == "defint" || cmd == "symsum") {
         const keel::usize t1 = varName.find('\t');
@@ -462,7 +472,7 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         if (varName.empty())
             return runResidue(exprSrc, "x", "0");
         const keel::usize tab = varName.find('\t');
-        if (tab == std::string::npos)
+        if (tab == keel::kInvalidIndex)
             return runResidue(exprSrc, varName, "0");
         return runResidue(exprSrc, varName.substr(0, tab), varName.substr(tab + 1));
     }
@@ -471,25 +481,24 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
-        std::cout << "parse error at offset " << e.pos() << ": " << e.what()
-                  << "\n";
+        keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
     if (cmd == "print") {
-        std::cout << ctx.toString(f) << "\n";
+        keel::println("{}", ctx.toString(f));
         return 0;
     }
     if (cmd == "expand") {
-        std::cout << ctx.toString(ctx.expand(f)) << "\n";
+        keel::println("{}", ctx.toString(ctx.expand(f)));
         return 0;
     }
     if (cmd == "simplify") {
-        std::cout << ctx.toString(ctx.simplify(f)) << "\n";
+        keel::println("{}", ctx.toString(ctx.simplify(f)));
         return 0;
     }
     const numkit::cas::Expr var = ctx.symbol(varName);
     if (cmd == "diff") {
-        std::cout << ctx.toString(ctx.diff(f, var)) << "\n";
+        keel::println("{}", ctx.toString(ctx.diff(f, var)));
         return 0;
     }
     if (cmd == "taylor")
@@ -497,49 +506,48 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
     if (cmd == "limit")
         return runLimit(exprSrc, varName, "");
     if (cmd == "laplace")
-        return runLaplace(exprSrc, varName.empty() ? "t" : varName, "s", false);
+        return runLaplace(exprSrc, varName.empty() ? keel::StringRef("t") : varName, "s", false);
     if (cmd == "ilaplace")
-        return runLaplace(exprSrc, varName.empty() ? "s" : varName, "t", true);
+        return runLaplace(exprSrc, varName.empty() ? keel::StringRef("s") : varName, "t", true);
     if (cmd == "ztrans")
-        return runZTrans(exprSrc, varName.empty() ? "n" : varName, "z", false);
+        return runZTrans(exprSrc, varName.empty() ? keel::StringRef("n") : varName, "z", false);
     if (cmd == "iztrans")
-        return runZTrans(exprSrc, varName.empty() ? "z" : varName, "n", true);
+        return runZTrans(exprSrc, varName.empty() ? keel::StringRef("z") : varName, "n", true);
     if (cmd == "fourier")
-        return runFourier(exprSrc, varName.empty() ? "t" : varName, "w", false);
+        return runFourier(exprSrc, varName.empty() ? keel::StringRef("t") : varName, "w", false);
     if (cmd == "ifourier")
-        return runFourier(exprSrc, varName.empty() ? "w" : varName, "t", true);
+        return runFourier(exprSrc, varName.empty() ? keel::StringRef("w") : varName, "t", true);
     if (cmd == "integrate") {
         const numkit::cas::RationalIntegral r =
             numkit::cas::integrate(ctx, f, var);
         if (r.proved()) {
-            std::cout << ctx.toString(r.F) << "\n";
-            std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+            keel::println("{}", ctx.toString(r.F));
+            keel::println("[certificate: PROVED_SYMBOLIC]");
             return 0;
         }
-        std::cout << "Unevaluated: " << r.reason << "\n";
+        keel::println("Unevaluated: {}", r.reason);
         return 2;
     }
     if (cmd == "solve") {
         numkit::cas::UPoly N, D;
         if (!numkit::cas::toRational(ctx, f, var, N, D) || !D.isConst()) {
-            std::cout << "not a polynomial in " << varName << "\n";
+            keel::println("not a polynomial in {}", varName);
             return 1;
         }
         if (N.isZero()) {
-            std::cout << "every point (zero polynomial)\n";
+            keel::println("every point (zero polynomial)");
             return 0;
         }
         const auto roots = numkit::cas::solveRealRoots(N);
         if (roots.empty())
-            std::cout << "no real roots\n";
+            keel::println("no real roots");
         for (const auto &s : roots) {
             if (s.isRational) {
-                std::cout << "root #" << s.realIndex << " = "
-                          << s.value.toString() << "\n";
+                keel::println("root #{} = {}", s.realIndex, s.value.toString());
             } else {
-                std::cout << "root #" << s.realIndex << " in ("
-                          << s.interval.lo.toString() << ", "
-                          << s.interval.hi.toString() << "]\n";
+                keel::println("root #{} in ({}, {}]", s.realIndex,
+                              s.interval.lo.toString(),
+                              s.interval.hi.toString());
             }
         }
         return 0;
@@ -547,11 +555,11 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
     if (cmd == "symsolve") {
         const auto roots = numkit::cas::solveSymbolic(ctx, f, var);
         if (roots.empty()) {
-            std::cout << "no symbolic solutions found\n";
+            keel::println("no symbolic solutions found");
             return 2;
         }
         for (const auto &r : roots)
-            std::cout << ctx.toString(r) << "\n";
+            keel::println("{}", ctx.toString(r));
         return 0;
     }
     if (cmd == "dsolve") {
@@ -559,20 +567,20 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
         const numkit::cas::OdeResult sol =
             numkit::cas::dsolve1(ctx, f, var, y);
         if (sol.proved()) {
-            std::cout << ctx.toString(sol.y) << "\n";
-            std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+            keel::println("{}", ctx.toString(sol.y));
+            keel::println("[certificate: PROVED_SYMBOLIC]");
             return 0;
         }
-        std::cout << "Unevaluated: " << sol.reason << "\n";
+        keel::println("Unevaluated: {}", sol.reason);
         return 2;
     }
     if (cmd == "factor") {
         numkit::cas::Expr factored;
         if (!numkit::cas::factorExpr(ctx, f, var, factored)) {
-            std::cout << "not a rational function of " << varName << "\n";
+            keel::println("not a rational function of {}", varName);
             return 1;
         }
-        std::cout << ctx.toString(factored) << "\n";
+        keel::println("{}", ctx.toString(factored));
         return 0;
     }
     if (cmd == "rubi") {
@@ -582,14 +590,14 @@ int runCommand(const std::string &cmd, const std::string &exprSrc,
             numkit::cas::rubi::rubiApply(numkit::cas::rubi::sliceTables(),
                                          ctx, f, var);
         if (F.isNull()) {
-            std::cout << "no certified rule application\n";
+            keel::println("no certified rule application");
             return 2;
         }
-        std::cout << ctx.toString(F) << "\n";
-        std::cout << "[certificate: PROVED_SYMBOLIC]\n";
+        keel::println("{}", ctx.toString(F));
+        keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
-    std::cout << "unknown command '" << cmd << "' (integrate, diff, subs, print)\n";
+    keel::println("unknown command '{}' (integrate, diff, subs, print)", cmd);
     return 1;
 }
 
@@ -606,133 +614,142 @@ const char *statusName(nkcorpus::TaskStatus s)
 
 int runCorpusFile(const char *path)
 {
-    std::ifstream in(path);
-    if (!in) {
-        std::cout << "cannot open corpus file: " << path << "\n";
+    auto fileRes = keel::fs_read_text(path);
+    if (!fileRes) {
+        keel::println("cannot open corpus file: {}", path);
         return 1;
     }
-    std::vector<nkcorpus::CorpusTask> tasks;
+    const keel::String content = keel::move(fileRes).value();
+    keel::Array<nkcorpus::CorpusTask> tasks;
     keel::usize lineNo = 0, malformed = 0;
-    std::string line;
-    while (std::getline(in, line)) {
+    keel::StringRef rem = content.as_ref();
+    while (!rem.empty()) {
+        const keel::usize nl = rem.find('\n');
+        keel::StringRef line = (nl == keel::kInvalidIndex) ? rem : rem.substr(0, nl);
+        if (!line.empty() && line.back() == '\r')
+            line.remove_suffix(1);
         ++lineNo;
         nkcorpus::CorpusTask t;
         if (nkcorpus::parseCorpusLine(line, t)) {
-            tasks.push_back(std::move(t));
+            tasks.push_back(keel::move(t));
         } else if (nkcorpus::lineKind(line) == nkcorpus::LineKind::Malformed) {
             ++malformed;
-            std::cout << "line " << lineNo << "\tMALFORMED_LINE\n";
+            keel::println("line {}\tMALFORMED_LINE", lineNo);
         }
+        if (nl == keel::kInvalidIndex)
+            break;
+        rem.remove_prefix(nl + 1);
     }
-    std::vector<nkcorpus::TaskOutcome> outcomes;
+    keel::Array<nkcorpus::TaskOutcome> outcomes;
     const nkcorpus::CorpusReport rep =
         nkcorpus::runCorpus(tasks, &outcomes);
     for (const nkcorpus::TaskOutcome &o : outcomes) {
-        std::cout << o.id << '\t' << statusName(o.status) << '\t'
-                  << o.micros << "us\t" << o.answerNodes << "nodes";
-        if (o.status != nkcorpus::TaskStatus::Proved && !o.detail.empty())
-            std::cout << '\t' << o.detail;
-        std::cout << '\n';
+        if (o.status != nkcorpus::TaskStatus::Proved && !o.detail.empty()) {
+            keel::println("{}\t{}\t{}us\t{}nodes\t{}", o.id,
+                          statusName(o.status), o.micros, o.answerNodes,
+                          o.detail);
+        } else {
+            keel::println("{}\t{}\t{}us\t{}nodes", o.id,
+                          statusName(o.status), o.micros, o.answerNodes);
+        }
     }
-    std::cout << "----\n"
-              << "tasks: " << rep.total << " (+" << malformed
-              << " malformed lines)\n"
-              << "proved: " << rep.proved << " (" << rep.passRatePct()
-              << "%)\n"
-              << "unevaluated: " << rep.unevaluated << ", parse errors: "
-              << rep.parseErrors << "\n"
-              << "verification rate: " << rep.verificationRatePct()
-              << "% of integrable\n"
-              << "median time: " << rep.medianMicros << "us, p95: "
-              << rep.p95Micros << "us\n";
+    keel::println("----");
+    keel::println("tasks: {} (+{} malformed lines)", rep.total, malformed);
+    keel::println("proved: {} ({}%)", rep.proved, rep.passRatePct());
+    keel::println("unevaluated: {}, parse errors: {}", rep.unevaluated,
+                  rep.parseErrors);
+    keel::println("verification rate: {}% of integrable",
+                  rep.verificationRatePct());
+    keel::println("median time: {}us, p95: {}us", rep.medianMicros,
+                  rep.p95Micros);
     if (rep.withReference > 0) {
-        std::cout << "mean leaf ratio: " << rep.meanLeafRatio << " (over "
-                  << rep.withReference << " referenced tasks)\n";
+        keel::println("mean leaf ratio: {} (over {} referenced tasks)",
+                      rep.meanLeafRatio, rep.withReference);
     }
     return 0;
 }
 
 void usage()
 {
-    std::cout << "usage: nkcas <command> <expr> <var>\n"
-                 "  commands: integrate, diff; print takes no var\n"
-                 "  or no arguments: read '<command> <expr> <var>' lines "
-                 "from stdin\n";
+    keel::println("usage: nkcas <command> <expr> <var>\n"
+                  "  commands: integrate, diff; print takes no var\n"
+                  "  or no arguments: read '<command> <expr> <var>' lines "
+                  "from stdin");
 }
 
 } // namespace
 
 int main(int argc, char **argv)
 {
-    if (argc == 7 && std::string(argv[1]) == "pade")
+    if (argc == 7 && keel::StringRef(argv[1]) == "pade")
         return runPade(argv[2], argv[3], argv[4], std::atoi(argv[5]),
                        std::atoi(argv[6]));
-    if (argc == 6 && std::string(argv[1]) == "pade")
+    if (argc == 6 && keel::StringRef(argv[1]) == "pade")
         return runPade(argv[2], argv[3], "", std::atoi(argv[4]),
                        std::atoi(argv[5]));
-    if (argc == 6 && std::string(argv[1]) == "taylor")
+    if (argc == 6 && keel::StringRef(argv[1]) == "taylor")
         return runTaylor(argv[2], argv[3], argv[4], std::atoi(argv[5]));
-    if (argc == 6 && std::string(argv[1]) == "defint")
+    if (argc == 6 && keel::StringRef(argv[1]) == "defint")
         return runDefInt(argv[2], argv[3], argv[4], argv[5]);
-    if (argc == 6 && std::string(argv[1]) == "symsum")
+    if (argc == 6 && keel::StringRef(argv[1]) == "symsum")
         return runSymSum(argv[2], argv[3], argv[4], argv[5]);
-    if (argc == 5 && std::string(argv[1]) == "taylor")
+    if (argc == 5 && keel::StringRef(argv[1]) == "taylor")
         return runTaylor(argv[2], argv[3], "", std::atoi(argv[4]));
-    if (argc == 5 && std::string(argv[1]) == "limit")
+    if (argc == 5 && keel::StringRef(argv[1]) == "limit")
         return runLimit(argv[2], argv[3], argv[4]);
-    if (argc == 5 && std::string(argv[1]) == "residue")
+    if (argc == 5 && keel::StringRef(argv[1]) == "residue")
         return runResidue(argv[2], argv[3], argv[4]);
-    if (argc == 5 && std::string(argv[1]) == "subs")
+    if (argc == 5 && keel::StringRef(argv[1]) == "subs")
         return runSubs(argv[2], argv[3], argv[4]);
-    if (argc == 5 && std::string(argv[1]) == "eval")
+    if (argc == 5 && keel::StringRef(argv[1]) == "eval")
         return runEval(argv[2], argv[3], argv[4]);
-    if (argc == 5 && std::string(argv[1]) == "laplace")
+    if (argc == 5 && keel::StringRef(argv[1]) == "laplace")
         return runLaplace(argv[2], argv[3], argv[4], false);
-    if (argc == 5 && std::string(argv[1]) == "ilaplace")
+    if (argc == 5 && keel::StringRef(argv[1]) == "ilaplace")
         return runLaplace(argv[2], argv[3], argv[4], true);
-    if (argc == 5 && std::string(argv[1]) == "ztrans")
+    if (argc == 5 && keel::StringRef(argv[1]) == "ztrans")
         return runZTrans(argv[2], argv[3], argv[4], false);
-    if (argc == 5 && std::string(argv[1]) == "iztrans")
+    if (argc == 5 && keel::StringRef(argv[1]) == "iztrans")
         return runZTrans(argv[2], argv[3], argv[4], true);
-    if (argc == 5 && std::string(argv[1]) == "fourier")
+    if (argc == 5 && keel::StringRef(argv[1]) == "fourier")
         return runFourier(argv[2], argv[3], argv[4], false);
-    if (argc == 5 && std::string(argv[1]) == "ifourier")
+    if (argc == 5 && keel::StringRef(argv[1]) == "ifourier")
         return runFourier(argv[2], argv[3], argv[4], true);
     if (argc == 4)
         return runCommand(argv[1], argv[2], argv[3]);
-    if (argc == 3 && std::string(argv[1]) == "print")
+    if (argc == 3 && keel::StringRef(argv[1]) == "print")
         return runCommand(argv[1], argv[2], "");
-    if (argc == 3 && std::string(argv[1]) == "expand")
+    if (argc == 3 && keel::StringRef(argv[1]) == "expand")
         return runCommand(argv[1], argv[2], "");
-    if (argc == 3 && std::string(argv[1]) == "simplify")
+    if (argc == 3 && keel::StringRef(argv[1]) == "simplify")
         return runCommand(argv[1], argv[2], "");
-    if (argc == 3 && std::string(argv[1]) == "laplace")
+    if (argc == 3 && keel::StringRef(argv[1]) == "laplace")
         return runLaplace(argv[2], "t", "s", false);
-    if (argc == 3 && std::string(argv[1]) == "ilaplace")
+    if (argc == 3 && keel::StringRef(argv[1]) == "ilaplace")
         return runLaplace(argv[2], "s", "t", true);
-    if (argc == 3 && std::string(argv[1]) == "ztrans")
+    if (argc == 3 && keel::StringRef(argv[1]) == "ztrans")
         return runZTrans(argv[2], "n", "z", false);
-    if (argc == 3 && std::string(argv[1]) == "iztrans")
+    if (argc == 3 && keel::StringRef(argv[1]) == "iztrans")
         return runZTrans(argv[2], "z", "n", true);
-    if (argc == 3 && std::string(argv[1]) == "fourier")
+    if (argc == 3 && keel::StringRef(argv[1]) == "fourier")
         return runFourier(argv[2], "t", "w", false);
-    if (argc == 3 && std::string(argv[1]) == "ifourier")
+    if (argc == 3 && keel::StringRef(argv[1]) == "ifourier")
         return runFourier(argv[2], "w", "t", true);
-    if (argc == 3 && std::string(argv[1]) == "eval")
+    if (argc == 3 && keel::StringRef(argv[1]) == "eval")
         return runEval(argv[2], "", "");
-    if (argc == 3 && std::string(argv[1]) == "corpus")
+    if (argc == 3 && keel::StringRef(argv[1]) == "corpus")
         return runCorpusFile(argv[2]);
     if (argc == 1) {
-        std::string line;
-        while (std::getline(std::cin, line)) {
-            const std::string t = trim(line);
+        keel::String line;
+        while (readStdinLine(line)) {
+            const keel::StringRef t = trimRef(line);
             if (t.empty())
                 continue;
             if (t == "quit" || t == "exit")
                 break;
-            std::string cmd, exprSrc, var;
+            keel::String cmd, exprSrc, var;
             if (!splitLine(t, cmd, exprSrc, var)) {
-                std::cout << "malformed line (want: <command> <expr> <var>)\n";
+                keel::println("malformed line (want: <command> <expr> <var>)");
                 continue;
             }
             runCommand(cmd, exprSrc, var);

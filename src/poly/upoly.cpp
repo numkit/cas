@@ -1,4 +1,5 @@
 #include <keel/core.h>
+#include <keel/format.h>
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <algorithm>
@@ -12,7 +13,7 @@ UPoly::UPoly(Rational c)
         c_.push_back(std::move(c));
 }
 
-UPoly::UPoly(std::vector<Rational> coeffs) : c_(std::move(coeffs))
+UPoly::UPoly(keel::Array<Rational> coeffs) : c_(keel::move(coeffs))
 {
     trim();
 }
@@ -241,7 +242,7 @@ UPoly UPoly::squarefreePart() const
     return q;
 }
 
-std::vector<UPoly> UPoly::squarefreeDecomposition() const
+keel::Array<UPoly> UPoly::squarefreeDecomposition() const
 {
     assert(!isZero() && "squarefreeDecomposition of zero");
     // Yun's algorithm operates on the monic associate; the identity
@@ -257,7 +258,7 @@ std::vector<UPoly> UPoly::squarefreeDecomposition() const
     divMod(d, c, q, r);
     UPoly v = q;
 
-    std::vector<UPoly> out;
+    keel::Array<UPoly> out;
     const UPoly one(Rational(keel::i64{1}));
     while (!(w == one)) {
         const UPoly z = v - w.derivative();
@@ -314,30 +315,31 @@ bool operator!=(const UPoly &a, const UPoly &b)
     return !(a == b);
 }
 
-std::string UPoly::toString(const char *var) const
+keel::String UPoly::toString(const char *var) const
 {
     if (isZero())
-        return "0";
-    std::string out;
+        return keel::String::from("0");
+    keel::String out;
     for (keel::usize k = c_.size(); k-- > 0;) {
         if (c_[k].isZero())
             continue;
         const bool negative = c_[k].signum() < 0;
         const Rational mag = c_[k].abs();
-        if (out.empty())
-            out = negative ? "-" : "";
-        else
-            out += negative ? " - " : " + ";
+        if (out.empty()) {
+            if (negative)
+                out.push_back('-');
+        } else {
+            out.append(negative ? " - " : " + ");
+        }
         const bool isOne = mag == Rational(keel::i64{1});
         if (k == 0 || !isOne)
-            out += mag.toString();
+            out.append(mag.toString());
         if (k > 0) {
             if (!isOne)
-                out += "*";
-            out += var;
+                out.push_back('*');
+            out.append(var);
             if (k > 1) {
-                out += "^";
-                out += std::to_string(k);
+                keel::format_into(out, "^{}", k);
             }
         }
     }

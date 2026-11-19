@@ -1,15 +1,15 @@
 // num/bigint.hpp — arbitrary-precision integer, exact arithmetic layer.
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
+#include <keel/string.h>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -43,7 +43,7 @@ public:
     BigInt(T v) noexcept : BigInt(static_cast<keel::u64>(v)) {}
 
     // Strict decimal parse: optional sign, one or more digits, no whitespace.
-    static bool tryParse(BigInt &out, const std::string &s);
+    static bool tryParse(BigInt &out, keel::StringRef s);
 
     bool isZero() const noexcept { return limbs_.empty(); }
     bool isInline() const noexcept { return limbs_.isInline(); }
@@ -63,7 +63,7 @@ public:
     // Nearest IEEE-754 double (+/-INFINITY on overflow past 2^1024).
     keel::f64 toDouble() const noexcept;
 
-    std::string toString() const;
+    keel::String toString() const;
 
     BigInt abs() const;
     BigInt operator-() const;
@@ -104,7 +104,7 @@ public:
     // Canonical factorization of n >= 1 into (prime, exponent) pairs
     // with primes ascending. Deterministic (Pollard-Brent rho with a
     // fixed c-sequence).
-    static std::vector<std::pair<BigInt, int>> factorize(const BigInt &n);
+    static keel::Array<std::pair<BigInt, int>> factorize(const BigInt &n);
 
     // Exact integer square root (false for negatives and non-squares).
     bool sqrtExact(BigInt &out) const;

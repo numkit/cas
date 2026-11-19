@@ -1,11 +1,12 @@
 // poly/modcpoly.hpp — polynomials over the quotient field Q[t]/(c).
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
+#include <keel/string.h>
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <cstddef>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -54,8 +55,20 @@ private:
 class ModCPoly
 {
 public:
-    ModCPoly() = default;
-    ModCPoly(const ModCRing &ring, std::vector<UPoly> coeffs);
+    ModCPoly() noexcept = default;
+    ModCPoly(const ModCPoly &o) : ring_(o.ring_), c_(o.c_.clone()) {}
+    ModCPoly &operator=(const ModCPoly &o)
+    {
+        if (this != &o) {
+            ring_ = o.ring_;
+            c_ = o.c_.clone();
+        }
+        return *this;
+    }
+    ModCPoly(ModCPoly &&) noexcept = default;
+    ModCPoly &operator=(ModCPoly &&) noexcept = default;
+
+    ModCPoly(const ModCRing &ring, keel::Array<UPoly> coeffs);
 
     static ModCPoly constant(const ModCRing &ring, UPoly c0);
     static ModCPoly monomial(const ModCRing &ring, UPoly c0, keel::usize exp);
@@ -87,7 +100,7 @@ public:
 
     // "p0|p1|..." with each coefficient an ascending rational csv —
     // used by tests and debugging.
-    std::string toString() const;
+    keel::String toString() const;
 
 private:
     friend struct ModCPolyOps;
@@ -98,7 +111,7 @@ private:
     void makeMonic();
 
     const ModCRing *ring_ = nullptr;
-    std::vector<UPoly> c_;
+    keel::Array<UPoly> c_;
 };
 
 } // namespace numkit::cas

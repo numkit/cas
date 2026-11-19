@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <string>
 
 namespace numkit::cas {
 
@@ -70,7 +69,7 @@ UPoly ModCRing::mul(const UPoly &a, const UPoly &b) const
         const Rational t2 = a1 * b1; // coefficient of t^2 before reduction
         const Rational m0 = a0 * b0 - q * t2;
         const Rational m1 = a0 * b1 + a1 * b0 - p * t2;
-        return UPoly(std::vector<Rational>{m0, m1});
+        return UPoly(keel::Array<Rational>{m0, m1});
     }
     if (c_.deg() == 3) {
         // Closed form for the cubic modulus t^3 = -k2*t^2 - k1*t - k0
@@ -92,7 +91,7 @@ UPoly ModCRing::mul(const UPoly &a, const UPoly &b) const
         const Rational m0 = p0 - k0 * p3 + k0 * k2 * p4;
         const Rational m1 = p1 - k1 * p3 + (k2 * k1 - k0) * p4;
         const Rational m2 = p2 - k2 * p3 + (k2 * k2 - k1) * p4;
-        return UPoly(std::vector<Rational>{m0, m1, m2});
+        return UPoly(keel::Array<Rational>{m0, m1, m2});
     }
     return reduce(a * b);
 }
@@ -119,7 +118,7 @@ UPoly ModCRing::inv(const UPoly &a) const
         assert(!n.isZero() && "nonzero element has zero norm: c reducible?");
         const Rational i0 = (a0 - p * a1) / n;
         const Rational i1 = Rational(keel::i64{-1}) * a1 / n;
-        return UPoly(std::vector<Rational>{i0, i1});
+        return UPoly(keel::Array<Rational>{i0, i1});
     }
     return UPoly::invMod(a, c_);
 }
@@ -143,8 +142,8 @@ void ModCPoly::trim()
         c_.pop_back();
 }
 
-ModCPoly::ModCPoly(const ModCRing &ring, std::vector<UPoly> coeffs)
-    : ring_(&ring), c_(std::move(coeffs))
+ModCPoly::ModCPoly(const ModCRing &ring, keel::Array<UPoly> coeffs)
+    : ring_(&ring), c_(keel::move(coeffs))
 {
     for (UPoly &c : c_) {
         assert(c.deg() < ring_->modulus().deg() && "unreduced coefficient");
@@ -155,14 +154,16 @@ ModCPoly::ModCPoly(const ModCRing &ring, std::vector<UPoly> coeffs)
 
 ModCPoly ModCPoly::constant(const ModCRing &ring, UPoly c0)
 {
-    return ModCPoly(ring, std::vector<UPoly>{std::move(c0)});
+    keel::Array<UPoly> cs;
+    cs.push_back(keel::move(c0));
+    return ModCPoly(ring, keel::move(cs));
 }
 
 ModCPoly ModCPoly::monomial(const ModCRing &ring, UPoly c0, keel::usize exp)
 {
-    std::vector<UPoly> cs(exp + 1, ring.zero());
-    cs[exp] = std::move(c0);
-    return ModCPoly(ring, std::move(cs));
+    keel::Array<UPoly> cs(exp + 1, ring.zero());
+    cs[exp] = keel::move(c0);
+    return ModCPoly(ring, keel::move(cs));
 }
 
 const UPoly &ModCPoly::lc() const
@@ -176,11 +177,11 @@ ModCPoly operator+(const ModCPoly &a, const ModCPoly &b)
     ModCPoly::checkSameRing(a, b);
     const ModCRing *rg = a.hasRing() ? a.ring_ : b.ring_;
     assert(rg != nullptr);
-    std::vector<UPoly> cs;
+    keel::Array<UPoly> cs;
     cs.reserve(std::max(a.c_.size(), b.c_.size()));
     for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
         cs.push_back(rg->add(a.coeff(i), b.coeff(i)));
-    return ModCPoly(*rg, std::move(cs));
+    return ModCPoly(*rg, keel::move(cs));
 }
 
 ModCPoly operator-(const ModCPoly &a, const ModCPoly &b)
@@ -188,11 +189,11 @@ ModCPoly operator-(const ModCPoly &a, const ModCPoly &b)
     ModCPoly::checkSameRing(a, b);
     const ModCRing *rg = a.hasRing() ? a.ring_ : b.ring_;
     assert(rg != nullptr);
-    std::vector<UPoly> cs;
+    keel::Array<UPoly> cs;
     cs.reserve(std::max(a.c_.size(), b.c_.size()));
     for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
         cs.push_back(rg->sub(a.coeff(i), b.coeff(i)));
-    return ModCPoly(*rg, std::move(cs));
+    return ModCPoly(*rg, keel::move(cs));
 }
 
 ModCPoly ModCPoly::operator-() const
@@ -213,11 +214,11 @@ ModCPoly operator*(const ModCPoly &a, const ModCPoly &b)
     if (a.isZero() || b.isZero())
         return ModCPoly();
     const ModCRing &r = a.ring();
-    std::vector<UPoly> cs(a.c_.size() + b.c_.size() - 1, r.zero());
+    keel::Array<UPoly> cs(a.c_.size() + b.c_.size() - 1, r.zero());
     for (keel::usize i = 0; i < a.c_.size(); ++i)
         for (keel::usize j = 0; j < b.c_.size(); ++j)
             cs[i + j] = r.add(cs[i + j], r.mul(a.c_[i], b.c_[j]));
-    return ModCPoly(r, std::move(cs));
+    return ModCPoly(r, keel::move(cs));
 }
 
 void ModCPoly::divMod(const ModCPoly &a, const ModCPoly &b,
@@ -289,17 +290,17 @@ bool operator!=(const ModCPoly &a, const ModCPoly &b)
     return !(a == b);
 }
 
-std::string ModCPoly::toString() const
+keel::String ModCPoly::toString() const
 {
-    std::string out;
+    keel::String out;
     for (const UPoly &c : c_) {
         if (!out.empty())
-            out += "|";
+            out.push_back('|');
         bool first = true;
         for (const Rational &q : c.coeffs()) {
             if (!first)
-                out += ",";
-            out += q.toString();
+                out.push_back(',');
+            out.append(q.toString());
             first = false;
         }
     }

@@ -1,5 +1,6 @@
 // integrate/verify.cpp — Tier-2a certified interval evaluation.
 #include <keel/core.h>
+#include <keel/hash_map.h>
 #include <numkit/cas/integrate/verify.hpp>
 
 #include <numkit/cas/poly/sturm.hpp>
@@ -7,7 +8,6 @@
 
 #include <array>
 #include <cstdint>
-#include <unordered_map>
 #include <cassert>
 
 namespace numkit::cas {
@@ -128,20 +128,19 @@ bool iPowRatPos(const RIval &a, keel::i64 p, keel::i64 q, RIval &out)
 // sample points; refine once. SUCCESSFUL enclosures only - a failed
 // lookup (complex root) must keep failing, never turn into a
 // cached [0,0] that would silently null the whole form.
-using RootOfCache = std::unordered_map<keel::u32, RIval>;
+using RootOfCache = keel::HashMap<keel::u32, RIval>;
 
 bool evalRootOf(const Ctx &c, Expr e, RootOfCache &cache, RIval &out)
 {
-    const auto hit = cache.find(c.id(e));
-    if (hit != cache.end()) {
-        out = hit->second;
+    if (const RIval *hit = cache.get(c.id(e))) {
+        out = *hit;
         return true;
     }
-    const std::vector<Rational> &poly = c.rootOfPoly(e);
+    const keel::Array<Rational> &poly = c.rootOfPoly(e);
     const int index = c.rootOfIndex(e);
-    UPoly p = UPoly(poly).squarefreePart();
+    UPoly p = UPoly(poly.clone()).squarefreePart();
     p.makeMonic();
-    const std::vector<RootInterval> ivs = isolateRealRoots(p);
+    const keel::Array<RootInterval> ivs = isolateRealRoots(p);
     if (index < 0 || index >= static_cast<int>(ivs.size()))
         return false; // complex root or out of range: Unknown
         // (deliberately NOT cached: the enclosing evalIval fails the
@@ -155,7 +154,7 @@ bool evalRootOf(const Ctx &c, Expr e, RootOfCache &cache, RIval &out)
         refineRoot(p, ivs[static_cast<keel::usize>(index)],
                    Rational(keel::i64{1}, BigInt(1) << 24));
     out = {iv.lo, iv.hi};
-    cache.emplace(c.id(e), out);
+    cache.try_insert(c.id(e), out);
     return true;
 }
 

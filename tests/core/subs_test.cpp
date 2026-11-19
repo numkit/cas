@@ -136,7 +136,7 @@ TEST(SubsProperty, PrintParseSurvival)
             c.pow(x, c.number(keel::i64{2}))}),
             c.func("sin", x)});
         const Expr s = c.subs(e, x, c.number(keel::i64{7}));
-        const std::string printed = c.toString(s);
+        const std::string printed(c.toString(s).as_ref());
         EXPECT_EQ(parseExpr(c, printed), s);
     }
 }

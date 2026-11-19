@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <vector>
+#include <keel/array.h>
+#include <keel/format.h>
+#include <keel/string.h>
 
 namespace numkit::cas {
 
@@ -68,8 +70,8 @@ bool isZeroSimp(Ctx &c, Expr e)
 Expr expOfIntegral(Ctx &c, Expr intA)
 {
     const Expr expd = c.expand(intA);
-    std::vector<Expr> factors;
-    std::vector<Expr> remAdd;
+    keel::Array<Expr> factors;
+    keel::Array<Expr> remAdd;
     auto processTerm = [&](Expr t) {
         if (c.kind(t) == NodeKind::Func && c.funcName(t) == "log") {
             factors.push_back(c.child(t, 0));
@@ -144,7 +146,7 @@ bool verifyOde2(Ctx &c, Expr ySol, Expr a, Expr b, Expr d, Expr f, Expr x)
 // each additive child is split into `(constFactor, xAtom)` where `constFactor`
 // is independent of `x`.
 void splitIntoBasisTerms(Ctx &c, Expr e, Expr x,
-                         std::vector<std::pair<Expr, Expr>> &out)
+                         keel::Array<std::pair<Expr, Expr>> &out)
 {
     const Expr expd = c.expand(e);
     auto processTerm = [&](Expr t) {
@@ -155,8 +157,8 @@ void splitIntoBasisTerms(Ctx &c, Expr e, Expr x,
             return;
         }
         if (c.kind(t) == NodeKind::Mul) {
-            std::vector<Expr> constPart;
-            std::vector<Expr> xPart;
+            keel::Array<Expr> constPart;
+            keel::Array<Expr> xPart;
             for (keel::usize i = 0; i < c.childCount(t); ++i) {
                 const Expr f = c.child(t, i);
                 if (mentionsSym(c, f, x))
@@ -182,7 +184,7 @@ void splitIntoBasisTerms(Ctx &c, Expr e, Expr x,
     }
 }
 
-void addUniqueAtom(Ctx &c, std::vector<Expr> &atoms, Expr atom)
+void addUniqueAtom(Ctx &c, keel::Array<Expr> &atoms, Expr atom)
 {
     if (atom.isNull() || c.isZero(atom))
         return;
@@ -199,7 +201,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                            Budget *budget, Expr &ypOut)
 {
     // Build the differential-closure basis from f(x), x*f(x), and x^2*f(x).
-    std::vector<Expr> rawAtoms;
+    keel::Array<Expr> rawAtoms;
     const Expr seeds[3] = {
         f,
         c.mul({x, f}),
@@ -211,7 +213,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         for (int drv = 0; drv < 4; ++drv) {
             if (drv > 0)
                 cur = c.diff(cur, x);
-            std::vector<std::pair<Expr, Expr>> terms;
+            keel::Array<std::pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, cur, x, terms);
             for (const auto &kv : terms)
                 addUniqueAtom(c, rawAtoms, kv.second);
@@ -228,11 +230,11 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     };
 
     // Keep only non-kernel basis functions phi_j where L[phi_j] != 0.
-    std::vector<Expr> phiBasis;
-    std::vector<Expr> psiImages;
-    std::vector<Expr> rowAtoms;
+    keel::Array<Expr> phiBasis;
+    keel::Array<Expr> psiImages;
+    keel::Array<Expr> rowAtoms;
 
-    std::vector<std::pair<Expr, Expr>> fTerms;
+    keel::Array<std::pair<Expr, Expr>> fTerms;
     splitIntoBasisTerms(c, f, x, fTerms);
     for (const auto &kv : fTerms)
         addUniqueAtom(c, rowAtoms, kv.second);
@@ -243,7 +245,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             continue;
         phiBasis.push_back(phi);
         psiImages.push_back(psi);
-        std::vector<std::pair<Expr, Expr>> psiTerms;
+        keel::Array<std::pair<Expr, Expr>> psiTerms;
         splitIntoBasisTerms(c, psi, x, psiTerms);
         for (const auto &kv : psiTerms)
             addUniqueAtom(c, rowAtoms, kv.second);
@@ -259,8 +261,8 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         return rowAtoms.size();
     };
 
-    std::vector<Expr> activePhi;
-    std::vector<Expr> activePsi;
+    keel::Array<Expr> activePhi;
+    keel::Array<Expr> activePsi;
     for (keel::usize col = 0; col < phiBasis.size(); ++col) {
         activePhi.push_back(phiBasis[col]);
         activePsi.push_back(psiImages[col]);
@@ -272,7 +274,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
         SymMatrix M = SymMatrix::zeros(c, mRows, nCols);
         for (keel::usize j = 0; j < nCols; ++j) {
-            std::vector<std::pair<Expr, Expr>> terms;
+            keel::Array<std::pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, activePsi[j], x, terms);
             for (const auto &kv : terms) {
                 const keel::usize r = findAtomRow(kv.second);
@@ -290,7 +292,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
         const SymMatrix sol = linsolve(c, M, rhsVec, budget);
         if (!sol.empty()) {
-            std::vector<Expr> ypTerms;
+            keel::Array<Expr> ypTerms;
             for (keel::usize j = 0; j < nCols; ++j) {
                 if (!c.isZero(sol.at(j, 0)))
                     ypTerms.push_back(c.mul({sol.at(j, 0), activePhi[j]}));
@@ -353,8 +355,8 @@ bool trySeparableOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
                       Budget *budget, Expr &yOut)
 {
     const Expr factoredRhs = c.simplify(rhs);
-    std::vector<Expr> xFactors;
-    std::vector<Expr> yFactors;
+    keel::Array<Expr> xFactors;
+    keel::Array<Expr> yFactors;
 
     auto classifyFactor = [&](Expr f) -> bool {
         const bool hasX = mentionsSym(c, f, x);
@@ -396,7 +398,7 @@ bool trySeparableOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
     // Solve H(y) - (G(x) + C1) = 0 for y.
     const Expr implicitEq =
         c.add({intH.F, c.neg(intG.F), c.neg(C1)});
-    const std::vector<Expr> sols = solveSymbolic(c, implicitEq, y, budget);
+    const keel::Array<Expr> sols = solveSymbolic(c, implicitEq, y, budget);
     Expr bestCand;
     for (const Expr &cand : sols) {
         if (verifyOde1(c, cand, rhs, x, y)) {
@@ -419,8 +421,8 @@ bool tryBernoulliOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
     if (c.kind(expd) != NodeKind::Add)
         return false;
 
-    std::vector<Expr> linearTerms;
-    std::vector<Expr> powerCoeffs;
+    keel::Array<Expr> linearTerms;
+    keel::Array<Expr> powerCoeffs;
     Rational nExp(0);
     bool hasPower = false;
 
@@ -428,7 +430,7 @@ bool tryBernoulliOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
         const Expr term = c.child(expd, i);
         // Extract power of y in `term`
         Rational pY(0);
-        std::vector<Expr> xRest;
+        keel::Array<Expr> xRest;
         bool validTerm = true;
         auto inspectFactor = [&](Expr f) {
             if (!mentionsSym(c, f, y)) {
@@ -541,7 +543,7 @@ bool tryHomogeneousOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1,
         const Expr lhsExp = expOfIntegral(c, c.mul({kExpr, intU.F}));
         const Expr rhsExp = c.mul({C1, c.pow(x, kExpr)});
         const Expr algEq = c.simplify(c.add({lhsExp, c.neg(rhsExp)}));
-        const std::vector<Expr> sols = solveSymbolic(c, algEq, uSym, budget);
+        const keel::Array<Expr> sols = solveSymbolic(c, algEq, uSym, budget);
         for (const Expr &uCand : sols) {
             const Expr cand = c.simplify(c.mul({uCand, x}));
             if (verifyOde1(c, cand, rhs, x, y)) {
@@ -560,8 +562,8 @@ void splitRationalNumDen(Ctx &c, Expr e, Expr &numOut, Expr &denOut)
     if (rat.isNull())
         rat = c.simplify(e);
 
-    std::vector<Expr> numFactors;
-    std::vector<Expr> denFactors;
+    keel::Array<Expr> numFactors;
+    keel::Array<Expr> denFactors;
     auto inspect = [&](Expr f) {
         if (c.kind(f) == NodeKind::Pow &&
             c.kind(c.child(f, 1)) == NodeKind::Number &&
@@ -661,7 +663,7 @@ bool tryExactOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
 
     const Expr Phi = c.simplify(c.add({intMx.F, intNy.F}));
     const Expr implicitEq = c.add({Phi, c.neg(C1)});
-    const std::vector<Expr> sols = solveSymbolic(c, implicitEq, y, budget);
+    const keel::Array<Expr> sols = solveSymbolic(c, implicitEq, y, budget);
     for (const Expr &cand : sols) {
         if (verifyOde1(c, cand, rhs, x, y)) {
             yOut = cand;
@@ -739,7 +741,7 @@ bool tryRiccatiOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
     // 7a. Try algebraic roots of q0(x) + q1(x)*y + q2(x)*y^2 = 0 (exact when constant)
     //     and power-law / linear ansatze yp(x) = k * x^m (m in {-1, 0, 1, 2}) or a*x + b.
     {
-        const std::vector<Expr> algRoots = solveSymbolic(c, rhs, y, budget);
+        const keel::Array<Expr> algRoots = solveSymbolic(c, rhs, y, budget);
         for (const Expr &r : algRoots) {
             if (solveRiccatiWithParticular(c, rhs, q1, q2, r, x, y, C1, budget,
                                            yOut)) {
@@ -758,7 +760,7 @@ bool tryRiccatiOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
             // Check at x = 1 and x = 2 to determine candidate constants kSym
             const Expr resAt1 = c.simplify(c.subs(res, x, c.one()));
             if (!resAt1.isNull() && mentionsSym(c, resAt1, kSym)) {
-                const std::vector<Expr> kVals =
+                const keel::Array<Expr> kVals =
                     solveSymbolic(c, resAt1, kSym, budget);
                 for (const Expr &kv : kVals) {
                     const Expr ypCand = c.simplify(c.subs(ypAns, kSym, kv));
@@ -845,11 +847,11 @@ OdeResult dsolve1(Ctx &c, Expr rhs, Expr x, Expr y, Budget *budget)
 {
     OdeResult out;
     if (rhs.isNull() || x.isNull() || y.isNull()) {
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -934,7 +936,7 @@ OdeResult dsolve1(Ctx &c, Expr rhs, Expr x, Expr y, Budget *budget)
         }
     }
 
-    out.reason = "ODE outside supported 1st-order classes or uncertified";
+    out.reason.assign("ODE outside supported 1st-order classes or uncertified");
     return out;
 }
 
@@ -943,17 +945,17 @@ OdeResult dsolve1Riccati(Ctx &c, Expr rhs, Expr x, Expr y, Expr yPart,
 {
     OdeResult out;
     if (rhs.isNull() || x.isNull() || y.isNull()) {
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
     const Expr C1 = c.symbol("C1");
     Expr q0, q1, q2;
     if (!extractRiccatiCoeffs(c, rhs, y, q0, q1, q2)) {
-        out.reason = "not a quadratic Riccati ODE in y";
+        out.reason.assign("not a quadratic Riccati ODE in y");
         return out;
     }
     Expr cand;
@@ -964,8 +966,7 @@ OdeResult dsolve1Riccati(Ctx &c, Expr rhs, Expr x, Expr y, Expr yPart,
             out.y = cand;
             return out;
         }
-        out.reason =
-            "supplied yPart does not satisfy the Riccati ODE or reduction failed";
+        out.reason.assign("supplied yPart does not satisfy the Riccati ODE or reduction failed");
         return out;
     }
     if (tryRiccatiOde1(c, rhs, x, y, C1, budget, cand)) {
@@ -973,7 +974,7 @@ OdeResult dsolve1Riccati(Ctx &c, Expr rhs, Expr x, Expr y, Expr yPart,
         out.y = cand;
         return out;
     }
-    out.reason = "unable to find particular solution for Riccati ODE";
+    out.reason.assign("unable to find particular solution for Riccati ODE");
     return out;
 }
 
@@ -983,15 +984,15 @@ ClairautResult dsolve1Clairaut(Ctx &c, Expr gOfP, Expr x, Expr p,
     ClairautResult out;
     if (gOfP.isNull() || x.isNull() || p.isNull() ||
         c.kind(x) != NodeKind::Symbol || c.kind(p) != NodeKind::Symbol) {
-        out.reason = "invalid Clairaut input arguments";
+        out.reason.assign("invalid Clairaut input arguments");
         return out;
     }
     if (mentionsSym(c, gOfP, x)) {
-        out.reason = "Clairaut nonlinearity g(p) must not depend on x";
+        out.reason.assign("Clairaut nonlinearity g(p) must not depend on x");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -1010,7 +1011,7 @@ ClairautResult dsolve1Clairaut(Ctx &c, Expr gOfP, Expr x, Expr p,
     const Expr yGen =
         c.simplify(c.add({c.mul({C1, x}), c.subs(gOfP, p, C1)}));
     if (!verifyClairaut(yGen)) {
-        out.reason = "Clairaut general family failed certificate";
+        out.reason.assign("Clairaut general family failed certificate");
         return out;
     }
     out.general = yGen;
@@ -1020,7 +1021,7 @@ ClairautResult dsolve1Clairaut(Ctx &c, Expr gOfP, Expr x, Expr p,
     const Expr dg = c.diff(gOfP, p);
     if (!dg.isNull()) {
         const Expr envEq = c.add({x, dg});
-        const std::vector<Expr> pRoots = solveSymbolic(c, envEq, p, budget);
+        const keel::Array<Expr> pRoots = solveSymbolic(c, envEq, p, budget);
         for (const Expr &pSol : pRoots) {
             const Expr ySing = c.simplify(
                 c.add({c.mul({x, pSol}), c.subs(gOfP, p, pSol)}));
@@ -1041,7 +1042,7 @@ OdeResult dsolve1IVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr x0, Expr y0,
         return gen;
 
     const Expr C1 = c.symbol("C1");
-    std::vector<Expr> branches = {gen.y};
+    keel::Array<Expr> branches = {gen.y};
     const Expr negGen = c.simplify(c.neg(gen.y));
     if (!(negGen == gen.y) && verifyOde1(c, negGen, rhs, x, y))
         branches.push_back(negGen);
@@ -1049,7 +1050,7 @@ OdeResult dsolve1IVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr x0, Expr y0,
     for (const Expr &branch : branches) {
         const Expr atX0 = c.simplify(c.subs(branch, x, x0));
         const Expr icEq = c.add({atX0, c.neg(y0)});
-        const std::vector<Expr> c1Vals = solveSymbolic(c, icEq, C1, budget);
+        const keel::Array<Expr> c1Vals = solveSymbolic(c, icEq, C1, budget);
         for (const Expr &cVal : c1Vals) {
             const Expr yPart = c.simplify(c.subs(branch, C1, cVal));
             const Expr checkIC =
@@ -1064,7 +1065,7 @@ OdeResult dsolve1IVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr x0, Expr y0,
     }
 
     OdeResult fail;
-    fail.reason = "unable to resolve initial condition y(x0) = y0";
+    fail.reason.assign("unable to resolve initial condition y(x0) = y0");
     return fail;
 }
 
@@ -1077,18 +1078,18 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 {
     OdeResult out;
     if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull()) {
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     if (isZeroSimp(c, a)) {
-        out.reason = "leading coefficient a must be non-zero";
+        out.reason.assign("leading coefficient a must be non-zero");
         return out;
     }
     if (mentionsSym(c, a, x) || mentionsSym(c, b, x) || mentionsSym(c, d, x)) {
         return dsolve2Special(c, a, b, d, f, x, budget);
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -1112,7 +1113,7 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         // real fundamental basis exp(alpha*x)*cos(omega*x), exp(alpha*x)*sin(omega*x).
         const Expr alpha = c.simplify(c.div(c.neg(b), twoA));
         const Expr negDisc = c.neg(disc);
-        const std::vector<Expr> wRoots = solveSymbolic(
+        const keel::Array<Expr> wRoots = solveSymbolic(
             c, c.add({c.mul({four, c.pow(a, two), c.pow(x, two)}), c.neg(negDisc)}),
             x, budget);
         Expr omega = wRoots.empty()
@@ -1128,9 +1129,9 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         const Expr rSym = c.symbol("_ode_r");
         const Expr charEq =
             c.add({c.mul({a, c.pow(rSym, two)}), c.mul({b, rSym}), d});
-        const std::vector<Expr> roots = solveSymbolic(c, charEq, rSym, budget);
+        const keel::Array<Expr> roots = solveSymbolic(c, charEq, rSym, budget);
         if (roots.size() < 2) {
-            out.reason = "unable to solve characteristic equation";
+            out.reason.assign("unable to solve characteristic equation");
             return out;
         }
         y1 = c.simplify(c.func("exp", c.mul({roots[0], x})));
@@ -1144,7 +1145,7 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             out.y = yh;
             return out;
         }
-        out.reason = "homogeneous solution failed verification";
+        out.reason.assign("homogeneous solution failed verification");
         return out;
     }
 
@@ -1174,7 +1175,7 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     }
 
     if (!foundYp) {
-        out.reason = "particular integral could not be determined or certified";
+        out.reason.assign("particular integral could not be determined or certified");
         return out;
     }
 
@@ -1185,7 +1186,7 @@ OdeResult dsolve2Linear(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         return out;
     }
 
-    out.reason = "combined ODE solution failed verification";
+    out.reason.assign("combined ODE solution failed verification");
     return out;
 }
 
@@ -1223,7 +1224,7 @@ OdeResult dsolve2LinearIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     const SymMatrix sol = linsolve(c, M, rhs, budget);
     if (sol.empty()) {
         OdeResult fail;
-        fail.reason = "singular Wronskian at initial point x0";
+        fail.reason.assign("singular Wronskian at initial point x0");
         return fail;
     }
 
@@ -1240,7 +1241,7 @@ OdeResult dsolve2LinearIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     }
 
     OdeResult fail;
-    fail.reason = "IVP solution failed verification";
+    fail.reason.assign("IVP solution failed verification");
     return fail;
 }
 
@@ -1274,16 +1275,16 @@ OdeResult dsolve2EulerCauchy(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 {
     OdeResult out;
     if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull()) {
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     if (isZeroSimp(c, a) || mentionsSym(c, a, x) || mentionsSym(c, b, x) ||
         mentionsSym(c, d, x)) {
-        out.reason = "coefficients a, b, d must be non-zero constants in x";
+        out.reason.assign("coefficients a, b, d must be non-zero constants in x");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -1311,7 +1312,7 @@ OdeResult dsolve2EulerCauchy(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         // y1 = x^alpha * cos(omega * log(x)), y2 = x^alpha * sin(omega * log(x))
         const Expr alpha = c.simplify(c.div(c.neg(bInd), twoA));
         const Expr negDisc = c.neg(disc);
-        const std::vector<Expr> wRoots = solveSymbolic(
+        const keel::Array<Expr> wRoots = solveSymbolic(
             c, c.add({c.mul({four, c.pow(a, two), c.pow(x, two)}), c.neg(negDisc)}),
             x, budget);
         Expr omega = wRoots.empty()
@@ -1328,9 +1329,9 @@ OdeResult dsolve2EulerCauchy(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         const Expr rSym = c.symbol("_ode_ec_r");
         const Expr indEq =
             c.add({c.mul({a, c.pow(rSym, two)}), c.mul({bInd, rSym}), d});
-        const std::vector<Expr> roots = solveSymbolic(c, indEq, rSym, budget);
+        const keel::Array<Expr> roots = solveSymbolic(c, indEq, rSym, budget);
         if (roots.size() < 2) {
-            out.reason = "unable to solve Euler-Cauchy indicial equation";
+            out.reason.assign("unable to solve Euler-Cauchy indicial equation");
             return out;
         }
         y1 = c.simplify(c.pow(x, roots[0]));
@@ -1344,7 +1345,7 @@ OdeResult dsolve2EulerCauchy(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             out.y = yh;
             return out;
         }
-        out.reason = "Euler-Cauchy homogeneous solution failed verification";
+        out.reason.assign("Euler-Cauchy homogeneous solution failed verification");
         return out;
     }
 
@@ -1386,8 +1387,7 @@ OdeResult dsolve2EulerCauchy(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     }
 
     if (!foundYp) {
-        out.reason =
-            "Euler-Cauchy particular integral could not be determined or certified";
+        out.reason.assign("Euler-Cauchy particular integral could not be determined or certified");
         return out;
     }
 
@@ -1398,7 +1398,7 @@ OdeResult dsolve2EulerCauchy(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         return out;
     }
 
-    out.reason = "combined Euler-Cauchy ODE solution failed verification";
+    out.reason.assign("combined Euler-Cauchy ODE solution failed verification");
     return out;
 }
 
@@ -1407,7 +1407,7 @@ OdeResult dsolve2EulerCauchyIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 {
     if (x0.isNull() || isZeroSimp(c, x0)) {
         OdeResult fail;
-        fail.reason = "Euler-Cauchy initial point x0 must be non-zero";
+        fail.reason.assign("Euler-Cauchy initial point x0 must be non-zero");
         return fail;
     }
 
@@ -1439,7 +1439,7 @@ OdeResult dsolve2EulerCauchyIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     const SymMatrix sol = linsolve(c, M, rhs, budget);
     if (sol.empty()) {
         OdeResult fail;
-        fail.reason = "singular Wronskian at initial point x0";
+        fail.reason.assign("singular Wronskian at initial point x0");
         return fail;
     }
 
@@ -1456,7 +1456,7 @@ OdeResult dsolve2EulerCauchyIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     }
 
     OdeResult fail;
-    fail.reason = "Euler-Cauchy IVP solution failed verification";
+    fail.reason.assign("Euler-Cauchy IVP solution failed verification");
     return fail;
 }
 
@@ -1466,13 +1466,13 @@ OdeResult dsolve2EulerCauchyIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
 namespace {
 
-bool verifyOdeN(Ctx &c, Expr ySol, const std::vector<Expr> &coeffs, Expr f,
+bool verifyOdeN(Ctx &c, Expr ySol, keel::ArrayRef<Expr> coeffs, Expr f,
                 Expr x)
 {
     if (ySol.isNull() || coeffs.size() < 2)
         return false;
     const keel::usize n = coeffs.size() - 1;
-    std::vector<Expr> lhsTerms;
+    keel::Array<Expr> lhsTerms;
     Expr curDrv = ySol;
     for (keel::usize k = 0; k <= n; ++k) {
         if (k > 0) {
@@ -1487,11 +1487,11 @@ bool verifyOdeN(Ctx &c, Expr ySol, const std::vector<Expr> &coeffs, Expr f,
     return isZeroSimp(c, c.add({lhs, c.neg(f)}));
 }
 
-bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
+bool tryUndeterminedCoeffsN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
                             Expr x, Budget *budget, Expr &ypOut)
 {
     const keel::usize n = coeffs.size() - 1;
-    std::vector<Expr> rawAtoms;
+    keel::Array<Expr> rawAtoms;
     for (keel::usize k = 0; k <= n; ++k) {
         const Expr xk =
             (k == 0) ? c.one()
@@ -1500,7 +1500,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
         for (keel::usize drv = 0; drv < n + 2; ++drv) {
             if (drv > 0)
                 cur = c.diff(cur, x);
-            std::vector<std::pair<Expr, Expr>> terms;
+            keel::Array<std::pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, cur, x, terms);
             for (const auto &kv : terms)
                 addUniqueAtom(c, rawAtoms, kv.second);
@@ -1510,7 +1510,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     }
 
     auto applyL = [&](Expr phi) -> Expr {
-        std::vector<Expr> terms;
+        keel::Array<Expr> terms;
         Expr curDrv = phi;
         for (keel::usize k = 0; k <= n; ++k) {
             if (k > 0)
@@ -1521,11 +1521,11 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
         return terms.empty() ? c.zero() : c.simplify(c.add(terms));
     };
 
-    std::vector<Expr> phiBasis;
-    std::vector<Expr> psiImages;
-    std::vector<Expr> rowAtoms;
+    keel::Array<Expr> phiBasis;
+    keel::Array<Expr> psiImages;
+    keel::Array<Expr> rowAtoms;
 
-    std::vector<std::pair<Expr, Expr>> fTerms;
+    keel::Array<std::pair<Expr, Expr>> fTerms;
     splitIntoBasisTerms(c, f, x, fTerms);
     for (const auto &kv : fTerms)
         addUniqueAtom(c, rowAtoms, kv.second);
@@ -1536,7 +1536,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
             continue;
         phiBasis.push_back(phi);
         psiImages.push_back(psi);
-        std::vector<std::pair<Expr, Expr>> psiTerms;
+        keel::Array<std::pair<Expr, Expr>> psiTerms;
         splitIntoBasisTerms(c, psi, x, psiTerms);
         for (const auto &kv : psiTerms)
             addUniqueAtom(c, rowAtoms, kv.second);
@@ -1552,8 +1552,8 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
         return rowAtoms.size();
     };
 
-    std::vector<Expr> activePhi;
-    std::vector<Expr> activePsi;
+    keel::Array<Expr> activePhi;
+    keel::Array<Expr> activePsi;
     for (keel::usize col = 0; col < phiBasis.size(); ++col) {
         activePhi.push_back(phiBasis[col]);
         activePsi.push_back(psiImages[col]);
@@ -1565,7 +1565,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
 
         SymMatrix M = SymMatrix::zeros(c, mRows, nCols);
         for (keel::usize j = 0; j < nCols; ++j) {
-            std::vector<std::pair<Expr, Expr>> terms;
+            keel::Array<std::pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, activePsi[j], x, terms);
             for (const auto &kv : terms) {
                 const keel::usize r = findAtomRow(kv.second);
@@ -1584,7 +1584,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
 
         const SymMatrix sol = linsolve(c, M, rhsVec, budget);
         if (!sol.empty()) {
-            std::vector<Expr> ypTerms;
+            keel::Array<Expr> ypTerms;
             for (keel::usize j = 0; j < nCols; ++j) {
                 if (!c.isZero(sol.at(j, 0)))
                     ypTerms.push_back(c.mul({sol.at(j, 0), activePhi[j]}));
@@ -1598,8 +1598,8 @@ bool tryUndeterminedCoeffsN(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     return false;
 }
 
-bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
-                            Budget *budget, std::vector<Expr> &basisOut)
+bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
+                            Budget *budget, keel::Array<Expr> &basisOut)
 {
     const keel::usize n = coeffs.size() - 1;
     basisOut.clear();
@@ -1607,7 +1607,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
     // Check if all coefficients are rational numbers so we can factor P(lambda)
     // over Q with exact multiplicities via factorOverQ.
     bool allRational = true;
-    std::vector<Rational> ratCoeffs(n + 1);
+    keel::Array<Rational> ratCoeffs(n + 1);
     for (keel::usize k = 0; k <= n; ++k) {
         const Expr ck = c.simplify(coeffs[k]);
         if (c.kind(ck) == NodeKind::Number) {
@@ -1619,9 +1619,9 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
     }
 
     if (allRational) {
-        const UPoly charPoly(ratCoeffs);
-        const std::vector<UPoly> rawFactors = factorOverQ(charPoly, budget);
-        std::vector<std::pair<UPoly, keel::usize>> grouped;
+        const UPoly charPoly(keel::move(ratCoeffs));
+        const keel::Array<UPoly> rawFactors = factorOverQ(charPoly, budget);
+        keel::Array<std::pair<UPoly, keel::usize>> grouped;
         for (const UPoly &fac : rawFactors) {
             bool found = false;
             for (auto &gm : grouped) {
@@ -1675,7 +1675,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                         const Expr alpha =
                             c.number(-pRat / Rational(keel::i64{2}));
                         const Expr negDisc = c.number(-discRat);
-                        const std::vector<Expr> wRoots = solveSymbolic(
+                        const keel::Array<Expr> wRoots = solveSymbolic(
                             c,
                             c.add({c.mul({four, c.pow(x, two)}),
                                    c.neg(negDisc)}),
@@ -1707,7 +1707,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
                         const Expr rSym = c.symbol("_ode_n_r");
                         const Expr quadEq = c.add(
                             {c.pow(rSym, two), c.mul({pExpr, rSym}), qExpr});
-                        const std::vector<Expr> roots =
+                        const keel::Array<Expr> roots =
                             solveSymbolic(c, quadEq, rSym, budget);
                         if (roots.size() < 2) {
                             basisOut.clear();
@@ -1737,7 +1737,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
     // Symbolic / general fallback via solveSymbolic on P(r) = 0
     basisOut.clear();
     const Expr rSym = c.symbol("_ode_n_sym_r");
-    std::vector<Expr> charTerms;
+    keel::Array<Expr> charTerms;
     for (keel::usize k = 0; k <= n; ++k) {
         const Expr rk =
             (k == 0) ? c.one()
@@ -1745,7 +1745,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
         charTerms.push_back(c.mul({coeffs[k], rk}));
     }
     const Expr charEq = c.add(charTerms);
-    const std::vector<Expr> roots = solveSymbolic(c, charEq, rSym, budget);
+    const keel::Array<Expr> roots = solveSymbolic(c, charEq, rSym, budget);
     if (roots.empty())
         return false;
 
@@ -1775,7 +1775,7 @@ bool buildHomogeneousBasisN(Ctx &c, const std::vector<Expr> &coeffs, Expr x,
     return basisOut.size() == n;
 }
 
-SymMatrix buildCompanionMatrix(Ctx &c, const std::vector<Expr> &coeffs)
+SymMatrix buildCompanionMatrix(Ctx &c, keel::ArrayRef<Expr> coeffs)
 {
     const keel::usize n = coeffs.size() - 1;
     const Expr aN = coeffs[n];
@@ -1789,27 +1789,27 @@ SymMatrix buildCompanionMatrix(Ctx &c, const std::vector<Expr> &coeffs)
 
 } // namespace
 
-OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
+OdeResult dsolveNLinear(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
                         Expr x, Budget *budget)
 {
     OdeResult out;
     if (coeffs.size() < 2 || f.isNull() || x.isNull()) {
-        out.reason = "invalid N-th order ODE arguments";
+        out.reason.assign("invalid N-th order ODE arguments");
         return out;
     }
     const keel::usize n = coeffs.size() - 1;
     for (const Expr &ck : coeffs) {
         if (ck.isNull() || mentionsSym(c, ck, x)) {
-            out.reason = "coefficients must be non-null constants in x";
+            out.reason.assign("coefficients must be non-null constants in x");
             return out;
         }
     }
     if (isZeroSimp(c, coeffs[n])) {
-        out.reason = "leading coefficient coeffs[N] must be non-zero";
+        out.reason.assign("leading coefficient coeffs[N] must be non-zero");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -1820,12 +1820,12 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
             return r2;
     }
 
-    std::vector<Expr> basis;
+    keel::Array<Expr> basis;
     if (buildHomogeneousBasisN(c, coeffs, x, budget, basis) &&
         basis.size() == n) {
-        std::vector<Expr> yhTerms;
+        keel::Array<Expr> yhTerms;
         for (keel::usize i = 0; i < n; ++i) {
-            const Expr Ci = c.symbol("C" + std::to_string(i + 1));
+            const Expr Ci = c.symbol(keel::format("C{}", i + 1));
             yhTerms.push_back(c.mul({Ci, basis[i]}));
         }
         const Expr yh = c.simplify(c.add(yhTerms));
@@ -1845,7 +1845,7 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
             // Fallback: Variation of Parameters via companion system
             if (!foundYp) {
                 const SymMatrix A = buildCompanionMatrix(c, coeffs);
-                std::vector<Expr> fVec(n, c.zero());
+                keel::Array<Expr> fVec(n, c.zero());
                 fVec[n - 1] = c.simplify(c.div(f, coeffs[n]));
                 const OdeSystemResult sysRes =
                     dsolveSystem1Linear(c, A, fVec, x, budget);
@@ -1853,7 +1853,7 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
                     Expr candYp = sysRes.y[0];
                     for (keel::usize i = 0; i < n; ++i) {
                         candYp = c.subs(
-                            candYp, c.symbol("C" + std::to_string(i + 1)),
+                            candYp, c.symbol(keel::format("C{}", i + 1)),
                             c.zero());
                     }
                     candYp = c.simplify(candYp);
@@ -1878,7 +1878,7 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     // Full companion-matrix fallback
     {
         const SymMatrix A = buildCompanionMatrix(c, coeffs);
-        std::vector<Expr> fVec(n, c.zero());
+        keel::Array<Expr> fVec(n, c.zero());
         fVec[n - 1] = c.simplify(c.div(f, coeffs[n]));
         const OdeSystemResult sysRes =
             dsolveSystem1Linear(c, A, fVec, x, budget);
@@ -1890,25 +1890,24 @@ OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
         }
     }
 
-    out.reason =
-        "N-th order constant-coefficient ODE could not be solved or certified";
+    out.reason.assign("N-th order constant-coefficient ODE could not be solved or certified");
     return out;
 }
 
-OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
-                           Expr x, Expr x0, const std::vector<Expr> &initVals,
+OdeResult dsolveNLinearIVP(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
+                           Expr x, Expr x0, keel::ArrayRef<Expr> initVals,
                            Budget *budget)
 {
     OdeResult out;
     if (coeffs.size() < 2 || x0.isNull() ||
         initVals.size() != coeffs.size() - 1) {
-        out.reason = "invalid N-th order IVP arguments";
+        out.reason.assign("invalid N-th order IVP arguments");
         return out;
     }
     const keel::usize n = coeffs.size() - 1;
     for (const Expr &iv : initVals) {
         if (iv.isNull()) {
-            out.reason = "null initial condition value";
+            out.reason.assign("null initial condition value");
             return out;
         }
     }
@@ -1917,9 +1916,9 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     if (!gen.proved())
         return gen;
 
-    std::vector<Expr> cSyms(n);
+    keel::Array<Expr> cSyms(n);
     for (keel::usize j = 0; j < n; ++j)
-        cSyms[j] = c.symbol("C" + std::to_string(j + 1));
+        cSyms[j] = c.symbol(keel::format("C{}", j + 1));
 
     SymMatrix M = SymMatrix::zeros(c, n, n);
     SymMatrix rhs = SymMatrix::zeros(c, n, 1);
@@ -1940,7 +1939,7 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
 
     const SymMatrix sol = linsolve(c, M, rhs, budget);
     if (sol.empty()) {
-        out.reason = "singular Wronskian at initial point x0";
+        out.reason.assign("singular Wronskian at initial point x0");
         return out;
     }
 
@@ -1950,7 +1949,7 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
     yIVP = c.simplify(yIVP);
 
     if (!verifyOdeN(c, yIVP, coeffs, f, x)) {
-        out.reason = "N-th order IVP solution failed ODE certificate";
+        out.reason.assign("N-th order IVP solution failed ODE certificate");
         return out;
     }
 
@@ -1960,7 +1959,7 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
             checkDrv = c.diff(checkDrv, x);
         const Expr at0 = c.subs(checkDrv, x, x0);
         if (!isZeroSimp(c, c.add({at0, c.neg(initVals[k])}))) {
-            out.reason = "N-th order IVP solution failed initial condition";
+            out.reason.assign("N-th order IVP solution failed initial condition");
             return out;
         }
     }
@@ -1972,8 +1971,8 @@ OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
 
 namespace {
 
-bool verifyOdeSystem1Linear(Ctx &c, const std::vector<Expr> &ySol,
-                            const SymMatrix &A, const std::vector<Expr> &f,
+bool verifyOdeSystem1Linear(Ctx &c, keel::ArrayRef<Expr> ySol,
+                            const SymMatrix &A, keel::ArrayRef<Expr> f,
                             Expr x, Budget *budget)
 {
     const keel::usize n = A.rows();
@@ -1985,7 +1984,7 @@ bool verifyOdeSystem1Linear(Ctx &c, const std::vector<Expr> &ySol,
         const Expr dyi = c.diff(ySol[i], x);
         if (dyi.isNull())
             return false;
-        std::vector<Expr> rhsTerms;
+        keel::Array<Expr> rhsTerms;
         for (keel::usize j = 0; j < n; ++j) {
             if (!c.isZero(A.at(i, j)) && !c.isZero(ySol[j]))
                 rhsTerms.push_back(c.mul({A.at(i, j), ySol[j]}));
@@ -2006,24 +2005,24 @@ bool verifyOdeSystem1Linear(Ctx &c, const std::vector<Expr> &ySol,
 } // namespace
 
 OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
-                                    const std::vector<Expr> &f, Expr x,
+                                    keel::ArrayRef<Expr> f, Expr x,
                                     Budget *budget)
 {
     OdeSystemResult out;
     if (!A.isSquare() || A.empty() || x.isNull() ||
         c.kind(x) != NodeKind::Symbol) {
-        out.reason = "invalid matrix or independent variable";
+        out.reason.assign("invalid matrix or independent variable");
         return out;
     }
     const keel::usize n = A.rows();
     if (!f.empty() && f.size() != n) {
-        out.reason = "forcing vector dimension mismatch";
+        out.reason.assign("forcing vector dimension mismatch");
         return out;
     }
     for (keel::usize r = 0; r < n; ++r) {
         for (keel::usize col = 0; col < n; ++col) {
             if (A.at(r, col).isNull() || mentionsSym(c, A.at(r, col), x)) {
-                out.reason = "matrix A must have x-independent constant entries";
+                out.reason.assign("matrix A must have x-independent constant entries");
                 return out;
             }
         }
@@ -2031,23 +2030,23 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
 
     const SymMatrix Phi = matrixExp(c, A, x, budget);
     if (Phi.empty()) {
-        out.reason = "could not construct fundamental matrix exp(A*x)";
+        out.reason.assign("could not construct fundamental matrix exp(A*x)");
         return out;
     }
 
-    std::vector<Expr> cVec(n);
+    keel::Array<Expr> cVec(n);
     for (keel::usize i = 0; i < n; ++i)
-        cVec[i] = c.symbol("C" + std::to_string(i + 1));
+        cVec[i] = c.symbol(keel::format("C{}", i + 1));
 
     const SymMatrix yHomMat = Phi.mul(c, SymMatrix::column(cVec));
-    std::vector<Expr> ySol(n, c.zero());
+    keel::Array<Expr> ySol(n, c.zero());
     for (keel::usize i = 0; i < n; ++i)
         ySol[i] = simplify(c, yHomMat.at(i, 0), budget);
 
     bool hasForcing = false;
     for (const Expr &fi : f) {
         if (fi.isNull()) {
-            out.reason = "null entry in forcing vector";
+            out.reason.assign("null entry in forcing vector");
             return out;
         }
         if (!c.isZero(fi))
@@ -2066,7 +2065,7 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
                 continue;
             const auto ant = integrate(c, term, x, budget);
             if (!ant.proved()) {
-                out.reason = "could not integrate Variation of Parameters term";
+                out.reason.assign("could not integrate Variation of Parameters term");
                 return out;
             }
             intVec.at(i, 0) = ant.F;
@@ -2078,7 +2077,7 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
     }
 
     if (!verifyOdeSystem1Linear(c, ySol, A, f, x, budget)) {
-        out.reason = "system ODE solution failed certificate verification";
+        out.reason.assign("system ODE solution failed certificate verification");
         return out;
     }
 
@@ -2095,20 +2094,20 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A, Expr x,
 }
 
 OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
-                                       const std::vector<Expr> &f, Expr x,
-                                       Expr x0, const std::vector<Expr> &y0,
+                                       keel::ArrayRef<Expr> f, Expr x,
+                                       Expr x0, keel::ArrayRef<Expr> y0,
                                        Budget *budget)
 {
     OdeSystemResult out;
     if (!A.isSquare() || A.empty() || x.isNull() || x0.isNull() ||
         y0.size() != A.rows()) {
-        out.reason = "invalid IVP arguments";
+        out.reason.assign("invalid IVP arguments");
         return out;
     }
     const keel::usize n = A.rows();
     for (const Expr &yi0 : y0) {
         if (yi0.isNull()) {
-            out.reason = "null initial value";
+            out.reason.assign("null initial value");
             return out;
         }
     }
@@ -2118,11 +2117,11 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
         return gen;
 
     // Extract particular solution y_p(x) by setting C1 = ... = Cn = 0
-    std::vector<Expr> yp(n);
+    keel::Array<Expr> yp(n);
     for (keel::usize i = 0; i < n; ++i) {
         Expr e = gen.y[i];
         for (keel::usize j = 0; j < n; ++j)
-            e = c.subs(e, c.symbol("C" + std::to_string(j + 1)), c.zero());
+            e = c.subs(e, c.symbol(keel::format("C{}", j + 1)), c.zero());
         yp[i] = simplify(c, e, budget);
     }
 
@@ -2139,19 +2138,19 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
     const SymMatrix PhiShifted = gen.fundamental.subs(c, x, shiftedX);
     const SymMatrix yHomIVP = PhiShifted.mul(c, delta0);
 
-    std::vector<Expr> yIVP(n);
+    keel::Array<Expr> yIVP(n);
     for (keel::usize i = 0; i < n; ++i) {
         yIVP[i] = simplify(c, c.add({yHomIVP.at(i, 0), yp[i]}), budget);
     }
 
     if (!verifyOdeSystem1Linear(c, yIVP, A, f, x, budget)) {
-        out.reason = "IVP system solution failed ODE certificate";
+        out.reason.assign("IVP system solution failed ODE certificate");
         return out;
     }
     for (keel::usize i = 0; i < n; ++i) {
         const Expr atX0 = c.subs(yIVP[i], x, x0);
         if (!isZeroSimp(c, c.add({atX0, c.neg(y0[i])}))) {
-            out.reason = "IVP system solution failed initial condition at x0";
+            out.reason.assign("IVP system solution failed initial condition at x0");
             return out;
         }
     }
@@ -2163,7 +2162,7 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
 }
 
 OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A, Expr x,
-                                       Expr x0, const std::vector<Expr> &y0,
+                                       Expr x0, keel::ArrayRef<Expr> y0,
                                        Budget *budget)
 {
     return dsolveSystem1LinearIVP(c, A, {}, x, x0, y0, budget);
@@ -2200,11 +2199,11 @@ OdeResult dsolve2Nonlinear(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
     if (rhs.isNull() || x.isNull() || y.isNull() || dy.isNull() ||
         c.kind(x) != NodeKind::Symbol || c.kind(y) != NodeKind::Symbol ||
         c.kind(dy) != NodeKind::Symbol) {
-        out.reason = "invalid input arguments";
+        out.reason.assign("invalid input arguments");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -2242,7 +2241,7 @@ OdeResult dsolve2Nonlinear(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
             if (intY.proved()) {
                 const Expr impEq =
                     c.add({intY.F, c.neg(c.add({x, C2}))});
-                const std::vector<Expr> ySols =
+                const keel::Array<Expr> ySols =
                     solveSymbolic(c, impEq, y, budget);
                 for (const Expr &cand : ySols) {
                     const Expr simpCand = c.simplify(cand);
@@ -2256,8 +2255,7 @@ OdeResult dsolve2Nonlinear(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
         }
     }
 
-    out.reason =
-        "2nd-order nonlinear ODE outside supported reduction classes or uncertified";
+    out.reason.assign("2nd-order nonlinear ODE outside supported reduction classes or uncertified");
     return out;
 }
 
@@ -2267,11 +2265,11 @@ OdeResult dsolve2NonlinearIVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
     OdeResult out;
     if (rhs.isNull() || x.isNull() || y.isNull() || dy.isNull() ||
         x0.isNull() || y0.isNull() || dy0.isNull()) {
-        out.reason = "invalid IVP input arguments";
+        out.reason.assign("invalid IVP input arguments");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -2357,7 +2355,7 @@ OdeResult dsolve2NonlinearIVP(Ctx &c, Expr rhs, Expr x, Expr y, Expr dy,
         }
     }
 
-    out.reason = "unable to solve or certify 2nd-order nonlinear IVP";
+    out.reason.assign("unable to solve or certify 2nd-order nonlinear IVP");
     return out;
 }
 
@@ -2379,7 +2377,7 @@ bool hasLeadingNegativeCoeff(const Ctx &c, Expr e)
     return c.isAssumedNegative(e);
 }
 
-Expr pickPreferredParamRoot(const Ctx &c, const std::vector<Expr> &roots)
+Expr pickPreferredParamRoot(const Ctx &c, keel::ArrayRef<Expr> roots)
 {
     if (roots.empty())
         return Expr{};
@@ -2414,7 +2412,7 @@ Expr principalSqrtExpr(Ctx &c, Expr val, Budget *budget)
     const Expr sSym = c.symbol("_ode_sp_s");
     const Expr eq =
         c.add({c.pow(sSym, c.number(keel::i64{2})), c.neg(sVal)});
-    const std::vector<Expr> roots = solveSymbolic(c, eq, sSym, budget);
+    const keel::Array<Expr> roots = solveSymbolic(c, eq, sSym, budget);
     const Expr picked = pickPreferredParamRoot(c, roots);
     if (!picked.isNull())
         return c.simplify(picked);
@@ -2561,15 +2559,15 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 {
     OdeResult out;
     if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull()) {
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     if (isZeroSimp(c, a)) {
-        out.reason = "leading coefficient a(x) must be non-zero";
+        out.reason.assign("leading coefficient a(x) must be non-zero");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -2669,7 +2667,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                 const Expr nSym = c.symbol("_ode_leg_n");
                 const Expr eq =
                     c.add({c.pow(nSym, two), nSym, c.neg(D1)});
-                const std::vector<Expr> roots =
+                const keel::Array<Expr> roots =
                     solveSymbolic(c, eq, nSym, budget);
                 const Expr nRoot = pickPreferredParamRoot(c, roots);
                 if (!nRoot.isNull()) {
@@ -2726,7 +2724,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                 const Expr nSym = c.symbol("_ode_cheb2_n");
                 const Expr eq = c.add(
                     {c.pow(nSym, two), c.mul({two, nSym}), c.neg(D1)});
-                const std::vector<Expr> roots =
+                const keel::Array<Expr> roots =
                     solveSymbolic(c, eq, nSym, budget);
                 const Expr nRoot = pickPreferredParamRoot(c, roots);
                 if (!nRoot.isNull()) {
@@ -2896,7 +2894,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                         c.pow(tSym, two),
                         c.neg(c.mul({apb, tSym})),
                         abProd});
-                    const std::vector<Expr> roots =
+                    const keel::Array<Expr> roots =
                         solveSymbolic(c, eq, tSym, budget);
                     if (!roots.empty()) {
                         Expr aG = roots[0];
@@ -2949,9 +2947,9 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     // 6. General variable-coefficient 2nd-order linear ODE admitting a low-degree
     //    polynomial homogeneous solution y1(x) + Liouville reduction of order:
     {
-        std::vector<Expr> polyBasis;
-        std::vector<Expr> polyImages;
-        std::vector<Expr> rowAtoms;
+        keel::Array<Expr> polyBasis;
+        keel::Array<Expr> polyImages;
+        keel::Array<Expr> rowAtoms;
         for (int deg = 0; deg <= 4; ++deg) {
             const Expr phi =
                 (deg == 0) ? c.one()
@@ -2969,7 +2967,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             }
             polyBasis.push_back(phi);
             polyImages.push_back(img);
-            std::vector<std::pair<Expr, Expr>> terms;
+            keel::Array<std::pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, img, x, terms);
             for (const auto &kv : terms)
                 addUniqueAtom(c, rowAtoms, kv.second);
@@ -2978,7 +2976,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             SymMatrix M =
                 SymMatrix::zeros(c, rowAtoms.size(), polyBasis.size());
             for (keel::usize j = 0; j < polyBasis.size(); ++j) {
-                std::vector<std::pair<Expr, Expr>> terms;
+                keel::Array<std::pair<Expr, Expr>> terms;
                 splitIntoBasisTerms(c, polyImages[j], x, terms);
                 for (const auto &kv : terms) {
                     for (keel::usize r = 0; r < rowAtoms.size(); ++r) {
@@ -2990,10 +2988,10 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                     }
                 }
             }
-            const std::vector<SymMatrix> ns = nullspace(c, M, budget);
+            const keel::Array<SymMatrix> ns = nullspace(c, M, budget);
             if (!ns.empty()) {
                 auto buildVecPoly = [&](const SymMatrix &v) {
-                    std::vector<Expr> terms;
+                    keel::Array<Expr> terms;
                     for (keel::usize j = 0; j < polyBasis.size(); ++j) {
                         if (!c.isZero(v.at(j, 0)))
                             terms.push_back(
@@ -3015,8 +3013,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         }
     }
 
-    out.reason =
-        "2nd-order variable-coefficient ODE outside supported special-function families";
+    out.reason.assign("2nd-order variable-coefficient ODE outside supported special-function families");
     return out;
 }
 
@@ -3036,7 +3033,7 @@ OdeResult dsolve2SpecialIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
     if (!mentionsSym(c, gen.y, C2)) {
         // 1-parameter polynomial family (e.g. orthogonal polynomial solution)
-        const std::vector<Expr> c1Sols =
+        const keel::Array<Expr> c1Sols =
             solveSymbolic(c, c.add({yAt0, c.neg(y0)}), C1, budget);
         for (const Expr &c1Val : c1Sols) {
             const Expr yIVP = c.simplify(c.subs(gen.y, C1, c1Val));
@@ -3051,7 +3048,7 @@ OdeResult dsolve2SpecialIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             }
         }
         OdeResult fail;
-        fail.reason = "initial conditions incompatible with 1-parameter branch";
+        fail.reason.assign("initial conditions incompatible with 1-parameter branch");
         return fail;
     }
 
@@ -3072,7 +3069,7 @@ OdeResult dsolve2SpecialIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     const SymMatrix sol = linsolve(c, M, rhs, budget);
     if (sol.empty()) {
         OdeResult fail;
-        fail.reason = "singular Wronskian at initial point x0";
+        fail.reason.assign("singular Wronskian at initial point x0");
         return fail;
     }
 
@@ -3089,14 +3086,14 @@ OdeResult dsolve2SpecialIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     }
 
     OdeResult fail;
-    fail.reason = "special-function IVP solution failed verification";
+    fail.reason.assign("special-function IVP solution failed verification");
     return fail;
 }
 
 namespace {
 
 bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
-                            Budget *budget, std::vector<Expr> &coeffsOut)
+                            Budget *budget, keel::Array<Expr> &coeffsOut)
 {
     coeffsOut.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
     const Expr tSym = c.symbol("_ode_jet_t");
@@ -3133,7 +3130,7 @@ bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
         }
         if (c.kind(term) == NodeKind::Mul) {
             keel::i64 degT = 0;
-            std::vector<Expr> coefParts;
+            keel::Array<Expr> coefParts;
             for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr f = c.child(term, i);
                 keel::i64 kf = 0;
@@ -3184,44 +3181,44 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     OdeResult out;
     if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull() ||
         x0.isNull() || y0.isNull() || dy0.isNull() || order < 2) {
-        out.reason = "invalid series IVP input arguments or order < 2";
+        out.reason.assign("invalid series IVP input arguments or order < 2");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
     const Expr aAt0 = c.simplify(c.subs(a, x, x0));
     if (aAt0.isNull() || isZeroSimp(c, aAt0)) {
-        out.reason = "x0 is a singular point (a(x0) == 0); use dsolveSeries for Frobenius branches";
+        out.reason.assign("x0 is a singular point (a(x0) == 0); use dsolveSeries for Frobenius branches");
         return out;
     }
 
     const int jetOrder = order - 2;
-    std::vector<Expr> pCoeffs;
-    std::vector<Expr> qCoeffs;
-    std::vector<Expr> rCoeffs;
+    keel::Array<Expr> pCoeffs;
+    keel::Array<Expr> qCoeffs;
+    keel::Array<Expr> rCoeffs;
     if (!extractTaylorJetCoeffs(c, c.div(b, a), x, x0, jetOrder, budget,
                                 pCoeffs) ||
         !extractTaylorJetCoeffs(c, c.div(d, a), x, x0, jetOrder, budget,
                                 qCoeffs) ||
         !extractTaylorJetCoeffs(c, c.div(f, a), x, x0, jetOrder, budget,
                                 rCoeffs)) {
-        out.reason = "unable to expand ODE coefficients in Taylor series around x0";
+        out.reason.assign("unable to expand ODE coefficients in Taylor series around x0");
         return out;
     }
 
-    std::vector<Expr> cCoeffs(static_cast<keel::usize>(order + 1), c.zero());
+    keel::Array<Expr> cCoeffs(static_cast<keel::usize>(order + 1), c.zero());
     cCoeffs[0] = y0;
     cCoeffs[1] = dy0;
 
     for (int n = 0; n <= jetOrder; ++n) {
         if (!checkOdeBudget(c, budget)) {
-            out.reason = "budget exhausted";
+            out.reason.assign("budget exhausted");
             return out;
         }
-        std::vector<Expr> sumTerms;
+        keel::Array<Expr> sumTerms;
         for (int k = 0; k <= n; ++k) {
             const auto nkIdx = static_cast<keel::usize>(n - k);
             const auto kIdx = static_cast<keel::usize>(k);
@@ -3247,7 +3244,7 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     }
 
     const Expr dx = c.add({x, c.neg(x0)});
-    std::vector<Expr> yTerms;
+    keel::Array<Expr> yTerms;
     for (int k = 0; k <= order; ++k) {
         const Expr ck = cCoeffs[static_cast<keel::usize>(k)];
         if (c.isZero(ck))
@@ -3274,7 +3271,7 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         return out;
     }
 
-    out.reason = "Taylor series solution failed residual jet certificate";
+    out.reason.assign("Taylor series solution failed residual jet certificate");
     return out;
 }
 
@@ -3284,7 +3281,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
     OdeResult out;
     if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull() ||
         x0.isNull() || order < 2) {
-        out.reason = "invalid series ODE input arguments or order < 2";
+        out.reason.assign("invalid series ODE input arguments or order < 2");
         return out;
     }
 
@@ -3298,7 +3295,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
 
     // Regular singular point x0 (Frobenius method for homogeneous ODE f == 0):
     if (!isZeroSimp(c, f)) {
-        out.reason = "Frobenius series at singular point requires homogeneous ODE (f == 0)";
+        out.reason.assign("Frobenius series at singular point requires homogeneous ODE (f == 0)");
         return out;
     }
 
@@ -3307,11 +3304,11 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
     const Expr Q2 =
         c.simplify(c.mul({c.pow(dx, c.number(keel::i64{2})), c.div(d, a)}));
 
-    std::vector<Expr> pCoeffs;
-    std::vector<Expr> qCoeffs;
+    keel::Array<Expr> pCoeffs;
+    keel::Array<Expr> qCoeffs;
     if (!extractTaylorJetCoeffs(c, P1, x, x0, order, budget, pCoeffs) ||
         !extractTaylorJetCoeffs(c, Q2, x, x0, order, budget, qCoeffs)) {
-        out.reason = "x0 is an irregular singular point (P1 or Q2 not analytic)";
+        out.reason.assign("x0 is an irregular singular point (P1 or Q2 not analytic)");
         return out;
     }
 
@@ -3323,9 +3320,9 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
     };
 
     const Expr indEq = evalIndicial(rSym);
-    std::vector<Expr> roots = solveSymbolic(c, indEq, rSym, budget);
+    keel::Array<Expr> roots = solveSymbolic(c, indEq, rSym, budget);
     if (roots.empty()) {
-        out.reason = "unable to solve Frobenius indicial equation";
+        out.reason.assign("unable to solve Frobenius indicial equation");
         return out;
     }
 
@@ -3336,7 +3333,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
         return c.compare(lhs, rhs) < 0;
     });
 
-    std::vector<Expr> uniqueRoots;
+    keel::Array<Expr> uniqueRoots;
     for (const Expr &rt : roots) {
         bool dup = false;
         for (const Expr &ex : uniqueRoots) {
@@ -3349,9 +3346,9 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
             uniqueRoots.push_back(rt);
     }
 
-    std::vector<Expr> branches;
+    keel::Array<Expr> branches;
     for (const Expr &rRoot : uniqueRoots) {
-        std::vector<Expr> cCoeffs(static_cast<keel::usize>(order + 1), c.zero());
+        keel::Array<Expr> cCoeffs(static_cast<keel::usize>(order + 1), c.zero());
         cCoeffs[0] = c.one();
         bool validBranch = true;
         for (int n = 1; n <= order; ++n) {
@@ -3362,7 +3359,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
                 validBranch = false;
                 break;
             }
-            std::vector<Expr> sumTerms;
+            keel::Array<Expr> sumTerms;
             for (int k = 0; k < n; ++k) {
                 const auto nkIdx = static_cast<keel::usize>(n - k);
                 const auto kIdx = static_cast<keel::usize>(k);
@@ -3383,7 +3380,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
         if (!validBranch)
             continue;
 
-        std::vector<Expr> sTerms;
+        keel::Array<Expr> sTerms;
         for (int k = 0; k <= order; ++k) {
             const Expr ck = cCoeffs[static_cast<keel::usize>(k)];
             if (c.isZero(ck))
@@ -3412,7 +3409,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
     }
 
     if (branches.empty()) {
-        out.reason = "Frobenius series branches failed recurrence or jet certificate";
+        out.reason.assign("Frobenius series branches failed recurrence or jet certificate");
         return out;
     }
 
@@ -3464,13 +3461,13 @@ Expr applyTrigProductToSum(Ctx &c, Expr e)
     auto rewriteMul = [&](Expr term) -> Expr {
         if (c.kind(term) != NodeKind::Mul)
             return term;
-        std::vector<Expr> other;
-        std::vector<std::pair<std::string, Expr>> trigFactors;
+        keel::Array<Expr> other;
+        keel::Array<std::pair<keel::StringRef, Expr>> trigFactors;
         for (keel::usize i = 0; i < c.childCount(term); ++i) {
             const Expr f = c.child(term, i);
             if (c.kind(f) == NodeKind::Func && c.childCount(f) == 1 &&
                 (c.funcName(f) == "sin" || c.funcName(f) == "cos")) {
-                trigFactors.emplace_back(std::string(c.funcName(f)), c.child(f, 0));
+                trigFactors.emplace_back(keel::StringRef(c.funcName(f)), c.child(f, 0));
             } else if (c.kind(f) == NodeKind::Pow &&
                        c.kind(c.child(f, 0)) == NodeKind::Func &&
                        c.childCount(c.child(f, 0)) == 1 &&
@@ -3479,16 +3476,16 @@ Expr applyTrigProductToSum(Ctx &c, Expr e)
                        c.kind(c.child(f, 1)) == NodeKind::Number &&
                        c.numberValue(c.child(f, 1)) == Rational(2)) {
                 const Expr fn = c.child(f, 0);
-                trigFactors.emplace_back(std::string(c.funcName(fn)), c.child(fn, 0));
-                trigFactors.emplace_back(std::string(c.funcName(fn)), c.child(fn, 0));
+                trigFactors.emplace_back(keel::StringRef(c.funcName(fn)), c.child(fn, 0));
+                trigFactors.emplace_back(keel::StringRef(c.funcName(fn)), c.child(fn, 0));
             } else {
                 other.push_back(f);
             }
         }
         if (trigFactors.size() != 2)
             return term;
-        const std::string &fn1 = trigFactors[0].first;
-        const std::string &fn2 = trigFactors[1].first;
+        const keel::StringRef fn1 = trigFactors[0].first;
+        const keel::StringRef fn2 = trigFactors[1].first;
         const Expr A = trigFactors[0].second;
         const Expr B = trigFactors[1].second;
         const Expr diffAB = c.simplify(c.add({A, c.neg(B)}));
@@ -3512,7 +3509,7 @@ Expr applyTrigProductToSum(Ctx &c, Expr e)
     };
 
     if (c.kind(expd) == NodeKind::Add) {
-        std::vector<Expr> terms;
+        keel::Array<Expr> terms;
         for (keel::usize i = 0; i < c.childCount(expd); ++i)
             terms.push_back(rewriteMul(c.child(expd, i)));
         return c.add(terms);
@@ -3544,11 +3541,11 @@ PdeResult pdsolve1Quasilinear(Ctx &c, Expr a, Expr b, Expr rhs,
 {
     PdeResult out;
     if (a.isNull() || b.isNull() || rhs.isNull() || x.isNull() || y.isNull()) {
-        out.reason = "invalid 1st-order PDE arguments";
+        out.reason.assign("invalid 1st-order PDE arguments");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -3589,7 +3586,7 @@ PdeResult pdsolve1Quasilinear(Ctx &c, Expr a, Expr b, Expr rhs,
         }
 
         if (!isZeroSimp(c, a) && !isZeroSimp(c, b)) {
-            std::vector<CharCurveCandidate> candidates;
+            keel::Array<CharCurveCandidate> candidates;
 
             // 1. Constant-coefficient principal part: b*x - a*y = xi
             if (!mentionsSym(c, a, x) && !mentionsSym(c, a, y) &&
@@ -3605,13 +3602,13 @@ PdeResult pdsolve1Quasilinear(Ctx &c, Expr a, Expr b, Expr rhs,
             const OdeResult charOdeY =
                 dsolve1(c, c.simplify(c.div(b, a)), x, y, budget);
             if (charOdeY.proved()) {
-                const std::vector<Expr> invSols = solveSymbolic(
+                const keel::Array<Expr> invSols = solveSymbolic(
                     c, c.add({y, c.neg(charOdeY.y)}), C1, budget);
                 for (const Expr &inv : invSols) {
                     CharCurveCandidate cc;
                     cc.inv = c.simplify(inv);
                     cc.yOfX = c.simplify(c.subs(charOdeY.y, C1, xiSym));
-                    const std::vector<Expr> xSols = solveSymbolic(
+                    const keel::Array<Expr> xSols = solveSymbolic(
                         c, c.add({y, c.neg(cc.yOfX)}), x, budget);
                     if (!xSols.empty())
                         cc.xOfY = c.simplify(xSols[0]);
@@ -3623,13 +3620,13 @@ PdeResult pdsolve1Quasilinear(Ctx &c, Expr a, Expr b, Expr rhs,
             const OdeResult charOdeX =
                 dsolve1(c, c.simplify(c.div(a, b)), y, x, budget);
             if (charOdeX.proved()) {
-                const std::vector<Expr> invSols = solveSymbolic(
+                const keel::Array<Expr> invSols = solveSymbolic(
                     c, c.add({x, c.neg(charOdeX.y)}), C1, budget);
                 for (const Expr &inv : invSols) {
                     CharCurveCandidate cc;
                     cc.inv = c.simplify(inv);
                     cc.xOfY = c.simplify(c.subs(charOdeX.y, C1, xiSym));
-                    const std::vector<Expr> ySols = solveSymbolic(
+                    const keel::Array<Expr> ySols = solveSymbolic(
                         c, c.add({x, c.neg(cc.xOfY)}), y, budget);
                     if (!ySols.empty())
                         cc.yOfX = c.simplify(ySols[0]);
@@ -3649,11 +3646,11 @@ PdeResult pdsolve1Quasilinear(Ctx &c, Expr a, Expr b, Expr rhs,
                             CharCurveCandidate cc;
                             cc.inv = c.simplify(c.add(
                                 {intB.F, intRem.F}));
-                            const std::vector<Expr> ySols = solveSymbolic(
+                            const keel::Array<Expr> ySols = solveSymbolic(
                                 c, c.add({cc.inv, c.neg(xiSym)}), y, budget);
                             if (!ySols.empty())
                                 cc.yOfX = c.simplify(ySols[0]);
-                            const std::vector<Expr> xSols = solveSymbolic(
+                            const keel::Array<Expr> xSols = solveSymbolic(
                                 c, c.add({cc.inv, c.neg(xiSym)}), x, budget);
                             if (!xSols.empty())
                                 cc.xOfY = c.simplify(xSols[0]);
@@ -3718,7 +3715,7 @@ PdeResult pdsolve1Quasilinear(Ctx &c, Expr a, Expr b, Expr rhs,
         }
     }
 
-    out.reason = "unable to construct certified explicit general solution for 1st-order PDE";
+    out.reason.assign("unable to construct certified explicit general solution for 1st-order PDE");
     return out;
 }
 
@@ -3730,11 +3727,11 @@ PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
     PdeResult out;
     if (a.isNull() || b.isNull() || rhs.isNull() || x.isNull() || y.isNull() ||
         s.isNull() || x0S.isNull() || y0S.isNull() || u0S.isNull()) {
-        out.reason = "invalid 1st-order PDE Cauchy arguments";
+        out.reason.assign("invalid 1st-order PDE Cauchy arguments");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -3765,9 +3762,9 @@ PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
         const Expr invOnCurve =
             c.simplify(c.subs(c.subs(gen.charInvariant, x, x0S), y, y0S));
 
-        const std::vector<Expr> fValSols = solveSymbolic(
+        const keel::Array<Expr> fValSols = solveSymbolic(
             c, c.add({uOnCurve, c.neg(u0S)}), fValSym, budget);
-        const std::vector<Expr> sOfXiSols = solveSymbolic(
+        const keel::Array<Expr> sOfXiSols = solveSymbolic(
             c, c.add({invOnCurve, c.neg(xiSym)}), s, budget);
 
         for (const Expr &fValS : fValSols) {
@@ -3828,10 +3825,10 @@ PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
         const Expr eqY = c.simplify(c.add({yTau, c.neg(y)}));
 
         // Try eliminating tau from eqY first, then solving eqX for s
-        const std::vector<Expr> tauFromY = solveSymbolic(c, eqY, tau, budget);
+        const keel::Array<Expr> tauFromY = solveSymbolic(c, eqY, tau, budget);
         for (const Expr &tVal : tauFromY) {
             const Expr eqXSub = c.simplify(c.subs(eqX, tau, tVal));
-            const std::vector<Expr> sSols = solveSymbolic(c, eqXSub, s, budget);
+            const keel::Array<Expr> sSols = solveSymbolic(c, eqXSub, s, budget);
             for (const Expr &sVal : sSols) {
                 const Expr tauFinal = c.simplify(c.subs(tVal, s, sVal));
                 const Expr uCand =
@@ -3842,10 +3839,10 @@ PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
         }
 
         // Try eliminating tau from eqX first, then solving eqY for s
-        const std::vector<Expr> tauFromX = solveSymbolic(c, eqX, tau, budget);
+        const keel::Array<Expr> tauFromX = solveSymbolic(c, eqX, tau, budget);
         for (const Expr &tVal : tauFromX) {
             const Expr eqYSub = c.simplify(c.subs(eqY, tau, tVal));
-            const std::vector<Expr> sSols = solveSymbolic(c, eqYSub, s, budget);
+            const keel::Array<Expr> sSols = solveSymbolic(c, eqYSub, s, budget);
             for (const Expr &sVal : sSols) {
                 const Expr tauFinal = c.simplify(c.subs(tVal, s, sVal));
                 const Expr uCand =
@@ -3856,10 +3853,10 @@ PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
         }
 
         // Try eliminating s from eqX first, then solving eqY for tau
-        const std::vector<Expr> sFromX = solveSymbolic(c, eqX, s, budget);
+        const keel::Array<Expr> sFromX = solveSymbolic(c, eqX, s, budget);
         for (const Expr &sVal : sFromX) {
             const Expr eqYSub = c.simplify(c.subs(eqY, s, sVal));
-            const std::vector<Expr> tauSols = solveSymbolic(c, eqYSub, tau, budget);
+            const keel::Array<Expr> tauSols = solveSymbolic(c, eqYSub, tau, budget);
             for (const Expr &tVal : tauSols) {
                 const Expr sFinal = c.simplify(c.subs(sVal, tau, tVal));
                 const Expr uCand =
@@ -3870,7 +3867,7 @@ PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
         }
     }
 
-    out.reason = "unable to invert characteristic surface or certify Cauchy solution";
+    out.reason.assign("unable to invert characteristic surface or certify Cauchy solution");
     return out;
 }
 
@@ -3880,11 +3877,11 @@ PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
 {
     PdeResult out;
     if (cWave.isNull() || isZeroSimp(c, cWave) || x.isNull() || t.isNull()) {
-        out.reason = "invalid wave speed or variables in pdsolveWaveDalembert";
+        out.reason.assign("invalid wave speed or variables in pdsolveWaveDalembert");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -3924,7 +3921,7 @@ PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
         const Expr psiS = c.subs(psiExpr, x, sSym);
         const RationalIntegral intPsi = integrate(c, psiS, sSym, budget);
         if (!intPsi.proved() || intPsi.F.isNull()) {
-            out.reason = "unable to integrate initial velocity psi(x)";
+            out.reason.assign("unable to integrate initial velocity psi(x)");
             return out;
         }
         const Expr diffAntideriv =
@@ -3942,7 +3939,7 @@ PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
         const Expr fSTau = c.subs(c.subs(fExpr, x, sSym), t, tauSym);
         const RationalIntegral intS = integrate(c, fSTau, sSym, budget);
         if (!intS.proved() || intS.F.isNull()) {
-            out.reason = "unable to integrate wave forcing f(x, t) over space";
+            out.reason.assign("unable to integrate wave forcing f(x, t) over space");
             return out;
         }
         const Expr dt = c.add({t, c.neg(tauSym)});
@@ -3953,7 +3950,7 @@ PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
                    c.neg(c.subs(intS.F, sSym, lowerS))}));
         const RationalIntegral intTau = integrate(c, innerIntegral, tauSym, budget);
         if (!intTau.proved() || intTau.F.isNull()) {
-            out.reason = "unable to integrate Duhamel wave term over time";
+            out.reason.assign("unable to integrate Duhamel wave term over time");
             return out;
         }
         const Expr outerDiff =
@@ -3978,7 +3975,7 @@ PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
         return out;
     }
 
-    out.reason = "d'Alembert solution failed wave PDE or initial condition certificate";
+    out.reason.assign("d'Alembert solution failed wave PDE or initial condition certificate");
     return out;
 }
 
@@ -3989,23 +3986,23 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
     PdeResult out;
     if (alpha.isNull() || L.isNull() || isZeroSimp(c, L) || initU.isNull() ||
         x.isNull() || t.isNull() || maxModes < 1) {
-        out.reason = "invalid arguments in pdsolveHeat1D";
+        out.reason.assign("invalid arguments in pdsolveHeat1D");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
     const Expr piSym = c.symbol("pi");
     const Expr two = c.number(keel::i64{2});
     const Expr twoOverL = c.div(two, L);
-    std::vector<Expr> modeTerms;
+    keel::Array<Expr> modeTerms;
 
     if (bc == PdeBoundaryKind::Neumann) {
         const Expr int0 = definiteIntegralOn0L(c, initU, x, L, budget);
         if (int0.isNull()) {
-            out.reason = "unable to compute 0th Fourier cosine coefficient on [0, L]";
+            out.reason.assign("unable to compute 0th Fourier cosine coefficient on [0, L]");
             return out;
         }
         const Expr a0Half = c.simplify(c.div(int0, L));
@@ -4015,7 +4012,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
 
     for (int n = 1; n <= maxModes; ++n) {
         if (!checkOdeBudget(c, budget)) {
-            out.reason = "budget exhausted";
+            out.reason.assign("budget exhausted");
             return out;
         }
         const Expr nExpr = c.number(static_cast<keel::i64>(n));
@@ -4027,7 +4024,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
         const Expr intN =
             definiteIntegralOn0L(c, c.mul({initU, basisN}), x, L, budget);
         if (intN.isNull()) {
-            out.reason = "unable to compute Fourier mode coefficient on [0, L]";
+            out.reason.assign("unable to compute Fourier mode coefficient on [0, L]");
             return out;
         }
         const Expr aN = c.simplify(c.mul({twoOverL, intN}));
@@ -4058,7 +4055,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
         return out;
     }
 
-    out.reason = "1D heat Fourier solution failed PDE or boundary condition certificate";
+    out.reason.assign("1D heat Fourier solution failed PDE or boundary condition certificate");
     return out;
 }
 
@@ -4069,11 +4066,11 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
     PdeResult out;
     if (cWave.isNull() || isZeroSimp(c, cWave) || L.isNull() ||
         isZeroSimp(c, L) || x.isNull() || t.isNull() || maxModes < 1) {
-        out.reason = "invalid arguments in pdsolveWave1D";
+        out.reason.assign("invalid arguments in pdsolveWave1D");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
@@ -4082,13 +4079,13 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
     const Expr piSym = c.symbol("pi");
     const Expr two = c.number(keel::i64{2});
     const Expr twoOverL = c.div(two, L);
-    std::vector<Expr> modeTerms;
+    keel::Array<Expr> modeTerms;
 
     if (bc == PdeBoundaryKind::Neumann) {
         if (!isZeroSimp(c, fExpr)) {
             const Expr intF0 = definiteIntegralOn0L(c, fExpr, x, L, budget);
             if (intF0.isNull()) {
-                out.reason = "unable to compute 0th cosine displacement mode";
+                out.reason.assign("unable to compute 0th cosine displacement mode");
                 return out;
             }
             const Expr a0Half = c.simplify(c.div(intF0, L));
@@ -4098,7 +4095,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
         if (!isZeroSimp(c, gExpr)) {
             const Expr intG0 = definiteIntegralOn0L(c, gExpr, x, L, budget);
             if (intG0.isNull()) {
-                out.reason = "unable to compute 0th cosine velocity mode";
+                out.reason.assign("unable to compute 0th cosine velocity mode");
                 return out;
             }
             const Expr b0Half = c.simplify(c.div(intG0, L));
@@ -4109,7 +4106,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
 
     for (int n = 1; n <= maxModes; ++n) {
         if (!checkOdeBudget(c, budget)) {
-            out.reason = "budget exhausted";
+            out.reason.assign("budget exhausted");
             return out;
         }
         const Expr nExpr = c.number(static_cast<keel::i64>(n));
@@ -4126,7 +4123,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
             const Expr intF =
                 definiteIntegralOn0L(c, c.mul({fExpr, basisN}), x, L, budget);
             if (intF.isNull()) {
-                out.reason = "unable to compute Fourier displacement mode on [0, L]";
+                out.reason.assign("unable to compute Fourier displacement mode on [0, L]");
                 return out;
             }
             aN = c.simplify(c.mul({twoOverL, intF}));
@@ -4137,13 +4134,13 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
             const Expr intG =
                 definiteIntegralOn0L(c, c.mul({gExpr, basisN}), x, L, budget);
             if (intG.isNull()) {
-                out.reason = "unable to compute Fourier velocity mode on [0, L]";
+                out.reason.assign("unable to compute Fourier velocity mode on [0, L]");
                 return out;
             }
             bN = c.simplify(c.div(c.mul({twoOverL, intG}), omegaN));
         }
 
-        std::vector<Expr> timeParts;
+        keel::Array<Expr> timeParts;
         if (!isZeroSimp(c, aN))
             timeParts.push_back(c.mul({aN, c.func("cos", argT)}));
         if (!isZeroSimp(c, bN))
@@ -4176,7 +4173,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
         return out;
     }
 
-    out.reason = "1D wave Fourier solution failed PDE or boundary condition certificate";
+    out.reason.assign("1D wave Fourier solution failed PDE or boundary condition certificate");
     return out;
 }
 
@@ -4186,22 +4183,22 @@ PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
     PdeResult out;
     if (a.isNull() || isZeroSimp(c, a) || b.isNull() || isZeroSimp(c, b) ||
         topProfile.isNull() || x.isNull() || y.isNull() || maxModes < 1) {
-        out.reason = "invalid arguments in pdsolveLaplace2DRect";
+        out.reason.assign("invalid arguments in pdsolveLaplace2DRect");
         return out;
     }
     if (!checkOdeBudget(c, budget)) {
-        out.reason = "budget exhausted";
+        out.reason.assign("budget exhausted");
         return out;
     }
 
     const Expr piSym = c.symbol("pi");
     const Expr two = c.number(keel::i64{2});
     const Expr twoOverA = c.div(two, a);
-    std::vector<Expr> modeTerms;
+    keel::Array<Expr> modeTerms;
 
     for (int n = 1; n <= maxModes; ++n) {
         if (!checkOdeBudget(c, budget)) {
-            out.reason = "budget exhausted";
+            out.reason.assign("budget exhausted");
             return out;
         }
         const Expr nExpr = c.number(static_cast<keel::i64>(n));
@@ -4210,7 +4207,7 @@ PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
         const Expr intN =
             definiteIntegralOn0L(c, c.mul({topProfile, basisX}), x, a, budget);
         if (intN.isNull()) {
-            out.reason = "unable to compute Laplace Fourier mode on [0, a]";
+            out.reason.assign("unable to compute Laplace Fourier mode on [0, a]");
             return out;
         }
         const Expr aN = c.simplify(c.mul({twoOverA, intN}));
@@ -4236,7 +4233,7 @@ PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
         return out;
     }
 
-    out.reason = "2D Laplace Fourier solution failed harmonic or boundary certificate";
+    out.reason.assign("2D Laplace Fourier solution failed harmonic or boundary certificate");
     return out;
 }
 

@@ -31,7 +31,7 @@ Rational rr(keel::u64 &state, int range)
 UPoly rndPoly(keel::u64 &state, int maxDeg)
 {
     const int deg = 1 + static_cast<int>(nextU64(state) % maxDeg);
-    std::vector<Rational> cs;
+    keel::Array<Rational> cs;
     for (int i = 0; i < deg; ++i)
         cs.push_back(rr(state, 6));
     Rational lc = rr(state, 5);
@@ -52,8 +52,8 @@ TEST(AlgebraicConstruction, CanonicalForms)
     EXPECT_EQ(half.rationalValue(), Rational(keel::i64{1}, BigInt(2)));
 
     // Linear polynomials normalize to exact rationals.
-    const std::vector<Algebraic> lin =
-        Algebraic::realRoots(UPoly(std::vector<Rational>{
+    const keel::Array<Algebraic> lin =
+        Algebraic::realRoots(UPoly(keel::Array<Rational>{
             Rational(keel::i64{3}), Rational(keel::i64{-2})}));
     ASSERT_EQ(lin.size(), 1u);
     EXPECT_TRUE(lin[0].isRational());
@@ -62,8 +62,8 @@ TEST(AlgebraicConstruction, CanonicalForms)
 
 TEST(AlgebraicSqrt2, RootsSignsAndOrder)
 {
-    const std::vector<Algebraic> roots = Algebraic::realRoots(
-        UPoly(std::vector<Rational>{Rational(keel::i64{-2}), Rational(keel::i64{0}),
+    const keel::Array<Algebraic> roots = Algebraic::realRoots(
+        UPoly(keel::Array<Rational>{Rational(keel::i64{-2}), Rational(keel::i64{0}),
                                     Rational(keel::i64{1})}));
     ASSERT_EQ(roots.size(), 2u);
     EXPECT_EQ(roots[0].sign(), -1);
@@ -82,11 +82,11 @@ TEST(AlgebraicSqrt2, RootsSignsAndOrder)
 TEST(AlgebraicEquality, AcrossRepresentations)
 {
     // sqrt(2) defined by x^2 - 2 and by x^4 - 4 (positive roots).
-    const std::vector<Algebraic> a = Algebraic::realRoots(
-        UPoly(std::vector<Rational>{Rational(keel::i64{-2}), Rational(keel::i64{0}),
+    const keel::Array<Algebraic> a = Algebraic::realRoots(
+        UPoly(keel::Array<Rational>{Rational(keel::i64{-2}), Rational(keel::i64{0}),
                                     Rational(keel::i64{1})}));
-    const std::vector<Algebraic> b = Algebraic::realRoots(
-        UPoly(std::vector<Rational>{Rational(keel::i64{-4}), Rational(keel::i64{0}),
+    const keel::Array<Algebraic> b = Algebraic::realRoots(
+        UPoly(keel::Array<Rational>{Rational(keel::i64{-4}), Rational(keel::i64{0}),
                                     Rational(keel::i64{0}), Rational(keel::i64{0}),
                                     Rational(keel::i64{1})}));
     ASSERT_EQ(a.size(), 2u);
@@ -97,8 +97,8 @@ TEST(AlgebraicEquality, AcrossRepresentations)
 
     // sqrt(2) inside a larger squarefree polynomial (x^2 - 2)(x - 5)
     // = x^3 - 5x^2 - 2x + 10.
-    const std::vector<Algebraic> c = Algebraic::realRoots(
-        UPoly(std::vector<Rational>{Rational(keel::i64{10}), Rational(keel::i64{-2}),
+    const keel::Array<Algebraic> c = Algebraic::realRoots(
+        UPoly(keel::Array<Rational>{Rational(keel::i64{10}), Rational(keel::i64{-2}),
                                     Rational(keel::i64{-5}), Rational(keel::i64{1})}));
     ASSERT_EQ(c.size(), 3u); // -sqrt2, sqrt2, 5
     bool found = false;
@@ -110,11 +110,11 @@ TEST(AlgebraicEquality, AcrossRepresentations)
 
 TEST(AlgebraicDistinct, Sqrt2VsSqrt3)
 {
-    const std::vector<Algebraic> s2 = Algebraic::realRoots(
-        UPoly(std::vector<Rational>{Rational(keel::i64{-2}), Rational(keel::i64{0}),
+    const keel::Array<Algebraic> s2 = Algebraic::realRoots(
+        UPoly(keel::Array<Rational>{Rational(keel::i64{-2}), Rational(keel::i64{0}),
                                     Rational(keel::i64{1})}));
-    const std::vector<Algebraic> s3 = Algebraic::realRoots(
-        UPoly(std::vector<Rational>{Rational(keel::i64{-3}), Rational(keel::i64{0}),
+    const keel::Array<Algebraic> s3 = Algebraic::realRoots(
+        UPoly(keel::Array<Rational>{Rational(keel::i64{-3}), Rational(keel::i64{0}),
                                     Rational(keel::i64{1})}));
     EXPECT_LT(Algebraic::compare(s2[1], s3[1]), 0); // sqrt2 < sqrt3
     EXPECT_GT(Algebraic::compare(s3[1], s2[1]), 0);
@@ -130,9 +130,9 @@ TEST(AlgebraicProperty, OrderingAndCrossRepresentation)
         const UPoly q = rndPoly(state, 3);
         if (q.isConst())
             continue;
-        const std::vector<Algebraic> rp = Algebraic::realRoots(p);
-        const std::vector<Algebraic> rq = Algebraic::realRoots(q);
-        const std::vector<Algebraic> rpq = Algebraic::realRoots(p * q);
+        const keel::Array<Algebraic> rp = Algebraic::realRoots(p);
+        const keel::Array<Algebraic> rq = Algebraic::realRoots(q);
+        const keel::Array<Algebraic> rpq = Algebraic::realRoots(p * q);
         if (rp.empty() && rq.empty())
             continue;
 
@@ -169,7 +169,7 @@ TEST(AlgebraicProperty, SignAndApproxConsistent)
     keel::u64 state = 0xB16B00B5E5ULL;
     for (int iter = 0; iter < 1000; ++iter) {
         const UPoly p = rndPoly(state, 4);
-        const std::vector<Algebraic> roots = Algebraic::realRoots(p);
+        const keel::Array<Algebraic> roots = Algebraic::realRoots(p);
         for (const Algebraic &r : roots) {
             const int s = r.sign();
             const double v = r.approx();

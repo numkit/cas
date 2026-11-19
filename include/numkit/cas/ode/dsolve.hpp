@@ -1,12 +1,11 @@
 // ode/dsolve.hpp — certified symbolic solver for 1st- and 2nd-order ODEs.
 #pragma once
 
+#include <keel/array.h>
+#include <keel/string.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/linalg/symmatrix.hpp>
-
-#include <string>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -20,7 +19,7 @@ struct OdeResult
 
     Status status = Status::Unevaluated;
     Expr y; // explicit solution y(x), certified by substituting into the ODE
-    std::string reason;
+    keel::String reason;
 
     bool proved() const { return status == Status::Proved; }
 };
@@ -53,7 +52,7 @@ struct ClairautResult
     Status status = Status::Unevaluated;
     Expr general;  // general linear family y(x) = C1 * x + g(C1)
     Expr singular; // singular envelope solution (if x + g'(p) = 0 is solvable; null otherwise)
-    std::string reason;
+    keel::String reason;
 
     bool proved() const { return status == Status::Proved; }
 };
@@ -160,15 +159,15 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 // where `coeffs = {a_0, a_1, ..., a_N}` (from y(x) up to y^(N)(x), with a_N != 0)
 // using integration constants "C1", ..., "CN".
 // Certified by verifying `simplify(sum_{k=0}^N coeffs[k] * y^(k)(x) - f(x)) == 0`.
-OdeResult dsolveNLinear(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
+OdeResult dsolveNLinear(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
                         Expr x, Budget *budget = nullptr);
 
 // Solve an N-th order constant-coefficient linear IVP:
 //   sum_{k=0}^N coeffs[k] * y^(k)(x) = f(x),
 //   y(x0) = initVals[0], y'(x0) = initVals[1], ..., y^(N-1)(x0) = initVals[N-1].
 // Certified against the ODE and all N initial conditions.
-OdeResult dsolveNLinearIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr f,
-                           Expr x, Expr x0, const std::vector<Expr> &initVals,
+OdeResult dsolveNLinearIVP(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
+                           Expr x, Expr x0, keel::ArrayRef<Expr> initVals,
                            Budget *budget = nullptr);
 
 // Solve a 2nd-order nonlinear ODE `y''(x) = rhs(x, y, dy)` (where `dy` is the
@@ -199,9 +198,9 @@ struct OdeSystemResult
     };
 
     Status status = Status::Unevaluated;
-    std::vector<Expr> y;   // n components [y_0(x), ..., y_{n-1}(x)]
+    keel::Array<Expr> y;   // n components [y_0(x), ..., y_{n-1}(x)]
     SymMatrix fundamental; // n x n fundamental matrix Phi(x) = exp(A*x) with Phi(0) = I
-    std::string reason;
+    keel::String reason;
 
     bool proved() const { return status == Status::Proved; }
 };
@@ -217,18 +216,18 @@ struct OdeSystemResult
 OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A, Expr x,
                                     Budget *budget = nullptr);
 OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
-                                    const std::vector<Expr> &f, Expr x,
+                                    keel::ArrayRef<Expr> f, Expr x,
                                     Budget *budget = nullptr);
 
 // Solve a 1st-order constant-coefficient linear ODE system Initial Value Problem:
 //   y'(x) = A * y(x) (+ f(x)),   y(x0) = y0
 // Certified against the ODE system and all n initial conditions y_i(x0) == y0_i.
 OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A, Expr x,
-                                       Expr x0, const std::vector<Expr> &y0,
+                                       Expr x0, keel::ArrayRef<Expr> y0,
                                        Budget *budget = nullptr);
 OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
-                                       const std::vector<Expr> &f, Expr x,
-                                       Expr x0, const std::vector<Expr> &y0,
+                                       keel::ArrayRef<Expr> f, Expr x,
+                                       Expr x0, keel::ArrayRef<Expr> y0,
                                        Budget *budget = nullptr);
 
 // ---------------------------------------------------------------------------
@@ -246,7 +245,7 @@ struct PdeResult
     Status status = Status::Unevaluated;
     Expr u;             // certified explicit solution u(x, y) or u(x, t)
     Expr charInvariant; // 1st characteristic invariant I_1(x, y) = const (when applicable)
-    std::string reason;
+    keel::String reason;
 
     bool proved() const { return status == Status::Proved; }
 };

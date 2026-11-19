@@ -1,3 +1,4 @@
+#include <keel/algo.h>
 #include <keel/core.h>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
@@ -22,17 +23,17 @@ const BigInt B1()
 
 // ── integer-polynomial helpers (ascending BigInt vectors) ─────
 
-void bpTrim(std::vector<BigInt> &a)
+void bpTrim(keel::Array<BigInt> &a)
 {
     while (!a.empty() && a.back().isZero())
         a.pop_back();
 }
 
-std::vector<BigInt> bpMul(const std::vector<BigInt> &a, const std::vector<BigInt> &b)
+keel::Array<BigInt> bpMul(keel::ArrayRef<BigInt> a, keel::ArrayRef<BigInt> b)
 {
     if (a.empty() || b.empty())
         return {};
-    std::vector<BigInt> out(a.size() + b.size() - 1, B0());
+    keel::Array<BigInt> out(a.size() + b.size() - 1, B0());
     for (keel::usize i = 0; i < a.size(); ++i)
         for (keel::usize j = 0; j < b.size(); ++j)
             out[i + j] = out[i + j] + a[i] * b[j];
@@ -40,9 +41,9 @@ std::vector<BigInt> bpMul(const std::vector<BigInt> &a, const std::vector<BigInt
     return out;
 }
 
-std::vector<BigInt> bpSub(const std::vector<BigInt> &a, const std::vector<BigInt> &b)
+keel::Array<BigInt> bpSub(keel::ArrayRef<BigInt> a, keel::ArrayRef<BigInt> b)
 {
-    std::vector<BigInt> out(std::max(a.size(), b.size()), B0());
+    keel::Array<BigInt> out(std::max(a.size(), b.size()), B0());
     for (keel::usize i = 0; i < a.size(); ++i)
         out[i] = a[i];
     for (keel::usize i = 0; i < b.size(); ++i)
@@ -55,7 +56,7 @@ std::vector<BigInt> bpSub(const std::vector<BigInt> &a, const std::vector<BigInt
 // negative coefficient leaves a negative remainder — lift it back into
 // [0, m). Consumers feed possibly-negative symmetric values through
 // here (Hensel state, reconstruction candidates).
-void bpMod(std::vector<BigInt> &a, const BigInt &m)
+void bpMod(keel::Array<BigInt> &a, const BigInt &m)
 {
     for (BigInt &c : a) {
         BigInt q, r;
@@ -77,17 +78,18 @@ keel::u64 modP(const BigInt &c, keel::u64 p)
     return r.isZero() ? 0 : static_cast<keel::u64>(r.lowLimb());
 }
 
-FpPoly toFp(const std::vector<BigInt> &a, keel::u64 p)
+FpPoly toFp(keel::ArrayRef<BigInt> a, keel::u64 p)
 {
-    std::vector<keel::u64> cs;
+    keel::Array<keel::u64> cs;
     for (const BigInt &c : a)
         cs.push_back(modP(c, p));
-    return FpPoly(p, cs);
+    return FpPoly(p, keel::move(cs));
 }
 
-std::vector<BigInt> fromFp(const FpPoly &a, keel::u64 p)
+keel::Array<BigInt> fromFp(const FpPoly &a, keel::u64 p)
 {
-    std::vector<BigInt> out;
+    (void)p;
+    keel::Array<BigInt> out;
     for (keel::u64 c : a.coeffsAll())
         out.push_back(BigInt(c));
     return out;
@@ -95,18 +97,18 @@ std::vector<BigInt> fromFp(const FpPoly &a, keel::u64 p)
 
 // Exact division over Z: true iff b divides a exactly (including
 // leading-coefficient divisibility); q receives the quotient.
-bool bpDivExact(const std::vector<BigInt> &a, const std::vector<BigInt> &b,
-                std::vector<BigInt> &q)
+bool bpDivExact(keel::ArrayRef<BigInt> a, keel::ArrayRef<BigInt> b,
+                keel::Array<BigInt> &q)
 {
     if (b.empty())
         return false;
     if (a.empty()) {
-        q = {};
+        q.clear();
         return true;
     }
     if (a.size() < b.size())
         return false;
-    std::vector<BigInt> r = a;
+    keel::Array<BigInt> r = keel::Array<BigInt>::from(a);
     q.assign(a.size() - b.size() + 1, B0());
     const int db = static_cast<int>(b.size()) - 1;
     while (!r.empty()) {
@@ -128,7 +130,7 @@ bool bpDivExact(const std::vector<BigInt> &a, const std::vector<BigInt> &b,
 }
 
 // Normalize to primitive part with positive leading coefficient.
-void bpNormalize(std::vector<BigInt> &a)
+void bpNormalize(keel::Array<BigInt> &a)
 {
     if (a.empty())
         return;
@@ -156,9 +158,9 @@ void bpNormalize(std::vector<BigInt> &a)
 // large prime factor cost millions of BigInt divisions and dominated
 // the whole integration; see notes/c1-algebraic-layer.md (baseline
 // profiling session).
-std::vector<BigInt> divisorsOf(const BigInt &n)
+keel::Array<BigInt> divisorsOf(const BigInt &n)
 {
-    std::vector<BigInt> divs{B1()};
+    keel::Array<BigInt> divs{B1()};
     for (const auto &pe : BigInt::factorize(n)) {
         const keel::usize base = divs.size();
         BigInt pw(1);
@@ -168,14 +170,14 @@ std::vector<BigInt> divisorsOf(const BigInt &n)
                 divs.push_back(divs[w] * pw);
         }
     }
-    std::sort(divs.begin(), divs.end());
+    keel::sort(divs);
     return divs;
 }
 
 // Symmetric representatives in (-pk/2, pk/2].
-std::vector<BigInt> bpSymmetric(const std::vector<BigInt> &a, const BigInt &pk)
+keel::Array<BigInt> bpSymmetric(keel::ArrayRef<BigInt> a, const BigInt &pk)
 {
-    std::vector<BigInt> out;
+    keel::Array<BigInt> out;
     const BigInt half = pk >> 1;
     for (const BigInt &c : a) {
         BigInt v = c;
@@ -193,21 +195,21 @@ std::vector<BigInt> bpSymmetric(const std::vector<BigInt> &a, const BigInt &pk)
 // (mod p*m), with the FIXED Bezout pair s*g + t*h == 1 over F_p
 // (g and h stay congruent to themselves mod p during lifting, so the
 // pair never changes).
-void henselStep(const std::vector<BigInt> &target,
+void henselStep(keel::ArrayRef<BigInt> target,
                 const FpPoly &gFp, const FpPoly &hFp,
                 const FpPoly &sFp, const FpPoly &tFp,
                 keel::u64 p, const BigInt &m,
-                std::vector<BigInt> &g, std::vector<BigInt> &h)
+                keel::Array<BigInt> &g, keel::Array<BigInt> &h)
 {
-    std::vector<BigInt> e = bpSub(target, bpMul(g, h));
-    std::vector<keel::u64> eFpCs;
+    keel::Array<BigInt> e = bpSub(target, bpMul(g, h));
+    keel::Array<keel::u64> eFpCs;
     for (const BigInt &c : e) {
         BigInt q, r;
         BigInt::divMod(c, m, q, r);
         assert(r.isZero() && "henselStep: congruence invariant broken");
         eFpCs.push_back(modP(q, p));
     }
-    const FpPoly eFp(p, eFpCs);
+    const FpPoly eFp(p, keel::move(eFpCs));
 
     // g*v + h*u = e over F_p with BOTH corrections reduced:
     // u = (t*e) mod g, v = (s*e) mod h. The reduction of v modulo h is
@@ -216,17 +218,10 @@ void henselStep(const std::vector<BigInt> &target,
     // s*e + q*h which must be taken mod h).
     const FpPoly u = (tFp * eFp) % gFp;
     const FpPoly v = (sFp * eFp) % hFp;
-    {
-        auto fs = [](const FpPoly &q) {
-            std::string o;
-            for (keel::u64 c : q.coeffsAll()) o += std::to_string(c) + " ";
-            return o;
-        };
-    }
 
-    const std::vector<BigInt> uZ = fromFp(u, p);
-    const std::vector<BigInt> vZ = fromFp(v, p);
-    const auto accumulate = [&](std::vector<BigInt> &dst, const std::vector<BigInt> &d) {
+    const keel::Array<BigInt> uZ = fromFp(u, p);
+    const keel::Array<BigInt> vZ = fromFp(v, p);
+    const auto accumulate = [&](keel::Array<BigInt> &dst, keel::ArrayRef<BigInt> d) {
         if (dst.size() < d.size())
             dst.resize(d.size(), B0());
         for (keel::usize i = 0; i < d.size(); ++i)
@@ -239,17 +234,17 @@ void henselStep(const std::vector<BigInt> &target,
 
 // Lift g[lo..hi) so their product equals target (mod pk), by splitting
 // off the last factor as one side of the pair.
-void henselGroup(const std::vector<BigInt> &target,
-                 std::vector<std::vector<BigInt>> &g,
+void henselGroup(keel::ArrayRef<BigInt> target,
+                 keel::Array<keel::Array<BigInt>> &g,
                  keel::usize lo, keel::usize hi,
-                 const std::vector<FpPoly> &gFp,
+                 keel::ArrayRef<FpPoly> gFp,
                  keel::u64 p, const BigInt &pk)
 {
     if (hi - lo <= 1)
         return;
     const keel::usize mid = hi - 1;
 
-    std::vector<BigInt> A(g[lo]);
+    keel::Array<BigInt> A = g[lo].clone();
     for (keel::usize i = lo + 1; i < mid; ++i)
         A = bpMul(A, g[i]);
 
@@ -258,16 +253,16 @@ void henselGroup(const std::vector<BigInt> &target,
     FpPoly::extGcd(aFp, gFp[mid], sFp, tFp);
 
     BigInt m = BigInt(p);
-    std::vector<BigInt> B = g[mid];
+    keel::Array<BigInt> B = g[mid].clone();
     while (m < pk) {
         henselStep(target, aFp, gFp[mid], sFp, tFp, p, m, A, B);
         m = m * BigInt(p);
         bpMod(A, m);
         bpMod(B, m);
     }
-    g[mid] = B;
+    g[mid] = keel::move(B);
     if (mid == lo + 1)
-        g[lo] = A; // singleton left group: A IS the lifted factor
+        g[lo] = A.clone(); // singleton left group: A IS the lifted factor
     henselGroup(A, g, lo, mid, gFp, p, pk);
 }
 
@@ -283,35 +278,42 @@ int popcount32(keel::u32 v)
     return c;
 }
 
-std::vector<keel::u32> subsetMasks(keel::usize n)
+keel::Array<keel::u32> subsetMasks(keel::usize n)
 {
-    std::vector<keel::u32> masks;
+    keel::Array<keel::u32> masks;
     const keel::u32 full = (n >= 32) ? ~keel::u32{0}
                                          : ((keel::u32{1} << n) - 1);
     for (keel::u32 m = 1; m <= full - 1 && m != 0; ++m)
         masks.push_back(m);
-    std::sort(masks.begin(), masks.end(), [](keel::u32 a, keel::u32 b) {
+    keel::sort(masks, [](keel::u32 a, keel::u32 b) {
         const int pa = popcount32(a), pb = popcount32(b);
         return pa != pb ? pa < pb : a < b;
     });
     return masks;
 }
 
+keel::Array<keel::Array<BigInt>> singletonPoly(keel::Array<BigInt> f)
+{
+    keel::Array<keel::Array<BigInt>> out;
+    out.push_back(keel::move(f));
+    return out;
+}
+
 } // namespace
 
-std::vector<std::vector<BigInt>>
-factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
+keel::Array<keel::Array<BigInt>>
+factorPrimitiveInteger(keel::ArrayRef<BigInt> fIn, Budget *budget)
 {
     if (budget && !budget->tryConsume())
         return {};
-    std::vector<BigInt> f = fIn;
+    keel::Array<BigInt> f = keel::Array<BigInt>::from(fIn);
     bpTrim(f);
     assert(!f.empty() && f.size() >= 2 && "need degree >= 1");
     // Strip the content: the caller gets the factors of the primitive
     // part (a non-unit content is the caller's business).
     bpNormalize(f);
     if (f.size() == 2)
-        return {f};
+        return singletonPoly(keel::move(f));
 
     // Prime search: p must not kill the leading coefficient and f must
     // stay squarefree mod p.
@@ -330,12 +332,12 @@ factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
         break;
     }
     if (p == 0)
-        return {f}; // no suitable small prime found: return whole
+        return singletonPoly(keel::move(f)); // no suitable small prime found: return whole
 
-    std::vector<FpPoly> gFp = FpPoly::factor(fFp);
+    keel::Array<FpPoly> gFp = FpPoly::factor(fFp);
     const keel::usize r = gFp.size();
     if (r <= 1)
-        return {f}; // irreducible mod p => irreducible over Q
+        return singletonPoly(keel::move(f)); // irreducible mod p => irreducible over Q
     assert(r < 32 && "subset enumeration limit");
     // All gFp are MONIC: the lift runs against the monic associate of f
     // (absorbing lc mod p into a factor would freeze the product's
@@ -362,7 +364,7 @@ factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
     while (pk <= bound * BigInt(32))
         pk = pk * BigInt(p);
 
-    std::vector<std::vector<BigInt>> g;
+    keel::Array<keel::Array<BigInt>> g;
     for (const FpPoly &gf : gFp)
         g.push_back(fromFp(gf, p));
     // monic associate of f, reduced mod pk: f/lc * (lc^-1 mod pk exists
@@ -395,7 +397,7 @@ factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
             lcInv = lcInv + pk;
     }
     (void)lcRem;
-    std::vector<BigInt> target = f;
+    keel::Array<BigInt> target = f.clone();
     bpMod(target, pk);
     for (BigInt &c : target)
         c = (c * lcInv) % pk;
@@ -404,11 +406,11 @@ factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
     // Reconstruction: only divisors found by exact division over Z are
     // recorded; the final leftover is the exact integer cofactor (never
     // a lifted representative, which is only defined modulo p^k).
-    std::vector<std::vector<BigInt>> out;
-    std::vector<keel::usize> active;
+    keel::Array<keel::Array<BigInt>> out;
+    keel::Array<keel::usize> active;
     for (keel::usize i = 0; i < r; ++i)
         active.push_back(i);
-    std::vector<BigInt> cur = f;
+    keel::Array<BigInt> cur = keel::move(f);
 
     while (!cur.empty() && cur.size() >= 2) {
         const keel::u32 n = static_cast<keel::u32>(active.size());
@@ -421,15 +423,15 @@ factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
             // per while-iteration: `cur` only changes when a factor is
             // found, and recomputing per subset mask re-factored the
             // same lc up to 2^n times.
-            const std::vector<BigInt> divs = divisorsOf(cur.back().abs());
+            const keel::Array<BigInt> divs = divisorsOf(cur.back().abs());
             for (keel::u32 mask : subsetMasks(n)) {
-                std::vector<BigInt> cand{B1()};
+                keel::Array<BigInt> cand{B1()};
                 for (keel::u32 i = 0; i < n; ++i)
                     if (mask & (keel::u32{1} << i)) {
                         cand = bpMul(cand, g[active[i]]);
                         bpMod(cand, pk);
                     }
-                std::vector<BigInt> sym = bpSymmetric(cand, pk);
+                keel::Array<BigInt> sym = bpSymmetric(cand, pk);
                 if (sym.empty() || sym.size() < 2)
                     continue;
                 // the true divisor is D * sym where D divides lc(cur).
@@ -460,7 +462,7 @@ factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
                         if (!r0.isZero())
                             continue;
                     }
-                    std::vector<BigInt> scaled = sym;
+                    keel::Array<BigInt> scaled = sym.clone();
                     for (BigInt &c : scaled)
                         c = c * d;
                     bpMod(scaled, pk);
@@ -482,17 +484,17 @@ factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
                         }
                     if (over)
                         continue;
-                    std::vector<BigInt> qv;
+                    keel::Array<BigInt> qv;
                     if (bpDivExact(cur, scaled, qv)) {
                         bpNormalize(scaled); // after division: before it,
                         // content-stripping destroys the D scale
-                        out.push_back(scaled);
-                        cur = qv;
-                        std::vector<keel::usize> keep;
+                        out.push_back(keel::move(scaled));
+                        cur = keel::move(qv);
+                        keel::Array<keel::usize> keep;
                         for (keel::u32 i = 0; i < n; ++i)
                             if (!(mask & (keel::u32{1} << i)))
                                 keep.push_back(active[i]);
-                        active = keep;
+                        active = keel::move(keep);
                         found = true;
                         break;
                     }
@@ -503,30 +505,30 @@ factorPrimitiveInteger(const std::vector<BigInt> &fIn, Budget *budget)
         }
         if (!found) {
             // the remaining cofactor over Z is the last irreducible
-            std::vector<BigInt> sym = cur;
+            keel::Array<BigInt> sym = keel::move(cur);
             bpNormalize(sym);
             if (sym.size() >= 2)
-                out.push_back(sym);
+                out.push_back(keel::move(sym));
             cur.clear();
             break;
         }
     }
 
-    std::sort(out.begin(), out.end(),
-              [](const std::vector<BigInt> &a, const std::vector<BigInt> &b) {
-                  if (a.size() != b.size())
-                      return a.size() < b.size();
-                  for (keel::usize i = a.size(); i-- > 0;)
-                      if (a[i] != b[i])
-                          return a[i] < b[i];
-                  return false;
-              });
+    keel::sort(out,
+               [](const keel::Array<BigInt> &a, const keel::Array<BigInt> &b) {
+                   if (a.size() != b.size())
+                       return a.size() < b.size();
+                   for (keel::usize i = a.size(); i-- > 0;)
+                       if (a[i] != b[i])
+                           return a[i] < b[i];
+                   return false;
+               });
     return out;
 }
 
-std::vector<UPoly> factorOverQ(const UPoly &f, Budget *budget)
+keel::Array<UPoly> factorOverQ(const UPoly &f, Budget *budget)
 {
-    std::vector<UPoly> out;
+    keel::Array<UPoly> out;
     if (f.isZero() || f.deg() < 1)
         return out;
     if (budget && !budget->tryConsume())
@@ -537,7 +539,7 @@ std::vector<UPoly> factorOverQ(const UPoly &f, Budget *budget)
     // components are monic, so clearing their denominators by the lcm
     // already yields a primitive integer polynomial (minimality of the
     // lcm: any common prime factor would contradict it).
-    const std::vector<UPoly> comps = f.squarefreeDecomposition();
+    const keel::Array<UPoly> comps = f.squarefreeDecomposition();
     for (keel::usize i = 0; i < comps.size(); ++i) {
         const UPoly &comp = comps[i];
         if (comp.isConst())
@@ -545,20 +547,20 @@ std::vector<UPoly> factorOverQ(const UPoly &f, Budget *budget)
         BigInt denLcm2(1);
         for (const Rational &c : comp.coeffs())
             denLcm2 = BigInt::lcm(denLcm2, c.den());
-        std::vector<BigInt> ip2;
+        keel::Array<BigInt> ip2;
         for (const Rational &c : comp.coeffs()) {
             BigInt q2, r2;
             BigInt::divMod(denLcm2, c.den(), q2, r2);
             ip2.push_back(c.num() * q2);
         }
-        for (const std::vector<BigInt> &g : factorPrimitiveInteger(ip2, budget)) {
+        for (const keel::Array<BigInt> &g : factorPrimitiveInteger(ip2, budget)) {
             if (budget && !budget->ok())
                 return {};
-            std::vector<Rational> cs;
+            keel::Array<Rational> cs;
             const BigInt glc = g.back();
             for (const BigInt &c : g)
                 cs.emplace_back(c, glc);
-            const UPoly fact(cs);
+            const UPoly fact(keel::move(cs));
             for (keel::usize k = 0; k <= i; ++k) // multiplicity i+1
                 out.push_back(fact);
         }

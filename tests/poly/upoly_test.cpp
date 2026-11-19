@@ -12,7 +12,7 @@ using numkit::cas::UPoly;
 // Parse an ascending comma-separated coefficient list ("1,-2,3/4").
 UPoly P(const std::string &csv)
 {
-    std::vector<Rational> cs;
+    keel::Array<Rational> cs;
     keel::usize pos = 0;
     while (pos <= csv.size()) {
         const keel::usize comma = csv.find(',', pos);
@@ -36,7 +36,7 @@ std::string S(const UPoly &p)
     for (const Rational &c : p.coeffs()) {
         if (!out.empty())
             out += ",";
-        out += c.toString();
+        out += c.toString().c_str();
     }
     return out;
 }
@@ -53,7 +53,7 @@ keel::u64 nextU64(keel::u64 &state)
 UPoly rndPoly(keel::u64 &state, int maxDeg)
 {
     const int deg = static_cast<int>(nextU64(state) % (maxDeg + 1));
-    std::vector<Rational> cs;
+    keel::Array<Rational> cs;
     for (int i = 0; i <= deg; ++i) {
         const keel::i64 n = static_cast<keel::i64>(nextU64(state) % 19) - 9;
         const keel::i64 d =
@@ -241,7 +241,7 @@ TEST(UPolyProperty, Squarefree)
         ASSERT_EQ(sfp * prod.lc(), prod * sfp.lc())
             << S(a) << " sfp=" << S(sfp) << " prod=" << S(prod);
 
-        const std::vector<UPoly> fs = a.squarefreeDecomposition();
+        const keel::Array<UPoly> fs = a.squarefreeDecomposition();
         UPoly rebuild = UPoly(Rational(a.lc()));
         for (keel::usize i = 0; i < fs.size(); ++i)
             rebuild = rebuild * fs[i].powUInt(i + 1);
@@ -280,7 +280,7 @@ TEST(UPolyProperty, ResultantIdentities)
 
         // Evaluation oracle: res(A, x - r) == A(r).
         const keel::i64 r = static_cast<keel::i64>(nextU64(state) % 41) - 20;
-        const UPoly lin = UPoly(std::vector<Rational>{Rational(-r),
+        const UPoly lin = UPoly(keel::Array<Rational>{Rational(-r),
                                                       Rational(keel::i64{1})});
         ASSERT_EQ(UPoly::resultant(a, lin), a.eval(Rational(r)))
             << S(a) << " at " << r;

@@ -2,7 +2,6 @@
 #include <numkit/cas/poly/algebraic.hpp>
 
 #include <cassert>
-#include <string>
 
 namespace numkit::cas {
 
@@ -20,7 +19,7 @@ const Rational R1()
 
 UPoly linearOf(const Rational &r)
 {
-    return UPoly(std::vector<Rational>{Rational(-r), R1()});
+    return UPoly(keel::Array<Rational>{Rational(-r), R1()});
 }
 
 int cmpRational(const Rational &a, const Rational &b)
@@ -65,10 +64,10 @@ Algebraic::Algebraic(UPoly p, RootInterval iv)
     iv_ = iv;
 }
 
-std::vector<Algebraic> Algebraic::realRoots(const UPoly &p)
+keel::Array<Algebraic> Algebraic::realRoots(const UPoly &p)
 {
     const UPoly psf = p.squarefreePart();
-    std::vector<Algebraic> out;
+    keel::Array<Algebraic> out;
     if (psf.isConst())
         return out;
     for (const RootInterval &iv : isolateRealRoots(p))
@@ -85,7 +84,7 @@ Rational Algebraic::rationalValue() const
 // True iff a's number is a root of g. Any root of g lying strictly
 // inside a's open isolating interval is a root of a's own polynomial
 // there, hence is a's number itself.
-bool Algebraic::containsRoot(const UPoly &g, const std::vector<UPoly> &sturmG,
+bool Algebraic::containsRoot(const UPoly &g, keel::ArrayRef<UPoly> sturmG,
                              const Algebraic &a)
 {
     if (a.isRational())
@@ -163,7 +162,7 @@ int Algebraic::compare(const Algebraic &a, const Algebraic &b)
     bool samePoly = false;
     const UPoly g = UPoly::gcd(a.poly_, b.poly_);
     if (!g.isConst()) {
-        const std::vector<UPoly> sturmG = sturmSequence(g);
+        const keel::Array<UPoly> sturmG = sturmSequence(g);
         // A common root of both polynomials is a root of g. If both
         // numbers live among g's roots, comparing roots of one
         // polynomial decides everything; otherwise they are distinct.
@@ -173,8 +172,8 @@ int Algebraic::compare(const Algebraic &a, const Algebraic &b)
             samePoly = true;
         }
     }
-    const std::vector<UPoly> sturmW =
-        samePoly ? sturmSequence(g) : std::vector<UPoly>();
+    const keel::Array<UPoly> sturmW =
+        samePoly ? sturmSequence(g) : keel::Array<UPoly>();
 
     while (true) {
         const int pos = x.positionCompare(y);
@@ -232,14 +231,11 @@ void Algebraic::refineTo(const Rational &width)
 double Algebraic::approx() const
 {
     if (iv_.exact())
-        return std::stod(iv_.lo.num().toString()) /
-               std::stod(iv_.lo.den().toString());
+        return iv_.lo.toDouble();
     const_cast<Algebraic *>(this)->refineTo(
         Rational(keel::i64{1}, BigInt(1000000)));
-    const double lo = std::stod(iv_.lo.num().toString()) /
-                      std::stod(iv_.lo.den().toString());
-    const double hi = std::stod(iv_.hi.num().toString()) /
-                      std::stod(iv_.hi.den().toString());
+    const double lo = iv_.lo.toDouble();
+    const double hi = iv_.hi.toDouble();
     return 0.5 * (lo + hi);
 }
 

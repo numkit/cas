@@ -1,17 +1,17 @@
 // core/expr.hpp — hash-consed immutable expression DAG.
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
+#include <keel/hash_map.h>
+#include <keel/string.h>
 #include <numkit/cas/num/rational.hpp>
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <string>
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -101,23 +101,23 @@ public:
     Expr zero() { return number(keel::i64{0}); }
     Expr one() { return number(keel::i64{1}); }
 
-    Expr symbol(const std::string &name);
+    Expr symbol(keel::StringRef name);
 
     // Algebraic number atom: the root #index (0-based, in ascending
     // real order) of a MONIC polynomial of degree >= 2 with rational
     // coefficients (ascending). The polynomial is stored canonically
     // (trimmed, monic); identical (poly, index) pairs intern to the
     // same node. Callers extract rational roots themselves.
-    Expr rootOf(std::vector<Rational> poly, int index);
-    const std::vector<Rational> &rootOfPoly(Expr e) const;
+    Expr rootOf(keel::Array<Rational> poly, int index);
+    const keel::Array<Rational> &rootOfPoly(Expr e) const;
     int rootOfIndex(Expr e) const;
 
-    Expr add(const std::vector<Expr> &children) { return makeAdd(children); }
-    Expr mul(const std::vector<Expr> &children) { return makeMul(children); }
+    Expr add(keel::ArrayRef<Expr> children) { return makeAdd(children); }
+    Expr mul(keel::ArrayRef<Expr> children) { return makeMul(children); }
     Expr pow(Expr base, Expr exp);
-    Expr func(const std::string &name, Expr arg);
-    Expr func(const std::string &name, Expr arg0, Expr arg1);
-    Expr func(const std::string &name, const std::vector<Expr> &args);
+    Expr func(keel::StringRef name, Expr arg);
+    Expr func(keel::StringRef name, Expr arg0, Expr arg1);
+    Expr func(keel::StringRef name, keel::ArrayRef<Expr> args);
 
     Expr neg(Expr a);             // (-1) * a
     Expr div(Expr a, Expr b);     // a * b^(-1); b must be non-zero Number
@@ -125,8 +125,8 @@ public:
     // ── observation ───────────────────────────────────────────
     NodeKind kind(Expr e) const { return node(e).kind; }
     const Rational &numberValue(Expr e) const { return node(e).num; }
-    const std::string &symbolName(Expr e) const;
-    const std::string &funcName(Expr e) const;
+    const keel::String &symbolName(Expr e) const;
+    const keel::String &funcName(Expr e) const;
     keel::usize childCount(Expr e) const { return node(e).childCount; }
     Expr child(Expr e, keel::usize i) const;
 
@@ -175,7 +175,7 @@ public:
     // decline otherwise.
     bool evalExact(
         Expr e,
-        const std::vector<std::pair<std::string, Rational>> &vals,
+        keel::ArrayRef<std::pair<keel::StringRef, Rational>> vals,
         Rational &out);
 
     // Real IEEE-754 double evaluation (vpa/double bridge, item 35):
@@ -188,10 +188,10 @@ public:
     // values, poles, or non-finite overflow.
     bool evalDouble(
         Expr e,
-        const std::vector<std::pair<std::string, keel::f64>> &vals,
+        keel::ArrayRef<std::pair<keel::StringRef, keel::f64>> vals,
         keel::f64 &out) const;
 
-    std::string toString(Expr e) const;
+    keel::String toString(Expr e) const;
 
     // Tree-based leaf/head count (Mathematica/Rubi LeafCount convention):
     // 1 for atoms (Number, Symbol, RootOf), 1 + sum(child leafCounts) for
@@ -214,9 +214,9 @@ public:
     }
 
     // ── symbol assumptions (item 45) ──────────────────────────
-    void assume(const std::string &name, AssumeDomain dom);
+    void assume(keel::StringRef name, AssumeDomain dom);
     void assume(Expr sym, AssumeDomain dom);
-    AssumeDomain assumption(const std::string &name) const;
+    AssumeDomain assumption(keel::StringRef name) const;
     AssumeDomain assumption(Expr sym) const;
     void clearAssumptions();
 
@@ -235,42 +235,43 @@ private:
         return nodes_[e.id_ - 1];
     }
 
-    keel::u32 internName(const std::string &name,
-                             std::unordered_map<std::string, keel::u32> &ids,
-                             std::deque<std::string> &names);
+    keel::u32 internName(keel::StringRef name,
+                             keel::HashMap<keel::String, keel::u32> &ids,
+                             std::deque<keel::String> &names);
 
     Expr makeNode(NodeKind kind, keel::u32 aux,
-                  const std::vector<Expr> &children, const Rational &num);
+                  keel::ArrayRef<Expr> children, const Rational &num);
     bool equalNode(const Node &n, NodeKind kind, keel::u32 aux,
-                   const std::vector<Expr> &children, const Rational &num) const;
+                   keel::ArrayRef<Expr> children, const Rational &num) const;
 
-    Expr makeAdd(const std::vector<Expr> &children);
-    Expr makeMul(const std::vector<Expr> &children);
+    Expr makeAdd(keel::ArrayRef<Expr> children);
+    Expr makeMul(keel::ArrayRef<Expr> children);
     bool smallInteger(const Rational &e, keel::i64 &n) const;
-    Expr diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo);
+    Expr diffRec(Expr e, Expr var, keel::HashMap<keel::u32, Expr> &memo);
 
-    void print(Expr e, std::string &out) const;
-    void printPrec(Expr e, std::string &out, int parentPrec) const;
+    void print(Expr e, keel::String &out) const;
+    void printPrec(Expr e, keel::String &out, int parentPrec) const;
     static int kindRank(NodeKind k);
 
     std::deque<Node> nodes_;
-    std::vector<keel::u32> childArena_;
-    std::unordered_multimap<keel::u32, keel::u32> intern_;
-    std::unordered_map<std::string, keel::u32> symbolIds_;
-    std::unordered_map<std::string, keel::u32> funcIds_;
-    std::deque<std::string> symbolNames_;
-    std::deque<std::string> funcNames_;
+    keel::Array<keel::u32> childArena_;
+    keel::HashMap<keel::u32, keel::u32> internHead_;
+    keel::Array<keel::u32> internNext_;
+    keel::HashMap<keel::String, keel::u32> symbolIds_;
+    keel::HashMap<keel::String, keel::u32> funcIds_;
+    std::deque<keel::String> symbolNames_;
+    std::deque<keel::String> funcNames_;
     // RootOf payload table (index by node aux). Coefficients ascending;
     // stored as plain vectors to keep the core layer independent of
     // the poly layer.
     struct RootOfDesc
     {
-        std::vector<Rational> poly;
+        keel::Array<Rational> poly;
         int index;
         keel::u32 nodeId = 0; // id of the interning node (filled after makeNode)
     };
     std::deque<RootOfDesc> rootofs_;
-    std::unordered_map<std::string, AssumeDomain> assumptions_;
+    keel::HashMap<keel::String, AssumeDomain> assumptions_;
 };
 
 } // namespace numkit::cas

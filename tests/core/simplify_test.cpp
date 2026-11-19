@@ -45,8 +45,8 @@ TEST(SimplifyTest, PythagoreanAndHyperbolicIdentities)
         const Expr want = parseExpr(c, tc.expected);
         const Expr got = c.simplify(e);
         EXPECT_EQ(got, want)
-            << "in:   " << tc.in << "\n  got:  " << c.toString(got)
-            << "\n  want: " << c.toString(want);
+            << "in:   " << tc.in << "\n  got:  " << c.toString(got).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -76,8 +76,8 @@ TEST(SimplifyTest, CrossTrigAndParityIdentities)
         const Expr want = parseExpr(c, tc.expected);
         const Expr got = c.simplify(e);
         EXPECT_EQ(got, want)
-            << "in:   " << tc.in << "\n  got:  " << c.toString(got)
-            << "\n  want: " << c.toString(want);
+            << "in:   " << tc.in << "\n  got:  " << c.toString(got).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -113,8 +113,8 @@ TEST(SimplifyTest, InverseFunctionAndExpLogIdentities)
         const Expr want = parseExpr(c, tc.expected);
         const Expr got = c.simplify(e);
         EXPECT_EQ(got, want)
-            << "in:   " << tc.in << "\n  got:  " << c.toString(got)
-            << "\n  want: " << c.toString(want);
+            << "in:   " << tc.in << "\n  got:  " << c.toString(got).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -165,8 +165,8 @@ TEST(SimplifyTest, SpecialAngleTrigAndInverseTrigEvaluation)
         const Expr want = parseExpr(c, tc.expected);
         const Expr got = c.simplify(e);
         EXPECT_EQ(got, want)
-            << "in:   " << tc.in << "\n  got:  " << c.toString(got)
-            << "\n  want: " << c.toString(want);
+            << "in:   " << tc.in << "\n  got:  " << c.toString(got).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -190,8 +190,8 @@ TEST(SimplifyTest, RationalGcdAndFactorization)
         const Expr want = parseExpr(c, tc.expected);
         const Expr got = c.simplify(e);
         EXPECT_EQ(got, want)
-            << "in:   " << tc.in << "\n  got:  " << c.toString(got)
-            << "\n  want: " << c.toString(want);
+            << "in:   " << tc.in << "\n  got:  " << c.toString(got).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -804,7 +804,7 @@ TEST(SimplifyTest, StirlingNumbersAndMatlabScriptingUtilities)
 
     // 5. LaTeX and C/C++ code generation
     const Expr texExpr = parseExpr(c, "sin(pi*x)/x^(1/2) + 3/4*alpha^2");
-    const std::string tex = latex(c, texExpr);
+    const std::string tex(latex(c, texExpr).as_ref());
     EXPECT_NE(tex.find("\\frac"), std::string::npos);
     EXPECT_NE(tex.find("\\sqrt{x}"), std::string::npos);
     EXPECT_NE(tex.find("\\sin"), std::string::npos);
@@ -812,7 +812,7 @@ TEST(SimplifyTest, StirlingNumbersAndMatlabScriptingUtilities)
     EXPECT_NE(tex.find("\\alpha"), std::string::npos);
 
     const Expr cExpr = parseExpr(c, "exp(-x^2)*cos(pi*x) + x^(1/2)");
-    const std::string cc = ccode(c, cExpr);
+    const std::string cc(ccode(c, cExpr).as_ref());
     EXPECT_NE(cc.find("std::exp"), std::string::npos);
     EXPECT_NE(cc.find("std::cos"), std::string::npos);
     EXPECT_NE(cc.find("std::sqrt"), std::string::npos);

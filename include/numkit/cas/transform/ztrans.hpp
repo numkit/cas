@@ -2,11 +2,10 @@
 // and certified linear recurrence equation solver (rsolve / rsolveIVP).
 #pragma once
 
+#include <keel/array.h>
+#include <keel/string.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
-
-#include <string>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -16,7 +15,7 @@ struct ZTransResult
 
     Status status = Status::Unevaluated;
     Expr F;             // transformed expression in `z` (ztrans) or `n` (iztrans)
-    std::string reason; // populated on Unevaluated
+    keel::String reason; // populated on Unevaluated
 
     bool proved() const { return status == Status::ProvedSymbolic; }
 };
@@ -43,7 +42,7 @@ struct RsolveResult
 
     Status status = Status::Unevaluated;
     Expr y;             // closed-form sequence y(n)
-    std::string reason; // populated on Unevaluated
+    keel::String reason; // populated on Unevaluated
 
     bool proved() const { return status == Status::ProvedSymbolic; }
 };
@@ -52,15 +51,15 @@ struct RsolveResult
 //   coeffs[0]*y(n) + coeffs[1]*y(n+1) + ... + coeffs[K]*y(n+K) = rhs(n)
 // with integration constants C1, ..., CK, certified by substituting y(n+k)
 // back into the recurrence.
-RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
+RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                     Budget *budget = nullptr);
 
 // Solve the initial-value problem for a K-th order linear recurrence:
 //   coeffs[0]*y(n) + ... + coeffs[K]*y(n+K) = rhs(n),
 //   y(0) = initVals[0], ..., y(K-1) = initVals[K-1],
 // certified by verifying both the recurrence and all K initial values.
-RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
-                       Expr n, const std::vector<Expr> &initVals,
+RsolveResult rsolveIVP(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs,
+                       Expr n, keel::ArrayRef<Expr> initVals,
                        Budget *budget = nullptr);
 
 } // namespace numkit::cas

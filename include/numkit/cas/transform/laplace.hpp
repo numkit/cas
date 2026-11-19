@@ -1,10 +1,9 @@
 // transform/laplace.hpp — symbolic unilateral Laplace and inverse Laplace transforms.
 #pragma once
 
+#include <keel/string.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
-
-#include <string>
 
 namespace numkit::cas {
 
@@ -14,7 +13,7 @@ struct LaplaceResult
 
     Status status = Status::Unevaluated;
     Expr F;             // transformed expression in `s` (laplace) or `t` (ilaplace)
-    std::string reason; // populated on Unevaluated
+    keel::String reason; // populated on Unevaluated
 
     bool proved() const { return status == Status::ProvedSymbolic; }
 };

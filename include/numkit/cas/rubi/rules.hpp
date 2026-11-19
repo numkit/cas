@@ -14,13 +14,13 @@
 // step 3) come later.
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
+#include <keel/string.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 
 #include <cstdint>
-#include <string>
-#include <vector>
 
 namespace numkit::cas::rubi {
 
@@ -98,8 +98,23 @@ Expr rubiApply(const RuleTables &t, Ctx &c, Expr e, Expr var,
 // table at generation time, recorded per rule) and the matched Expr.
 struct Binding
 {
-    std::string name;
+    keel::String name;
     Expr value;
+
+    Binding() noexcept = default;
+    Binding(keel::String n, Expr v) noexcept : name(keel::move(n)), value(v) {}
+    Binding(keel::StringRef n, Expr v) : name(keel::String::from(n)), value(v) {}
+    Binding(const Binding &o) : name(o.name.clone()), value(o.value) {}
+    Binding &operator=(const Binding &o)
+    {
+        if (this != &o) {
+            name = o.name.clone();
+            value = o.value;
+        }
+        return *this;
+    }
+    Binding(Binding &&) noexcept = default;
+    Binding &operator=(Binding &&) noexcept = default;
 };
 
 // Match `e` against the tables' patterns, depth-first along the
@@ -107,6 +122,6 @@ struct Binding
 // assignments of the FIRST matching rule (table order = rule order
 // in the source file, which is Rubi's precedence by construction).
 int matchFirst(const RuleTables &t, Ctx &c, Expr e,
-               std::vector<Binding> &bindings);
+               keel::Array<Binding> &bindings);
 
 } // namespace numkit::cas::rubi

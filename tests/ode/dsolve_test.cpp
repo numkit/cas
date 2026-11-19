@@ -56,7 +56,7 @@ TEST(DsolveTest, FirstOrderQuadratureAndLinear)
     {
         const Expr rhs = P(c, "3*x^2 - 2*x + 1");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y));
         EXPECT_TRUE(sameExpr(c, sol.y, P(c, "x^3 - x^2 + x + C1")));
     }
@@ -65,7 +65,7 @@ TEST(DsolveTest, FirstOrderQuadratureAndLinear)
     {
         const Expr rhs = P(c, "-2*y + 4");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y));
     }
 
@@ -73,7 +73,7 @@ TEST(DsolveTest, FirstOrderQuadratureAndLinear)
     {
         const Expr rhs = P(c, "-3*y + exp(-x)");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y));
     }
 
@@ -82,7 +82,7 @@ TEST(DsolveTest, FirstOrderQuadratureAndLinear)
     {
         const Expr rhs = P(c, "(2/x)*y + x^3");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y));
         EXPECT_TRUE(sameExpr(c, sol.y, P(c, "1/2*x^4 + C1*x^2")));
     }
@@ -98,7 +98,7 @@ TEST(DsolveTest, FirstOrderSeparableAndBernoulli)
     {
         const Expr rhs = P(c, "x * y^2");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y));
     }
 
@@ -106,7 +106,7 @@ TEST(DsolveTest, FirstOrderSeparableAndBernoulli)
     {
         const Expr rhs = P(c, "2*x / y");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y));
     }
 
@@ -114,7 +114,7 @@ TEST(DsolveTest, FirstOrderSeparableAndBernoulli)
     {
         const Expr rhs = P(c, "(1/x)*y + x*y^2");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y));
     }
 }
@@ -129,18 +129,18 @@ TEST(DsolveTest, FirstOrderIVP)
     {
         const Expr rhs = P(c, "-2*y + 6");
         const OdeResult sol = dsolve1IVP(c, rhs, x, y, c.zero(), c.number(5));
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(sameExpr(c, sol.y, P(c, "3 + 2*exp(-2*x)")))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 
     // 2. Separable IVP: y' = x * y^2, y(0) = 1 -> y(x) = 2 / (2 - x^2)
     {
         const Expr rhs = P(c, "x * y^2");
         const OdeResult sol = dsolve1IVP(c, rhs, x, y, c.zero(), c.one());
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(sameExpr(c, sol.y, P(c, "2 / (2 - x^2)")))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 }
 
@@ -153,7 +153,7 @@ TEST(DsolveTest, SecondOrderHomogeneousThreeRegimes)
     {
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.number(-3), c.number(2), c.zero(), x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.number(-3), c.number(2), c.zero(), x));
     }
 
@@ -161,7 +161,7 @@ TEST(DsolveTest, SecondOrderHomogeneousThreeRegimes)
     {
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.number(4), c.number(4), c.zero(), x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.number(4), c.number(4), c.zero(), x));
     }
 
@@ -169,7 +169,7 @@ TEST(DsolveTest, SecondOrderHomogeneousThreeRegimes)
     {
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.zero(), c.number(4), c.zero(), x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.zero(), c.number(4), c.zero(), x));
     }
 
@@ -177,7 +177,7 @@ TEST(DsolveTest, SecondOrderHomogeneousThreeRegimes)
     {
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.number(2), c.number(5), c.zero(), x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.number(2), c.number(5), c.zero(), x));
     }
 }
@@ -192,7 +192,7 @@ TEST(DsolveTest, SecondOrderForcedAndResonance)
         const Expr fx = P(c, "x^2");
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.zero(), c.number(-1), fx, x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.zero(), c.number(-1), fx, x));
     }
 
@@ -201,7 +201,7 @@ TEST(DsolveTest, SecondOrderForcedAndResonance)
         const Expr fx = P(c, "2*x");
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.one(), c.zero(), fx, x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.one(), c.zero(), fx, x));
     }
 
@@ -210,7 +210,7 @@ TEST(DsolveTest, SecondOrderForcedAndResonance)
         const Expr fx = P(c, "4*exp(3*x)");
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.number(-3), c.number(2), fx, x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.number(-3), c.number(2), fx, x));
     }
 
@@ -219,7 +219,7 @@ TEST(DsolveTest, SecondOrderForcedAndResonance)
         const Expr fx = P(c, "exp(x)");
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.number(-3), c.number(2), fx, x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.number(-3), c.number(2), fx, x));
     }
 
@@ -228,7 +228,7 @@ TEST(DsolveTest, SecondOrderForcedAndResonance)
         const Expr fx = P(c, "6*exp(x)");
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.number(-2), c.one(), fx, x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.number(-2), c.one(), fx, x));
     }
 
@@ -237,7 +237,7 @@ TEST(DsolveTest, SecondOrderForcedAndResonance)
         const Expr fx = P(c, "3*sin(x)");
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.zero(), c.number(4), fx, x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.zero(), c.number(4), fx, x));
     }
 
@@ -246,7 +246,7 @@ TEST(DsolveTest, SecondOrderForcedAndResonance)
         const Expr fx = P(c, "8*sin(2*x)");
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.zero(), c.number(4), fx, x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol.y, c.one(), c.zero(), c.number(4), fx, x));
     }
 }
@@ -260,18 +260,18 @@ TEST(DsolveTest, SecondOrderIVP)
     {
         const OdeResult sol = dsolve2LinearIVP(
             c, c.one(), c.zero(), c.one(), c.zero(), x, c.zero(), c.one(), c.number(2));
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(sameExpr(c, sol.y, P(c, "cos(x) + 2*sin(x)")))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 
     // 2. Critically damped IVP: y'' + 2*y' + y = 0, y(0) = 1, y'(0) = 0 -> (1 + x)*exp(-x)
     {
         const OdeResult sol = dsolve2LinearIVP(
             c, c.one(), c.number(2), c.one(), c.zero(), x, c.zero(), c.one(), c.zero());
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(sameExpr(c, sol.y, P(c, "(1 + x)*exp(-x)")))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 
     // 3. Resonant forced IVP: y'' + y = cos(x), y(0) = 0, y'(0) = 0 -> 1/2*x*sin(x)
@@ -279,9 +279,9 @@ TEST(DsolveTest, SecondOrderIVP)
         const Expr fx = P(c, "cos(x)");
         const OdeResult sol = dsolve2LinearIVP(
             c, c.one(), c.zero(), c.one(), fx, x, c.zero(), c.zero(), c.zero());
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(sameExpr(c, sol.y, P(c, "1/2*x*sin(x)")))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 }
 
@@ -307,7 +307,7 @@ TEST(DsolveTest, RandomFirstAndSecondOrderLinearProperty)
         const Expr rhs = c.add({c.mul({c.number(-a), y}),
                                 c.number(c0), c.mul({c.number(c1), x})});
         const OdeResult sol1 = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol1.proved()) << "iter " << iter << ": " << sol1.reason;
+        ASSERT_TRUE(sol1.proved()) << "iter " << iter << ": " << sol1.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol1.y, rhs, x, y));
 
         // 2nd-order: y'' + a*y' + b*y = c0 + c1*x
@@ -315,7 +315,7 @@ TEST(DsolveTest, RandomFirstAndSecondOrderLinearProperty)
         const Expr fx = c.add({c.number(c0), c.mul({c.number(c1), x})});
         const OdeResult sol2 =
             dsolve2Linear(c, c.one(), c.number(a), c.number(b), fx, x);
-        ASSERT_TRUE(sol2.proved()) << "iter " << iter << ": " << sol2.reason;
+        ASSERT_TRUE(sol2.proved()) << "iter " << iter << ": " << sol2.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sol2.y, c.one(), c.number(a), c.number(b), fx, x));
     }
 }
@@ -346,7 +346,7 @@ TEST(DsolveTest, BoundaryAndEdgeCases)
     {
         const OdeResult sol =
             dsolve2Linear(c, c.one(), c.zero(), c.zero(), c.zero(), x);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(sameExpr(c, sol.y, P(c, "C1 + C2*x")));
     }
 
@@ -373,18 +373,18 @@ TEST(DsolveTest, LinearOdeSystemsDistinctRepeatedAndComplexEigenvalues)
         const SymMatrix A(2, 2,
                           {c.one(), c.number(2), c.number(2), c.one()});
         const OdeSystemResult gen = dsolveSystem1Linear(c, A, x);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
         ASSERT_EQ(gen.y.size(), 2u);
 
         const OdeSystemResult ivp1 = dsolveSystem1LinearIVP(
             c, A, x, c.zero(), {c.one(), c.number(-1)});
-        ASSERT_TRUE(ivp1.proved()) << ivp1.reason;
+        ASSERT_TRUE(ivp1.proved()) << ivp1.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp1.y[0], P(c, "exp(-x)")));
         EXPECT_TRUE(sameExpr(c, ivp1.y[1], P(c, "-exp(-x)")));
 
         const OdeSystemResult ivp2 = dsolveSystem1LinearIVP(
             c, A, x, c.zero(), {c.one(), c.one()});
-        ASSERT_TRUE(ivp2.proved()) << ivp2.reason;
+        ASSERT_TRUE(ivp2.proved()) << ivp2.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp2.y[0], P(c, "exp(3*x)")));
         EXPECT_TRUE(sameExpr(c, ivp2.y[1], P(c, "exp(3*x)")));
     }
@@ -396,7 +396,7 @@ TEST(DsolveTest, LinearOdeSystemsDistinctRepeatedAndComplexEigenvalues)
                           {c.number(2), c.one(), c.zero(), c.number(2)});
         const OdeSystemResult ivp = dsolveSystem1LinearIVP(
             c, A, x, c.zero(), {c.one(), c.number(3)});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y[0], P(c, "(1 + 3*x)*exp(2*x)")));
         EXPECT_TRUE(sameExpr(c, ivp.y[1], P(c, "3*exp(2*x)")));
     }
@@ -408,7 +408,7 @@ TEST(DsolveTest, LinearOdeSystemsDistinctRepeatedAndComplexEigenvalues)
             2, 2, {c.number(-1), c.number(-2), c.number(2), c.number(-1)});
         const OdeSystemResult ivp = dsolveSystem1LinearIVP(
             c, A, x, c.zero(), {c.one(), c.zero()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y[0], P(c, "exp(-x)*cos(2*x)")));
         EXPECT_TRUE(sameExpr(c, ivp.y[1], P(c, "exp(-x)*sin(2*x)")));
     }
@@ -423,7 +423,7 @@ TEST(DsolveTest, LinearOdeSystemsDistinctRepeatedAndComplexEigenvalues)
                            c.number(-1)});
         const OdeSystemResult ivp = dsolveSystem1LinearIVP(
             c, A, x, c.one(), {c.zero(), c.zero(), c.number(2)});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(
             sameExpr(c, ivp.y[0], P(c, "(x - 1)^2*exp(1 - x)")));
         EXPECT_TRUE(
@@ -440,7 +440,7 @@ TEST(DsolveTest, LinearOdeSystemsDistinctRepeatedAndComplexEigenvalues)
         const std::vector<Expr> f = {c.zero(), P(c, "cos(x)")};
         const OdeSystemResult ivp = dsolveSystem1LinearIVP(
             c, A, f, x, c.zero(), {c.zero(), c.zero()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y[0], P(c, "1/2*x*sin(x)")));
         EXPECT_TRUE(
             sameExpr(c, ivp.y[1], P(c, "1/2*sin(x) + 1/2*x*cos(x)")));
@@ -462,7 +462,7 @@ TEST(DsolveTest, PropertyRandom2x2LinearOdeSystems)
         const OdeSystemResult res =
             dsolveSystem1LinearIVP(c, A, x, c.zero(), y0);
         ASSERT_TRUE(res.proved())
-            << "iter " << iter << " A=" << A.toString(c) << ": " << res.reason;
+            << "iter " << iter << " A=" << A.toString(c).c_str() << ": " << res.reason.c_str();
         ASSERT_EQ(res.y.size(), 2u);
         for (keel::usize i = 0; i < 2; ++i) {
             const Expr dy = c.diff(res.y[i], x);
@@ -490,26 +490,26 @@ TEST(DsolveTest, FirstOrderHomogeneousAndExactOde)
     {
         const Expr rhs = P(c, "y/x + exp(y/x)");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
 
         // IVP: y(1) = 0 -> -x * log(1 - log(x)) = x * log(1 / (1 - log(x)))
         const OdeResult ivp = dsolve1IVP(c, rhs, x, y, c.one(), c.zero());
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(checkOde1(c, ivp.y, rhs, x, y))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
         EXPECT_TRUE(c.isZero(c.simplify(c.subs(ivp.y, x, c.one()))))
-            << "got at x=1: " << c.toString(c.subs(ivp.y, x, c.one()));
+            << "got at x=1: " << c.toString(c.subs(ivp.y, x, c.one())).c_str();
     }
 
     // 2. Homogeneous rational ODE: y' = (x^2 + y^2) / (x * y)
     {
         const Expr rhs = P(c, "(x^2 + y^2)/(x*y)");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 
     // 3. Exact 1st-order ODE: (2*x*y + 3*x^2)*dx + (x^2 + 2*y)*dy = 0
@@ -517,9 +517,9 @@ TEST(DsolveTest, FirstOrderHomogeneousAndExactOde)
     {
         const Expr rhs = P(c, "-(2*x*y + 3*x^2)/(x^2 + 2*y)");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 
     // 4. Integrating factor mu(x) = x: (3*x*y + y^2)*dx + (x^2 + x*y)*dy = 0
@@ -527,9 +527,9 @@ TEST(DsolveTest, FirstOrderHomogeneousAndExactOde)
     {
         const Expr rhs = P(c, "-(3*x*y + y^2)/(x^2 + x*y)");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 
     // 5. Integrating factor mu(y) = y^(-2): dx + ((y^2 - x)/y)*dy = 0
@@ -537,9 +537,9 @@ TEST(DsolveTest, FirstOrderHomogeneousAndExactOde)
     {
         const Expr rhs = P(c, "-y/(y^2 - x)");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, sol.y, rhs, x, y))
-            << "got: " << c.toString(sol.y);
+            << "got: " << c.toString(sol.y).c_str();
     }
 }
 
@@ -553,14 +553,14 @@ TEST(DsolveTest, SecondOrderEulerCauchyOdeAndIVP)
     {
         const OdeResult gen = dsolve2EulerCauchy(
             c, c.one(), c.number(-2), c.number(2), c.zero(), x);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
 
         const OdeResult ivp = dsolve2EulerCauchyIVP(
             c, c.one(), c.number(-2), c.number(2), c.zero(), x, c.one(),
             c.number(3), c.number(5));
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x + 2*x^2")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 2. Repeated indicial root: x^2*y'' + 3*x*y' + y = 0 (r = -1)
@@ -569,9 +569,9 @@ TEST(DsolveTest, SecondOrderEulerCauchyOdeAndIVP)
         const OdeResult ivp = dsolve2EulerCauchyIVP(
             c, c.one(), c.number(3), c.one(), c.zero(), x, c.one(),
             c.number(2), c.one());
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "(2 + 3*log(x))/x")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 3. Complex-conjugate indicial roots: x^2*y'' + x*y' + 4*y = 0 (r = +-2*i)
@@ -580,9 +580,9 @@ TEST(DsolveTest, SecondOrderEulerCauchyOdeAndIVP)
         const OdeResult ivp = dsolve2EulerCauchyIVP(
             c, c.one(), c.one(), c.number(4), c.zero(), x, c.one(),
             c.one(), c.number(4));
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "cos(2*log(x)) + 2*sin(2*log(x))")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 4. Inhomogeneous Euler-Cauchy: x^2*y'' - 2*x*y' + 2*y = 2*x^3
@@ -592,9 +592,9 @@ TEST(DsolveTest, SecondOrderEulerCauchyOdeAndIVP)
         const OdeResult ivp = dsolve2EulerCauchyIVP(
             c, c.one(), c.number(-2), c.number(2), fx, x, c.one(),
             c.one(), c.number(3));
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x^3")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 5. Resonant Euler-Cauchy with double root r = 1:
@@ -603,9 +603,9 @@ TEST(DsolveTest, SecondOrderEulerCauchyOdeAndIVP)
         const OdeResult ivp = dsolve2EulerCauchyIVP(
             c, c.one(), c.number(-1), c.one(), x, x, c.one(),
             c.zero(), c.zero());
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1/2*x*log(x)^2")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 }
 
@@ -622,9 +622,9 @@ TEST(DsolveTest, NthOrderConstantCoefficientLinearOdeAndIVP)
         const OdeResult ivp = dsolveNLinearIVP(
             c, coeffs, c.zero(), x, c.zero(),
             {c.number(3), c.number(6), c.number(14)});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "exp(x) + exp(2*x) + exp(3*x)")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 2. 3rd-order triple root with resonant forcing:
@@ -636,9 +636,9 @@ TEST(DsolveTest, NthOrderConstantCoefficientLinearOdeAndIVP)
         const Expr fx = P(c, "6*exp(x)");
         const OdeResult ivp = dsolveNLinearIVP(
             c, coeffs, fx, x, c.zero(), {c.zero(), c.zero(), c.zero()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x^3*exp(x)")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 3. 4th-order mixed real + complex roots (Euler-Bernoulli beam):
@@ -650,9 +650,9 @@ TEST(DsolveTest, NthOrderConstantCoefficientLinearOdeAndIVP)
         const OdeResult ivp = dsolveNLinearIVP(
             c, coeffs, c.zero(), x, c.zero(),
             {c.number(2), c.zero(), c.zero(), c.zero()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1/2*exp(x) + 1/2*exp(-x) + cos(x)")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 4. 4th-order repeated complex roots (biharmonic):
@@ -668,9 +668,9 @@ TEST(DsolveTest, NthOrderConstantCoefficientLinearOdeAndIVP)
         const OdeResult ivp = dsolveNLinearIVP(
             c, coeffs, c.zero(), x, c.zero(),
             {c.zero(), c.zero(), c.number(2), c.zero()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x*sin(x)")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 5. 4th-order pure integrator with polynomial forcing:
@@ -681,9 +681,9 @@ TEST(DsolveTest, NthOrderConstantCoefficientLinearOdeAndIVP)
         const OdeResult ivp = dsolveNLinearIVP(
             c, coeffs, c.number(24), x, c.zero(),
             {c.one(), c.number(2), c.zero(), c.zero()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1 + 2*x + x^4")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 }
 
@@ -699,15 +699,15 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
     {
         const Expr rhs = P(c, "1 + x^2 - 2*x*y + y^2");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(
             sameExpr(c, c.diff(sol.y, x), c.subs(rhs, y, sol.y)));
 
         // Riccati IVP: y(0) = 1 -> y(x) = x + 1/(1 - x)
         const OdeResult ivp = dsolve1IVP(c, rhs, x, y, c.zero(), c.one());
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "x + 1/(1 - x)")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 2. Riccati ODE with supplied particular solution via `dsolve1Riccati`:
@@ -715,7 +715,7 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
     {
         const Expr rhs = P(c, "-1/x^2 - y/x + y^2");
         const OdeResult sol = dsolve1Riccati(c, rhs, x, y, P(c, "1/x"));
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(
             sameExpr(c, c.diff(sol.y, x), c.subs(rhs, y, sol.y)));
     }
@@ -725,7 +725,7 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
     {
         const Expr rhs = P(c, "y^2 - 2/x^2");
         const OdeResult sol = dsolve1(c, rhs, x, y);
-        ASSERT_TRUE(sol.proved()) << sol.reason;
+        ASSERT_TRUE(sol.proved()) << sol.reason.c_str();
         EXPECT_TRUE(
             sameExpr(c, c.diff(sol.y, x), c.subs(rhs, y, sol.y)));
     }
@@ -734,7 +734,7 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
     {
         const Expr p = c.symbol("p");
         const ClairautResult cl = dsolve1Clairaut(c, P(c, "-p^2"), x, p);
-        ASSERT_TRUE(cl.proved()) << cl.reason;
+        ASSERT_TRUE(cl.proved()) << cl.reason.c_str();
         EXPECT_TRUE(sameExpr(c, cl.general, P(c, "C1*x - C1^2")));
         ASSERT_FALSE(cl.singular.isNull());
         EXPECT_TRUE(sameExpr(c, cl.singular, P(c, "1/4*x^2")));
@@ -746,20 +746,20 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
     {
         const Expr rhs1 = P(c, "-dy^2");
         const OdeResult gen1 = dsolve2Nonlinear(c, rhs1, x, y, dy);
-        ASSERT_TRUE(gen1.proved()) << gen1.reason;
+        ASSERT_TRUE(gen1.proved()) << gen1.reason.c_str();
 
         const OdeResult ivp1 =
             dsolve2NonlinearIVP(c, rhs1, x, y, dy, c.one(), c.zero(), c.one());
-        ASSERT_TRUE(ivp1.proved()) << ivp1.reason;
+        ASSERT_TRUE(ivp1.proved()) << ivp1.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp1.y, P(c, "log(x)")))
-            << "got: " << c.toString(ivp1.y);
+            << "got: " << c.toString(ivp1.y).c_str();
 
         const Expr rhs2 = P(c, "-2*x*dy^2");
         const OdeResult ivp2 =
             dsolve2NonlinearIVP(c, rhs2, x, y, dy, c.zero(), c.zero(), c.one());
-        ASSERT_TRUE(ivp2.proved()) << ivp2.reason;
+        ASSERT_TRUE(ivp2.proved()) << ivp2.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp2.y, P(c, "atan(x)")))
-            << "got: " << c.toString(ivp2.y);
+            << "got: " << c.toString(ivp2.y).c_str();
     }
 
     // 6. 2nd-order nonlinear autonomous ODE (missing x): y'' = 2 * y * y'
@@ -768,9 +768,9 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
         const Expr rhs = P(c, "2*y*dy");
         const OdeResult ivp =
             dsolve2NonlinearIVP(c, rhs, x, y, dy, c.zero(), c.zero(), c.one());
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "tan(x)")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 7. 2nd-order nonlinear autonomous ODE: y * y'' = (y')^2  (i.e. y'' = dy^2 / y)
@@ -778,13 +778,13 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
     {
         const Expr rhs = P(c, "dy^2 / y");
         const OdeResult gen = dsolve2Nonlinear(c, rhs, x, y, dy);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
 
         const OdeResult ivp = dsolve2NonlinearIVP(
             c, rhs, x, y, dy, c.zero(), c.one(), c.number(2));
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "exp(2*x)")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 8. 2nd-order nonlinear autonomous ODE: y'' = 2*y^3
@@ -793,9 +793,9 @@ TEST(DsolveTest, RiccatiClairautAndSecondOrderNonlinearOde)
         const Expr rhs = P(c, "2*y^3");
         const OdeResult ivp =
             dsolve2NonlinearIVP(c, rhs, x, y, dy, c.zero(), c.one(), c.one());
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1/(1 - x)")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 }
 
@@ -809,21 +809,21 @@ TEST(DsolveTest, SpecialFunctionSecondOrderOdes)
     {
         const OdeResult sol1 =
             dsolve2Linear(c, c.one(), c.zero(), c.neg(x), c.zero(), x);
-        ASSERT_TRUE(sol1.proved()) << sol1.reason;
+        ASSERT_TRUE(sol1.proved()) << sol1.reason.c_str();
         EXPECT_TRUE(sameExpr(c, sol1.y, P(c, "C1*airyAi(x) + C2*airyBi(x)")))
-            << "got: " << c.toString(sol1.y);
+            << "got: " << c.toString(sol1.y).c_str();
 
         const OdeResult sol2 = dsolve2Special(
             c, c.one(), c.zero(), P(c, "-8*(x - 1)"), c.zero(), x);
-        ASSERT_TRUE(sol2.proved()) << sol2.reason;
+        ASSERT_TRUE(sol2.proved()) << sol2.reason.c_str();
         EXPECT_TRUE(sameExpr(c, sol2.y,
                              P(c, "C1*airyAi(2*x - 2) + C2*airyBi(2*x - 2)")))
-            << "got: " << c.toString(sol2.y);
+            << "got: " << c.toString(sol2.y).c_str();
 
         // Airy Riccati ODE: y' = x - y^2 solved via 2nd-order Airy reduction
         const Expr ricRhs = P(c, "x - y^2");
         const OdeResult ricSol = dsolve1(c, ricRhs, x, y);
-        ASSERT_TRUE(ricSol.proved()) << ricSol.reason;
+        ASSERT_TRUE(ricSol.proved()) << ricSol.reason.c_str();
         EXPECT_TRUE(checkOde1(c, ricSol.y, ricRhs, x, y));
     }
 
@@ -834,28 +834,28 @@ TEST(DsolveTest, SpecialFunctionSecondOrderOdes)
     {
         const OdeResult bes1 = dsolve2Special(
             c, P(c, "x^2"), x, P(c, "4*x^2 - 9"), c.zero(), x);
-        ASSERT_TRUE(bes1.proved()) << bes1.reason;
+        ASSERT_TRUE(bes1.proved()) << bes1.reason.c_str();
         EXPECT_TRUE(sameExpr(c, bes1.y,
                              P(c, "C1*besselj(3, 2*x) + C2*bessely(3, 2*x)")))
-            << "got: " << c.toString(bes1.y);
+            << "got: " << c.toString(bes1.y).c_str();
 
         const OdeResult besSym = dsolve2Special(
             c, P(c, "x^2"), x, P(c, "x^2 - nu^2"), c.zero(), x);
-        ASSERT_TRUE(besSym.proved()) << besSym.reason;
+        ASSERT_TRUE(besSym.proved()) << besSym.reason.c_str();
         EXPECT_TRUE(checkOde2(c, besSym.y, P(c, "x^2"), x, P(c, "x^2 - nu^2"),
                               c.zero(), x));
 
         const OdeResult modBes = dsolve2Special(
             c, P(c, "x^2"), x, P(c, "-(9*x^2 + 4)"), c.zero(), x);
-        ASSERT_TRUE(modBes.proved()) << modBes.reason;
+        ASSERT_TRUE(modBes.proved()) << modBes.reason.c_str();
         EXPECT_TRUE(sameExpr(c, modBes.y,
                              P(c, "C1*besseli(2, 3*x) + C2*besselk(2, 3*x)")))
-            << "got: " << c.toString(modBes.y);
+            << "got: " << c.toString(modBes.y).c_str();
 
         // Spherical Bessel ODE (n = 1): x^2*y'' + 2*x*y' + (x^2 - 2)*y = 0
         const OdeResult sphBes = dsolve2Special(
             c, P(c, "x^2"), P(c, "2*x"), P(c, "x^2 - 2"), c.zero(), x);
-        ASSERT_TRUE(sphBes.proved()) << sphBes.reason;
+        ASSERT_TRUE(sphBes.proved()) << sphBes.reason.c_str();
         EXPECT_TRUE(checkOde2(c, sphBes.y, P(c, "x^2"), P(c, "2*x"),
                               P(c, "x^2 - 2"), c.zero(), x));
     }
@@ -864,22 +864,22 @@ TEST(DsolveTest, SpecialFunctionSecondOrderOdes)
     {
         const OdeResult legGen = dsolve2Special(
             c, P(c, "1 - x^2"), P(c, "-2*x"), c.number(6), c.zero(), x);
-        ASSERT_TRUE(legGen.proved()) << legGen.reason;
+        ASSERT_TRUE(legGen.proved()) << legGen.reason.c_str();
         EXPECT_TRUE(checkOde2(c, legGen.y, P(c, "1 - x^2"), P(c, "-2*x"),
                               c.number(6), c.zero(), x));
 
         const OdeResult legIVP = dsolve2SpecialIVP(
             c, P(c, "1 - x^2"), P(c, "-2*x"), c.number(6), c.zero(), x,
             c.zero(), P(c, "-1/2"), c.zero());
-        ASSERT_TRUE(legIVP.proved()) << legIVP.reason;
+        ASSERT_TRUE(legIVP.proved()) << legIVP.reason.c_str();
         EXPECT_TRUE(sameExpr(c, legIVP.y, P(c, "3/2*x^2 - 1/2")))
-            << "got: " << c.toString(legIVP.y);
+            << "got: " << c.toString(legIVP.y).c_str();
 
         const OdeResult legSym = dsolve2Special(
             c, P(c, "1 - x^2"), P(c, "-2*x"), P(c, "n*(n + 1)"), c.zero(), x);
-        ASSERT_TRUE(legSym.proved()) << legSym.reason;
+        ASSERT_TRUE(legSym.proved()) << legSym.reason.c_str();
         EXPECT_TRUE(sameExpr(c, legSym.y, P(c, "C1*legendreP(n, x)")))
-            << "got: " << c.toString(legSym.y);
+            << "got: " << c.toString(legSym.y).c_str();
     }
 
     // 4. Chebyshev 1st & 2nd kind ODEs:
@@ -889,19 +889,19 @@ TEST(DsolveTest, SpecialFunctionSecondOrderOdes)
         const OdeResult chebIVP = dsolve2SpecialIVP(
             c, P(c, "1 - x^2"), P(c, "-x"), c.number(9), c.zero(), x,
             c.zero(), c.zero(), c.number(-3));
-        ASSERT_TRUE(chebIVP.proved()) << chebIVP.reason;
+        ASSERT_TRUE(chebIVP.proved()) << chebIVP.reason.c_str();
         EXPECT_TRUE(sameExpr(c, chebIVP.y, P(c, "4*x^3 - 3*x")))
-            << "got: " << c.toString(chebIVP.y);
+            << "got: " << c.toString(chebIVP.y).c_str();
 
         const OdeResult chebSym = dsolve2Special(
             c, P(c, "1 - x^2"), P(c, "-x"), P(c, "n^2"), c.zero(), x);
-        ASSERT_TRUE(chebSym.proved()) << chebSym.reason;
+        ASSERT_TRUE(chebSym.proved()) << chebSym.reason.c_str();
         EXPECT_TRUE(checkOde2(c, chebSym.y, P(c, "1 - x^2"), P(c, "-x"),
                               P(c, "n^2"), c.zero(), x));
 
         const OdeResult cheb2 = dsolve2Special(
             c, P(c, "1 - x^2"), P(c, "-3*x"), c.number(8), c.zero(), x);
-        ASSERT_TRUE(cheb2.proved()) << cheb2.reason;
+        ASSERT_TRUE(cheb2.proved()) << cheb2.reason.c_str();
         EXPECT_TRUE(checkOde2(c, cheb2.y, P(c, "1 - x^2"), P(c, "-3*x"),
                               c.number(8), c.zero(), x));
     }
@@ -911,30 +911,30 @@ TEST(DsolveTest, SpecialFunctionSecondOrderOdes)
         const OdeResult hermIVP = dsolve2SpecialIVP(
             c, c.one(), P(c, "-2*x"), c.number(6), c.zero(), x, c.zero(),
             c.zero(), c.number(-12));
-        ASSERT_TRUE(hermIVP.proved()) << hermIVP.reason;
+        ASSERT_TRUE(hermIVP.proved()) << hermIVP.reason.c_str();
         EXPECT_TRUE(sameExpr(c, hermIVP.y, P(c, "8*x^3 - 12*x")))
-            << "got: " << c.toString(hermIVP.y);
+            << "got: " << c.toString(hermIVP.y).c_str();
 
         const OdeResult hermSym = dsolve2Special(
             c, c.one(), P(c, "-2*x"), P(c, "2*n"), c.zero(), x);
-        ASSERT_TRUE(hermSym.proved()) << hermSym.reason;
+        ASSERT_TRUE(hermSym.proved()) << hermSym.reason.c_str();
         EXPECT_TRUE(sameExpr(c, hermSym.y, P(c, "C1*hermiteH(n, x)")))
-            << "got: " << c.toString(hermSym.y);
+            << "got: " << c.toString(hermSym.y).c_str();
     }
 
     // 6. Laguerre's ODE: x*y'' + (1 - x)*y' + 2*y = 0 (n = 2) and symbolic n
     {
         const OdeResult lagGen = dsolve2Special(
             c, x, P(c, "1 - x"), c.number(2), c.zero(), x);
-        ASSERT_TRUE(lagGen.proved()) << lagGen.reason;
+        ASSERT_TRUE(lagGen.proved()) << lagGen.reason.c_str();
         EXPECT_TRUE(checkOde2(c, lagGen.y, x, P(c, "1 - x"), c.number(2),
                               c.zero(), x));
 
         const OdeResult lagSym = dsolve2Special(
             c, x, P(c, "1 - x"), P(c, "n"), c.zero(), x);
-        ASSERT_TRUE(lagSym.proved()) << lagSym.reason;
+        ASSERT_TRUE(lagSym.proved()) << lagSym.reason.c_str();
         EXPECT_TRUE(sameExpr(c, lagSym.y, P(c, "C1*laguerreL(n, x)")))
-            << "got: " << c.toString(lagSym.y);
+            << "got: " << c.toString(lagSym.y).c_str();
     }
 }
 
@@ -948,18 +948,18 @@ TEST(DsolveTest, PowerSeriesAndFrobeniusOdeSolver)
     {
         const OdeResult gen = dsolveSeries(
             c, c.one(), c.zero(), c.neg(x), c.zero(), x, c.zero(), 6);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, gen.y,
             P(c, "C1*(1 + 1/6*x^3 + 1/180*x^6) + C2*(x + 1/12*x^4)")))
-            << "got: " << c.toString(gen.y);
+            << "got: " << c.toString(gen.y).c_str();
 
         const OdeResult ivp = dsolveSeriesIVP(
             c, c.one(), c.zero(), c.neg(x), c.zero(), x, c.zero(), c.one(),
             c.zero(), 6);
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivp.y, P(c, "1 + 1/6*x^3 + 1/180*x^6")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 2. Forced variable-coefficient IVP around ordinary point x0 = 0:
@@ -973,10 +973,10 @@ TEST(DsolveTest, PowerSeriesAndFrobeniusOdeSolver)
         const OdeResult ivp = dsolveSeriesIVP(
             c, c.one(), x, c.one(), P(c, "2*x"), x, c.zero(), c.one(),
             c.zero(), 5);
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, ivp.y, P(c, "1 - 1/2*x^2 + 1/3*x^3 + 1/8*x^4 - 1/15*x^5")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 3. Frobenius series at regular singular point x0 = 0:
@@ -987,12 +987,12 @@ TEST(DsolveTest, PowerSeriesAndFrobeniusOdeSolver)
     {
         const OdeResult frob = dsolveSeries(
             c, P(c, "x^2"), x, P(c, "x^2 - 1/9"), c.zero(), x, c.zero(), 4);
-        ASSERT_TRUE(frob.proved()) << frob.reason;
+        ASSERT_TRUE(frob.proved()) << frob.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, frob.y,
             P(c, "C1*x^(1/3)*(1 - 3/16*x^2 + 9/896*x^4) + "
                  "C2*x^(-1/3)*(1 - 3/8*x^2 + 9/320*x^4)")))
-            << "got: " << c.toString(frob.y);
+            << "got: " << c.toString(frob.y).c_str();
     }
 
     // 4. Kummer's confluent hypergeometric ODE:
@@ -1000,11 +1000,11 @@ TEST(DsolveTest, PowerSeriesAndFrobeniusOdeSolver)
     {
         const OdeResult kum = dsolve2Special(
             c, x, P(c, "1/2 - x"), P(c, "-2"), c.zero(), x);
-        ASSERT_TRUE(kum.proved()) << kum.reason;
+        ASSERT_TRUE(kum.proved()) << kum.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, kum.y,
             P(c, "C1*hypergeom1F1(2, 1/2, x) + C2*x^(1/2)*hypergeom1F1(5/2, 3/2, x)")))
-            << "got: " << c.toString(kum.y);
+            << "got: " << c.toString(kum.y).c_str();
     }
 
     // 5. Gauss's hypergeometric ODE:
@@ -1012,12 +1012,12 @@ TEST(DsolveTest, PowerSeriesAndFrobeniusOdeSolver)
     {
         const OdeResult gauss = dsolve2Special(
             c, P(c, "x*(1 - x)"), P(c, "1/2 - 4*x"), P(c, "-2"), c.zero(), x);
-        ASSERT_TRUE(gauss.proved()) << gauss.reason;
+        ASSERT_TRUE(gauss.proved()) << gauss.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, gauss.y,
             P(c, "C1*hypergeom2F1(1, 2, 1/2, x) + "
                  "C2*x^(1/2)*hypergeom2F1(3/2, 5/2, 3/2, x)")))
-            << "got: " << c.toString(gauss.y);
+            << "got: " << c.toString(gauss.y).c_str();
     }
 }
 
@@ -1035,21 +1035,21 @@ TEST(DsolveTest, PartialDifferentialEquationsPdsolve)
     {
         const PdeResult r1 = pdsolve1Quasilinear(
             c, c.number(2), c.number(3), c.zero(), x, y, u);
-        ASSERT_TRUE(r1.proved()) << r1.reason;
+        ASSERT_TRUE(r1.proved()) << r1.reason.c_str();
         EXPECT_TRUE(sameExpr(c, r1.u, P(c, "F(3*x - 2*y)")))
-            << "got: " << c.toString(r1.u);
+            << "got: " << c.toString(r1.u).c_str();
 
         // u_x + 2*u_y = -3*u -> u = F(2*x - y)*exp(-3*x)
         const PdeResult r2 = pdsolve1Quasilinear(
             c, c.one(), c.number(2), P(c, "-3*u"), x, y, u);
-        ASSERT_TRUE(r2.proved()) << r2.reason;
+        ASSERT_TRUE(r2.proved()) << r2.reason.c_str();
         EXPECT_TRUE(sameExpr(c, r2.u, P(c, "F(2*x - y)*exp(-3*x)")))
-            << "got: " << c.toString(r2.u);
+            << "got: " << c.toString(r2.u).c_str();
 
         // Euler homogeneous PDE: x*u_x + y*u_y = 2*u -> u = x^2*F(y/x)
         const PdeResult r3 = pdsolve1Quasilinear(
             c, x, y, P(c, "2*u"), x, y, u);
-        ASSERT_TRUE(r3.proved()) << r3.reason;
+        ASSERT_TRUE(r3.proved()) << r3.reason.c_str();
         const Expr res3 = c.simplify(c.add(
             {c.mul({x, c.diff(r3.u, x)}),
              c.mul({y, c.diff(r3.u, y)}),
@@ -1064,50 +1064,50 @@ TEST(DsolveTest, PartialDifferentialEquationsPdsolve)
         const PdeResult adv = pdsolve1Cauchy(
             c, cSpd, c.one(), c.zero(), x, t, u, s, s, c.zero(),
             P(c, "sin(s)"));
-        ASSERT_TRUE(adv.proved()) << adv.reason;
+        ASSERT_TRUE(adv.proved()) << adv.reason.c_str();
         EXPECT_TRUE(sameExpr(c, adv.u, P(c, "sin(x - c*t)")))
-            << "got: " << c.toString(adv.u);
+            << "got: " << c.toString(adv.u).c_str();
 
         // Variable-coefficient PDE: x*u_x + y*u_y = 2*u with u(s, 1) = s^2 + 1 -> x^2 + y^2
         const PdeResult varPde = pdsolve1Cauchy(
             c, x, y, P(c, "2*u"), x, y, u, s, s, c.one(), P(c, "s^2 + 1"));
-        ASSERT_TRUE(varPde.proved()) << varPde.reason;
+        ASSERT_TRUE(varPde.proved()) << varPde.reason.c_str();
         EXPECT_TRUE(sameExpr(c, varPde.u, P(c, "x^2 + y^2")))
-            << "got: " << c.toString(varPde.u);
+            << "got: " << c.toString(varPde.u).c_str();
 
         // Quasilinear inviscid Burgers' equation:
         //   u*u_x + u_t = 0,  u(s, 0) = 2*s + 1  ->  u(x, t) = (2*x + 1)/(2*t + 1)
         const PdeResult burgers = pdsolve1Cauchy(
             c, u, c.one(), c.zero(), x, t, u, s, s, c.zero(),
             P(c, "2*s + 1"));
-        ASSERT_TRUE(burgers.proved()) << burgers.reason;
+        ASSERT_TRUE(burgers.proved()) << burgers.reason.c_str();
         EXPECT_TRUE(sameExpr(c, burgers.u, P(c, "(2*x + 1)/(2*t + 1)")))
-            << "got: " << c.toString(burgers.u);
+            << "got: " << c.toString(burgers.u).c_str();
     }
 
     // 3. 1D wave equation via d'Alembert's formula and Duhamel's principle:
     {
         const Expr cSpd = c.symbol("c");
         const PdeResult genWave = pdsolveWaveDalembert(c, cSpd, x, t);
-        ASSERT_TRUE(genWave.proved()) << genWave.reason;
+        ASSERT_TRUE(genWave.proved()) << genWave.reason.c_str();
         EXPECT_TRUE(sameExpr(c, genWave.u, P(c, "F1(x - c*t) + F2(x + c*t)")));
 
         // u_tt - 4*u_xx = 0, u(x, 0) = cos(x), u_t(x, 0) = sin(x)
         //   -> 3/4*cos(x - 2*t) + 1/4*cos(x + 2*t)
         const PdeResult ivpWave = pdsolveWaveDalembert(
             c, c.number(2), x, t, P(c, "cos(x)"), P(c, "sin(x)"));
-        ASSERT_TRUE(ivpWave.proved()) << ivpWave.reason;
+        ASSERT_TRUE(ivpWave.proved()) << ivpWave.reason.c_str();
         EXPECT_TRUE(sameExpr(c, ivpWave.u,
                              P(c, "3/4*cos(x - 2*t) + 1/4*cos(x + 2*t)")))
-            << "got: " << c.toString(ivpWave.u);
+            << "got: " << c.toString(ivpWave.u).c_str();
 
         // Forced wave equation: u_tt - c^2*u_xx = 6*x*t, u(x, 0) = x^2, u_t(x, 0) = 0
         //   -> x^2 + c^2*t^2 + x*t^3
         const PdeResult forcedWave = pdsolveWaveDalembert(
             c, cSpd, x, t, P(c, "x^2"), c.zero(), P(c, "6*x*t"));
-        ASSERT_TRUE(forcedWave.proved()) << forcedWave.reason;
+        ASSERT_TRUE(forcedWave.proved()) << forcedWave.reason.c_str();
         EXPECT_TRUE(sameExpr(c, forcedWave.u, P(c, "x^2 + c^2*t^2 + x*t^3")))
-            << "got: " << c.toString(forcedWave.u);
+            << "got: " << c.toString(forcedWave.u).c_str();
     }
 
     // 4. 1D heat & wave equations on [0, L] via Fourier separation of variables,
@@ -1120,37 +1120,37 @@ TEST(DsolveTest, PartialDifferentialEquationsPdsolve)
         const PdeResult heatDir = pdsolveHeat1D(
             c, alpha, piSym, P(c, "3*sin(x) - 5*sin(2*x)"), x, t,
             PdeBoundaryKind::Dirichlet, 3);
-        ASSERT_TRUE(heatDir.proved()) << heatDir.reason;
+        ASSERT_TRUE(heatDir.proved()) << heatDir.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, heatDir.u,
             P(c, "3*exp(-alpha*t)*sin(x) - 5*exp(-4*alpha*t)*sin(2*x)")))
-            << "got: " << c.toString(heatDir.u);
+            << "got: " << c.toString(heatDir.u).c_str();
 
         // Heat Neumann on [0, pi]: u_t = alpha*u_xx, u(x, 0) = 4 + 2*cos(3*x)
         const PdeResult heatNeu = pdsolveHeat1D(
             c, alpha, piSym, P(c, "4 + 2*cos(3*x)"), x, t,
             PdeBoundaryKind::Neumann, 3);
-        ASSERT_TRUE(heatNeu.proved()) << heatNeu.reason;
+        ASSERT_TRUE(heatNeu.proved()) << heatNeu.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, heatNeu.u, P(c, "4 + 2*exp(-9*alpha*t)*cos(3*x)")))
-            << "got: " << c.toString(heatNeu.u);
+            << "got: " << c.toString(heatNeu.u).c_str();
 
         // Wave Dirichlet on [0, pi]: u_tt = 9*u_xx, u(x, 0) = sin(x), u_t(x, 0) = 6*sin(2*x)
         const PdeResult waveDir = pdsolveWave1D(
             c, c.number(3), piSym, P(c, "sin(x)"), P(c, "6*sin(2*x)"), x, t,
             PdeBoundaryKind::Dirichlet, 3);
-        ASSERT_TRUE(waveDir.proved()) << waveDir.reason;
+        ASSERT_TRUE(waveDir.proved()) << waveDir.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, waveDir.u, P(c, "cos(3*t)*sin(x) + sin(6*t)*sin(2*x)")))
-            << "got: " << c.toString(waveDir.u);
+            << "got: " << c.toString(waveDir.u).c_str();
 
         // 2D Laplace on [0, pi] x [0, 1]: u_xx + u_yy = 0, u(x, 1) = 2*sin(x)
         const PdeResult lap2d = pdsolveLaplace2DRect(
             c, piSym, c.one(), P(c, "2*sin(x)"), x, y, 2);
-        ASSERT_TRUE(lap2d.proved()) << lap2d.reason;
+        ASSERT_TRUE(lap2d.proved()) << lap2d.reason.c_str();
         EXPECT_TRUE(sameExpr(
             c, lap2d.u, P(c, "2*sinh(y)/sinh(1)*sin(x)")))
-            << "got: " << c.toString(lap2d.u);
+            << "got: " << c.toString(lap2d.u).c_str();
     }
 }
 

@@ -52,8 +52,8 @@ FpPoly FpPoly::derivative() const
     return out;
 }
 
-FpPoly::FpPoly(keel::u64 p, std::vector<keel::u64> coeffs)
-    : p_(p), c_(std::move(coeffs))
+FpPoly::FpPoly(keel::u64 p, keel::Array<keel::u64> coeffs)
+    : p_(p), c_(keel::move(coeffs))
 {
     assert(p >= 3 && p < (keel::u64{1} << 31));
     for (keel::u64 &c : c_)
@@ -69,14 +69,14 @@ void FpPoly::trim()
 
 FpPoly FpPoly::constant(keel::u64 p, keel::u64 c)
 {
-    return FpPoly(p, std::vector<keel::u64>{c});
+    return FpPoly(p, keel::Array<keel::u64>{c});
 }
 
 FpPoly FpPoly::monomial(keel::u64 p, keel::u64 c, keel::usize exp)
 {
-    std::vector<keel::u64> cs(exp + 1, 0);
+    keel::Array<keel::u64> cs(exp + 1, keel::u64{0});
     cs[exp] = c % p;
-    return FpPoly(p, std::move(cs));
+    return FpPoly(p, keel::move(cs));
 }
 
 FpPoly FpPoly::x(keel::u64 p)
@@ -300,7 +300,7 @@ namespace {
 
 // Cantor-Zassenhaus equal-degree splitting: all irreducible factors of
 // g have degree d. Deterministic via the fixed-seed PRNG.
-void edf(const FpPoly &g, int d, std::vector<FpPoly> &out, keel::u64 &rng)
+void edf(const FpPoly &g, int d, keel::Array<FpPoly> &out, keel::u64 &rng)
 {
     assert(!g.isZero());
     if (g.deg() < d) {
@@ -315,10 +315,10 @@ void edf(const FpPoly &g, int d, std::vector<FpPoly> &out, keel::u64 &rng)
     while (true) {
         // random poly of degree < deg(g), not constant
         const int degA = 1 + static_cast<int>(fpNext(rng) % static_cast<keel::u64>(g.deg()));
-        std::vector<keel::u64> cs;
+        keel::Array<keel::u64> cs;
         for (int i = 0; i <= degA; ++i)
             cs.push_back(fpNext(rng) % p);
-        const FpPoly a(p, cs);
+        const FpPoly a(p, keel::move(cs));
         if (a.isZero() || a.deg() == 0)
             continue;
         // exponent (p^d - 1)/2
@@ -339,11 +339,11 @@ void edf(const FpPoly &g, int d, std::vector<FpPoly> &out, keel::u64 &rng)
 
 } // namespace
 
-std::vector<FpPoly> FpPoly::factor(const FpPoly &f)
+keel::Array<FpPoly> FpPoly::factor(const FpPoly &f)
 {
     assert(f.hasP() && !f.isZero());
     const keel::u64 p = f.p();
-    std::vector<FpPoly> out;
+    keel::Array<FpPoly> out;
     if (f.deg() < 1)
         return out;
 

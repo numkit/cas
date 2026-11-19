@@ -15,7 +15,7 @@
 namespace numkit::cas {
 namespace {
 
-bool containsRoot(Ctx &c, const std::vector<Expr> &roots, Expr target)
+bool containsRoot(Ctx &c, keel::ArrayRef<Expr> roots, Expr target)
 {
     for (const Expr &r : roots) {
         if (c.simplify(c.add({r, c.neg(target)})) == c.zero())
@@ -24,7 +24,7 @@ bool containsRoot(Ctx &c, const std::vector<Expr> &roots, Expr target)
     return false;
 }
 
-bool containsPair(Ctx &c, const std::vector<std::pair<Expr, Expr>> &sols,
+bool containsPair(Ctx &c, keel::ArrayRef<std::pair<Expr, Expr>> sols,
                   Expr wantX, Expr wantY)
 {
     for (const auto &kv : sols) {
@@ -279,8 +279,8 @@ TEST(SymSolveTest, PropertyQuadraticAndSystemResidualsVanish)
         for (const Expr &r : roots) {
             const Expr res = c.simplify(c.subs(eqn, x, r));
             EXPECT_EQ(res, c.zero())
-                << "iter " << iter << ": eqn=" << c.toString(eqn)
-                << ", root=" << c.toString(r) << ", res=" << c.toString(res);
+                << "iter " << iter << ": eqn=" << c.toString(eqn).c_str()
+                << ", root=" << c.toString(r).c_str() << ", res=" << c.toString(res).c_str();
         }
     }
 

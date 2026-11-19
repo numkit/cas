@@ -1,8 +1,6 @@
 #include <keel/core.h>
 #include <numkit/cas/core/expr.hpp>
 
-#include <unordered_map>
-
 namespace numkit::cas {
 
 Expr Ctx::diff(Expr e, Expr var)
@@ -10,17 +8,16 @@ Expr Ctx::diff(Expr e, Expr var)
     if (e.isNull() || var.isNull())
         return Expr();
     assert(kind(var) == NodeKind::Symbol && "diff variable must be a Symbol");
-    std::unordered_map<keel::u32, Expr> memo;
+    keel::HashMap<keel::u32, Expr> memo;
     return diffRec(e, var, memo);
 }
 
-Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
+Expr Ctx::diffRec(Expr e, Expr var, keel::HashMap<keel::u32, Expr> &memo)
 {
     if (e.isNull())
         return Expr();
-    const auto cached = memo.find(id(e));
-    if (cached != memo.end())
-        return cached->second;
+    if (const Expr *cached = memo.get(id(e)))
+        return *cached;
 
     Expr result;
     switch (kind(e)) {
@@ -31,7 +28,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
         result = (e == var) ? one() : zero();
         break;
     case NodeKind::Add: {
-        std::vector<Expr> ds;
+        keel::Array<Expr> ds;
         bool failed = false;
         for (keel::usize i = 0; i < childCount(e); ++i) {
             const Expr di = diffRec(child(e, i), var, memo);
@@ -48,7 +45,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
     case NodeKind::Mul: {
         // n-ary product rule: sum_i (d(fi) * prod_{j != i} fj).
         const keel::usize n = childCount(e);
-        std::vector<Expr> terms;
+        keel::Array<Expr> terms;
         bool failed = false;
         for (keel::usize i = 0; i < n; ++i) {
             const Expr di = diffRec(child(e, i), var, memo);
@@ -56,7 +53,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
                 failed = true;
                 break;
             }
-            std::vector<Expr> factors;
+            keel::Array<Expr> factors;
             factors.push_back(di);
             for (keel::usize j = 0; j < n; ++j)
                 if (j != i)
@@ -117,7 +114,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
         result = zero();
         break;
     case NodeKind::Func: {
-        const std::string &name = funcName(e);
+        const keel::String &name = funcName(e);
         if (childCount(e) == 4 && name == "hypergeom2F1") {
             const Expr a = child(e, 0);
             const Expr b = child(e, 1);
@@ -187,7 +184,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
                     neg(mul({u, pow(sinPhi, number(keel::i64{2}))}))});
                 const Expr fInc = func("ellipticF", n, u);
                 const Expr eInc = func("ellipticEInc", n, u);
-                std::vector<Expr> totalTerms;
+                keel::Array<Expr> totalTerms;
                 if (!isZero(dn)) {
                     const Expr dPhi =
                         (name == "ellipticF") ? pow(radArg, mHalf)
@@ -226,7 +223,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
                 const Expr mMinusN = add({u, neg(n)});
                 const Expr nMinus1 = add({n, number(keel::i64{-1})});
                 const Expr oneMinusM = add({one(), neg(u)});
-                std::vector<Expr> totalTerms;
+                keel::Array<Expr> totalTerms;
                 if (!isZero(dn)) {
                     const Expr numN = add({
                         em,
@@ -253,7 +250,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
             if (name == "beta") {
                 const Expr nPlusU = add({n, u});
                 const Expr psiSum = func("digamma", nPlusU);
-                std::vector<Expr> totalTerms;
+                keel::Array<Expr> totalTerms;
                 if (!isZero(dn)) {
                     totalTerms.push_back(mul({
                         e, add({func("digamma", n), neg(psiSum)}), dn}));
@@ -268,7 +265,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
             if (name == "pochhammer") {
                 const Expr nPlusU = add({n, u});
                 const Expr psiSum = func("digamma", nPlusU);
-                std::vector<Expr> totalTerms;
+                keel::Array<Expr> totalTerms;
                 if (!isZero(dn)) {
                     totalTerms.push_back(mul({
                         e, add({psiSum, neg(func("digamma", n))}), dn}));
@@ -545,7 +542,7 @@ Expr Ctx::diffRec(Expr e, Expr var, std::unordered_map<keel::u32, Expr> &memo)
     }
     }
 
-    memo.emplace(id(e), result);
+    memo.try_insert(id(e), result);
     return result;
 }
 

@@ -130,7 +130,7 @@ TEST(CorpusTask, StatusesOnFixedInputs)
 
 TEST(CorpusReport, CountsAndRates)
 {
-    std::vector<TaskOutcome> o;
+    keel::Array<TaskOutcome> o;
     // sin(x)/x stays Unevaluated (bare x outside trig: the sine
     // integral), keeping the 1/1/1 status mix intact now that plain
     // sin(x) integrates via the trig storey.
@@ -199,7 +199,7 @@ TEST(CorpusProperty, RandomRationalTextAllProved)
             if (r.isZero())
                 r = Rational(keel::i64{1});
             const int m = 1 + static_cast<int>(nextU64(st) % 3);
-            den = den * UPoly(std::vector<Rational>{Rational(-r),
+            den = den * UPoly(keel::Array<Rational>{Rational(-r),
                 Rational(keel::i64{1})}).powUInt(m);
         }
         for (int i = 0; i < nQuad; ++i) {
@@ -210,7 +210,7 @@ TEST(CorpusProperty, RandomRationalTextAllProved)
                     if (c + b * Rational(r0) + Rational(r0 * r0) == 0)
                         red = true;
                 if (!red) {
-                    den = den * UPoly(std::vector<Rational>{c, b,
+                    den = den * UPoly(keel::Array<Rational>{c, b,
                         Rational(keel::i64{1})});
                     break;
                 }
@@ -225,7 +225,7 @@ TEST(CorpusProperty, RandomRationalTextAllProved)
                             Rational(r0 * r0 * r0) == 0)
                         red = true;
                 if (!red) {
-                    den = den * UPoly(std::vector<Rational>{c, b,
+                    den = den * UPoly(keel::Array<Rational>{c, b,
                         Rational(keel::i64{0}), Rational(keel::i64{1})});
                     break;
                 }
@@ -234,24 +234,24 @@ TEST(CorpusProperty, RandomRationalTextAllProved)
         if (den.isConst() || den.deg() < 3)
             continue;
         const int nn = static_cast<int>(nextU64(st) % den.deg());
-        std::vector<Rational> ncs;
+        keel::Array<Rational> ncs;
         for (int i = 0; i <= nn; ++i)
             ncs.push_back(rr(5));
-        const UPoly num(ncs);
+        const UPoly num(std::move(ncs));
         if (num.isZero())
             continue;
 
         numkit::cas::Ctx ctx;
         const numkit::cas::Expr var = ctx.symbol("x");
-        const std::string text = ctx.toString(ctx.div(
+        const std::string text(ctx.toString(ctx.div(
             numkit::cas::toExpr(ctx, num, var),
-            numkit::cas::toExpr(ctx, den, var)));
+            numkit::cas::toExpr(ctx, den, var))).as_ref());
         ++total;
         const TaskOutcome o = runTask(task("p", "x", text.c_str()));
         if (o.status == TaskStatus::Proved)
             ++proved;
         else
-            ADD_FAILURE() << "not proved on: " << text << " (" << o.detail << ")";
+            ADD_FAILURE() << "not proved on: " << text << " (" << o.detail.c_str() << ")";
     }
     EXPECT_EQ(proved, total);
     EXPECT_GT(total, 100u);
@@ -312,7 +312,7 @@ TEST(CorpusReport, MeanLeafRatioAndCascadeOp)
     ASSERT_TRUE(parseCorpusLine(
         "m2\tx\tcascade\t(1 + 2*x)^(-3/2) + exp(x)/(1 + exp(x))\t-(1 + 2*x)^(-1/2) + log(1 + exp(x))",
         t2));
-    std::vector<TaskOutcome> outcomes;
+    keel::Array<TaskOutcome> outcomes;
     const CorpusReport rep = runCorpus({t1, t2}, &outcomes);
     EXPECT_EQ(rep.total, 2u);
     EXPECT_EQ(rep.proved, 2u);

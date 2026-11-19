@@ -7,9 +7,9 @@
 
 namespace numkit::cas {
 
-std::vector<UPoly> sturmSequence(const UPoly &p)
+keel::Array<UPoly> sturmSequence(const UPoly &p)
 {
-    std::vector<UPoly> s;
+    keel::Array<UPoly> s;
     if (p.isZero() || p.deg() < 1)
         return s;
     s.push_back(p);
@@ -46,7 +46,7 @@ int signOfR(const Rational &r)
 }
 
 // Sign variations of the Sturm chain at x (zeros skipped).
-keel::usize variations(const std::vector<UPoly> &sturm, const Rational &x)
+keel::usize variations(keel::ArrayRef<UPoly> sturm, const Rational &x)
 {
     keel::usize v = 0;
     int prev = 0;
@@ -63,7 +63,7 @@ keel::usize variations(const std::vector<UPoly> &sturm, const Rational &x)
 
 } // namespace
 
-keel::usize countRealRoots(const std::vector<UPoly> &sturm,
+keel::usize countRealRoots(keel::ArrayRef<UPoly> sturm,
                            const Rational &a, const Rational &b)
 {
     assert(!sturm.empty());
@@ -71,16 +71,16 @@ keel::usize countRealRoots(const std::vector<UPoly> &sturm,
     return variations(sturm, a) - variations(sturm, b);
 }
 
-std::vector<RootInterval> isolateRealRoots(const UPoly &p0)
+keel::Array<RootInterval> isolateRealRoots(const UPoly &p0)
 {
-    std::vector<RootInterval> out;
+    keel::Array<RootInterval> out;
     if (p0.isZero())
         return out;
     const UPoly p = p0.squarefreePart();
     if (p.isConst())
         return out;
 
-    const std::vector<UPoly> sturm = sturmSequence(p);
+    const keel::Array<UPoly> sturm = sturmSequence(p);
     const Rational B = cauchyRootBound(p);
 
     // Work items carry (lo, hi, rootAtHi): count(lo, hi) has (lo, hi]
@@ -131,7 +131,7 @@ RootInterval refineRoot(const UPoly &p, RootInterval iv,
     // Endpoints of an isolated interval may themselves be recorded exact
     // roots; the (a, b] Sturm count excludes a, so half selection by
     // counting stays correct with root endpoints.
-    const std::vector<UPoly> sturm = sturmSequence(p);
+    const keel::Array<UPoly> sturm = sturmSequence(p);
     while (iv.hi - iv.lo > targetWidth) {
         const Rational mid = (iv.lo + iv.hi) * Rational(keel::i64{1}, BigInt(2));
         if (p.eval(mid).isZero())

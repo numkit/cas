@@ -2,10 +2,10 @@
 #pragma once
 
 #include <keel/core.h>
+#include <keel/string.h>
 #include <numkit/cas/num/bigint.hpp>
 
 #include <cstdint>
-#include <string>
 
 namespace numkit::cas {
 
@@ -31,7 +31,7 @@ public:
 
     // Strict parse: "<bigint>" or "<signed bigint>/<unsigned bigint>".
     // Denominator zero or malformed input returns false.
-    static bool tryParse(Rational &out, const std::string &s);
+    static bool tryParse(Rational &out, keel::StringRef s);
 
     // Exact rational value of a FINITE IEEE double: every double is
     // m * 2^e with an integer 53-bit mantissa, so the conversion is
@@ -56,7 +56,7 @@ public:
 
     static Rational powUInt(const Rational &base, keel::u64 exp);
 
-    std::string toString() const; // "p" if den == 1, else "p/q"
+    keel::String toString() const; // "p" if den == 1, else "p/q"
 
     Rational operator-() const;
     Rational abs() const;

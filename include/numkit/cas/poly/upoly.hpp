@@ -1,12 +1,12 @@
 // poly/upoly.hpp — dense univariate polynomial over Q (exact arithmetic).
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
+#include <keel/string.h>
 #include <numkit/cas/num/rational.hpp>
 
 #include <cstdint>
-#include <string>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -25,9 +25,19 @@ namespace numkit::cas {
 class UPoly
 {
 public:
-    UPoly() = default;
+    UPoly() noexcept = default;
+    UPoly(const UPoly &o) : c_(o.c_.clone()) {}
+    UPoly &operator=(const UPoly &o)
+    {
+        if (this != &o)
+            c_ = o.c_.clone();
+        return *this;
+    }
+    UPoly(UPoly &&) noexcept = default;
+    UPoly &operator=(UPoly &&) noexcept = default;
+
     explicit UPoly(Rational c);
-    explicit UPoly(std::vector<Rational> coeffs);
+    explicit UPoly(keel::Array<Rational> coeffs);
     static UPoly monomial(Rational c, keel::u64 exp); // c * x^exp
 
     int deg() const { return static_cast<int>(c_.size()) - 1; }
@@ -38,7 +48,7 @@ public:
         return i < c_.size() ? c_[i] : Rational(keel::i64{0});
     }
     const Rational &lc() const; // asserts !isZero
-    const std::vector<Rational> &coeffs() const { return c_; }
+    const keel::Array<Rational> &coeffs() const { return c_; }
 
     Rational eval(const Rational &x) const;
 
@@ -73,7 +83,7 @@ public:
     // (F_1, F_2, ..., F_k) so that A == lc(A) * F_1^1 * ... * F_k^k,
     // each F_i monic and squarefree; an entry equal to 1 means there is
     // no factor of that multiplicity.
-    std::vector<UPoly> squarefreeDecomposition() const;
+    keel::Array<UPoly> squarefreeDecomposition() const;
 
     // Resultant res_x(a, b) via the exact Euclidean recursion.
     static Rational resultant(const UPoly &a, const UPoly &b);
@@ -82,12 +92,12 @@ public:
     friend bool operator!=(const UPoly &a, const UPoly &b);
 
     // Human-readable descending form, e.g. "x^3 - 3/2*x + 4".
-    std::string toString(const char *var = "x") const;
+    keel::String toString(const char *var = "x") const;
 
 private:
     void trim();
 
-    std::vector<Rational> c_;
+    keel::Array<Rational> c_;
 };
 
 } // namespace numkit::cas

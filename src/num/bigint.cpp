@@ -1,4 +1,6 @@
+#include <keel/algo.h>
 #include <keel/core.h>
+#include <keel/number.h>
 #include <numkit/cas/num/bigint.hpp>
 
 #include <algorithm>
@@ -75,7 +77,7 @@ void mulu64(keel::u64 a, keel::u64 b, keel::u64 *lo, keel::u64 *hi)
 }
 
 template <typename LimbContainer>
-void toDigits32(const LimbContainer &limbs, std::vector<keel::u32> &d)
+void toDigits32(const LimbContainer &limbs, keel::Array<keel::u32> &d)
 {
     d.clear();
     d.reserve(limbs.size() * 2);
@@ -88,7 +90,7 @@ void toDigits32(const LimbContainer &limbs, std::vector<keel::u32> &d)
 }
 
 template <typename LimbContainer>
-void fromDigits32(const std::vector<keel::u32> &d, LimbContainer &limbs)
+void fromDigits32(const keel::Array<keel::u32> &d, LimbContainer &limbs)
 {
     limbs.assign((d.size() + 1) / 2, 0);
     for (keel::usize i = 0; i < d.size(); ++i) {
@@ -103,17 +105,17 @@ void fromDigits32(const std::vector<keel::u32> &d, LimbContainer &limbs)
 
 // Knuth algorithm D (Hacker's Delight divmnu) on base-2^32 digits.
 // Digits are little-endian with no leading zero digit; u may be empty.
-void divModDigits(const std::vector<keel::u32> &u,
-                  const std::vector<keel::u32> &v,
-                  std::vector<keel::u32> &q,
-                  std::vector<keel::u32> &r)
+void divModDigits(const keel::Array<keel::u32> &u,
+                  const keel::Array<keel::u32> &v,
+                  keel::Array<keel::u32> &q,
+                  keel::Array<keel::u32> &r)
 {
     const keel::usize m = u.size();
     const keel::usize n = v.size();
 
     if (n > m) {
         q.clear();
-        r = u;
+        r = u.clone();
         return;
     }
 
@@ -132,7 +134,7 @@ void divModDigits(const std::vector<keel::u32> &u,
     }
 
     const int s = nlz32(v[n - 1]);
-    std::vector<keel::u32> vn(n), un(m + 1, 0);
+    keel::Array<keel::u32> vn(n), un(m + 1, keel::u32{0});
 
     for (keel::usize i = n; i-- > 1;)
         vn[i] = s ? (v[i] << s) | (v[i - 1] >> (32 - s)) : v[i];
@@ -383,7 +385,7 @@ void BigInt::divMod(const BigInt &a, const BigInt &b, BigInt &q, BigInt &r)
         return;
     }
 
-    std::vector<keel::u32> ud, vd, qd, rd;
+    keel::Array<keel::u32> ud, vd, qd, rd;
     toDigits32(a.limbs_, ud);
     toDigits32(b.limbs_, vd);
     divModDigits(ud, vd, qd, rd);
@@ -681,29 +683,36 @@ double BigInt::toDouble() const noexcept
     return negative_ ? -scaled : scaled;
 }
 
-std::string BigInt::toString() const
+keel::String BigInt::toString() const
 {
     if (isZero())
-        return "0";
+        return keel::String::from("0");
     const BigInt chunk(kPow10_19);
-    std::string digits;
+    keel::Array<keel::u64> chunks;
     BigInt m = abs();
     while (!m.isZero()) {
         BigInt q, r;
         divMod(m, chunk, q, r);
-        const keel::u64 c = r.lowLimb();
-        std::string part = std::to_string(c);
-        if (!q.isZero())
-            part.insert(0, 19 - part.size(), '0');
-        digits.insert(0, part);
-        m = q;
+        chunks.push_back(r.lowLimb());
+        m = keel::move(q);
     }
+    keel::String digits;
+    digits.reserve(chunks.size() * 19 + (negative_ ? 1 : 0));
     if (negative_)
-        digits.insert(0, "-");
+        digits.push_back('-');
+    for (keel::usize i = chunks.size(); i-- > 0;) {
+        char buf[32];
+        const keel::usize n = keel::format_u64(buf, sizeof(buf), chunks[i]);
+        if (i + 1 < chunks.size() && n < 19) {
+            for (keel::usize z = 0; z < 19 - n; ++z)
+                digits.push_back('0');
+        }
+        digits.append(keel::StringRef(buf, n));
+    }
     return digits;
 }
 
-bool BigInt::tryParse(BigInt &out, const std::string &s)
+bool BigInt::tryParse(BigInt &out, keel::StringRef s)
 {
     out = BigInt();
     keel::usize i = 0;
@@ -878,10 +887,10 @@ bool BigInt::isPrime(const BigInt &n)
     return true;
 }
 
-std::vector<std::pair<BigInt, int>> BigInt::factorize(const BigInt &nIn)
+keel::Array<std::pair<BigInt, int>> BigInt::factorize(const BigInt &nIn)
 {
     assert(!(nIn < BigInt(1)) && "factorize expects n >= 1");
-    std::vector<std::pair<BigInt, int>> out;
+    keel::Array<std::pair<BigInt, int>> out;
     if (nIn == BigInt(1))
         return out;
     BigInt n = nIn;
@@ -900,7 +909,7 @@ std::vector<std::pair<BigInt, int>> BigInt::factorize(const BigInt &nIn)
         if (e != 0)
             out.emplace_back(BigInt(p), e);
     }
-    std::vector<BigInt> rest;
+    keel::Array<BigInt> rest;
     if (!(n == BigInt(1)))
         rest.push_back(n);
     while (!rest.empty()) {
@@ -930,11 +939,11 @@ std::vector<std::pair<BigInt, int>> BigInt::factorize(const BigInt &nIn)
         rest.push_back(d);
         rest.push_back(m / d);
     }
-    std::sort(out.begin(), out.end(),
-              [](const std::pair<BigInt, int> &a,
-                 const std::pair<BigInt, int> &b) {
-                  return a.first < b.first;
-              });
+    keel::sort(out,
+               [](const std::pair<BigInt, int> &a,
+                  const std::pair<BigInt, int> &b) {
+                   return a.first < b.first;
+               });
     return out;
 }
 

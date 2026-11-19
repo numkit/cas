@@ -17,28 +17,28 @@ keel::u64 nextU64(keel::u64 &state)
     return state * 0x2545F4914F6CDD1DULL;
 }
 
-std::vector<BigInt> IB(const std::vector<keel::i64> &cs)
+keel::Array<BigInt> IB(const std::vector<keel::i64> &cs)
 {
-    std::vector<BigInt> out;
+    keel::Array<BigInt> out;
     for (keel::i64 c : cs)
         out.push_back(BigInt(c));
     return out;
 }
 
-std::string S(const std::vector<BigInt> &p)
+std::string S(keel::ArrayRef<BigInt> p)
 {
     std::string out;
     for (const BigInt &c : p) {
         if (!out.empty())
             out += " ";
-        out += c.toString();
+        out += c.toString().c_str();
     }
     return out;
 }
 
 UPoly P(const std::string &csv)
 {
-    std::vector<Rational> cs;
+    keel::Array<Rational> cs;
     keel::usize pos = 0;
     while (pos <= csv.size()) {
         const keel::usize comma = csv.find(',', pos);
@@ -58,18 +58,18 @@ UPoly P(const std::string &csv)
 
 // product reconstruction (the integer factors multiply back to the
 // primitive part, positive leading coefficient).
-void verifyReconstruction(const std::vector<BigInt> &f,
-                           const std::vector<std::vector<BigInt>> &factors)
+void verifyReconstruction(keel::ArrayRef<BigInt> f,
+                          const keel::Array<keel::Array<BigInt>> &factors)
 {
     ASSERT_FALSE(factors.empty());
-    std::vector<BigInt> prod{BigInt(1)};
+    keel::Array<BigInt> prod{BigInt(1)};
     for (const auto &g : factors) {
         ASSERT_GE(g.size(), 2u) << "constant/degenerate factor";
         ASSERT_FALSE(g.back().isNegative());
         prod = [&] {
-            std::vector<BigInt> out = prod;
+            keel::Array<BigInt> out = prod.clone();
             // small multiplication directly
-            std::vector<BigInt> r(out.size() + g.size() - 1, BigInt(0));
+            keel::Array<BigInt> r(out.size() + g.size() - 1, BigInt(0));
             for (keel::usize i = 0; i < out.size(); ++i)
                 for (keel::usize j = 0; j < g.size(); ++j)
                     r[i + j] = r[i + j] + out[i] * g[j];
@@ -79,7 +79,10 @@ void verifyReconstruction(const std::vector<BigInt> &f,
         }();
     }
     // f normalized to its primitive part (content stripped)
-    std::vector<BigInt> fn = f;
+    keel::Array<BigInt> fn;
+    fn.reserve(f.size());
+    for (const BigInt &c : f)
+        fn.push_back(c);
     if (fn.back().isNegative())
         for (BigInt &c : fn)
             c = -c;
@@ -88,18 +91,13 @@ void verifyReconstruction(const std::vector<BigInt> &f,
         if (!c.isZero())
             cont = BigInt::gcd(cont, c);
     if (!cont.isZero() && !(cont == BigInt(1))) {
-        for (BigInt &c : fn) {
-            BigInt q, r;
-            BigInt::divMod(c, cont, q, r);
-            fn = fn; // placeholder
-        }
-        std::vector<BigInt> red;
+        keel::Array<BigInt> red;
         for (const BigInt &c : fn) {
             BigInt q, r;
             BigInt::divMod(c, cont, q, r);
             red.push_back(q);
         }
-        fn = red;
+        fn = std::move(red);
     }
     while (!fn.empty() && fn.back().isZero())
         fn.pop_back();
@@ -159,10 +157,10 @@ TEST(ZassenhausFixed, ZeroConstantTermFactors)
 TEST(ZassenhausFixed, RationalFactorization)
 {
     // Monic rational input.
-    const std::vector<UPoly> f = numkit::cas::factorOverQ(P("-2,0,1"));
+    const keel::Array<UPoly> f = numkit::cas::factorOverQ(P("-2,0,1"));
     ASSERT_EQ(f.size(), 1u); // x^2 - 2 irreducible over Q
 
-    const std::vector<UPoly> g = numkit::cas::factorOverQ(P("6,0,-5,0,1"));
+    const keel::Array<UPoly> g = numkit::cas::factorOverQ(P("6,0,-5,0,1"));
     ASSERT_EQ(g.size(), 2u);
     UPoly prod(Rational(keel::i64{1}));
     for (const UPoly &q : g)
@@ -170,7 +168,7 @@ TEST(ZassenhausFixed, RationalFactorization)
     EXPECT_EQ(prod, P("6,0,-5,0,1").squarefreePart()); // monic factors multiply to the monic associate
 
     // Non-monic rational input: 2x^2 - 8 = 2(x-2)(x+2); factors monic.
-    const std::vector<UPoly> h = numkit::cas::factorOverQ(P("-8,0,2"));
+    const keel::Array<UPoly> h = numkit::cas::factorOverQ(P("-8,0,2"));
     ASSERT_EQ(h.size(), 2u);
     EXPECT_EQ(h[0], P("-2,1"));
     EXPECT_EQ(h[1], P("2,1"));
@@ -195,25 +193,25 @@ TEST(ZassenhausProperty, AssembleFromKnownFactors)
                                 ? std::vector<keel::i64>{b, a}
                                 : std::vector<keel::i64>{b, b, a});
         }
-        std::vector<Rational> fcs{Rational(keel::i64{1})};
+        keel::Array<Rational> fcs{Rational(keel::i64{1})};
         for (const auto &part : parts) {
-            std::vector<Rational> pcs;
+            keel::Array<Rational> pcs;
             for (keel::i64 c : part)
                 pcs.push_back(Rational(c));
-            const UPoly pp(pcs);
-            std::vector<Rational> rcs(fcs.size() + pcs.size() - 1, Rational(keel::i64{0}));
+            const UPoly pp(pcs.clone());
+            keel::Array<Rational> rcs(fcs.size() + pcs.size() - 1, Rational(keel::i64{0}));
             for (keel::usize i = 0; i < fcs.size(); ++i)
                 for (keel::usize j = 0; j < pcs.size(); ++j)
                     rcs[i + j] = rcs[i + j] + fcs[i] * pcs[j];
             while (rcs.size() > 1 && rcs.back().isZero())
                 rcs.pop_back();
-            fcs = rcs;
+            fcs = std::move(rcs);
         }
-        const UPoly f(fcs);
+        const UPoly f(std::move(fcs));
         if (f.isZero() || f.deg() < 1)
             continue;
 
-        const std::vector<UPoly> factors = numkit::cas::factorOverQ(f);
+        const keel::Array<UPoly> factors = numkit::cas::factorOverQ(f);
         ASSERT_FALSE(factors.empty());
 
         // product reconstructs the monic associate of f
@@ -227,10 +225,10 @@ TEST(ZassenhausProperty, AssembleFromKnownFactors)
         // parts (e.g. x^2) are legitimately split further by the
         // factorization and are not asserted verbatim.
         for (const auto &part : parts) {
-            std::vector<Rational> pcs;
+            keel::Array<Rational> pcs;
             for (keel::i64 c : part)
                 pcs.push_back(Rational(c));
-            const UPoly pf(pcs);
+            const UPoly pf(std::move(pcs));
             {
                 // skip parts with a rational root (reducible)
                 bool hasRoot = false;
@@ -250,10 +248,10 @@ TEST(ZassenhausProperty, AssembleFromKnownFactors)
             ASSERT_TRUE(r.isZero()) << "planted factor does not divide f";
             keel::usize planted = 0;
             for (const auto &other : parts) {
-                std::vector<Rational> ocs;
+                keel::Array<Rational> ocs;
                 for (keel::i64 c : other)
                     ocs.push_back(Rational(c));
-                const UPoly of_(ocs);
+                const UPoly of_(std::move(ocs));
                 UPoly oq, orr;
                 UPoly::divMod(of_, UPoly(of_.lc()), oq, orr);
                 if (oq == monic)

@@ -34,7 +34,7 @@ bool matEq(Ctx &c, const SymMatrix &A, const SymMatrix &B)
 SymMatrix parseMat(Ctx &c, keel::usize rows, keel::usize cols,
                    const std::vector<const char *> &src)
 {
-    std::vector<Expr> data;
+    keel::Array<Expr> data;
     data.reserve(src.size());
     for (const char *s : src)
         data.push_back(parseExpr(c, s));
@@ -145,7 +145,7 @@ TEST(SymMatrixTest, DeterminantVandermonde3x3)
     const Expr d = det(c, V);
     const Expr want = parseExpr(c, "(y - x)*(z - x)*(z - y)");
     EXPECT_TRUE(exprEq(c, d, want))
-        << "got: " << c.toString(d) << "\nwant: " << c.toString(want);
+        << "got: " << c.toString(d).c_str() << "\nwant: " << c.toString(want).c_str();
 }
 
 TEST(SymMatrixTest, CharpolyInverseAndLinsolveSymbolic)
@@ -169,7 +169,7 @@ TEST(SymMatrixTest, CharpolyInverseAndLinsolveSymbolic)
     ASSERT_EQ(sol.rows(), 2u);
     ASSERT_EQ(sol.cols(), 1u);
     EXPECT_TRUE(matEq(c, sol, parseMat(c, 2, 1, {"1", "1"})))
-        << "got: " << sol.toString(c);
+        << "got: " << sol.toString(c).c_str();
 
     // 3x3 symbolic system over Q(x)
     const SymMatrix A3 = parseMat(c, 3, 3, {
@@ -180,7 +180,7 @@ TEST(SymMatrixTest, CharpolyInverseAndLinsolveSymbolic)
     const SymMatrix invA3 = inv(c, A3);
     ASSERT_FALSE(invA3.empty());
     EXPECT_TRUE(matEq(c, A3.mul(c, invA3), SymMatrix::eye(c, 3)))
-        << "A3 * invA3 = " << A3.mul(c, invA3).toString(c);
+        << "A3 * invA3 = " << A3.mul(c, invA3).toString(c).c_str();
 
     // Consistent overdetermined 3x2 system
     const SymMatrix Aover = parseMat(c, 3, 2, {
@@ -344,12 +344,12 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
     // 1. Symmetric 2x2: [1, 2; 2, 1] -> eigenvalues -1, 3; eigenvectors [-1; 1], [1; 1]
     {
         const SymMatrix A = parseMat(c, 2, 2, {"1", "2", "2", "1"});
-        const std::vector<Expr> evals = eigenvalues(c, A);
+        const keel::Array<Expr> evals = eigenvalues(c, A);
         ASSERT_EQ(evals.size(), 2u);
         EXPECT_EQ(evals[0], c.number(keel::i64{-1}));
         EXPECT_EQ(evals[1], c.number(keel::i64{3}));
 
-        const std::vector<EigenPair> pairs = eigenvectors(c, A);
+        const keel::Array<EigenPair> pairs = eigenvectors(c, A);
         ASSERT_EQ(pairs.size(), 2u);
         EXPECT_EQ(pairs[0].multiplicity, 1u);
         ASSERT_EQ(pairs[0].vectors.size(), 1u);
@@ -364,12 +364,12 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
     // 2. Defective 2x2 Jordan block: [2, 1; 0, 2] -> eigenvalue 2 (algebraic mult 2, geometric mult 1)
     {
         const SymMatrix J = parseMat(c, 2, 2, {"2", "1", "0", "2"});
-        const std::vector<Expr> evals = eigenvalues(c, J);
+        const keel::Array<Expr> evals = eigenvalues(c, J);
         ASSERT_EQ(evals.size(), 2u);
         EXPECT_EQ(evals[0], c.number(keel::i64{2}));
         EXPECT_EQ(evals[1], c.number(keel::i64{2}));
 
-        const std::vector<EigenPair> pairs = eigenvectors(c, J);
+        const keel::Array<EigenPair> pairs = eigenvectors(c, J);
         ASSERT_EQ(pairs.size(), 1u);
         EXPECT_EQ(pairs[0].lambda, c.number(keel::i64{2}));
         EXPECT_EQ(pairs[0].multiplicity, 2u);
@@ -383,7 +383,7 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
     {
         const SymMatrix A = parseMat(
             c, 3, 3, {"2", "0", "0", "0", "2", "0", "0", "0", "5"});
-        const std::vector<EigenPair> pairs = eigenvectors(c, A);
+        const keel::Array<EigenPair> pairs = eigenvectors(c, A);
         ASSERT_EQ(pairs.size(), 2u);
         EXPECT_EQ(pairs[0].lambda, c.number(keel::i64{2}));
         EXPECT_EQ(pairs[0].multiplicity, 2u);
@@ -397,7 +397,7 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
     {
         const SymMatrix A = parseMat(c, 2, 2, {"1", "1", "2", "1"});
         const SymMatrix I2 = SymMatrix::eye(c, 2);
-        const std::vector<EigenPair> pairs = eigenvectors(c, A);
+        const keel::Array<EigenPair> pairs = eigenvectors(c, A);
         ASSERT_EQ(pairs.size(), 2u);
         EXPECT_EQ(c.simplify(c.add({pairs[0].lambda,
                                     c.neg(parseExpr(c, "1 - 2^(1/2)"))})),
@@ -418,7 +418,7 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
     {
         const SymMatrix A = parseMat(c, 2, 2, {"a", "b", "b", "a"});
         const SymMatrix I2 = SymMatrix::eye(c, 2);
-        const std::vector<EigenPair> pairs = eigenvectors(c, A);
+        const keel::Array<EigenPair> pairs = eigenvectors(c, A);
         ASSERT_EQ(pairs.size(), 2u);
         for (const auto &ep : pairs) {
             ASSERT_EQ(ep.vectors.size(), 1u);
@@ -433,7 +433,7 @@ TEST(SymMatrixTest, NullspaceEigenvaluesAndEigenvectors)
     {
         const SymMatrix M =
             parseMat(c, 2, 3, {"1", "2", "3", "2", "4", "6"});
-        const std::vector<SymMatrix> ns = nullspace(c, M);
+        const keel::Array<SymMatrix> ns = nullspace(c, M);
         ASSERT_EQ(ns.size(), 2u);
         const SymMatrix Z21 = SymMatrix::zeros(c, 2, 1);
         for (const auto &v : ns) {
@@ -486,7 +486,7 @@ TEST(SymMatrixTest, RrefRankAndLUDecomposition)
             {"1", "2", "1", "1",
              "2", "4", "2", "2",
              "1", "2", "3", "4"});
-        std::vector<keel::usize> pivs;
+        keel::Array<keel::usize> pivs;
         const SymMatrix R = rref(c, A, &pivs);
         ASSERT_FALSE(R.empty());
         EXPECT_EQ(rank(c, A), 2u);
@@ -510,7 +510,7 @@ TEST(SymMatrixTest, RrefRankAndLUDecomposition)
              "1", "1", "2",
              "2", "3", "1"});
         const LUDecomposition d = lu(c, A);
-        ASSERT_TRUE(d.proved()) << d.reason;
+        ASSERT_TRUE(d.proved()) << d.reason.c_str();
         EXPECT_TRUE(matEq(c, d.P.mul(c, A), d.L.mul(c, d.U)));
         // det(A) = sign * U(0,0) * U(1,1) * U(2,2)
         const Expr detFromLU = c.mul(
@@ -522,7 +522,7 @@ TEST(SymMatrixTest, RrefRankAndLUDecomposition)
     {
         const SymMatrix A = parseMat(c, 2, 2, {"a", "b", "c", "d"});
         const LUDecomposition d = lu(c, A);
-        ASSERT_TRUE(d.proved()) << d.reason;
+        ASSERT_TRUE(d.proved()) << d.reason.c_str();
         EXPECT_TRUE(matEq(c, d.P.mul(c, A), d.L.mul(c, d.U)));
     }
 
@@ -537,7 +537,7 @@ TEST(SymMatrixTest, RrefRankAndLUDecomposition)
             for (keel::usize j = 0; j < cols; ++j)
                 M.at(r, j) = c.number(entryDist(rng));
         const LUDecomposition d = lu(c, M);
-        ASSERT_TRUE(d.proved()) << "iter " << iter << ": " << d.reason;
+        ASSERT_TRUE(d.proved()) << "iter " << iter << ": " << d.reason.c_str();
         EXPECT_TRUE(matEq(c, d.P.mul(c, M), d.L.mul(c, d.U)));
     }
 }
@@ -555,7 +555,7 @@ TEST(SymMatrixTest, GramSchmidtAndQRDecomposition)
              "6", "167", "-68",
              "-4", "24", "-41"});
         const QRDecomposition d = qr(c, A);
-        ASSERT_TRUE(d.proved()) << d.reason;
+        ASSERT_TRUE(d.proved()) << d.reason.c_str();
         EXPECT_TRUE(matEq(c, d.Q.mul(c, d.R), A));
         EXPECT_TRUE(matEq(c, d.Q.transpose().mul(c, d.Q), SymMatrix::eye(c, 3)));
         EXPECT_EQ(d.R.at(0, 0), c.number(14));
@@ -571,7 +571,7 @@ TEST(SymMatrixTest, GramSchmidtAndQRDecomposition)
              "1", "0",
              "0", "1"});
         const QRDecomposition d = qr(c, A);
-        ASSERT_TRUE(d.proved()) << d.reason;
+        ASSERT_TRUE(d.proved()) << d.reason.c_str();
         for (keel::usize r = 0; r < 3; ++r) {
             for (keel::usize j = 0; j < 2; ++j) {
                 const Expr diffEntry =
@@ -594,7 +594,7 @@ TEST(SymMatrixTest, GramSchmidtAndQRDecomposition)
         const SymMatrix v1 = SymMatrix::column({c.one(), c.one(), c.zero()});
         const SymMatrix v2 = SymMatrix::column({c.number(2), c.number(2), c.zero()});
         const SymMatrix v3 = SymMatrix::column({c.one(), c.zero(), c.one()});
-        const std::vector<SymMatrix> ortho =
+        const keel::Array<SymMatrix> ortho =
             gramSchmidt(c, {v1, v2, v3}, false);
         ASSERT_EQ(ortho.size(), 2u);
         const SymMatrix ip = ortho[0].transpose().mul(c, ortho[1]);
@@ -610,7 +610,7 @@ TEST(SymMatrixTest, JordanCanonicalForm)
     {
         const SymMatrix A = parseMat(c, 2, 2, {"4", "1", "2", "3"});
         const JordanDecomposition jd = jordanForm(c, A);
-        ASSERT_TRUE(jd.proved()) << jd.reason;
+        ASSERT_TRUE(jd.proved()) << jd.reason.c_str();
         EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
         EXPECT_TRUE(matEq(c, jd.P.mul(c, jd.PInv), SymMatrix::eye(c, 2)));
         EXPECT_EQ(jd.J.at(0, 0), c.number(2));
@@ -622,7 +622,7 @@ TEST(SymMatrixTest, JordanCanonicalForm)
     {
         const SymMatrix A = parseMat(c, 2, 2, {"3", "1", "-1", "1"});
         const JordanDecomposition jd = jordanForm(c, A);
-        ASSERT_TRUE(jd.proved()) << jd.reason;
+        ASSERT_TRUE(jd.proved()) << jd.reason.c_str();
         EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
         EXPECT_TRUE(matEq(c, jd.P.mul(c, jd.PInv), SymMatrix::eye(c, 2)));
         EXPECT_EQ(jd.J.at(0, 0), c.number(2));
@@ -646,7 +646,7 @@ TEST(SymMatrixTest, JordanCanonicalForm)
              "0", "0", "2"});
         const SymMatrix A = P0.mul(c, J0).mul(c, inv(c, P0));
         const JordanDecomposition jd = jordanForm(c, A);
-        ASSERT_TRUE(jd.proved()) << jd.reason;
+        ASSERT_TRUE(jd.proved()) << jd.reason.c_str();
         EXPECT_TRUE(matEq(c, jd.J, J0));
         EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
     }
@@ -666,7 +666,7 @@ TEST(SymMatrixTest, JordanCanonicalForm)
              "0", "0", "3"});
         const SymMatrix A = P0.mul(c, J0).mul(c, inv(c, P0));
         const JordanDecomposition jd = jordanForm(c, A);
-        ASSERT_TRUE(jd.proved()) << jd.reason;
+        ASSERT_TRUE(jd.proved()) << jd.reason.c_str();
         EXPECT_TRUE(matEq(c, jd.J, J0));
         EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
     }
@@ -688,7 +688,7 @@ TEST(SymMatrixTest, JordanCanonicalForm)
              "0", "0", "0", "-1"});
         const SymMatrix A = P0.mul(c, J0).mul(c, inv(c, P0));
         const JordanDecomposition jd = jordanForm(c, A);
-        ASSERT_TRUE(jd.proved()) << jd.reason;
+        ASSERT_TRUE(jd.proved()) << jd.reason.c_str();
         EXPECT_TRUE(matEq(c, jd.J, J0));
         EXPECT_TRUE(matEq(c, A.mul(c, jd.P), jd.P.mul(c, jd.J)));
     }
@@ -769,7 +769,7 @@ TEST(SymMatrixTest, VectorCalculusDivergenceCurlLaplacianWronskianAndPotential)
         const SymMatrix g = gradient(c, phiTrue, vars3);
         const std::vector<Expr> F = {g.at(0, 0), g.at(1, 0), g.at(2, 0)};
         const PotentialResult pot = scalarPotential(c, F, vars3);
-        ASSERT_TRUE(pot.proved()) << pot.reason;
+        ASSERT_TRUE(pot.proved()) << pot.reason.c_str();
         // Difference between pot.phi and phiTrue must be constant in (x, y, z)
         const SymMatrix gDiff =
             gradient(c, c.add({pot.phi, c.neg(phiTrue)}), vars3);
@@ -801,7 +801,7 @@ TEST(SymMatrixTest, LagrangeExtremaUnconstrainedAndConstrained)
     {
         const Expr f = parseExpr(c, "x^3 - 3*x + y^2 - 4*y");
         const LagrangeExtremaResult res = lagrangeExtrema(c, f, {x, y});
-        ASSERT_TRUE(res.proved()) << res.reason;
+        ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_TRUE(res.certified);
         ASSERT_EQ(res.points.size(), 2u);
 
@@ -825,7 +825,7 @@ TEST(SymMatrixTest, LagrangeExtremaUnconstrainedAndConstrained)
         const Expr f = parseExpr(c, "x^2 + y^2");
         const Expr g = parseExpr(c, "x + y - 2");
         const LagrangeExtremaResult res = lagrangeExtrema(c, f, {x, y}, {g});
-        ASSERT_TRUE(res.proved()) << res.reason;
+        ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_TRUE(res.certified);
         ASSERT_EQ(res.points.size(), 1u);
         EXPECT_EQ(res.points[0].point[0], c.one());
@@ -844,7 +844,7 @@ TEST(SymMatrixTest, LagrangeExtremaUnconstrainedAndConstrained)
         const Expr f = parseExpr(c, "x + y");
         const Expr g = parseExpr(c, "x^2 + y^2 - 1");
         const LagrangeExtremaResult res = lagrangeExtrema(c, f, {x, y}, {g});
-        ASSERT_TRUE(res.proved()) << res.reason;
+        ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_TRUE(res.certified);
         ASSERT_EQ(res.points.size(), 2u);
         const Expr sqrt2 = parseExpr(c, "2^(1/2)");
@@ -867,7 +867,7 @@ TEST(SymMatrixTest, LagrangeExtremaUnconstrainedAndConstrained)
         const Expr g2 = parseExpr(c, "x - y");
         const LagrangeExtremaResult res =
             lagrangeExtrema(c, f, {x, y, z}, {g1, g2});
-        ASSERT_TRUE(res.proved()) << res.reason;
+        ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_TRUE(res.certified);
         ASSERT_EQ(res.points.size(), 1u);
         EXPECT_EQ(res.points[0].point[0], c.one());
@@ -989,7 +989,7 @@ TEST(SymMatrixTest, EulerLagrangePoissonBracketAndHamiltonEquations)
             c, "1/2*m*(dx^2 + dy^2) + 1/2*B*(x*dy - y*dx) - 1/2*k*(x^2 + y^2)");
         const HamiltonEquationsResult ham =
             legendreTransform(c, L, {x, y}, {dx, dy}, {px, py});
-        ASSERT_TRUE(ham.certified) << ham.reason;
+        ASSERT_TRUE(ham.certified) << ham.reason.c_str();
         const Expr expectedH = parseExpr(
             c, "1/2*m^(-1)*((px + 1/2*B*y)^2 + (py - 1/2*B*x)^2) + 1/2*k*(x^2 + y^2)");
         EXPECT_EQ(c.simplify(c.expand(c.add({ham.H, c.neg(expectedH)}))),
@@ -1019,7 +1019,7 @@ TEST(SymMatrixTest, DifferentialAndRiemannianGeometry)
             c, {parseExpr(c, "3*cos(t)"), parseExpr(c, "3*sin(t)"),
                 parseExpr(c, "4*t")},
             t);
-        ASSERT_TRUE(fs.certified) << fs.reason;
+        ASSERT_TRUE(fs.certified) << fs.reason.c_str();
         EXPECT_EQ(fs.speed, c.number(5));
         EXPECT_EQ(fs.curvature, c.number(Rational(3, BigInt(25))));
         EXPECT_EQ(fs.torsion, c.number(Rational(4, BigInt(25))));
@@ -1037,7 +1037,7 @@ TEST(SymMatrixTest, DifferentialAndRiemannianGeometry)
             {parseExpr(c, "R*sin(u)*cos(v)"), parseExpr(c, "R*sin(u)*sin(v)"),
              parseExpr(c, "R*cos(u)")},
             u, v);
-        ASSERT_TRUE(sc.certified) << sc.reason;
+        ASSERT_TRUE(sc.certified) << sc.reason.c_str();
         EXPECT_EQ(sc.gaussianCurvature, parseExpr(c, "R^(-2)"));
 
         // Gauss's Theorema Egregium: intrinsic scalar curvature of firstForm == 2*K
@@ -1055,7 +1055,7 @@ TEST(SymMatrixTest, DifferentialAndRiemannianGeometry)
             {parseExpr(c, "u*cos(v)"), parseExpr(c, "u*sin(v)"),
              parseExpr(c, "b*v")},
             u, v);
-        ASSERT_TRUE(hel.certified) << hel.reason;
+        ASSERT_TRUE(hel.certified) << hel.reason.c_str();
         EXPECT_EQ(hel.meanCurvature, c.zero());
         EXPECT_EQ(c.simplify(c.add({hel.gaussianCurvature,
                                     parseExpr(c, "b^2*(u^2 + b^2)^(-2)")})),
@@ -1072,7 +1072,7 @@ TEST(SymMatrixTest, DifferentialAndRiemannianGeometry)
         const SymMatrix poincare(2, 2, {yInv2, c.zero(), c.zero(), yInv2});
         const RiemannCurvatureResult riem =
             riemannTensor(c, poincare, {x, y});
-        ASSERT_TRUE(riem.certified) << riem.reason;
+        ASSERT_TRUE(riem.certified) << riem.reason.c_str();
         EXPECT_EQ(riem.scalarCurvature, c.number(-2));
         EXPECT_EQ(riem.einstein.at(0, 0), c.zero());
         EXPECT_EQ(riem.einstein.at(1, 1), c.zero());
@@ -1080,7 +1080,7 @@ TEST(SymMatrixTest, DifferentialAndRiemannianGeometry)
         // Geodesic equations on Poincare half-plane:
         //   ddx - 2/y * dx * dy = 0,   ddy + 1/y * (dx^2 - dy^2) = 0
         const GeodesicResult geo = geodesicEquations(c, poincare, {x, y});
-        ASSERT_TRUE(geo.certified) << geo.reason;
+        ASSERT_TRUE(geo.certified) << geo.reason.c_str();
         EXPECT_EQ(c.simplify(c.add({
                       geo.equations[0],
                       c.neg(parseExpr(c, "ddx - 2*y^(-1)*dx*dy"))})),

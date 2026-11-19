@@ -168,12 +168,12 @@ TEST(BigIntProperty, TruncDivisionInvariants)
         BigInt q, r;
         BigInt::divMod(a, b, q, r);
         ASSERT_EQ(q * b + r, a);
-        ASSERT_TRUE(r.abs() < b.abs()) << "a=" << a.toString() << " b=" << b.toString();
+        ASSERT_TRUE(r.abs() < b.abs()) << "a=" << a.toString().c_str() << " b=" << b.toString().c_str();
         ASSERT_TRUE(r.isZero() || r.signum() == a.signum())
-            << "a=" << a.toString() << " b=" << b.toString();
+            << "a=" << a.toString().c_str() << " b=" << b.toString().c_str();
         ASSERT_TRUE(q.isZero() ||
                     q.signum() == ((a.signum() < 0) != (b.signum() < 0) ? -1 : 1))
-            << "a=" << a.toString() << " b=" << b.toString();
+            << "a=" << a.toString().c_str() << " b=" << b.toString().c_str();
     }
 }
 

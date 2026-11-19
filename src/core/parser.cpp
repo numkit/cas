@@ -1,5 +1,6 @@
 // core/parser.cpp — pratt parser: source text -> Ctx constructors.
 #include <keel/core.h>
+#include <keel/format.h>
 #include <numkit/cas/core/parser.hpp>
 
 namespace numkit::cas {
@@ -22,8 +23,8 @@ enum class Tok : keel::u8 {
 struct Token {
     Tok kind = Tok::End;
     keel::usize pos = 0; // offset of the first character
-    std::string text;    // Ident: name; Number: integer part
-    std::string frac;    // Number: digits after '.' ("" if no point)
+    keel::StringRef text;    // Ident: name; Number: integer part
+    keel::StringRef frac;    // Number: digits after '.' ("" if no point)
 };
 
 bool isSpace(char ch)
@@ -41,7 +42,7 @@ bool isIdentStart(char ch)
 
 bool isIdentChar(char ch) { return isIdentStart(ch) || isDigit(ch); }
 
-Token lex(const std::string &src, keel::usize &pos)
+Token lex(keel::StringRef src, keel::usize &pos)
 {
     while (pos < src.size() && isSpace(src[pos]))
         ++pos;
@@ -51,26 +52,26 @@ Token lex(const std::string &src, keel::usize &pos)
         return t;
     const char ch = src[pos];
     if (isIdentStart(ch)) {
-        while (pos < src.size() && isIdentChar(src[pos])) {
-            t.text += src[pos];
+        const keel::usize start = pos;
+        while (pos < src.size() && isIdentChar(src[pos]))
             ++pos;
-        }
+        t.text = src.substr(start, pos - start);
         t.kind = Tok::Ident;
         return t;
     }
     if (isDigit(ch)) {
-        while (pos < src.size() && isDigit(src[pos])) {
-            t.text += src[pos];
+        const keel::usize start = pos;
+        while (pos < src.size() && isDigit(src[pos]))
             ++pos;
-        }
+        t.text = src.substr(start, pos - start);
         if (pos < src.size() && src[pos] == '.') {
             ++pos;
             if (pos >= src.size() || !isDigit(src[pos]))
                 throw ParseError(pos, "digit expected after '.'");
-            while (pos < src.size() && isDigit(src[pos])) {
-                t.frac += src[pos];
+            const keel::usize fstart = pos;
+            while (pos < src.size() && isDigit(src[pos]))
                 ++pos;
-            }
+            t.frac = src.substr(fstart, pos - fstart);
         }
         t.kind = Tok::Number;
         return t;
@@ -85,7 +86,7 @@ Token lex(const std::string &src, keel::usize &pos)
     case '(': t.kind = Tok::LParen; break;
     case ')': t.kind = Tok::RParen; break;
     case ',': t.kind = Tok::Comma; break;
-    default: throw ParseError(t.pos, std::string("unexpected character '") + ch + "'");
+    default: throw ParseError(t.pos, keel::format("unexpected character '{}'", ch));
     }
     return t;
 }
@@ -108,7 +109,7 @@ int bp(Tok k)
 class Parser
 {
 public:
-    Parser(Ctx &c, const std::string &src) : c_(c), src_(src), cur_(lex(src, pos_)) {}
+    Parser(Ctx &c, keel::StringRef src) : c_(c), src_(src), cur_(lex(src, pos_)) {}
 
     Expr run()
     {
@@ -127,7 +128,7 @@ private:
     // Any value in (50, 60) implements that; 55 is the midpoint.
     static constexpr int kUnaryBp = 55;
 
-    [[noreturn]] static void fail(keel::usize pos, const std::string &msg)
+    [[noreturn]] static void fail(keel::usize pos, keel::StringRef msg)
     {
         throw ParseError(pos, msg);
     }
@@ -204,7 +205,7 @@ private:
         advance();
         BigInt ipart;
         if (!BigInt::tryParse(ipart, t.text))
-            fail(t.pos, "malformed number '" + t.text + "'");
+            fail(t.pos, keel::format("malformed number '{}'", t.text));
         if (t.frac.empty())
             return c_.number(Rational(std::move(ipart), BigInt(1)));
         // value = (ipart*10^k + frac)/10^k, k = frac.size(). The
@@ -213,7 +214,7 @@ private:
         // the 2^k denominator.
         BigInt frac;
         if (!BigInt::tryParse(frac, t.frac))
-            fail(t.pos, "malformed number '0." + t.frac + "'");
+            fail(t.pos, keel::format("malformed number '0.{}'", t.frac));
         keel::usize k = t.frac.size();
         const BigInt five(5);
         while (k > 0) {
@@ -225,8 +226,8 @@ private:
             --k;
         }
         if (k != 0)
-            fail(t.pos, "decimal '" + t.text + "." + t.frac +
-                            "' is not exactly representable; write it as a fraction");
+            fail(t.pos, keel::format("decimal '{}.{}' is not exactly representable; write it as a fraction",
+                                     t.text, t.frac));
         const BigInt scale = BigInt::powUInt(BigInt(2), t.frac.size());
         BigInt num = ipart * scale + frac;
         return c_.number(Rational(std::move(num), scale));
@@ -238,7 +239,7 @@ private:
         advance();
         if (cur_.kind == Tok::LParen) {
             advance();
-            std::vector<Expr> args;
+            keel::Array<Expr> args;
             args.push_back(parseExpr(0));
             while (cur_.kind == Tok::Comma) {
                 advance();
@@ -251,14 +252,14 @@ private:
     }
 
     Ctx &c_;
-    const std::string &src_;
+    keel::StringRef src_;
     keel::usize pos_ = 0;
     Token cur_;
 };
 
 } // namespace
 
-Expr parseExpr(Ctx &c, const std::string &src)
+Expr parseExpr(Ctx &c, keel::StringRef src)
 {
     return Parser(c, src).run();
 }

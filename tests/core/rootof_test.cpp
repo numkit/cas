@@ -34,13 +34,13 @@ Rational rr(keel::u64 &state, int range)
 TEST(RootOfAtom, ConstructionAndInterning)
 {
     Ctx c;
-    const std::vector<Rational> x3m2 = {Rational(keel::i64{-2}), Rational(keel::i64{0}),
-                                         Rational(keel::i64{0}), Rational(keel::i64{1})};
-    const Expr a = c.rootOf(x3m2, 0);
-    const Expr b = c.rootOf(x3m2, 0);
+    const keel::Array<Rational> x3m2 = {Rational(keel::i64{-2}), Rational(keel::i64{0}),
+                                        Rational(keel::i64{0}), Rational(keel::i64{1})};
+    const Expr a = c.rootOf(x3m2.clone(), 0);
+    const Expr b = c.rootOf(x3m2.clone(), 0);
     ASSERT_EQ(a, b); // identical content -> same node
     const keel::usize before = c.nodeCount();
-    const Expr a2 = c.rootOf(x3m2, 0);
+    const Expr a2 = c.rootOf(x3m2.clone(), 0);
     EXPECT_EQ(a2, a);
     EXPECT_EQ(c.nodeCount(), before); // interning: no growth
 
@@ -50,7 +50,7 @@ TEST(RootOfAtom, ConstructionAndInterning)
     EXPECT_EQ(c.rootOfPoly(a).back(), Rational(keel::i64{1}));
 
     // different root index -> different node
-    const Expr c0 = c.rootOf(x3m2, 1);
+    const Expr c0 = c.rootOf(x3m2.clone(), 1);
     EXPECT_NE(a, c0);
     EXPECT_EQ(c.rootOfIndex(c0), 1);
 }
@@ -59,12 +59,12 @@ TEST(RootOfAtom, CanonicalMonization)
 {
     Ctx c;
     // 2x^2 - 4 is monicized to x^2 - 2 before interning.
-    const std::vector<Rational> two{Rational(keel::i64{-4}), Rational(keel::i64{0}),
+    const keel::Array<Rational> two{Rational(keel::i64{-4}), Rational(keel::i64{0}),
                                     Rational(keel::i64{2})};
-    const std::vector<Rational> one{Rational(keel::i64{-2}), Rational(keel::i64{0}),
+    const keel::Array<Rational> one{Rational(keel::i64{-2}), Rational(keel::i64{0}),
                                     Rational(keel::i64{1})};
-    const Expr a = c.rootOf(two, 0);
-    const Expr b = c.rootOf(one, 0);
+    const Expr a = c.rootOf(two.clone(), 0);
+    const Expr b = c.rootOf(one.clone(), 0);
     EXPECT_EQ(a, b);
     EXPECT_EQ(c.rootOfPoly(a).back(), Rational(keel::i64{1}));
 }
@@ -72,9 +72,9 @@ TEST(RootOfAtom, CanonicalMonization)
 TEST(RootOfAtom, Printing)
 {
     Ctx c;
-    const std::vector<Rational> x3m2 = {Rational(keel::i64{-2}), Rational(keel::i64{0}),
-                                         Rational(keel::i64{0}), Rational(keel::i64{1})};
-    const Expr a = c.rootOf(x3m2, 0);
+    const keel::Array<Rational> x3m2 = {Rational(keel::i64{-2}), Rational(keel::i64{0}),
+                                        Rational(keel::i64{0}), Rational(keel::i64{1})};
+    const Expr a = c.rootOf(x3m2.clone(), 0);
     EXPECT_EQ(c.toString(a), "RootOf(1*z^3 + 0*z^2 + 0*z + -2, 0)");
     // Inside arithmetic the atom binds like a symbol.
     const Expr x = c.symbol("x");
@@ -85,9 +85,9 @@ TEST(RootOfAtom, DifferentiatesToZero)
 {
     Ctx c;
     const Expr x = c.symbol("x");
-    const std::vector<Rational> q{Rational(keel::i64{1}), Rational(keel::i64{0}),
+    const keel::Array<Rational> q{Rational(keel::i64{1}), Rational(keel::i64{0}),
                                   Rational(keel::i64{1})};
-    const Expr a = c.rootOf(q, 0); // root of z^2 + 1
+    const Expr a = c.rootOf(q.clone(), 0); // root of z^2 + 1
     EXPECT_TRUE(c.isZero(c.diff(a, x)));
     EXPECT_EQ(c.diff(c.mul({a, x}), x), a); // constant multiple rule holds
 }
@@ -95,13 +95,13 @@ TEST(RootOfAtom, DifferentiatesToZero)
 TEST(RootOfAtom, CompareTotalOrder)
 {
     Ctx c;
-    const std::vector<Rational> p1{Rational(keel::i64{-2}), Rational(keel::i64{0}),
+    const keel::Array<Rational> p1{Rational(keel::i64{-2}), Rational(keel::i64{0}),
                                    Rational(keel::i64{1})};               // z^2 - 2
-    const std::vector<Rational> p2{Rational(keel::i64{-3}), Rational(keel::i64{0}),
+    const keel::Array<Rational> p2{Rational(keel::i64{-3}), Rational(keel::i64{0}),
                                    Rational(keel::i64{1})};               // z^2 - 3
-    const Expr a = c.rootOf(p1, 0);
-    const Expr b = c.rootOf(p1, 1);
-    const Expr d = c.rootOf(p2, 0);
+    const Expr a = c.rootOf(p1.clone(), 0);
+    const Expr b = c.rootOf(p1.clone(), 1);
+    const Expr d = c.rootOf(p2.clone(), 0);
     EXPECT_EQ(c.compare(a, a), 0);
     EXPECT_EQ(c.compare(a, b) < 0, true); // index order within same poly
     EXPECT_EQ(c.compare(b, a) > 0, true);
@@ -119,18 +119,18 @@ TEST(RootOfAtom, PropertyAlgebraAndRebuild)
 {
     Ctx c;
     const Expr x = c.symbol("x");
-    const std::vector<Rational> p{Rational(keel::i64{-5}), Rational(keel::i64{0}),
+    const keel::Array<Rational> p{Rational(keel::i64{-5}), Rational(keel::i64{0}),
                                   Rational(keel::i64{0}), Rational(keel::i64{1})};
     keel::u64 state = 0x600DCA5EED01ULL;
     for (int iter = 0; iter < 2000; ++iter) {
         const int i = static_cast<int>(nextU64(state) % 3);
         const int j = static_cast<int>(nextU64(state) % 3);
-        const Expr a = c.rootOf(p, i);
-        const Expr b = c.rootOf(p, j);
+        const Expr a = c.rootOf(p.clone(), i);
+        const Expr b = c.rootOf(p.clone(), j);
         EXPECT_EQ(a == b, i == j);
         // rebuild path: same construction returns the same node
         const keel::usize before = c.nodeCount();
-        const Expr again = c.rootOf(p, i);
+        const Expr again = c.rootOf(p.clone(), i);
         EXPECT_EQ(again, a);
         EXPECT_EQ(c.nodeCount(), before);
         // atoms commute under multiplication with x

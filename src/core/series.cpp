@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <vector>
+#include <keel/array.h>
+#include <keel/format.h>
+#include <keel/string.h>
 
 namespace numkit::cas {
 
@@ -49,7 +51,7 @@ Expr foldConst(Ctx &c, Expr e)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        std::vector<Expr> args;
+        keel::Array<Expr> args;
         args.reserve(c.childCount(e));
         bool allConst = true;
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
@@ -89,7 +91,7 @@ Expr foldConst(Ctx &c, Expr e)
     }
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr k = foldConst(c, c.child(e, i));
@@ -129,9 +131,9 @@ Expr safeSubsAndFold(Ctx &c, Expr e, Expr from, Expr to)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         if (c.childCount(e) != 1) {
-            std::vector<Expr> args;
+            keel::Array<Expr> args;
             args.reserve(c.childCount(e));
             for (keel::usize i = 0; i < c.childCount(e); ++i) {
                 const Expr ai = safeSubsAndFold(c, c.child(e, i), from, to);
@@ -169,7 +171,7 @@ Expr safeSubsAndFold(Ctx &c, Expr e, Expr from, Expr to)
     }
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr k = safeSubsAndFold(c, c.child(e, i), from, to);
@@ -189,7 +191,25 @@ struct Laurent
 {
     int val = 0;
     int maxDeg = 0;
-    std::vector<Expr> coeffs;
+    keel::Array<Expr> coeffs;
+
+    Laurent() noexcept = default;
+    Laurent(int v, int m, keel::Array<Expr> cs = {}) noexcept
+        : val(v), maxDeg(m), coeffs(keel::move(cs))
+    {
+    }
+    Laurent(const Laurent &o) : val(o.val), maxDeg(o.maxDeg), coeffs(o.coeffs.clone()) {}
+    Laurent &operator=(const Laurent &o)
+    {
+        if (this != &o) {
+            val = o.val;
+            maxDeg = o.maxDeg;
+            coeffs = o.coeffs.clone();
+        }
+        return *this;
+    }
+    Laurent(Laurent &&) noexcept = default;
+    Laurent &operator=(Laurent &&) noexcept = default;
 };
 
 void normalizeSeries(Ctx &c, Laurent &s)
@@ -197,7 +217,7 @@ void normalizeSeries(Ctx &c, Laurent &s)
     for (Expr &coef : s.coeffs)
         coef = foldConst(c, coef);
     while (!s.coeffs.empty() && isZeroCoeff(c, s.coeffs.front())) {
-        s.coeffs.erase(s.coeffs.begin());
+        s.coeffs.remove_at(0);
         ++s.val;
     }
     if (s.coeffs.empty()) {
@@ -312,7 +332,7 @@ bool invSeries(Ctx &c, const Laurent &b, Laurent &out)
     out.coeffs.assign(static_cast<keel::usize>(relPrec + 1), c.zero());
     out.coeffs[0] = invB0;
     for (int k = 1; k <= relPrec; ++k) {
-        std::vector<Expr> terms;
+        keel::Array<Expr> terms;
         for (int j = 1; j <= k; ++j) {
             const Expr bj = coeffAt(c, b, b.val + j);
             if (!isZeroCoeff(c, bj) &&
@@ -486,7 +506,7 @@ int exprSign(Ctx &c, Expr e)
     return 0;
 }
 
-bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
+bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
                     Laurent &out, bool positiveT = false)
 {
     if (fn == "sqrt") {
@@ -783,7 +803,7 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
         if (isZeroCoeff(c, c0))
             return false;
         Laurent numS, invA, intPart;
-        const std::string numFn = (fn == "Ci") ? "cos" : "exp";
+        const keel::StringRef numFn = (fn == "Ci") ? "cos" : "exp";
         if (!evalFuncSeries(c, numFn, arg, numS, positiveT) ||
             !invSeries(c, arg, invA))
             return false;
@@ -1070,7 +1090,7 @@ bool evalFuncSeries(Ctx &c, const std::string &fn, const Laurent &arg,
 
     if (fn == "airyAi" || fn == "airyBi" || fn == "airyAiPrime" ||
         fn == "airyBiPrime" || fn == "ellipticK" || fn == "ellipticE") {
-        std::vector<Expr> mac(static_cast<keel::usize>(L + 1), c.zero());
+        keel::Array<Expr> mac(static_cast<keel::usize>(L + 1), c.zero());
         const Expr tSym = c.symbol("$t_series");
         Expr cur = c.func(fn, tSym);
         BigInt fact(1);
@@ -1183,7 +1203,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
     }
     case NodeKind::Func: {
         if (c.childCount(e) == 3 || c.childCount(e) == 4) {
-            const std::string &fn = c.funcName(e);
+            const keel::String &fn = c.funcName(e);
             const Expr expd = c.simplify(e);
             if (!expd.isNull() && !(expd == e)) {
                 return computeLaurent(c, expd, var, x0, maxDeg, budget, out,
@@ -1239,10 +1259,10 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     out = sum;
                     return true;
                 }
-                std::vector<Expr> mac(static_cast<keel::usize>(L + 1),
+                keel::Array<Expr> mac(static_cast<keel::usize>(L + 1),
                                       c.zero());
                 const Expr tSym = c.symbol("$t_series");
-                std::vector<Expr> fnArgs;
+                keel::Array<Expr> fnArgs;
                 for (keel::usize i = 0; i + 1 < nArgs; ++i)
                     fnArgs.push_back(c.child(e, i));
                 fnArgs.push_back(tSym);
@@ -1280,7 +1300,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
             return false;
         }
         if (c.childCount(e) == 2) {
-            const std::string &fn = c.funcName(e);
+            const keel::String &fn = c.funcName(e);
             const Expr ord = c.child(e, 0);
             const Expr uExpr = c.child(e, 1);
             if (fn == "legendreP" || fn == "chebyshevT" ||
@@ -1323,8 +1343,8 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                 if (!integrateSeriesZeroConst(c, mulSeries(c, dPhi, factor),
                                               intPart))
                     return false;
-                const std::string canonFn =
-                    (fn == "ellipticE") ? "ellipticEInc" : fn;
+                const keel::StringRef canonFn =
+                    (fn == "ellipticE") ? keel::StringRef("ellipticEInc") : fn.as_ref();
                 const Expr f0 =
                     foldConst(c, c.simplify(c.func(canonFn, phi0, uExpr)));
                 out = addSeries(c, makeConstSeries(c, f0, L), intPart);
@@ -1347,16 +1367,16 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                             : c.zero();
                     if (isZeroCoeff(c, n0) && isZeroCoeff(c, m0)) {
                         const int L = maxDeg;
-                        std::vector<Rational> df(static_cast<keel::usize>(L + 1),
+                        keel::Array<Rational> df(static_cast<keel::usize>(L + 1),
                                                  Rational(1));
                         for (int k = 1; k <= L; ++k) {
                             df[static_cast<keel::usize>(k)] =
                                 df[static_cast<keel::usize>(k - 1)] *
                                 Rational(BigInt(2 * k - 1), BigInt(2 * k));
                         }
-                        std::vector<Laurent> nPows(
+                        keel::Array<Laurent> nPows(
                             static_cast<keel::usize>(L + 1));
-                        std::vector<Laurent> mPows(
+                        keel::Array<Laurent> mPows(
                             static_cast<keel::usize>(L + 1));
                         nPows[0] = makeConstSeries(c, c.one(), L);
                         mPows[0] = makeConstSeries(c, c.one(), L);
@@ -1419,7 +1439,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     Laurent u = argSeries;
                     if (u.val == 0 && !u.coeffs.empty())
                         u.coeffs[0] = c.zero();
-                    std::vector<Expr> mac(static_cast<keel::usize>(L + 1),
+                    keel::Array<Expr> mac(static_cast<keel::usize>(L + 1),
                                           c.zero());
                     for (keel::i64 k = 0; 2 * k + n <= L; ++k) {
                         const keel::usize deg =
@@ -1504,7 +1524,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                 Laurent u = argSeries;
                 if (u.val == 0 && !u.coeffs.empty())
                     u.coeffs[0] = c.zero();
-                std::vector<Expr> mac(static_cast<keel::usize>(L + 1),
+                keel::Array<Expr> mac(static_cast<keel::usize>(L + 1),
                                       c.zero());
                 const Expr tSym = c.symbol("$t_series");
                 Expr cur = c.func(fn, ord, tSym);
@@ -1553,7 +1573,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
 Expr renderSeries(Ctx &c, const Laurent &s, Expr var, Expr x0, int order)
 {
     const Expr dx = c.isZero(x0) ? var : c.add({var, c.neg(x0)});
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     for (keel::usize i = 0; i < s.coeffs.size(); ++i) {
         const int deg = s.val + static_cast<int>(i);
         if (deg > order)
@@ -1578,7 +1598,7 @@ Expr taylorByDiffFallback(Ctx &c, Expr f, Expr var, Expr x0, int order,
                           Budget *budget)
 {
     const Expr dx = c.isZero(x0) ? var : c.add({var, c.neg(x0)});
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     Expr cur = f;
     BigInt fact(1);
     for (int k = 0; k <= order; ++k) {
@@ -1658,7 +1678,7 @@ Expr combineLogsForLimit(Ctx &c, Expr e)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        std::vector<Expr> args;
+        keel::Array<Expr> args;
         args.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             args.push_back(combineLogsForLimit(c, c.child(e, i)));
@@ -1668,15 +1688,15 @@ Expr combineLogsForLimit(Ctx &c, Expr e)
         return c.pow(combineLogsForLimit(c, c.child(e, 0)),
                      combineLogsForLimit(c, c.child(e, 1)));
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(combineLogsForLimit(c, c.child(e, i)));
         return c.mul(ch);
     }
     case NodeKind::Add: {
-        std::vector<Expr> otherTerms;
-        std::vector<std::pair<Rational, Expr>> logTerms;
+        keel::Array<Expr> otherTerms;
+        keel::Array<std::pair<Rational, Expr>> logTerms;
         auto matchRatLog = [&](Expr t, Rational &rOut, Expr &uOut) -> bool {
             if (c.kind(t) == NodeKind::Func && c.funcName(t) == "log") {
                 rOut = Rational(keel::i64{1});
@@ -1708,7 +1728,7 @@ Expr combineLogsForLimit(Ctx &c, Expr e)
                 const BigInt g = BigInt::gcd(qLcm, kv.first.den());
                 qLcm = (qLcm / g) * kv.first.den();
             }
-            std::vector<Expr> prodFactors;
+            keel::Array<Expr> prodFactors;
             prodFactors.reserve(logTerms.size());
             for (const auto &kv : logTerms) {
                 const BigInt m = kv.first.num() * (qLcm / kv.first.den());
@@ -1733,14 +1753,14 @@ Expr combineLogsForLimit(Ctx &c, Expr e)
 bool isBoundedOscillatoryFactor(const Ctx &c, Expr f)
 {
     if (c.kind(f) == NodeKind::Func) {
-        const std::string &fn = c.funcName(f);
+        const keel::String &fn = c.funcName(f);
         return fn == "sin" || fn == "cos";
     }
     if (c.kind(f) == NodeKind::Pow &&
         c.kind(c.child(f, 0)) == NodeKind::Func &&
         c.kind(c.child(f, 1)) == NodeKind::Number &&
         c.numberValue(c.child(f, 1)).signum() > 0) {
-        const std::string &fn = c.funcName(c.child(f, 0));
+        const keel::String &fn = c.funcName(c.child(f, 0));
         return fn == "sin" || fn == "cos";
     }
     return false;
@@ -1751,13 +1771,13 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
 {
     LimitResult out;
     if (!checkSeriesBudget(c, budget)) {
-        out.reason = budget->status() == BudgetStatus::StepExhausted
-                         ? "step budget exhausted"
-                         : "arena byte budget exhausted";
+        out.reason.assign(budget->status() == BudgetStatus::StepExhausted
+                              ? "step budget exhausted"
+                              : "arena byte budget exhausted");
         return out;
     }
     if (depth > 6) {
-        out.reason = "maximum L'Hopital depth exceeded";
+        out.reason.assign("maximum L'Hopital depth exceeded");
         return out;
     }
 
@@ -1768,7 +1788,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
             if (!s.coeffs.empty() && s.val < 0) {
                 out.status = LimitResult::Status::Divergent;
                 out.poleOrder = -s.val;
-                out.reason = "pole at limit point";
+                out.reason.assign("pole at limit point");
                 return out;
             }
             if (s.maxDeg >= 0) {
@@ -1778,9 +1798,9 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
             }
         }
         if (budget && !budget->ok()) {
-            out.reason = budget->status() == BudgetStatus::StepExhausted
-                             ? "step budget exhausted"
-                             : "arena byte budget exhausted";
+            out.reason.assign(budget->status() == BudgetStatus::StepExhausted
+                                  ? "step budget exhausted"
+                                  : "arena byte budget exhausted");
             return out;
         }
     }
@@ -1804,7 +1824,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
             if (bLim.proved() && isZeroCoeff(c, bLim.value)) {
                 out.status = LimitResult::Status::Divergent;
                 out.poleOrder = 1;
-                out.reason = "algebraic pole at limit point";
+                out.reason.assign("algebraic pole at limit point");
                 return out;
             }
             if (bLim.status == LimitResult::Status::Divergent) {
@@ -1816,12 +1836,12 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                    bLim.status == LimitResult::Status::Divergent) {
             out.status = LimitResult::Status::Divergent;
             out.poleOrder = 1;
-            out.reason = "divergent power at limit point";
+            out.reason.assign("divergent power at limit point");
             return out;
         }
     }
     if (c.kind(f) == NodeKind::Func) {
-        const std::string &fn = c.funcName(f);
+        const keel::String &fn = c.funcName(f);
         const Expr arg = c.child(f, 0);
         if (fn == "log" || fn == "Ei" || fn == "Ci") {
             const LimitResult argLim =
@@ -1831,7 +1851,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                  argLim.status == LimitResult::Status::Divergent)) {
                 out.status = LimitResult::Status::Divergent;
                 out.poleOrder = 1;
-                out.reason = "logarithmic singularity at limit point";
+                out.reason.assign("logarithmic singularity at limit point");
                 return out;
             }
         } else if (fn == "li") {
@@ -1843,7 +1863,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                 argLim.status == LimitResult::Status::Divergent) {
                 out.status = LimitResult::Status::Divergent;
                 out.poleOrder = 1;
-                out.reason = "logarithmic integral singularity at limit point";
+                out.reason.assign("logarithmic integral singularity at limit point");
                 return out;
             }
         } else if (fn == "dilog" || fn == "Li2" || fn == "polylog2") {
@@ -1852,7 +1872,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
             if (argLim.status == LimitResult::Status::Divergent) {
                 out.status = LimitResult::Status::Divergent;
                 out.poleOrder = 1;
-                out.reason = "dilogarithmic singularity at limit point";
+                out.reason.assign("dilogarithmic singularity at limit point");
                 return out;
             }
         }
@@ -1864,7 +1884,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                 if (s > 0 || (fn == "erfi" && s != 0)) {
                     out.status = LimitResult::Status::Divergent;
                     out.poleOrder = -argS.val;
-                    out.reason = "essential exponential growth at limit point";
+                    out.reason.assign("essential exponential growth at limit point");
                     return out;
                 }
             }
@@ -1874,8 +1894,8 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
     // 3. Decompose Mul into bounded oscillatory factors (squeeze theorem) or
     //    numerator / denominator / 0 * log(...) indeterminate forms (L'Hopital).
     if (c.kind(f) == NodeKind::Mul) {
-        std::vector<Expr> boundedFactors;
-        std::vector<Expr> nonBoundedFactors;
+        keel::Array<Expr> boundedFactors;
+        keel::Array<Expr> nonBoundedFactors;
         for (keel::usize i = 0; i < c.childCount(f); ++i) {
             const Expr ch = c.child(f, i);
             if (isBoundedOscillatoryFactor(c, ch))
@@ -1894,10 +1914,10 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
             }
         }
 
-        std::vector<Expr> numFactors;
-        std::vector<Expr> denFactors;
-        std::vector<Expr> logFactors;
-        std::vector<keel::i64> logExps;
+        keel::Array<Expr> numFactors;
+        keel::Array<Expr> denFactors;
+        keel::Array<Expr> logFactors;
+        keel::Array<keel::i64> logExps;
         for (keel::usize i = 0; i < c.childCount(f); ++i) {
             const Expr ch = c.child(f, i);
             if (c.kind(ch) == NodeKind::Pow &&
@@ -1972,7 +1992,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
                 !isZeroCoeff(c, nAt0)) {
                 out.status = LimitResult::Status::Divergent;
                 out.poleOrder = 1;
-                out.reason = "non-zero numerator over zero denominator";
+                out.reason.assign("non-zero numerator over zero denominator");
                 return out;
             }
             const Expr dN = c.diff(N, var);
@@ -1987,7 +2007,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
     // 4. Additive linearity fallback when every summand has a finite Proved
     //    limit, or when exactly one summand diverges and all others are finite.
     if (c.kind(f) == NodeKind::Add) {
-        std::vector<Expr> pieceVals;
+        keel::Array<Expr> pieceVals;
         pieceVals.reserve(c.childCount(f));
         keel::usize divCount = 0;
         keel::usize unevalCount = 0;
@@ -2015,7 +2035,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
             return firstDiv;
     }
 
-    out.reason = "unable to determine limit";
+    out.reason.assign("unable to determine limit");
     return out;
 }
 
@@ -2024,7 +2044,7 @@ bool isSymbolicInfinity(const Ctx &c, Expr e, int &dirOut)
     if (e.isNull())
         return false;
     if (c.kind(e) == NodeKind::Symbol) {
-        const std::string &nm = c.symbolName(e);
+        const keel::String &nm = c.symbolName(e);
         if (nm == "inf" || nm == "oo" || nm == "infinity") {
             dirOut = +1;
             return true;
@@ -2033,7 +2053,7 @@ bool isSymbolicInfinity(const Ctx &c, Expr e, int &dirOut)
     if (c.kind(e) == NodeKind::Mul && c.childCount(e) == 2 &&
         c.kind(c.child(e, 0)) == NodeKind::Number &&
         c.kind(c.child(e, 1)) == NodeKind::Symbol) {
-        const std::string &nm = c.symbolName(c.child(e, 1));
+        const keel::String &nm = c.symbolName(c.child(e, 1));
         if (nm == "inf" || nm == "oo" || nm == "infinity") {
             const int s = c.numberValue(c.child(e, 0)).signum();
             if (s != 0) {
@@ -2068,7 +2088,7 @@ Expr expandAsymptoticLogsAndDilog(Ctx &c, Expr e, Expr tSym, Budget *budget,
                                                   budget, changedOut));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
             ch.push_back(expandAsymptoticLogsAndDilog(c, c.child(e, i), tSym,
@@ -2077,9 +2097,9 @@ Expr expandAsymptoticLogsAndDilog(Ctx &c, Expr e, Expr tSym, Budget *budget,
         return c.kind(e) == NodeKind::Add ? c.add(ch) : c.mul(ch);
     }
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         if (c.childCount(e) != 1) {
-            std::vector<Expr> args;
+            keel::Array<Expr> args;
             args.reserve(c.childCount(e));
             for (keel::usize i = 0; i < c.childCount(e); ++i) {
                 args.push_back(expandAsymptoticLogsAndDilog(
@@ -2151,7 +2171,7 @@ LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
 {
     if (f.isNull() || var.isNull() || x0.isNull()) {
         LimitResult out;
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     int infDir = 0;
@@ -2183,7 +2203,7 @@ LimitResult limitAtInfinity(Ctx &c, Expr f, Expr var, int dir, Budget *budget)
 {
     if (f.isNull() || var.isNull()) {
         LimitResult out;
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     if (!mentionsSymbol(c, f, var)) {
@@ -2205,7 +2225,7 @@ LimitResult limit(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget)
 {
     if (f.isNull() || var.isNull() || x0.isNull()) {
         LimitResult out;
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     int infDir = 0;
@@ -2288,9 +2308,9 @@ Rational binomRational(int n, int k)
 }
 
 // Compute classical Bernoulli numbers B_0 = 1, B_1 = -1/2, B_2 = 1/6, B_3 = 0, ...
-std::vector<Rational> bernoulliNumbers(int maxN)
+keel::Array<Rational> bernoulliNumbers(int maxN)
 {
-    std::vector<Rational> B(static_cast<keel::usize>(maxN + 1),
+    keel::Array<Rational> B(static_cast<keel::usize>(maxN + 1),
                             Rational(keel::i64{0}));
     B[0] = Rational(keel::i64{1});
     for (int m = 1; m <= maxN; ++m) {
@@ -2314,7 +2334,7 @@ std::vector<Rational> bernoulliNumbers(int maxN)
 Expr eulerZetaEven(Ctx &c, int twoM)
 {
     const int m = twoM / 2;
-    const std::vector<Rational> B = bernoulliNumbers(twoM);
+    const keel::Array<Rational> B = bernoulliNumbers(twoM);
     Rational bVal = B[static_cast<keel::usize>(twoM)];
     if (bVal.signum() < 0)
         bVal = -bVal;
@@ -2330,10 +2350,10 @@ Expr eulerZetaEven(Ctx &c, int twoM)
 }
 
 bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
-                            std::vector<Expr> &coeffs)
+                            keel::Array<Expr> &coeffs)
 {
     const Expr expanded = c.expand(e);
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     if (c.kind(expanded) == NodeKind::Add) {
         for (keel::usize i = 0; i < c.childCount(expanded); ++i)
             terms.push_back(c.child(expanded, i));
@@ -2347,7 +2367,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
             coeffs[0] = c.add({coeffs[0], t});
             continue;
         }
-        std::vector<Expr> facs;
+        keel::Array<Expr> facs;
         if (c.kind(t) == NodeKind::Mul) {
             for (keel::usize i = 0; i < c.childCount(t); ++i)
                 facs.push_back(c.child(t, i));
@@ -2355,7 +2375,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
             facs.push_back(t);
         }
         int deg = 0;
-        std::vector<Expr> cFacs;
+        keel::Array<Expr> cFacs;
         for (const Expr &f : facs) {
             if (!mentionsSymbol(c, f, var)) {
                 cFacs.push_back(f);
@@ -2389,9 +2409,9 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
     return true;
 }
 
-Expr evalSymbolicPolyInVar(Ctx &c, const std::vector<Expr> &coeffs, Expr var)
+Expr evalSymbolicPolyInVar(Ctx &c, const keel::Array<Expr> &coeffs, Expr var)
 {
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     for (keel::usize i = 0; i < coeffs.size(); ++i) {
         if (c.isZero(coeffs[i]))
             continue;
@@ -2421,7 +2441,7 @@ Expr expandShiftPowers(Ctx &c, Expr e, Expr var)
         const Expr b = expandShiftPowers(c, c.child(e, 0), var);
         const Expr ex = c.expand(expandShiftPowers(c, c.child(e, 1), var));
         if (!mentionsSymbol(c, b, var) && c.kind(ex) == NodeKind::Add) {
-            std::vector<Expr> varTerms, constTerms;
+            keel::Array<Expr> varTerms, constTerms;
             for (keel::usize i = 0; i < c.childCount(ex); ++i) {
                 const Expr ch = c.child(ex, i);
                 if (mentionsSymbol(c, ch, var))
@@ -2437,10 +2457,10 @@ Expr expandShiftPowers(Ctx &c, Expr e, Expr var)
         return c.pow(b, ex);
     }
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         const Expr arg = c.expand(expandShiftPowers(c, c.child(e, 0), var));
         if (fn == "exp" && c.kind(arg) == NodeKind::Add) {
-            std::vector<Expr> varTerms, constTerms;
+            keel::Array<Expr> varTerms, constTerms;
             for (keel::usize i = 0; i < c.childCount(arg); ++i) {
                 const Expr ch = c.child(arg, i);
                 if (mentionsSymbol(c, ch, var))
@@ -2457,7 +2477,7 @@ Expr expandShiftPowers(Ctx &c, Expr e, Expr var)
     }
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(expandShiftPowers(c, c.child(e, i), var));
@@ -2485,18 +2505,18 @@ bool certifyDiscreteAntidiff(Ctx &c, Expr G, Expr f, Expr var)
 
 // Faulhaber-Bernoulli polynomial antidifference:
 //   Delta(G(var)) == P(var) where P(var) = sum_{m=0}^d p_m * var^m.
-Expr polyDiscreteAntidiff(Ctx &c, const std::vector<Expr> &pCoeffs, Expr var)
+Expr polyDiscreteAntidiff(Ctx &c, const keel::Array<Expr> &pCoeffs, Expr var)
 {
     const int d = static_cast<int>(pCoeffs.size()) - 1;
     if (d < 0)
         return c.zero();
-    const std::vector<Rational> B = bernoulliNumbers(d + 1);
-    std::vector<Expr> terms;
+    const keel::Array<Rational> B = bernoulliNumbers(d + 1);
+    keel::Array<Expr> terms;
     for (int m = 0; m <= d; ++m) {
         const Expr &pm = pCoeffs[static_cast<keel::usize>(m)];
         if (c.isZero(pm))
             continue;
-        std::vector<Expr> mTerms;
+        keel::Array<Expr> mTerms;
         for (int j = 0; j <= m; ++j) {
             if (B[static_cast<keel::usize>(j)].isZero())
                 continue;
@@ -2527,7 +2547,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
     }
 
     // 1. Polynomial in `var` (Faulhaber-Bernoulli).
-    std::vector<Expr> pCoeffs;
+    keel::Array<Expr> pCoeffs;
     if (extractPolyCoeffsInVar(c, f, var, 16, pCoeffs)) {
         const Expr G = polyDiscreteAntidiff(c, pCoeffs, var);
         if (certifyDiscreteAntidiff(c, G, f, var)) {
@@ -2538,20 +2558,20 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
 
     // 2. Geometric and arithmetico-geometric terms: P(var) * R(var)
     //    where q = R(var + 1) / R(var) is independent of `var` and q != 1.
-    std::vector<Expr> factors;
+    keel::Array<Expr> factors;
     if (c.kind(f) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(f); ++i)
             factors.push_back(c.child(f, i));
     } else {
         factors.push_back(f);
     }
-    std::vector<Expr> geomFacs, otherFacs;
+    keel::Array<Expr> geomFacs, otherFacs;
     for (const Expr &fac : factors) {
         bool isGeom = false;
         if (c.kind(fac) == NodeKind::Pow &&
             !mentionsSymbol(c, c.child(fac, 0), var) &&
             mentionsSymbol(c, c.child(fac, 1), var)) {
-            std::vector<Expr> eCoeffs;
+            keel::Array<Expr> eCoeffs;
             if (extractPolyCoeffsInVar(c, c.child(fac, 1), var, 1, eCoeffs) &&
                 eCoeffs.size() == 2 && !c.isZero(eCoeffs[1])) {
                 isGeom = true;
@@ -2559,7 +2579,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
         } else if (c.kind(fac) == NodeKind::Func &&
                    c.funcName(fac) == "exp" &&
                    mentionsSymbol(c, c.child(fac, 0), var)) {
-            std::vector<Expr> eCoeffs;
+            keel::Array<Expr> eCoeffs;
             if (extractPolyCoeffsInVar(c, c.child(fac, 0), var, 1, eCoeffs) &&
                 eCoeffs.size() == 2 && !c.isZero(eCoeffs[1])) {
                 isGeom = true;
@@ -2576,7 +2596,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
         const Expr rNext = expandShiftPowers(
             c, c.subs(R, var, c.add({var, c.one()})), var);
         const Expr q = c.simplify(c.div(rNext, R));
-        std::vector<Expr> polyP;
+        keel::Array<Expr> polyP;
         if (!q.isNull() && !mentionsSymbol(c, q, var) &&
             extractPolyCoeffsInVar(c, rest, var, 10, polyP)) {
             const Expr qMinus1 =
@@ -2589,10 +2609,10 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                 }
             } else {
                 const int d = static_cast<int>(polyP.size()) - 1;
-                std::vector<Expr> qCoeffs(static_cast<keel::usize>(d + 1),
+                keel::Array<Expr> qCoeffs(static_cast<keel::usize>(d + 1),
                                           c.zero());
                 for (int m = d; m >= 0; --m) {
-                    std::vector<Expr> upperTerms;
+                    keel::Array<Expr> upperTerms;
                     for (int j = m + 1; j <= d; ++j) {
                         const Expr &qj = qCoeffs[static_cast<keel::usize>(j)];
                         if (!c.isZero(qj)) {
@@ -2638,7 +2658,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
         UPoly qPoly, rPoly;
         UPoly::divMod(N, dMonic, qPoly, rPoly);
 
-        std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+        keel::Array<UPoly> irreds = factorOverQ(dMonic, budget);
         struct LinFactor
         {
             Rational root;
@@ -2646,7 +2666,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
             int mult = 0;
             UPoly linPow;
         };
-        std::vector<LinFactor> lfs;
+        keel::Array<LinFactor> lfs;
         bool allLinear = !(budget && !budget->ok());
         for (const UPoly &ir : irreds) {
             if (ir.deg() != 1) {
@@ -2673,7 +2693,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                 int order = 0;
                 Rational coeff;
             };
-            std::vector<PoleTerm> poleTerms;
+            keel::Array<PoleTerm> poleTerms;
             for (keel::usize j = 0; j < lfs.size(); ++j) {
                 UPoly mj({Rational(keel::i64{1})});
                 for (keel::usize i = 0; i < lfs.size(); ++i) {
@@ -2695,10 +2715,10 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
             }
 
             // Group by (order, root mod Z).
-            std::vector<bool> used(poleTerms.size(), false);
-            std::vector<Expr> gPieces;
+            keel::Array<bool> used(poleTerms.size(), false);
+            keel::Array<Expr> gPieces;
             if (!qPoly.isZero()) {
-                std::vector<Expr> qCoeffs;
+                keel::Array<Expr> qCoeffs;
                 for (int i = 0; i <= qPoly.deg(); ++i)
                     qCoeffs.push_back(c.number(qPoly.coeff(i)));
                 gPieces.push_back(polyDiscreteAntidiff(c, qCoeffs, var));
@@ -2707,7 +2727,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
             for (keel::usize i = 0; i < poleTerms.size() && canTelescope; ++i) {
                 if (used[i])
                     continue;
-                std::vector<keel::usize> group{i};
+                keel::Array<keel::usize> group{i};
                 used[i] = true;
                 Rational sumCoeff = poleTerms[i].coeff;
                 Rational maxRoot = poleTerms[i].root;
@@ -2750,7 +2770,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                     }
                     if (s == 0)
                         continue;
-                    std::vector<Expr> shiftSum;
+                    keel::Array<Expr> shiftSum;
                     for (keel::i64 m = 0; m < s; ++m) {
                         const Expr denomBase =
                             (m == 0) ? baseL
@@ -2778,7 +2798,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
     //    where (b1 - b0)/a = s is a non-zero integer.
     {
         Expr logArg;
-        std::vector<Expr> cFacs;
+        keel::Array<Expr> cFacs;
         for (const Expr &fac : factors) {
             if (logArg.isNull() && c.kind(fac) == NodeKind::Func &&
                 c.funcName(fac) == "log") {
@@ -2802,7 +2822,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                 const UPoly &basePoly = (s > 0) ? lD : lN;
                 const Expr baseExpr = toExpr(c, basePoly, var);
                 const keel::i64 absS = keel::abs(s);
-                std::vector<Expr> logTerms;
+                keel::Array<Expr> logTerms;
                 for (keel::i64 m = 0; m < absS; ++m) {
                     const Expr shifted =
                         (m == 0)
@@ -2826,7 +2846,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
     // 5. Additive linearity over expanded sum.
     const Expr fExp = c.expand(f);
     if (c.kind(fExp) == NodeKind::Add) {
-        std::vector<Expr> pieces;
+        keel::Array<Expr> pieces;
         pieces.reserve(c.childCount(fExp));
         for (keel::usize i = 0; i < c.childCount(fExp); ++i) {
             Expr gi;
@@ -2851,13 +2871,13 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
 {
     SymSumResult out;
     if (f.isNull() || var.isNull() || a.isNull() || b.isNull()) {
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     if (!checkSeriesBudget(c, budget)) {
-        out.reason = budget->status() == BudgetStatus::StepExhausted
-                         ? "step budget exhausted"
-                         : "arena byte budget exhausted";
+        out.reason.assign(budget->status() == BudgetStatus::StepExhausted
+                              ? "step budget exhausted"
+                              : "arena byte budget exhausted");
         return out;
     }
 
@@ -2865,7 +2885,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
     const bool aIsInf = isSymbolicInfinity(c, a, aInfDir);
     const bool bIsInf = isSymbolicInfinity(c, b, bInfDir);
     if (aIsInf) {
-        out.reason = "infinite lower summation bound is not supported";
+        out.reason.assign("infinite lower summation bound is not supported");
         return out;
     }
 
@@ -2883,7 +2903,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                 return out;
             }
             if (spanInt < -1) {
-                out.reason = "upper summation bound is less than a - 1";
+                out.reason.assign("upper summation bound is less than a - 1");
                 return out;
             }
             if (spanInt <= 128) {
@@ -2891,7 +2911,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     const Expr kVal = c.add({a, c.number(j)});
                     if (safeSubsAndFold(c, f, var, kVal).isNull()) {
                         out.status = SymSumResult::Status::Divergent;
-                        out.reason = "summand pole on summation range";
+                        out.reason.assign("summand pole on summation range");
                         return out;
                     }
                 }
@@ -2913,14 +2933,14 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
 
         // Direct finite evaluation fallback for concrete integer spans <= 128.
         if (hasIntSpan && spanInt >= 0 && spanInt <= 128) {
-            std::vector<Expr> terms;
+            keel::Array<Expr> terms;
             terms.reserve(static_cast<keel::usize>(spanInt + 1));
             for (keel::i64 j = 0; j <= spanInt; ++j) {
                 const Expr term =
                     safeSubsAndFold(c, f, var, c.add({a, c.number(j)}));
                 if (term.isNull()) {
                     out.status = SymSumResult::Status::Divergent;
-                    out.reason = "summand pole on summation range";
+                    out.reason.assign("summand pole on summation range");
                     return out;
                 }
                 terms.push_back(term);
@@ -2930,13 +2950,13 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
             return out;
         }
 
-        out.reason = "no closed-form discrete antidifference found";
+        out.reason.assign("no closed-form discrete antidifference found");
         return out;
     }
 
     // Case 2: Infinite series sum_{var = a}^{+inf} f(var).
     if (bInfDir < 0) {
-        out.reason = "negative infinity upper bound is not supported";
+        out.reason.assign("negative infinity upper bound is not supported");
         return out;
     }
     if (!mentionsSymbol(c, f, var)) {
@@ -2946,7 +2966,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
             return out;
         }
         out.status = SymSumResult::Status::Divergent;
-        out.reason = "non-zero constant summand over infinite range";
+        out.reason.assign("non-zero constant summand over infinite range");
         return out;
     }
 
@@ -2956,7 +2976,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         const Expr gA = safeSubsAndFold(c, G, var, a);
         if (gA.isNull()) {
             out.status = SymSumResult::Status::Divergent;
-            out.reason = "summand pole at lower bound";
+            out.reason.assign("summand pole at lower bound");
             return out;
         }
         if (!geomRatio.isNull()) {
@@ -2969,14 +2989,14 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     return out;
                 }
                 out.status = SymSumResult::Status::Divergent;
-                out.reason = "geometric ratio |q| >= 1";
+                out.reason.assign("geometric ratio |q| >= 1");
                 return out;
             }
         }
         const LimitResult limInf = limitAtInfinity(c, G, var, +1, budget);
         if (limInf.status == LimitResult::Status::Divergent) {
             out.status = SymSumResult::Status::Divergent;
-            out.reason = "divergent partial sums at infinity";
+            out.reason.assign("divergent partial sums at infinity");
             return out;
         }
         if (limInf.proved()) {
@@ -3015,14 +3035,14 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
             // Since discreteAntidiff already checked whether p = 1 residues
             // cancel, deg(N) >= deg(D) - 1 here guarantees divergence.
             out.status = SymSumResult::Status::Divergent;
-            out.reason = "rational series of degree >= -1 does not converge";
+            out.reason.assign("rational series of degree >= -1 does not converge");
             return out;
         }
         const Rational dLc = D.lc();
         UPoly dMonic = D;
         dMonic.makeMonic();
         N = N * UPoly({Rational(keel::i64{1}) / dLc});
-        std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+        keel::Array<UPoly> irreds = factorOverQ(dMonic, budget);
         struct LinFactor
         {
             Rational root;
@@ -3030,7 +3050,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
             int mult = 0;
             UPoly linPow;
         };
-        std::vector<LinFactor> lfs;
+        keel::Array<LinFactor> lfs;
         bool allLinear = !(budget && !budget->ok());
         for (const UPoly &ir : irreds) {
             if (ir.deg() != 1) {
@@ -3042,7 +3062,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
             if (rt.den() == BigInt(1) && rt.num().fitsInt64(rtInt) &&
                 rtInt >= a0) {
                 out.status = SymSumResult::Status::Divergent;
-                out.reason = "pole of rational summand on summation range";
+                out.reason.assign("pole of rational summand on summation range");
                 return out;
             }
             bool found = false;
@@ -3064,7 +3084,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                 int order = 0;
                 Rational coeff;
             };
-            std::vector<PoleTerm> poleTerms;
+            keel::Array<PoleTerm> poleTerms;
             for (keel::usize j = 0; j < lfs.size(); ++j) {
                 UPoly mj({Rational(keel::i64{1})});
                 for (keel::usize i = 0; i < lfs.size(); ++i) {
@@ -3085,13 +3105,13 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                 }
             }
 
-            std::vector<bool> used(poleTerms.size(), false);
-            std::vector<Expr> sumPieces;
+            keel::Array<bool> used(poleTerms.size(), false);
+            keel::Array<Expr> sumPieces;
             bool okZeta = true;
             for (keel::usize i = 0; i < poleTerms.size() && okZeta; ++i) {
                 if (used[i])
                     continue;
-                std::vector<keel::usize> group{i};
+                keel::Array<keel::usize> group{i};
                 used[i] = true;
                 Rational sumCoeff = poleTerms[i].coeff;
                 Rational maxRoot = poleTerms[i].root;
@@ -3110,7 +3130,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                 const int p = poleTerms[i].order;
                 if (p == 1 && !sumCoeff.isZero()) {
                     out.status = SymSumResult::Status::Divergent;
-                    out.reason = "non-zero logarithmic residue sum (harmonic divergence)";
+                    out.reason.assign("non-zero logarithmic residue sum (harmonic divergence)");
                     return out;
                 }
                 if (sumCoeff.isZero()) {
@@ -3220,7 +3240,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
     // 2c. Alternating rational series sum_{k = a0}^{inf} (-1)^(c1*k + c0) * R(k)
     //     and exponential factorial series sum_{k = a0}^{inf} P(k) * R(k) / factorial(k).
     if (hasIntA) {
-        std::vector<Expr> facs;
+        keel::Array<Expr> facs;
         if (c.kind(f) == NodeKind::Mul) {
             for (keel::usize i = 0; i < c.childCount(f); ++i)
                 facs.push_back(c.child(f, i));
@@ -3230,7 +3250,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
 
         // Check for (-1)^(k + s0) alternating factor.
         Expr altExp;
-        std::vector<Expr> nonAltFacs;
+        keel::Array<Expr> nonAltFacs;
         for (const Expr &fac : facs) {
             if (altExp.isNull() && c.kind(fac) == NodeKind::Pow &&
                 c.child(fac, 0) == c.number(keel::i64{-1}) &&
@@ -3240,7 +3260,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                 nonAltFacs.push_back(fac);
             }
         }
-        std::vector<Expr> altCoeffs;
+        keel::Array<Expr> altCoeffs;
         if (!altExp.isNull() &&
             extractPolyCoeffsInVar(c, altExp, var, 1, altCoeffs) &&
             altCoeffs.size() == 2) {
@@ -3260,7 +3280,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     const Rational lcD = rD.lc();
                     UPoly dMon = rD;
                     dMon.makeMonic();
-                    const std::vector<UPoly> irs = factorOverQ(dMon, budget);
+                    const keel::Array<UPoly> irs = factorOverQ(dMon, budget);
                     if (!irs.empty()) {
                         bool sameRoot = true;
                         const Rational rt = -irs[0].coeff(0) / irs[0].coeff(1);
@@ -3373,7 +3393,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         // for a0 >= 0.
         if (a0 >= 0 && a0 <= 32) {
             bool hasFactDenom = false;
-            std::vector<Expr> remFacs;
+            keel::Array<Expr> remFacs;
             for (const Expr &fac : facs) {
                 if (!hasFactDenom && c.kind(fac) == NodeKind::Pow &&
                     c.child(fac, 1) == c.number(keel::i64{-1}) &&
@@ -3386,7 +3406,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                 }
             }
             if (hasFactDenom) {
-                std::vector<Expr> gFacs, pFacs;
+                keel::Array<Expr> gFacs, pFacs;
                 for (const Expr &rf : remFacs) {
                     if (c.kind(rf) == NodeKind::Pow &&
                         !mentionsSymbol(c, c.child(rf, 0), var) &&
@@ -3406,21 +3426,21 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     c, c.subs(R, var, c.add({var, c.one()})), var);
                 const Expr q = c.simplify(c.div(rNext, R));
                 const Expr pExpr = pFacs.empty() ? c.one() : c.mul(pFacs);
-                std::vector<Expr> polyP;
+                keel::Array<Expr> polyP;
                 if (!r0.isNull() && !q.isNull() &&
                     !mentionsSymbol(c, q, var) &&
                     extractPolyCoeffsInVar(c, pExpr, var, 8, polyP)) {
                     // Convert P(k) into falling-factorial basis sum_{j=0}^d beta_j * k^(j)_falling
                     // using forward finite differences at k = 0: beta_j = Delta^j P(0) / j!.
                     const int d = static_cast<int>(polyP.size()) - 1;
-                    std::vector<Expr> vals(static_cast<keel::usize>(d + 1));
+                    keel::Array<Expr> vals(static_cast<keel::usize>(d + 1));
                     for (int k = 0; k <= d; ++k) {
                         vals[static_cast<keel::usize>(k)] =
                             evalSymbolicPolyInVar(
                                 c, polyP,
                                 c.number(static_cast<keel::i64>(k)));
                     }
-                    std::vector<Expr> bellTerms;
+                    keel::Array<Expr> bellTerms;
                     BigInt factJ(1);
                     for (int j = 0; j <= d; ++j) {
                         if (j >= 2)
@@ -3444,7 +3464,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     const Expr fullSum = c.mul(
                         {r0, c.func("exp", q),
                          bellTerms.empty() ? c.zero() : c.add(bellTerms)});
-                    std::vector<Expr> headTerms{fullSum};
+                    keel::Array<Expr> headTerms{fullSum};
                     for (keel::i64 k = 0; k < a0; ++k) {
                         const Expr fk =
                             safeSubsAndFold(c, f, var, c.number(k));
@@ -3461,9 +3481,9 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         // Polylogarithm and symbolic p-series: sum_{k = a0}^{inf} c * z^k * k^(-s)
         // for a0 >= 1.
         if (a0 >= 1 && a0 <= 32) {
-            std::vector<Expr> cFacs;
+            keel::Array<Expr> cFacs;
             Expr kPowExp = c.zero();
-            std::vector<Expr> zFacs;
+            keel::Array<Expr> zFacs;
             bool okPolylog = true;
             for (const Expr &fac : facs) {
                 if (!mentionsSymbol(c, fac, var)) {
@@ -3476,7 +3496,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     kPowExp = c.add({kPowExp, c.child(fac, 1)});
                 } else if (c.kind(fac) == NodeKind::Pow &&
                            !mentionsSymbol(c, c.child(fac, 0), var)) {
-                    std::vector<Expr> ePoly;
+                    keel::Array<Expr> ePoly;
                     if (extractPolyCoeffsInVar(c, c.child(fac, 1), var, 1,
                                                ePoly) &&
                         ePoly.size() == 2 && !c.isZero(ePoly[1])) {
@@ -3488,7 +3508,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     }
                 } else if (c.kind(fac) == NodeKind::Func &&
                            c.funcName(fac) == "exp") {
-                    std::vector<Expr> ePoly;
+                    keel::Array<Expr> ePoly;
                     if (extractPolyCoeffsInVar(c, c.child(fac, 0), var, 1,
                                                ePoly) &&
                         ePoly.size() == 2 && !c.isZero(ePoly[1])) {
@@ -3532,7 +3552,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     }
                 }
                 if (!fullLi.isNull()) {
-                    std::vector<Expr> terms{fullLi};
+                    keel::Array<Expr> terms{fullLi};
                     for (keel::i64 k = 1; k < a0; ++k) {
                         terms.push_back(c.neg(c.mul({
                             c.pow(zBase, c.number(k)),
@@ -3550,7 +3570,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         // converges (or exactly one summand diverges).
         const Expr fExp = c.expand(f);
         if (c.kind(fExp) == NodeKind::Add) {
-            std::vector<Expr> pieceVals;
+            keel::Array<Expr> pieceVals;
             keel::usize divCount = 0;
             keel::usize unevalCount = 0;
             SymSumResult firstDiv;
@@ -3578,7 +3598,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         }
     }
 
-    out.reason = "unable to evaluate infinite series in closed form";
+    out.reason.assign("unable to evaluate infinite series in closed form");
     return out;
 }
 
@@ -3616,10 +3636,10 @@ bool isZeroSeriesCoeff(Ctx &c, Expr e, Budget *budget)
     return !norm.isNull() && c.isZero(norm);
 }
 
-Expr buildPolyInDx(Ctx &c, const std::vector<Expr> &coeffs, Expr dx,
+Expr buildPolyInDx(Ctx &c, const keel::Array<Expr> &coeffs, Expr dx,
                    Budget *budget)
 {
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     for (keel::usize k = 0; k < coeffs.size(); ++k) {
         const Expr &coef = coeffs[k];
         if (coef.isNull() || isZeroSeriesCoeff(c, coef, budget))
@@ -3636,7 +3656,7 @@ Expr buildPolyInDx(Ctx &c, const std::vector<Expr> &coeffs, Expr dx,
     return terms.empty() ? c.zero() : c.add(terms);
 }
 
-bool mentionsAnyVar(const Ctx &c, Expr e, const std::vector<Expr> &vars)
+bool mentionsAnyVar(const Ctx &c, Expr e, keel::ArrayRef<Expr> vars)
 {
     for (const Expr &v : vars) {
         if (mentionsSymbol(c, e, v))
@@ -3645,7 +3665,7 @@ bool mentionsAnyVar(const Ctx &c, Expr e, const std::vector<Expr> &vars)
     return false;
 }
 
-bool isPolynomialInVars(const Ctx &c, Expr e, const std::vector<Expr> &vars)
+bool isPolynomialInVars(const Ctx &c, Expr e, keel::ArrayRef<Expr> vars)
 {
     if (e.isNull())
         return false;
@@ -3683,8 +3703,8 @@ bool isPolynomialInVars(const Ctx &c, Expr e, const std::vector<Expr> &vars)
     return false;
 }
 
-Expr safeSubsMultiAndFold(Ctx &c, Expr e, const std::vector<Expr> &vars,
-                          const std::vector<Expr> &x0s)
+Expr safeSubsMultiAndFold(Ctx &c, Expr e, keel::ArrayRef<Expr> vars,
+                          keel::ArrayRef<Expr> x0s)
 {
     if (e.isNull())
         return Expr();
@@ -3698,9 +3718,9 @@ Expr safeSubsMultiAndFold(Ctx &c, Expr e, const std::vector<Expr> &vars,
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         if (c.childCount(e) != 1) {
-            std::vector<Expr> args;
+            keel::Array<Expr> args;
             args.reserve(c.childCount(e));
             for (keel::usize i = 0; i < c.childCount(e); ++i) {
                 const Expr ai = safeSubsMultiAndFold(c, c.child(e, i), vars, x0s);
@@ -3735,7 +3755,7 @@ Expr safeSubsMultiAndFold(Ctx &c, Expr e, const std::vector<Expr> &vars,
     }
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr k = safeSubsMultiAndFold(c, c.child(e, i), vars, x0s);
@@ -3751,11 +3771,11 @@ Expr safeSubsMultiAndFold(Ctx &c, Expr e, const std::vector<Expr> &vars,
 }
 
 bool mtaylorRecFallback(Ctx &c, Expr curDeriv, keel::usize varIdx,
-                        int remOrder, const std::vector<Expr> &vars,
-                        const std::vector<Expr> &x0s,
-                        const std::vector<Expr> &dxExprs, BigInt factProd,
+                        int remOrder, keel::ArrayRef<Expr> vars,
+                        keel::ArrayRef<Expr> x0s,
+                        keel::ArrayRef<Expr> dxExprs, BigInt factProd,
                         Expr monomProd, Budget *budget,
-                        std::vector<Expr> &termsOut)
+                        keel::Array<Expr> &termsOut)
 {
     if (!checkSeriesBudget(c, budget))
         return false;
@@ -3802,24 +3822,24 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
 {
     PadeResult out;
     if (f.isNull() || var.isNull() || x0.isNull() || m < 0 || n < 0) {
-        out.reason = "invalid input or negative Pade degree";
+        out.reason.assign("invalid input or negative Pade degree");
         return out;
     }
     if (!checkSeriesBudget(c, budget)) {
-        out.reason = budget->status() == BudgetStatus::StepExhausted
-                         ? "step budget exhausted"
-                         : "arena byte budget exhausted";
+        out.reason.assign(budget->status() == BudgetStatus::StepExhausted
+                              ? "step budget exhausted"
+                              : "arena byte budget exhausted");
         return out;
     }
 
     const int N = m + n;
-    std::vector<Expr> coeffs(static_cast<keel::usize>(N + 1), c.zero());
+    keel::Array<Expr> coeffs(static_cast<keel::usize>(N + 1), c.zero());
     bool haveCoeffs = false;
     for (int pad : {8, 16}) {
         Laurent s;
         if (computeLaurent(c, f, var, x0, N + pad, budget, s)) {
             if (!s.coeffs.empty() && s.val < 0) {
-                out.reason = "function has a pole at expansion point";
+                out.reason.assign("function has a pole at expansion point");
                 return out;
             }
             if (s.maxDeg >= N) {
@@ -3832,9 +3852,9 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
             }
         }
         if (budget && !budget->ok()) {
-            out.reason = budget->status() == BudgetStatus::StepExhausted
-                             ? "step budget exhausted"
-                             : "arena byte budget exhausted";
+            out.reason.assign(budget->status() == BudgetStatus::StepExhausted
+                                  ? "step budget exhausted"
+                                  : "arena byte budget exhausted");
             return out;
         }
     }
@@ -3844,9 +3864,9 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
         BigInt fact(1);
         for (int k = 0; k <= N; ++k) {
             if (!checkSeriesBudget(c, budget)) {
-                out.reason = budget->status() == BudgetStatus::StepExhausted
-                                 ? "step budget exhausted"
-                                 : "arena byte budget exhausted";
+                out.reason.assign(budget->status() == BudgetStatus::StepExhausted
+                                      ? "step budget exhausted"
+                                      : "arena byte budget exhausted");
                 return out;
             }
             if (k > 0) {
@@ -3855,7 +3875,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
             }
             const Expr atX0 = safeSubsAndFold(c, cur, var, x0);
             if (atX0.isNull()) {
-                out.reason = "function is singular at expansion point";
+                out.reason.assign("function is singular at expansion point");
                 return out;
             }
             coeffs[static_cast<keel::usize>(k)] = normalizeSeriesCoeff(
@@ -3865,7 +3885,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
 
     // Solve Toeplitz linear system for denominator coefficients q_1, ..., q_n (q_0 = 1):
     //   sum_{j=1}^n c_{m + 1 + i - j} * q_j = -c_{m + 1 + i},  i = 0, ..., n - 1.
-    std::vector<Expr> q(static_cast<keel::usize>(n + 1), c.zero());
+    keel::Array<Expr> q(static_cast<keel::usize>(n + 1), c.zero());
     q[0] = c.one();
     if (n > 0) {
         const keel::usize nSz = static_cast<keel::usize>(n);
@@ -3900,7 +3920,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
             }
             const SymMatrix R = rref(c, aug, nullptr, budget);
             if (R.empty()) {
-                out.reason = "failed to reduce Pade Toeplitz system";
+                out.reason.assign("failed to reduce Pade Toeplitz system");
                 return out;
             }
             for (keel::usize r = 0; r < nSz; ++r) {
@@ -3912,8 +3932,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
                     }
                 }
                 if (pivCol == nSz) {
-                    out.reason =
-                        "degenerate Pade table block (inconsistent linear system)";
+                    out.reason.assign("degenerate Pade table block (inconsistent linear system)");
                     return out;
                 }
                 if (pivCol < nSz) {
@@ -3926,9 +3945,9 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
 
     // Compute numerator coefficients p_0, ..., p_m:
     //   p_k = sum_{j=0}^{min(k, n)} c_{k - j} * q_j.
-    std::vector<Expr> p(static_cast<keel::usize>(m + 1), c.zero());
+    keel::Array<Expr> p(static_cast<keel::usize>(m + 1), c.zero());
     for (int k = 0; k <= m; ++k) {
-        std::vector<Expr> terms;
+        keel::Array<Expr> terms;
         const int jMax = std::min(k, n);
         for (int j = 0; j <= jMax; ++j) {
             const Expr &ckj = coeffs[static_cast<keel::usize>(k - j)];
@@ -3952,7 +3971,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
     const Expr diffExpr = c.add({out.value, c.neg(f)});
     const Expr rem = taylor(c, diffExpr, var, x0, N, budget);
     if (rem.isNull()) {
-        out.reason = "certificate failed: unable to expand Pade remainder";
+        out.reason.assign("certificate failed: unable to expand Pade remainder");
         return out;
     }
     bool certOk = isZeroSeriesCoeff(c, rem, budget);
@@ -3970,7 +3989,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
         }
     }
     if (!certOk) {
-        out.reason = "certificate failed: Pade Taylor remainder is non-zero";
+        out.reason.assign("certificate failed: Pade Taylor remainder is non-zero");
         return out;
     }
 
@@ -3978,8 +3997,8 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
     return out;
 }
 
-Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
-             const std::vector<Expr> &x0s, int order, Budget *budget)
+Expr mtaylor(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
+             keel::ArrayRef<Expr> x0s, int order, Budget *budget)
 {
     if (f.isNull() || order < 0 || vars.size() != x0s.size())
         return Expr();
@@ -3999,10 +4018,10 @@ Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
     if (vars.size() == 1)
         return taylor(c, f, vars[0], x0s[0], order, budget);
 
-    std::vector<Expr> dSyms(vars.size());
-    std::vector<Expr> dxExprs(vars.size());
+    keel::Array<Expr> dSyms(vars.size());
+    keel::Array<Expr> dxExprs(vars.size());
     for (keel::usize i = 0; i < vars.size(); ++i) {
-        dSyms[i] = c.symbol("_mt_d_" + std::to_string(i));
+        dSyms[i] = c.symbol(keel::format("_mt_d_{}", i));
         dxExprs[i] =
             c.isZero(x0s[i]) ? vars[i] : c.add({vars[i], c.neg(x0s[i])});
     }
@@ -4031,7 +4050,7 @@ Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
                     sSeries.coeffs.empty()
                         ? order
                         : std::min(sSeries.maxDeg, sSeries.val + 1));
-                std::vector<Expr> terms;
+                keel::Array<Expr> terms;
                 for (int m = 0; m <= checkDeg; ++m) {
                     Expr cm = coeffAt(c, sSeries, m);
                     if (isZeroCoeff(c, cm))
@@ -4059,7 +4078,7 @@ Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
     }
 
     // 2. Fallback: exact iterated partial differentiation at x0s.
-    std::vector<Expr> fallbackTerms;
+    keel::Array<Expr> fallbackTerms;
     if (!mtaylorRecFallback(c, f, 0, order, vars, x0s, dxExprs, BigInt(1),
                             c.one(), budget, fallbackTerms))
         return Expr();
@@ -4076,7 +4095,7 @@ Expr finiteDiff(Ctx &c, Expr f, Expr var, int order, Expr step)
         return c.simplify(f);
 
     const Expr h = step.isNull() ? c.one() : step;
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     terms.reserve(static_cast<keel::usize>(order + 1));
     for (int j = 0; j <= order; ++j) {
         Rational bin = binomRational(order, j);
@@ -4125,8 +4144,8 @@ EulerMaclaurinResult eulerMaclaurin(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     // 3. Bernoulli derivative correction terms:
     //    sum_{k=1}^{order/2} (B_{2k} / (2k)!) * (f^{(2k-1)}(b) - f^{(2k-1)}(a))
     const int maxK = order / 2;
-    const std::vector<Rational> B = bernoulliNumbers(2 * maxK);
-    std::vector<Expr> bTerms;
+    const keel::Array<Rational> B = bernoulliNumbers(2 * maxK);
+    keel::Array<Expr> bTerms;
     Expr curDeriv = f;
     BigInt fact(1);
     for (int k = 1; k <= maxK; ++k) {

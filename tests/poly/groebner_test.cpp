@@ -33,7 +33,7 @@ TEST(GroebnerTest, LexAndGrevLexReducedBasisFixedVectors)
             parseExpr(c, "y - z^2")};
         const GroebnerResult gbLex =
             groebnerBasis(c, gens, {x, y, z}, MonomialOrder::Lex);
-        ASSERT_TRUE(gbLex.proved()) << gbLex.reason;
+        ASSERT_TRUE(gbLex.proved()) << gbLex.reason.c_str();
         ASSERT_EQ(gbLex.basis.size(), 2u);
         EXPECT_TRUE(
             c.isZero(c.simplify(c.add({gbLex.basis[0], c.neg(parseExpr(c, "y - z^2"))}))));
@@ -42,7 +42,7 @@ TEST(GroebnerTest, LexAndGrevLexReducedBasisFixedVectors)
 
         const GroebnerResult gbGrev =
             groebnerBasis(c, gens, {x, y, z}, MonomialOrder::GrevLex);
-        ASSERT_TRUE(gbGrev.proved()) << gbGrev.reason;
+        ASSERT_TRUE(gbGrev.proved()) << gbGrev.reason.c_str();
         ASSERT_EQ(gbGrev.basis.size(), 3u);
         // Every generator of Lex basis reduces to 0 modulo GrevLex basis and vice versa
         for (const Expr &g : gbLex.basis) {
@@ -66,7 +66,7 @@ TEST(GroebnerTest, LexAndGrevLexReducedBasisFixedVectors)
             parseExpr(c, "x*y - 2")};
         const GroebnerResult gb =
             groebnerBasis(c, gens, {x, y}, MonomialOrder::Lex);
-        ASSERT_TRUE(gb.proved()) << gb.reason;
+        ASSERT_TRUE(gb.proved()) << gb.reason.c_str();
         ASSERT_EQ(gb.basis.size(), 2u);
         EXPECT_TRUE(c.isZero(c.simplify(
             c.add({gb.basis[0], c.neg(parseExpr(c, "y^4 - 5*y^2 + 4"))}))));
@@ -82,7 +82,7 @@ TEST(GroebnerTest, LexAndGrevLexReducedBasisFixedVectors)
             parseExpr(c, "x - y - 1")};
         const GroebnerResult gb =
             groebnerBasis(c, gens, {x, y}, MonomialOrder::Lex);
-        ASSERT_TRUE(gb.proved()) << gb.reason;
+        ASSERT_TRUE(gb.proved()) << gb.reason.c_str();
         ASSERT_EQ(gb.basis.size(), 1u);
         EXPECT_EQ(gb.basis[0], c.one());
     }
@@ -136,7 +136,7 @@ TEST(GroebnerTest, PropertyIdealMembershipAndCanonicalUniqueness)
 
         const GroebnerResult gb =
             groebnerBasis(c, {g1, g2, g3}, vars, MonomialOrder::Lex);
-        ASSERT_TRUE(gb.proved()) << gb.reason;
+        ASSERT_TRUE(gb.proved()) << gb.reason.c_str();
         ASSERT_EQ(gb.basis.size(), 3u);
         // Unique reduced monic Groebner basis of the maximal ideal <x-x0, y-y0, z-z0>
         EXPECT_TRUE(c.isZero(c.simplify(c.add({gb.basis[0], c.neg(f3)}))));
@@ -197,7 +197,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
         const Expr d = gcdMulti(c, f, g, {x, y});
         ASSERT_FALSE(d.isNull());
         EXPECT_TRUE(samePoly(d, parseExpr(c, "x + y")))
-            << "got: " << c.toString(d);
+            << "got: " << c.toString(d).c_str();
 
         // Trivariate GCD with monomial factor:
         // f3 = 6*x^2*y*(x + y + z)*(x - 2*y + 3*z)
@@ -210,7 +210,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
         const Expr d3 = gcdMulti(c, f3, g3);
         ASSERT_FALSE(d3.isNull());
         EXPECT_TRUE(samePoly(d3, parseExpr(c, "x*y*(x + y + z)")))
-            << "got: " << c.toString(d3);
+            << "got: " << c.toString(d3).c_str();
 
         // Exact division check
         const Expr q3 = divExactMulti(c, f3, d3);
@@ -223,7 +223,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
     {
         const Expr f = parseExpr(c, "x^4 - y^4");
         const FactorMultiResult res = factorMulti(c, f, {x, y});
-        ASSERT_TRUE(res.proved()) << res.reason;
+        ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_EQ(res.content, Rational(keel::i64{1}));
         EXPECT_EQ(res.factors.size(), 3u);
         for (const auto &it : res.factors)
@@ -237,7 +237,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
         const Expr f = c.expand(
             parseExpr(c, "3*x*(x + 2*y - 1)^2*(x^2 - y + 2)"));
         const FactorMultiResult res = factorMulti(c, f, {x, y});
-        ASSERT_TRUE(res.proved()) << res.reason;
+        ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_EQ(res.content, Rational(keel::i64{3}));
         ASSERT_EQ(res.factors.size(), 3u);
         EXPECT_TRUE(samePoly(res.expr, f));
@@ -249,7 +249,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
         const Expr f = c.expand(
             parseExpr(c, "(x*y + z + 1)*(x^2 + y^2 - z)"));
         const FactorMultiResult res = factorMulti(c, f, {x, y, z});
-        ASSERT_TRUE(res.proved()) << res.reason;
+        ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_EQ(res.factors.size(), 2u);
         EXPECT_TRUE(samePoly(res.expr, f));
     }
@@ -260,7 +260,7 @@ TEST(GroebnerTest, MultivariateGcdAndFactorFixedVectors)
         const Expr f = c.expand(parseExpr(
             c, "(x^2 + x*y + 2*y^2 + 1)*(2*x^2 - x*y + y^2 - 3)"));
         const FactorMultiResult res = factorMulti(c, f, {x, y});
-        ASSERT_TRUE(res.proved()) << res.reason;
+        ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_EQ(res.content, Rational(keel::i64{2}));
         EXPECT_EQ(res.factors.size(), 2u);
         EXPECT_TRUE(samePoly(res.expr, f));
@@ -309,7 +309,7 @@ TEST(GroebnerTest, PropertyMultivariateGcdAndFactorRoundTrip)
 
         const Expr prod = c.expand(c.mul({c.pow(p1, c.number(2)), p3}));
         const FactorMultiResult fac = factorMulti(c, prod, {x, y, z});
-        ASSERT_TRUE(fac.proved()) << fac.reason;
+        ASSERT_TRUE(fac.proved()) << fac.reason.c_str();
         EXPECT_TRUE(c.isZero(c.expand(c.add({fac.expr, c.neg(prod)}))));
         int totalMult = 0;
         for (const auto &it : fac.factors)

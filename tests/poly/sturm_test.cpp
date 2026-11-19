@@ -29,7 +29,7 @@ Rational rr(keel::u64 &state, int range)
 
 UPoly P(const std::string &csv)
 {
-    std::vector<Rational> cs;
+    keel::Array<Rational> cs;
     keel::usize pos = 0;
     while (pos <= csv.size()) {
         const keel::usize comma = csv.find(',', pos);
@@ -51,7 +51,7 @@ UPoly P(const std::string &csv)
 // representable; used only against the float oracle with 1e-5 slack).
 double toD(const Rational &r)
 {
-    return std::stod(r.num().toString()) / std::stod(r.den().toString());
+    return std::stod(std::string(r.num().toString().as_ref())) / std::stod(std::string(r.den().toString().as_ref()));
 }
 
 // Python oracle (Durand-Kerner): coefficients, real root count, roots.
@@ -89,7 +89,7 @@ TEST(SturmFixed, OracleVectors)
 {
     for (const Case &c : kCases) {
         const UPoly p = P(c.poly);
-        const std::vector<RootInterval> roots = numkit::cas::isolateRealRoots(p);
+        const keel::Array<RootInterval> roots = numkit::cas::isolateRealRoots(p);
         ASSERT_EQ(roots.size(), static_cast<keel::usize>(c.count)) << c.poly;
         ASSERT_EQ(roots.size(), c.roots.size());
         for (keel::usize i = 0; i < roots.size(); ++i) {
@@ -106,7 +106,7 @@ TEST(SturmFixed, KnownBounds)
 {
     // sqrt(2) is the positive root of x^2 - 2.
     const UPoly q = P("-2,0,1");
-    const std::vector<RootInterval> roots = numkit::cas::isolateRealRoots(q);
+    const keel::Array<RootInterval> roots = numkit::cas::isolateRealRoots(q);
     ASSERT_EQ(roots.size(), 2u);
     const RootInterval r2 = numkit::cas::refineRoot(
         q, roots[1], Rational(keel::i64{1}, BigInt(1000000)));
@@ -126,17 +126,17 @@ TEST(SturmProperty, IsolationInvariants)
     keel::u64 state = 0x5714571457145714ULL;
     for (int iter = 0; iter < 3000; ++iter) {
         const int deg = 1 + static_cast<int>(nextU64(state) % 6);
-        std::vector<Rational> cs;
+        keel::Array<Rational> cs;
         for (int i = 0; i < deg; ++i)
             cs.push_back(rr(state, 6));
         cs.push_back(rr(state, 5).isZero() ? Rational(keel::i64{1}) : rr(state, 5));
-        const UPoly p(cs);
+        const UPoly p(std::move(cs));
 
         const UPoly psf = p.squarefreePart();
         if (p.isConst())
             continue; // generator can produce constants (trimmed zeros)
-        const std::vector<RootInterval> roots = numkit::cas::isolateRealRoots(p);
-        const std::vector<UPoly> sturm = numkit::cas::sturmSequence(psf);
+        const keel::Array<RootInterval> roots = numkit::cas::isolateRealRoots(p);
+        const keel::Array<UPoly> sturm = numkit::cas::sturmSequence(psf);
 
         // Pairwise disjoint interiors, ordered; endpoints may be exact
         // roots shared with neighbours.
@@ -189,16 +189,16 @@ TEST(SturmProperty, KnownRationalRootsContained)
             if (dup)
                 continue;
             wanted.push_back(r);
-            p = p * UPoly(std::vector<Rational>{Rational(-r), Rational(keel::i64{1})});
+            p = p * UPoly(keel::Array<Rational>{Rational(-r), Rational(keel::i64{1})});
         }
-        const std::vector<RootInterval> roots = numkit::cas::isolateRealRoots(p);
+        const keel::Array<RootInterval> roots = numkit::cas::isolateRealRoots(p);
         ASSERT_EQ(roots.size(), wanted.size());
         for (const Rational &w : wanted) {
             bool found = false;
             for (const RootInterval &iv : roots)
                 if (iv.exact() ? iv.lo == w : (iv.lo < w && w < iv.hi))
                     found = true;
-            EXPECT_TRUE(found) << "root " << w.toString() << " of " << p.toString();
+            EXPECT_TRUE(found) << "root " << w.toString().c_str() << " of " << p.toString().c_str();
         }
     }
 }

@@ -16,16 +16,20 @@ keel::u64 nextU64(keel::u64 &state)
     return state * 0x2545F4914F6CDD1DULL;
 }
 
-FpPoly P(keel::u64 p, const std::vector<keel::u64> &cs)
+FpPoly P(keel::u64 p, keel::ArrayRef<keel::u64> cs)
 {
-    return FpPoly(p, cs);
+    keel::Array<keel::u64> arr;
+    arr.reserve(cs.size());
+    for (keel::u64 c : cs)
+        arr.push_back(c);
+    return FpPoly(p, std::move(arr));
 }
 
 // Full independent correctness proof of a factorization:
 // (a) the product of the factors reconstructs the squarefree input;
 // (b) every factor is monic and passes the Fermat irreducibility
 //     criterion (which does not use factor()).
-void verifyFactorization(const FpPoly &f, const std::vector<FpPoly> &factors)
+void verifyFactorization(const FpPoly &f, keel::ArrayRef<FpPoly> factors)
 {
     FpPoly prod = FpPoly::constant(f.p(), 1);
     for (const FpPoly &g : factors) {
@@ -85,12 +89,12 @@ TEST(FpPolyFixed, ExtGcdIdentity)
         const keel::u64 p = 7;
         const int da = 1 + static_cast<int>(nextU64(state) % 4);
         const int db = 1 + static_cast<int>(nextU64(state) % 3);
-        std::vector<keel::u64> ca, cb;
+        keel::Array<keel::u64> ca, cb;
         for (int i = 0; i < da; ++i) ca.push_back(nextU64(state) % p);
         ca.push_back(1 + nextU64(state) % (p - 1));
         for (int i = 0; i < db; ++i) cb.push_back(nextU64(state) % p);
         cb.push_back(1 + nextU64(state) % (p - 1));
-        const FpPoly a(p, ca), b(p, cb);
+        const FpPoly a(p, std::move(ca)), b(p, std::move(cb));
         if (FpPoly::gcd(a, b).deg() != 0)
             continue; // need coprime
         FpPoly s, t;
@@ -103,17 +107,17 @@ TEST(FpPolyFixed, ClassicFactorizations)
 {
     // x^5 - 1 = (x-1)(x^4+x^3+x^2+x+1) mod 3; the quartic is
     // irreducible mod 3 (order of 3 mod 5 is 4).
-    const std::vector<FpPoly> f1 = FpPoly::factor(P(3, {2, 0, 0, 0, 0, 1}));
+    const keel::Array<FpPoly> f1 = FpPoly::factor(P(3, {2, 0, 0, 0, 0, 1}));
     ASSERT_EQ(f1.size(), 2u);
     EXPECT_EQ(f1[0].deg(), 1);
     EXPECT_EQ(f1[1].deg(), 4);
     verifyFactorization(P(3, {2, 0, 0, 0, 0, 1}), f1);
 
     // x^7 - x mod 7 splits completely into 7 linears.
-    std::vector<keel::u64> cs8(8, 0);
+    keel::Array<keel::u64> cs8(8, 0);
     cs8[1] = 6; // -x
     cs8[7] = 1;
-    const std::vector<FpPoly> f2 = FpPoly::factor(P(7, cs8));
+    const keel::Array<FpPoly> f2 = FpPoly::factor(P(7, cs8));
     ASSERT_EQ(f2.size(), 7u);
     for (const FpPoly &g : f2)
         EXPECT_EQ(g.deg(), 1);
@@ -126,7 +130,7 @@ TEST(FpPolyFixed, ClassicFactorizations)
     // f(0)=1 f(1)=4 f(2)=8+4+1=13=3 f(3)=27+6+1=34=4 f(4)=64+8+1=73=3
     // -> no roots -> irreducible cubic.
     EXPECT_TRUE(P(5, {1, 2, 0, 1}).isIrreducible());
-    const std::vector<FpPoly> f3 = FpPoly::factor(P(5, {1, 2, 0, 1}));
+    const keel::Array<FpPoly> f3 = FpPoly::factor(P(5, {1, 2, 0, 1}));
     ASSERT_EQ(f3.size(), 1u);
     verifyFactorization(P(5, {1, 2, 0, 1}), f3);
 }
@@ -137,21 +141,21 @@ TEST(FpPolyProperty, RandomFactorizations)
     for (int iter = 0; iter < 500; ++iter) {
         const keel::u64 p = (iter % 2 == 0) ? 101 : 7;
         const int deg = 2 + static_cast<int>(nextU64(state) % 6);
-        std::vector<keel::u64> cs;
+        keel::Array<keel::u64> cs;
         for (int i = 0; i < deg; ++i)
             cs.push_back(nextU64(state) % p);
         cs.push_back(1 + nextU64(state) % (p - 1)); // monic, nonzero lc
-        const FpPoly f(p, cs);
+        const FpPoly f(p, std::move(cs));
         if (f.deg() < 1)
             continue;
         // Skip non-squarefree inputs occasionally included on purpose:
         // factor() handles them (squarefree part); verification uses
         // the squarefree part too.
-        const std::vector<FpPoly> factors = FpPoly::factor(f);
+        const keel::Array<FpPoly> factors = FpPoly::factor(f);
         verifyFactorization(f, factors);
 
         // Determinism: same input, same output.
-        const std::vector<FpPoly> factors2 = FpPoly::factor(f);
+        const keel::Array<FpPoly> factors2 = FpPoly::factor(f);
         ASSERT_EQ(factors.size(), factors2.size());
         for (keel::usize i = 0; i < factors.size(); ++i)
             ASSERT_EQ(factors[i], factors2[i]);
@@ -167,16 +171,16 @@ TEST(FpPolyProperty, BuiltFromKnownIrreducibles)
     while (checked < 60) {
         const keel::u64 p = 101;
         const int deg = 1 + static_cast<int>(nextU64(state) % 4);
-        std::vector<keel::u64> cs;
+        keel::Array<keel::u64> cs;
         for (int i = 0; i < deg; ++i)
             cs.push_back(nextU64(state) % p);
         cs.push_back(1);
-        const FpPoly f(p, cs);
+        const FpPoly f(p, std::move(cs));
         if (f.deg() < 1 || !f.isIrreducible())
             continue;
         const FpPoly h = P(p, {static_cast<keel::u64>(1 + nextU64(state) % 100), 1});
         const FpPoly prod = f * h;
-        const std::vector<FpPoly> factors = FpPoly::factor(prod);
+        const keel::Array<FpPoly> factors = FpPoly::factor(prod);
         verifyFactorization(prod, factors);
         // The multiset contains f and h.
         bool foundF = false, foundH = false;

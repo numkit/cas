@@ -1,10 +1,9 @@
 // poly/solve.hpp — exact polynomial solving over the reals.
 #pragma once
 
+#include <keel/array.h>
 #include <numkit/cas/poly/sturm.hpp>
 #include <numkit/cas/poly/upoly.hpp>
-
-#include <vector>
 
 namespace numkit::cas {
 
@@ -32,6 +31,6 @@ struct RealRootSolution
 };
 
 // All distinct real roots of p, ascending. Requires p != 0.
-std::vector<RealRootSolution> solveRealRoots(const UPoly &p);
+keel::Array<RealRootSolution> solveRealRoots(const UPoly &p);
 
 } // namespace numkit::cas

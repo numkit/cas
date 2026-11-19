@@ -1,4 +1,6 @@
+#include <keel/algo.h>
 #include <keel/core.h>
+#include <keel/format.h>
 #include <keel/math.h>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/poly/sturm.hpp>
@@ -20,7 +22,7 @@ keel::u32 mix32(keel::u32 h, keel::u32 v)
     return (h ^ v) * kFnvPrime;
 }
 
-keel::u32 hashName(const std::string &s)
+keel::u32 hashName(keel::StringRef s)
 {
     keel::u32 h = kFnvOffset;
     for (char c : s)
@@ -68,44 +70,43 @@ Expr Ctx::number(Rational v)
     return makeNode(NodeKind::Number, 0, {}, v);
 }
 
-keel::u32 Ctx::internName(const std::string &name,
-                              std::unordered_map<std::string, keel::u32> &ids,
-                              std::deque<std::string> &names)
+keel::u32 Ctx::internName(keel::StringRef name,
+                              keel::HashMap<keel::String, keel::u32> &ids,
+                              std::deque<keel::String> &names)
 {
-    auto it = ids.find(name);
-    if (it != ids.end())
-        return it->second;
+    if (const keel::u32 *hit = ids.get(name))
+        return *hit;
     const keel::u32 id = static_cast<keel::u32>(names.size());
-    names.push_back(name);
-    ids.emplace(names.back(), id);
+    names.push_back(keel::String::from(name));
+    ids.try_insert(keel::String::from(name), id);
     return id;
 }
 
-Expr Ctx::symbol(const std::string &name)
+Expr Ctx::symbol(keel::StringRef name)
 {
     const keel::u32 id = internName(name, symbolIds_, symbolNames_);
     return makeNode(NodeKind::Symbol, id, {}, Rational(keel::i64{0}));
 }
 
-Expr Ctx::func(const std::string &name, Expr arg)
+Expr Ctx::func(keel::StringRef name, Expr arg)
 {
     const keel::u32 id = internName(name, funcIds_, funcNames_);
     return makeNode(NodeKind::Func, id, {arg}, Rational(keel::i64{0}));
 }
 
-Expr Ctx::func(const std::string &name, Expr arg0, Expr arg1)
+Expr Ctx::func(keel::StringRef name, Expr arg0, Expr arg1)
 {
     const keel::u32 id = internName(name, funcIds_, funcNames_);
     return makeNode(NodeKind::Func, id, {arg0, arg1}, Rational(keel::i64{0}));
 }
 
-Expr Ctx::func(const std::string &name, const std::vector<Expr> &args)
+Expr Ctx::func(keel::StringRef name, keel::ArrayRef<Expr> args)
 {
     const keel::u32 id = internName(name, funcIds_, funcNames_);
     return makeNode(NodeKind::Func, id, args, Rational(keel::i64{0}));
 }
 
-Expr Ctx::rootOf(std::vector<Rational> poly, int index)
+Expr Ctx::rootOf(keel::Array<Rational> poly, int index)
 {
     while (poly.size() > 1 && poly.back().isZero())
         poly.pop_back();
@@ -129,14 +130,14 @@ Expr Ctx::rootOf(std::vector<Rational> poly, int index)
         if (d.index == index && d.poly == poly && d.nodeId != 0)
             return Expr(this, d.nodeId);
     }
-    rootofs_.push_back(RootOfDesc{std::move(poly), index, 0});
+    rootofs_.push_back(RootOfDesc{keel::move(poly), index, 0});
     const auto tableIdx = static_cast<keel::u32>(rootofs_.size() - 1);
     const Expr made = makeNode(NodeKind::RootOf, tableIdx, {}, Rational(keel::i64{0}));
     rootofs_[tableIdx].nodeId = id(made);
     return made;
 }
 
-const std::vector<Rational> &Ctx::rootOfPoly(Expr e) const
+const keel::Array<Rational> &Ctx::rootOfPoly(Expr e) const
 {
     assert(kind(e) == NodeKind::RootOf);
     return rootofs_[node(e).aux].poly;
@@ -212,7 +213,7 @@ Expr Ctx::pow(Expr base, Expr exp)
 
         // (u*v)^n = u^n * v^n holds for integer n.
         if (kind(base) == NodeKind::Mul && isSmallInt) {
-            std::vector<Expr> parts;
+            keel::Array<Expr> parts;
             for (keel::usize i = 0; i < childCount(base); ++i)
                 parts.push_back(pow(child(base, i), exp));
             return makeMul(parts);
@@ -221,14 +222,14 @@ Expr Ctx::pow(Expr base, Expr exp)
     return makeNode(NodeKind::Pow, 0, {base, exp}, Rational(keel::i64{0}));
 }
 
-Expr Ctx::makeAdd(const std::vector<Expr> &children)
+Expr Ctx::makeAdd(keel::ArrayRef<Expr> children)
 {
     // Collect like terms: every non-number child decomposes into
     // (coefficient, term) — a canonical Mul carries its numeric constant as
     // the first child — and coefficients of equal terms sum up. Run-only
     // merging would not be canonical: y + y + 2*y would fold the two y's
     // into a 2*y that then coexists with the original 2*y child.
-    std::vector<std::pair<Expr, Rational>> acc;
+    keel::Array<std::pair<Expr, Rational>> acc;
     Rational constSum(0);
     const auto absorbTerm = [&](Expr c) {
         Rational coef(keel::i64{1});
@@ -239,7 +240,7 @@ Expr Ctx::makeAdd(const std::vector<Expr> &children)
             if (childCount(c) == 2) {
                 term = child(c, 1);
             } else {
-                std::vector<Expr> rest;
+                keel::Array<Expr> rest;
                 for (keel::usize i = 1; i < childCount(c); ++i)
                     rest.push_back(child(c, i));
                 term = mul(rest);
@@ -271,7 +272,7 @@ Expr Ctx::makeAdd(const std::vector<Expr> &children)
         }
     }
 
-    std::vector<Expr> items;
+    keel::Array<Expr> items;
     for (const auto &p : acc) {
         if (p.second.isZero())
             continue;
@@ -291,18 +292,18 @@ Expr Ctx::makeAdd(const std::vector<Expr> &children)
         for (keel::usize j = i + 1; j < items.size(); ++j)
             assert(items[i] != items[j] && "makeAdd duplicate items");
 #endif
-    std::sort(items.begin(), items.end(),
-              [this](Expr a, Expr b) { return compare(a, b) < 0; });
+    keel::sort(items,
+               [this](Expr a, Expr b) { return compare(a, b) < 0; });
     return makeNode(NodeKind::Add, 0, items, Rational(keel::i64{0}));
 }
 
-Expr Ctx::makeMul(const std::vector<Expr> &children)
+Expr Ctx::makeMul(keel::ArrayRef<Expr> children)
 {
     // Collect like bases: every non-number child decomposes into
     // (base, exponent) — Pow with a numeric exponent — and exponents of
     // equal bases sum up. Mirrors the coefficient collection of makeAdd;
     // run-only merging would leave x * x * x^2 as x^2 * x^2.
-    std::vector<std::pair<Expr, Rational>> acc;
+    keel::Array<std::pair<Expr, Rational>> acc;
     Rational constProd(1);
     const auto absorbBase = [&](Expr c) {
         Expr base = c;
@@ -340,7 +341,7 @@ Expr Ctx::makeMul(const std::vector<Expr> &children)
     if (constProd.isZero())
         return zero();
 
-    std::vector<Expr> items;
+    keel::Array<Expr> items;
     for (const auto &p : acc) {
         if (p.second.isZero())
             continue;
@@ -360,13 +361,13 @@ Expr Ctx::makeMul(const std::vector<Expr> &children)
         for (keel::usize j = i + 1; j < items.size(); ++j)
             assert(items[i] != items[j] && "makeMul duplicate items");
 #endif
-    std::sort(items.begin(), items.end(),
-              [this](Expr a, Expr b) { return compare(a, b) < 0; });
+    keel::sort(items,
+               [this](Expr a, Expr b) { return compare(a, b) < 0; });
     return makeNode(NodeKind::Mul, 0, items, Rational(keel::i64{0}));
 }
 
 Expr Ctx::makeNode(NodeKind kind, keel::u32 aux,
-                   const std::vector<Expr> &children, const Rational &num)
+                   keel::ArrayRef<Expr> children, const Rational &num)
 {
     keel::u32 hash = mix32(kFnvOffset, static_cast<keel::u32>(kind));
     hash = mix32(hash, aux);
@@ -378,12 +379,13 @@ Expr Ctx::makeNode(NodeKind kind, keel::u32 aux,
     for (Expr c : children)
         hash = mix32(hash, node(c).hash);
 
-    auto range = intern_.equal_range(hash);
-    for (auto it = range.first; it != range.second; ++it) {
-        const Node &n = nodes_[it->second - 1];
-        if (n.hash == hash &&
-            equalNode(n, kind, aux, children, num))
-            return Expr(this, it->second);
+    if (const keel::u32 *head = internHead_.get(hash)) {
+        for (keel::u32 nid = *head; nid != 0; nid = internNext_[nid - 1]) {
+            const Node &n = nodes_[nid - 1];
+            if (n.hash == hash &&
+                equalNode(n, kind, aux, children, num))
+                return Expr(this, nid);
+        }
     }
 
     Node n;
@@ -398,12 +400,14 @@ Expr Ctx::makeNode(NodeKind kind, keel::u32 aux,
 
     const auto id = static_cast<keel::u32>(nodes_.size() + 1);
     nodes_.push_back(std::move(n));
-    intern_.emplace(hash, id);
+    const keel::u32 prevHead = internHead_.get(hash) ? *internHead_.get(hash) : 0u;
+    internNext_.push_back(prevHead);
+    internHead_.put(hash, id);
     return Expr(this, id);
 }
 
 bool Ctx::equalNode(const Node &n, NodeKind kind, keel::u32 aux,
-                    const std::vector<Expr> &children, const Rational &num) const
+                    keel::ArrayRef<Expr> children, const Rational &num) const
 {
     if (n.kind != kind || n.aux != aux || n.childCount != children.size())
         return false;
@@ -415,13 +419,13 @@ bool Ctx::equalNode(const Node &n, NodeKind kind, keel::u32 aux,
     return true;
 }
 
-const std::string &Ctx::symbolName(Expr e) const
+const keel::String &Ctx::symbolName(Expr e) const
 {
     assert(kind(e) == NodeKind::Symbol);
     return symbolNames_[node(e).aux];
 }
 
-const std::string &Ctx::funcName(Expr e) const
+const keel::String &Ctx::funcName(Expr e) const
 {
     assert(kind(e) == NodeKind::Func);
     return funcNames_[node(e).aux];
@@ -460,9 +464,9 @@ int Ctx::compare(Expr a, Expr b) const
     case NodeKind::Number:
         return na.num < nb.num ? -1 : (nb.num < na.num ? 1 : 0);
     case NodeKind::Symbol:
-        return signOf(symbolNames_[na.aux].compare(symbolNames_[nb.aux]));
+        return signOf(symbolNames_[na.aux].as_ref().compare(symbolNames_[nb.aux].as_ref()));
     case NodeKind::Func: {
-        const int byName = funcNames_[na.aux].compare(funcNames_[nb.aux]);
+        const int byName = funcNames_[na.aux].as_ref().compare(funcNames_[nb.aux].as_ref());
         if (byName != 0)
             return signOf(byName);
         const keel::usize n = std::min(na.childCount, nb.childCount);
@@ -509,7 +513,7 @@ int Ctx::compare(Expr a, Expr b) const
     return 0;
 }
 
-void Ctx::printPrec(Expr e, std::string &out, int parentPrec) const
+void Ctx::printPrec(Expr e, keel::String &out, int parentPrec) const
 {
     const Node &n = node(e);
     const int prec = precOf(n.kind, n.num);
@@ -518,47 +522,47 @@ void Ctx::printPrec(Expr e, std::string &out, int parentPrec) const
     case NodeKind::Number:
     case NodeKind::Symbol: {
         if (prec < parentPrec)
-            out += '(';
+            out.push_back('(');
         if (n.kind == NodeKind::Number)
-            out += n.num.toString();
+            out.append(n.num.toString());
         else
-            out += symbolNames_[n.aux];
+            out.append(symbolNames_[n.aux]);
         if (prec < parentPrec)
-            out += ')';
+            out.push_back(')');
         break;
     }
     case NodeKind::RootOf: {
-        out += "RootOf(";
+        out.append("RootOf(");
         const RootOfDesc &d = rootofs_[n.aux];
         for (keel::usize k = d.poly.size(); k-- > 0;) {
-            out += d.poly[k].toString();
+            out.append(d.poly[k].toString());
             if (k == 1) {
-                out += "*z + ";
+                out.append("*z + ");
             } else if (k > 1) {
-                out += "*z^" + std::to_string(k) + " + ";
+                keel::format_into(out, "*z^{} + ", k);
             }
         }
-        out += ", " + std::to_string(d.index) + ")";
+        keel::format_into(out, ", {})", d.index);
         break;
     }
     case NodeKind::Func: {
         if (prec < parentPrec)
-            out += '(';
-        out += funcNames_[n.aux];
-        out += '(';
+            out.push_back('(');
+        out.append(funcNames_[n.aux]);
+        out.push_back('(');
         for (keel::usize i = 0; i < n.childCount; ++i) {
             if (i > 0)
-                out += ", ";
+                out.append(", ");
             printPrec(child(e, i), out, 0);
         }
-        out += ')';
+        out.push_back(')');
         if (prec < parentPrec)
-            out += ')';
+            out.push_back(')');
         break;
     }
     case NodeKind::Pow: {
         if (prec < parentPrec)
-            out += '(';
+            out.push_back('(');
         // A NEGATIVE numeric base must keep parens: "-9^(1/2)" reads
         // back as -(9^(1/2)) under the parser's precedence (unary
         // minus looser than '^') — a different principal branch
@@ -566,52 +570,52 @@ void Ctx::printPrec(Expr e, std::string &out, int parentPrec) const
         const bool negNumBase = kind(child(e, 0)) == NodeKind::Number &&
                                 numberValue(child(e, 0)).num().isNegative();
         if (negNumBase)
-            out += '(';
+            out.push_back('(');
         // 61, not 60: a Pow base that is itself a Pow must keep parens
         // ("(x^2)^3" != "x^(2^3)").
         printPrec(child(e, 0), out, negNumBase ? 0 : 61);
         if (negNumBase)
-            out += ')';
-        out += '^';
+            out.push_back(')');
+        out.push_back('^');
         printPrec(child(e, 1), out, 61);
         if (prec < parentPrec)
-            out += ')';
+            out.push_back(')');
         break;
     }
     case NodeKind::Mul: {
         if (prec < parentPrec)
-            out += '(';
+            out.push_back('(');
         keel::usize start = 0;
         if (childCount(e) > 1 && kind(child(e, 0)) == NodeKind::Number &&
             numberValue(child(e, 0)) == Rational(keel::i64{-1})) {
-            out += '-';
+            out.push_back('-');
             start = 1;
         }
         for (keel::usize i = start; i < childCount(e); ++i) {
             if (i > start)
-                out += '*';
+                out.push_back('*');
             printPrec(child(e, i), out, 50);
         }
         if (prec < parentPrec)
-            out += ')';
+            out.push_back(')');
         break;
     }
     case NodeKind::Add: {
         if (prec < parentPrec)
-            out += '(';
+            out.push_back('(');
         for (keel::usize i = 0; i < childCount(e); ++i) {
             if (i > 0)
-                out += " + ";
+                out.append(" + ");
             printPrec(child(e, i), out, 40);
         }
         if (prec < parentPrec)
-            out += ')';
+            out.push_back(')');
         break;
     }
     }
 }
 
-void Ctx::print(Expr e, std::string &out) const
+void Ctx::print(Expr e, keel::String &out) const
 {
     printPrec(e, out, 0);
 }
@@ -635,7 +639,7 @@ bool bernoulliExact(keel::i64 n, Rational &out)
         return true;
     }
     // Akiyama-Tanigawa algorithm for B_n (with B_1 = -1/2 since n >= 2 is even).
-    std::vector<Rational> a(static_cast<keel::usize>(n + 1));
+    keel::Array<Rational> a(static_cast<keel::usize>(n + 1));
     for (keel::i64 m = 0; m <= n; ++m) {
         a[static_cast<keel::usize>(m)] = Rational(1, BigInt(m + 1));
         for (keel::i64 j = m; j >= 1; --j) {
@@ -660,7 +664,7 @@ bool eulerExact(keel::i64 n, Rational &out)
         return true;
     }
     const keel::i64 mMax = n / 2;
-    std::vector<BigInt> eEven(static_cast<keel::usize>(mMax + 1), BigInt(0));
+    keel::Array<BigInt> eEven(static_cast<keel::usize>(mMax + 1), BigInt(0));
     eEven[0] = BigInt(1);
     for (keel::i64 m = 1; m <= mMax; ++m) {
         BigInt sum(0);
@@ -736,7 +740,7 @@ bool evalPolylogNegIntExact(keel::i64 m, const Rational &z, Rational &out)
         out = z / den;
         return true;
     }
-    std::vector<BigInt> eul(static_cast<keel::usize>(m), BigInt(0));
+    keel::Array<BigInt> eul(static_cast<keel::usize>(m), BigInt(0));
     eul[0] = BigInt(1);
     for (keel::i64 i = 2; i <= m; ++i) {
         for (keel::i64 k = i - 1; k >= 1; --k) {
@@ -757,7 +761,7 @@ bool evalPolylogNegIntExact(keel::i64 m, const Rational &z, Rational &out)
 } // namespace
 
 bool Ctx::evalExact(
-    Expr e, const std::vector<std::pair<std::string, Rational>> &vals,
+    Expr e, keel::ArrayRef<std::pair<keel::StringRef, Rational>> vals,
     Rational &out)
 {
     switch (kind(e)) {
@@ -765,7 +769,7 @@ bool Ctx::evalExact(
         out = numberValue(e);
         return true;
     case NodeKind::Symbol: {
-        const std::string &name = symbolName(e);
+        const keel::String &name = symbolName(e);
         for (const auto &kv : vals)
             if (kv.first == name) {
                 out = kv.second;
@@ -777,7 +781,7 @@ bool Ctx::evalExact(
         return false; // algebraic, not rational (interval refinement
                       // is the future numeric layer's business)
     case NodeKind::Func: {
-        const std::string &name = funcName(e);
+        const keel::String &name = funcName(e);
         const Rational zero(0), one(1);
         if (childCount(e) == 4 && name == "hypergeom2F1") {
             Rational aVal, bVal, cVal, zVal;
@@ -915,7 +919,7 @@ bool Ctx::evalExact(
                         out = zero;
                         return true;
                     }
-                    std::vector<BigInt> row(static_cast<keel::usize>(kInt + 1),
+                    keel::Array<BigInt> row(static_cast<keel::usize>(kInt + 1),
                                             BigInt(0));
                     row[0] = BigInt(1);
                     for (keel::i64 i = 1; i <= nInt; ++i) {
@@ -1895,7 +1899,7 @@ bool evalBesselKDouble(double nu, double x, double &out)
     return std::isfinite(out);
 }
 
-bool evalAiryDouble(const std::string &fn, double x, double &out)
+bool evalAiryDouble(keel::StringRef fn, double x, double &out)
 {
     if (!std::isfinite(x))
         return false;
@@ -1989,7 +1993,7 @@ bool evalAiryDouble(const std::string &fn, double x, double &out)
     return false;
 }
 
-bool evalOrthogonalPolyDouble(const std::string &fn, double nVal, double x,
+bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
                               double &out)
 {
     if (!std::isfinite(nVal) || !std::isfinite(x) || std::floor(nVal) != nVal)
@@ -2218,7 +2222,7 @@ bool carlsonRJ(double x, double y, double z, double p, double &out)
     return std::isfinite(out);
 }
 
-bool evalElliptic1ArgDouble(const std::string &fn, double m, double &out)
+bool evalElliptic1ArgDouble(keel::StringRef fn, double m, double &out)
 {
     if (!std::isfinite(m) || m > 1.0)
         return false;
@@ -2242,7 +2246,7 @@ bool evalElliptic1ArgDouble(const std::string &fn, double m, double &out)
     return false;
 }
 
-bool evalElliptic2ArgDouble(const std::string &fn, double a0, double a1,
+bool evalElliptic2ArgDouble(keel::StringRef fn, double a0, double a1,
                             double &out)
 {
     if (!std::isfinite(a0) || !std::isfinite(a1))
@@ -2305,7 +2309,7 @@ bool evalElliptic2ArgDouble(const std::string &fn, double a0, double a1,
         }
         if (k != 0.0) {
             double compVal = 0.0;
-            const std::string compFn =
+            const keel::StringRef compFn =
                 (fn == "ellipticF") ? "ellipticK" : "ellipticE";
             if (!evalElliptic1ArgDouble(compFn, m, compVal))
                 return false;
@@ -2427,7 +2431,7 @@ bool evalPolylogDouble(double s, double z, double &out)
             return std::isfinite(out);
         }
         if (m <= 20) {
-            std::vector<double> eul(static_cast<keel::usize>(m), 0.0);
+            keel::Array<double> eul(static_cast<keel::usize>(m), 0.0);
             eul[0] = 1.0;
             for (keel::i64 i = 2; i <= m; ++i) {
                 for (keel::i64 k = i - 1; k >= 1; --k) {
@@ -2476,7 +2480,7 @@ bool evalPolylogDouble(double s, double z, double &out)
     return false;
 }
 
-bool evalBernoulliEuler2ArgDouble(const std::string &fn, double nVal, double x,
+bool evalBernoulliEuler2ArgDouble(keel::StringRef fn, double nVal, double x,
                                   double &out)
 {
     if (!std::isfinite(nVal) || !std::isfinite(x) || std::floor(nVal) != nVal)
@@ -2573,7 +2577,7 @@ bool evalPochhammerDouble(double a, double n, double &out)
     return std::isfinite(out);
 }
 
-bool evalIncompleteGammaDouble(const std::string &fn, double s, double x,
+bool evalIncompleteGammaDouble(keel::StringRef fn, double s, double x,
                                double &out)
 {
     if (!std::isfinite(s) || !std::isfinite(x) || x < 0.0 || s <= 0.0)
@@ -2747,15 +2751,14 @@ bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
 
 bool evalDoubleRec(
     const Ctx &c, Expr e,
-    const std::vector<std::pair<std::string, double>> &vals,
-    std::unordered_map<keel::u32, double> &memo, double &out)
+    keel::ArrayRef<std::pair<keel::StringRef, double>> vals,
+    keel::HashMap<keel::u32, double> &memo, double &out)
 {
     if (e.isNull())
         return false;
     const keel::u32 nid = c.id(e);
-    const auto hit = memo.find(nid);
-    if (hit != memo.end()) {
-        out = hit->second;
+    if (const double *hit = memo.get(nid)) {
+        out = *hit;
         return true;
     }
 
@@ -2767,7 +2770,7 @@ bool evalDoubleRec(
             return false;
         break;
     case NodeKind::Symbol: {
-        const std::string &name = c.symbolName(e);
+        const keel::String &name = c.symbolName(e);
         bool found = false;
         for (const auto &kv : vals) {
             if (kv.first == name) {
@@ -2793,11 +2796,11 @@ bool evalDoubleRec(
         break;
     }
     case NodeKind::RootOf: {
-        const std::vector<Rational> &poly = c.rootOfPoly(e);
+        const keel::Array<Rational> &poly = c.rootOfPoly(e);
         const int idx = c.rootOfIndex(e);
-        UPoly p = UPoly(poly).squarefreePart();
+        UPoly p = UPoly(poly.clone()).squarefreePart();
         p.makeMonic();
-        const std::vector<RootInterval> ivs = isolateRealRoots(p);
+        const keel::Array<RootInterval> ivs = isolateRealRoots(p);
         if (idx < 0 || idx >= static_cast<int>(ivs.size()))
             return false;
         const RootInterval iv =
@@ -2853,7 +2856,7 @@ bool evalDoubleRec(
         break;
     }
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         if (c.childCount(e) == 4 && fn == "hypergeom2F1") {
             double a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
             if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a0) ||
@@ -2920,7 +2923,7 @@ bool evalDoubleRec(
                 } else if (kInt == 0) {
                     res = 0.0;
                 } else {
-                    std::vector<BigInt> row(
+                    keel::Array<BigInt> row(
                         static_cast<keel::usize>(kInt + 1), BigInt(0));
                     row[0] = BigInt(1);
                     for (keel::i64 i = 1; i <= nInt; ++i) {
@@ -3107,7 +3110,7 @@ bool evalDoubleRec(
     }
     }
 
-    memo.emplace(nid, res);
+    memo.try_insert(nid, res);
     out = res;
     return true;
 }
@@ -3115,10 +3118,10 @@ bool evalDoubleRec(
 } // namespace
 
 bool Ctx::evalDouble(
-    Expr e, const std::vector<std::pair<std::string, double>> &vals,
+    Expr e, keel::ArrayRef<std::pair<keel::StringRef, double>> vals,
     double &out) const
 {
-    std::unordered_map<keel::u32, double> memo;
+    keel::HashMap<keel::u32, double> memo;
     return evalDoubleRec(*this, e, vals, memo, out);
 }
 
@@ -3126,7 +3129,7 @@ namespace {
 
 // Sum-of-terms view of an expression for the distributive step:
 // an Add contributes its children, everything else is one term.
-void pushSumTerms(const Ctx &c, Expr e, std::vector<Expr> &out)
+void pushSumTerms(const Ctx &c, Expr e, keel::Array<Expr> &out)
 {
     if (c.kind(e) == NodeKind::Add) {
         for (keel::usize i = 0; i < c.childCount(e); ++i)
@@ -3146,11 +3149,11 @@ Expr Ctx::expand(Expr e)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        std::vector<Expr> args;
+        keel::Array<Expr> args;
         args.reserve(childCount(e));
         for (keel::usize i = 0; i < childCount(e); ++i)
             args.push_back(expand(child(e, i)));
-        const std::string &fn = funcName(e);
+        const keel::String &fn = funcName(e);
         if (args.size() == 2 && kind(args[0]) == NodeKind::Number) {
             const Rational &rn = numberValue(args[0]);
             keel::i64 n = 0;
@@ -3232,7 +3235,7 @@ Expr Ctx::expand(Expr e)
                         return lCur;
                     }
                 } else if (fn == "bernoulliB" && n >= 0 && n <= 40) {
-                    std::vector<Expr> terms;
+                    keel::Array<Expr> terms;
                     BigInt binom(1);
                     for (keel::i64 k = 0; k <= n; ++k) {
                         if (k > 0)
@@ -3249,7 +3252,7 @@ Expr Ctx::expand(Expr e)
                 } else if (fn == "eulerE" && n >= 0 && n <= 40) {
                     const Expr xShift =
                         add({xArg, number(Rational(-1, BigInt(2)))});
-                    std::vector<Expr> terms;
+                    keel::Array<Expr> terms;
                     BigInt binom(1);
                     for (keel::i64 k = 0; k <= n; ++k) {
                         if (k > 0)
@@ -3270,7 +3273,7 @@ Expr Ctx::expand(Expr e)
                     BigInt nFact(1);
                     for (keel::i64 k = 2; k <= n - 1; ++k)
                         nFact = nFact * BigInt(k);
-                    std::vector<Expr> sumTerms;
+                    keel::Array<Expr> sumTerms;
                     BigInt kFact(1);
                     for (keel::i64 k = 0; k < n; ++k) {
                         if (k >= 2)
@@ -3300,13 +3303,13 @@ Expr Ctx::expand(Expr e)
                 if (kCount == 0)
                     return one();
                 if (kCount > 0) {
-                    std::vector<Expr> factors;
+                    keel::Array<Expr> factors;
                     factors.reserve(static_cast<keel::usize>(kCount));
                     for (keel::i64 j = 0; j < kCount; ++j)
                         factors.push_back(add({args[0], number(j)}));
                     return expand(mul(factors));
                 }
-                std::vector<Expr> denFactors;
+                keel::Array<Expr> denFactors;
                 bool okDen = true;
                 for (keel::i64 j = 1; j <= -kCount; ++j) {
                     const Expr step = add({args[0], number(-j)});
@@ -3330,7 +3333,7 @@ Expr Ctx::expand(Expr e)
                     if (numberValue(nSide).num().fitsInt64(nInt) &&
                         nInt >= 1 && nInt <= 20) {
                         BigInt fact(1);
-                        std::vector<Expr> denFactors;
+                        keel::Array<Expr> denFactors;
                         bool okDen = true;
                         for (keel::i64 k = 0; k < nInt; ++k) {
                             if (k >= 2)
@@ -3358,7 +3361,7 @@ Expr Ctx::expand(Expr e)
             keel::i64 ma = 0;
             if (numberValue(args[0]).num().fitsInt64(ma) && -ma <= 12) {
                 const keel::i64 mTerm = -ma;
-                std::vector<Expr> terms{one()};
+                keel::Array<Expr> terms{one()};
                 Expr numPoch = one();
                 Expr denPoch = one();
                 BigInt fact(1);
@@ -3394,7 +3397,7 @@ Expr Ctx::expand(Expr e)
                 }
             }
             if (mTerm >= 0) {
-                std::vector<Expr> terms{one()};
+                keel::Array<Expr> terms{one()};
                 Expr aPoch = one(), bPoch = one(), cPoch = one();
                 BigInt fact(1);
                 bool okDen = true;
@@ -3433,12 +3436,12 @@ Expr Ctx::expand(Expr e)
         // multiplicatively over the base factors instead.
         if (k <= 1)
             return pow(base, exp);
-        std::vector<Expr> terms{one()};
-        std::vector<Expr> factors;
+        keel::Array<Expr> terms{one()};
+        keel::Array<Expr> factors;
         for (int i = 0; i < k; ++i) {
             factors.clear();
             pushSumTerms(*this, base, factors);
-            std::vector<Expr> next;
+            keel::Array<Expr> next;
             next.reserve(terms.size() * factors.size());
             for (const Expr &t : terms) {
                 for (const Expr &f : factors) {
@@ -3458,23 +3461,23 @@ Expr Ctx::expand(Expr e)
                         next.push_back(prod);
                 }
             }
-            terms = std::move(next);
+            terms = keel::move(next);
         }
         return add(terms);
     }
     case NodeKind::Add: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         for (keel::usize i = 0; i < childCount(e); ++i)
             pushSumTerms(*this, expand(child(e, i)), kids);
         return add(kids);
     }
     case NodeKind::Mul: {
         // Multiply out the sum-views of the expanded factors.
-        std::vector<Expr> terms{one()};
+        keel::Array<Expr> terms{one()};
         for (keel::usize i = 0; i < childCount(e); ++i) {
-            std::vector<Expr> factors;
+            keel::Array<Expr> factors;
             pushSumTerms(*this, expand(child(e, i)), factors);
-            std::vector<Expr> next;
+            keel::Array<Expr> next;
             next.reserve(terms.size() * factors.size());
             for (const Expr &t : terms) {
                 for (const Expr &f : factors) {
@@ -3494,7 +3497,7 @@ Expr Ctx::expand(Expr e)
                         next.push_back(prod);
                 }
             }
-            terms = std::move(next);
+            terms = keel::move(next);
         }
         return add(terms);
     }
@@ -3512,7 +3515,7 @@ Expr Ctx::subs(Expr e, Expr from, Expr to)
     case NodeKind::RootOf:
         return e; // atoms: no children to descend into
     case NodeKind::Func: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(childCount(e));
         for (keel::usize i = 0; i < childCount(e); ++i)
             kids.push_back(subs(child(e, i), from, to));
@@ -3523,7 +3526,7 @@ Expr Ctx::subs(Expr e, Expr from, Expr to)
                    subs(child(e, 1), from, to));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(childCount(e));
         for (keel::usize i = 0; i < childCount(e); ++i)
             kids.push_back(subs(child(e, i), from, to));
@@ -3533,9 +3536,9 @@ Expr Ctx::subs(Expr e, Expr from, Expr to)
     return e;
 }
 
-std::string Ctx::toString(Expr e) const
+keel::String Ctx::toString(Expr e) const
 {
-    std::string out;
+    keel::String out;
     print(e, out);
     return out;
 }
@@ -3564,7 +3567,7 @@ keel::usize Ctx::leafCount(Expr e) const
 
 namespace {
 
-bool isElementaryFuncName(const std::string &name)
+bool isElementaryFuncName(keel::StringRef name)
 {
     return name == "log" || name == "exp" || name == "abs" ||
            name == "sin" || name == "cos" || name == "tan" ||
@@ -3583,7 +3586,7 @@ keel::usize Ctx::exprCost(Expr e) const
 {
     if (e.isNull())
         return 0;
-    std::unordered_map<keel::u32, bool> visited;
+    keel::HashMap<keel::u32, bool> visited;
     keel::usize total = 0;
 
     struct Frame
@@ -3591,22 +3594,21 @@ keel::usize Ctx::exprCost(Expr e) const
         Expr expr;
         bool insideLog;
     };
-    std::vector<Frame> stack{Frame{e, false}};
+    keel::Array<Frame> stack{Frame{e, false}};
     while (!stack.empty()) {
         const Frame cur = stack.back();
         stack.pop_back();
         if (cur.expr.isNull())
             continue;
         const keel::u32 nid = id(cur.expr);
-        auto it = visited.find(nid);
-        if (it != visited.end()) {
+        if (bool *flag = visited.get(nid)) {
             // If an `abs` node was previously visited outside `log` (cost 3)
             // and is now also reached directly inside `log` (cost 5), upgrade
             // its weight by +2 once.
-            if (cur.insideLog && !it->second &&
+            if (cur.insideLog && !(*flag) &&
                 kind(cur.expr) == NodeKind::Func &&
                 funcName(cur.expr) == "abs") {
-                it->second = true;
+                *flag = true;
                 total += 2;
             }
             continue;
@@ -3614,7 +3616,7 @@ keel::usize Ctx::exprCost(Expr e) const
         const NodeKind k = kind(cur.expr);
         bool markedInsideLog = false;
         if (k == NodeKind::Func) {
-            const std::string &fn = funcName(cur.expr);
+            const keel::String &fn = funcName(cur.expr);
             if (cur.insideLog && fn == "abs") {
                 total += 5;
                 markedInsideLog = true;
@@ -3626,7 +3628,7 @@ keel::usize Ctx::exprCost(Expr e) const
         } else {
             total += 1;
         }
-        visited.emplace(nid, markedInsideLog);
+        visited.try_insert(nid, markedInsideLog);
         const bool nextInsideLog =
             (k == NodeKind::Func && funcName(cur.expr) == "log");
         for (keel::usize i = 0; i < childCount(cur.expr); ++i)
@@ -3635,12 +3637,12 @@ keel::usize Ctx::exprCost(Expr e) const
     return total;
 }
 
-void Ctx::assume(const std::string &name, AssumeDomain dom)
+void Ctx::assume(keel::StringRef name, AssumeDomain dom)
 {
     if (dom == AssumeDomain::Any)
-        assumptions_.erase(name);
+        assumptions_.remove(name);
     else
-        assumptions_[name] = dom;
+        assumptions_.put(keel::String::from(name), dom);
 }
 
 void Ctx::assume(Expr sym, AssumeDomain dom)
@@ -3650,10 +3652,11 @@ void Ctx::assume(Expr sym, AssumeDomain dom)
         assume(symbolName(sym), dom);
 }
 
-AssumeDomain Ctx::assumption(const std::string &name) const
+AssumeDomain Ctx::assumption(keel::StringRef name) const
 {
-    auto it = assumptions_.find(name);
-    return it != assumptions_.end() ? it->second : AssumeDomain::Any;
+    if (const AssumeDomain *hit = assumptions_.get(name))
+        return *hit;
+    return AssumeDomain::Any;
 }
 
 AssumeDomain Ctx::assumption(Expr sym) const
@@ -3677,7 +3680,7 @@ bool Ctx::isAssumedPositive(Expr e) const
     case NodeKind::Number:
         return numberValue(e).signum() > 0;
     case NodeKind::Symbol: {
-        const std::string &nm = symbolName(e);
+        const keel::String &nm = symbolName(e);
         const AssumeDomain dom = assumption(nm);
         if (dom != AssumeDomain::Any)
             return dom == AssumeDomain::Positive;
@@ -3701,7 +3704,7 @@ bool Ctx::isAssumedPositive(Expr e) const
         return false;
     }
     case NodeKind::Func: {
-        const std::string &fn = funcName(e);
+        const keel::String &fn = funcName(e);
         const Expr u = child(e, 0);
         if (fn == "exp" || fn == "cosh" || fn == "sech" || fn == "erfc")
             return isAssumedReal(u);
@@ -3768,7 +3771,7 @@ bool Ctx::isAssumedNegative(Expr e) const
         return false;
     }
     case NodeKind::Func: {
-        const std::string &fn = funcName(e);
+        const keel::String &fn = funcName(e);
         const Expr u = child(e, 0);
         if (fn == "sinh" || fn == "tanh" || fn == "asinh" || fn == "atan" ||
             fn == "erf" || fn == "erfi" || fn == "Si" || fn == "FresnelS" ||
@@ -3833,7 +3836,7 @@ bool Ctx::isAssumedNonNegative(Expr e) const
         return false;
     }
     case NodeKind::Func: {
-        const std::string &fn = funcName(e);
+        const keel::String &fn = funcName(e);
         const Expr u = child(e, 0);
         if (fn == "abs")
             return isAssumedReal(u);
@@ -3876,7 +3879,7 @@ bool Ctx::isAssumedReal(Expr e) const
     case NodeKind::Number:
         return true;
     case NodeKind::Symbol: {
-        const std::string &nm = symbolName(e);
+        const keel::String &nm = symbolName(e);
         return assumption(nm) != AssumeDomain::Any || nm == "pi" ||
                nm == "e" || nm == "E" || nm == "euler_gamma" ||
                nm == "EulerGamma";
@@ -3898,7 +3901,7 @@ bool Ctx::isAssumedReal(Expr e) const
         return false;
     }
     case NodeKind::Func: {
-        const std::string &fn = funcName(e);
+        const keel::String &fn = funcName(e);
         const Expr u = child(e, 0);
         if (fn == "log" || fn == "Ci" || fn == "lgamma" || fn == "loggamma" ||
             fn == "digamma" || fn == "psi" || fn == "trigamma" || fn == "gamma")

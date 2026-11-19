@@ -11,23 +11,24 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <string>
-#include <vector>
+#include <keel/format.h>
+#include <keel/string.h>
+#include <keel/array.h>
 
 namespace numkit::cas {
 
 namespace {
 
-bool checkZBudget(const Ctx &c, Budget *budget, std::string &reason)
+bool checkZBudget(const Ctx &c, Budget *budget, keel::String &reason)
 {
     if (!budget)
         return true;
     if (!budget->step()) {
-        reason = "step budget exhausted";
+        reason.assign("step budget exhausted");
         return false;
     }
     if (!budget->recordArenaBytes(c.nodeCount() * 32)) {
-        reason = "arena byte budget exhausted";
+        reason.assign("arena byte budget exhausted");
         return false;
     }
     return true;
@@ -45,7 +46,7 @@ bool mentionsSymbol(const Ctx &c, Expr e, Expr sym)
     return false;
 }
 
-bool isDeltaFuncName(const std::string &fn)
+bool isDeltaFuncName(keel::StringRef fn)
 {
     return fn == "kroneckerDelta" || fn == "delta";
 }
@@ -70,7 +71,7 @@ bool matchLinearInVar(Ctx &c, Expr arg, Expr var, Expr &c0Out, Expr &c1Out)
             return true;
         }
         if (c.kind(term) == NodeKind::Mul) {
-            std::vector<Expr> others;
+            keel::Array<Expr> others;
             bool foundVar = false;
             for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr ch = c.child(term, i);
@@ -100,8 +101,8 @@ bool matchLinearInVar(Ctx &c, Expr arg, Expr var, Expr &c0Out, Expr &c1Out)
         return false;
     }
     if (c.kind(ex) == NodeKind::Add) {
-        std::vector<Expr> constTerms;
-        std::vector<Expr> linCoeffs;
+        keel::Array<Expr> constTerms;
+        keel::Array<Expr> linCoeffs;
         for (keel::usize i = 0; i < c.childCount(ex); ++i) {
             const Expr ti = c.child(ex, i);
             if (!mentionsSymbol(c, ti, var)) {
@@ -132,7 +133,7 @@ Expr rewriteHypToExpZ(Ctx &c, Expr e, Expr var)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         const Expr u = rewriteHypToExpZ(c, c.child(e, 0), var);
         const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
         if (fn == "sinh") {
@@ -150,7 +151,7 @@ Expr rewriteHypToExpZ(Ctx &c, Expr e, Expr var)
                      rewriteHypToExpZ(c, c.child(e, 1), var));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(rewriteHypToExpZ(c, c.child(e, i), var));
@@ -168,7 +169,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
 
     if (c.kind(e) == NodeKind::Pow && c.kind(c.child(e, 0)) == NodeKind::Func &&
         c.kind(c.child(e, 1)) == NodeKind::Number) {
-        const std::string &fn = c.funcName(c.child(e, 0));
+        const keel::String &fn = c.funcName(c.child(e, 0));
         const Expr u = c.child(c.child(e, 0), 0);
         keel::i64 p = 0;
         if (mentionsSymbol(c, u, var) &&
@@ -196,7 +197,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
     }
 
     if (c.kind(e) == NodeKind::Mul) {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(
@@ -204,7 +205,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
         for (keel::usize i = 0; i < kids.size(); ++i) {
             if (c.kind(kids[i]) != NodeKind::Func)
                 continue;
-            const std::string &f1 = c.funcName(kids[i]);
+            const keel::String &f1 = c.funcName(kids[i]);
             if (f1 != "sin" && f1 != "cos")
                 continue;
             const Expr u = c.child(kids[i], 0);
@@ -213,7 +214,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
             for (keel::usize j = i + 1; j < kids.size(); ++j) {
                 if (c.kind(kids[j]) != NodeKind::Func)
                     continue;
-                const std::string &f2 = c.funcName(kids[j]);
+                const keel::String &f2 = c.funcName(kids[j]);
                 if (f2 != "sin" && f2 != "cos")
                     continue;
                 const Expr v = c.child(kids[j], 0);
@@ -236,7 +237,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
                                                   c.neg(c.func("sin", uMinusV))})});
                 }
                 kids[i] = prodSum;
-                kids.erase(kids.begin() + static_cast<keel::isize>(j));
+                kids.remove_at(j);
                 changed = true;
                 return c.mul(kids);
             }
@@ -245,7 +246,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
     }
 
     if (c.kind(e) == NodeKind::Add) {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(
@@ -306,7 +307,7 @@ Expr evalDiscreteAtInt(Ctx &c, Expr e, Expr n, keel::i64 k)
         }
         case NodeKind::Add:
         case NodeKind::Mul: {
-            std::vector<Expr> ch;
+            keel::Array<Expr> ch;
             ch.reserve(c.childCount(node));
             for (keel::usize i = 0; i < c.childCount(node); ++i)
                 ch.push_back(self(self, c.child(node, i)));
@@ -333,7 +334,7 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
         return out;
     }
 
-    std::vector<Expr> factors;
+    keel::Array<Expr> factors;
     if (c.kind(term) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(term); ++i)
             factors.push_back(c.child(term, i));
@@ -341,11 +342,11 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
         factors.push_back(term);
     }
 
-    std::vector<Expr> constFacs;
-    std::vector<Expr> geomBases;
-    std::vector<Expr> nonDeltaFacs;
+    keel::Array<Expr> constFacs;
+    keel::Array<Expr> geomBases;
+    keel::Array<Expr> nonDeltaFacs;
     keel::i64 nDeg = 0;
-    std::string trigFn;
+    keel::StringRef trigFn;
     Expr trigPhase, trigFreq;
     bool hasDelta = false;
     keel::i64 deltaK = 0;
@@ -387,7 +388,7 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
             }
         }
         if (c.kind(fac) == NodeKind::Func) {
-            const std::string &fn = c.funcName(fac);
+            const keel::String &fn = c.funcName(fac);
             const Expr arg = c.child(fac, 0);
             Expr c0, c1;
             if (fn == "exp" && matchLinearInVar(c, arg, n, c0, c1) &&
@@ -421,7 +422,7 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
                 }
             }
         }
-        out.reason = "unsupported factor in ztrans: " + c.toString(fac);
+        out.reason = keel::format("unsupported factor in ztrans: {}", c.toString(fac));
         return out;
     }
 
@@ -441,7 +442,7 @@ ZTransResult ztransTerm(Ctx &c, Expr term, Expr n, Expr z, Budget *budget)
     }
 
     if (nDeg > 12) {
-        out.reason = "polynomial degree in n exceeds ztrans limit";
+        out.reason.assign("polynomial degree in n exceeds ztrans limit");
         return out;
     }
 
@@ -523,10 +524,10 @@ ZTransResult ztransRec(Ctx &c, Expr f, Expr n, Expr z, Budget *budget)
 
     const Expr norm = normalizeForZTrans(c, f, n);
     if (c.kind(norm) == NodeKind::Add) {
-        std::vector<Expr> parts;
+        keel::Array<Expr> parts;
         parts.reserve(c.childCount(norm));
         for (keel::usize i = 0; i < c.childCount(norm); ++i) {
-            const ZTransResult pi =
+            ZTransResult pi =
                 ztransTerm(c, c.child(norm, i), n, z, budget);
             if (!pi.proved())
                 return pi;
@@ -558,7 +559,7 @@ Expr binomialExpr(Ctx &c, Expr n, int k)
 {
     if (k <= 0)
         return c.one();
-    std::vector<Expr> numFactors;
+    keel::Array<Expr> numFactors;
     BigInt fact(1);
     for (int j = 0; j < k; ++j) {
         fact = fact * BigInt(j + 1);
@@ -698,10 +699,10 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     int pZero = 0;
     while (pZero <= D.deg() && D.coeff(static_cast<keel::usize>(pZero)).isZero())
         ++pZero;
-    std::vector<Rational> dTildeCoeffs;
+    keel::Array<Rational> dTildeCoeffs;
     for (int i = pZero; i <= D.deg(); ++i)
         dTildeCoeffs.push_back(D.coeff(static_cast<keel::usize>(i)));
-    UPoly dTilde(dTildeCoeffs);
+    UPoly dTilde(keel::move(dTildeCoeffs));
 
     // Require causal sequence: deg(N) <= deg(D).
     if (N.deg() > D.deg())
@@ -711,7 +712,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     //   1. If dTilde is constant, F(z) = sum_{k=0}^pZero c_k * z^(-k).
     const UPoly zPow = UPoly::monomial(
         Rational(keel::i64{1}), static_cast<keel::u64>(pZero + 1));
-    std::vector<Expr> seqTerms;
+    keel::Array<Expr> seqTerms;
 
     UPoly mPoly;
     if (dTilde.deg() == 0) {
@@ -765,7 +766,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
         return false;
 
     if (!mPoly.isZero()) {
-        std::vector<UPoly> irreds = factorOverQ(dTilde, budget);
+        keel::Array<UPoly> irreds = factorOverQ(dTilde, budget);
         if (budget && !budget->ok())
             return false;
         struct IrredFactor
@@ -774,7 +775,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
             int mult = 0;
             UPoly qPow;
         };
-        std::vector<IrredFactor> fs;
+        keel::Array<IrredFactor> fs;
         for (const UPoly &ir : irreds) {
             if (ir.deg() != 1 && ir.deg() != 2)
                 return false;
@@ -834,7 +835,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
 bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
 {
     const Expr fOverZ = simplifyRationalExpr(c, c.div(F, z));
-    std::vector<Expr> factors;
+    keel::Array<Expr> factors;
     if (c.kind(fOverZ) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(fOverZ); ++i)
             factors.push_back(c.child(fOverZ, i));
@@ -844,7 +845,7 @@ bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
 
     Expr linBase;
     int poleK = 0;
-    std::vector<Expr> numFacs;
+    keel::Array<Expr> numFacs;
     for (const Expr &fac : factors) {
         if (poleK == 0 && c.kind(fac) == NodeKind::Pow &&
             c.kind(c.child(fac, 1)) == NodeKind::Number) {
@@ -886,7 +887,7 @@ ZTransResult ztrans(Ctx &c, Expr f, Expr n, Expr z, Budget *budget)
 {
     ZTransResult out;
     if (f.isNull() || n.isNull() || z.isNull() || c.kind(n) != NodeKind::Symbol) {
-        out.reason = "invalid input to ztrans";
+        out.reason.assign("invalid input to ztrans");
         return out;
     }
     return ztransRec(c, f, n, z, budget);
@@ -896,7 +897,7 @@ ZTransResult iztrans(Ctx &c, Expr F, Expr z, Expr n, Budget *budget)
 {
     ZTransResult out;
     if (F.isNull() || z.isNull() || n.isNull() || c.kind(z) != NodeKind::Symbol) {
-        out.reason = "invalid input to iztrans";
+        out.reason.assign("invalid input to iztrans");
         return out;
     }
     if (!checkZBudget(c, budget, out.reason))
@@ -908,7 +909,7 @@ ZTransResult iztrans(Ctx &c, Expr F, Expr z, Expr n, Budget *budget)
     if (!ok && (!budget || budget->ok()))
         ok = iztransParametric(c, fNorm, z, n, cand);
     if (!ok && c.kind(F) == NodeKind::Add) {
-        std::vector<Expr> parts;
+        keel::Array<Expr> parts;
         bool allOk = true;
         for (keel::usize i = 0; i < c.childCount(F); ++i) {
             const ZTransResult sub = iztrans(c, c.child(F, i), z, n, budget);
@@ -926,14 +927,14 @@ ZTransResult iztrans(Ctx &c, Expr F, Expr z, Expr n, Budget *budget)
 
     if (!ok || cand.isNull()) {
         if (out.reason.empty())
-            out.reason = "unable to invert Z-transform";
+            out.reason.assign("unable to invert Z-transform");
         return out;
     }
 
     // Round-trip verification certificate: Z{cand}(z) == F(z).
     const ZTransResult check = ztrans(c, cand, n, z, budget);
     if (!check.proved() || !exprEquivalentZ(c, check.F, F)) {
-        out.reason = "inverse Z-transform round-trip certificate failed";
+        out.reason.assign("inverse Z-transform round-trip certificate failed");
         return out;
     }
     out.F = cand;
@@ -969,7 +970,7 @@ Expr expandSequenceShifts(Ctx &c, Expr e, Expr n)
         return c.pow(b, ex);
     }
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         const Expr arg = expandSequenceShifts(c, c.child(e, 0), n);
         Expr c0, c1;
         if ((fn == "sin" || fn == "cos") &&
@@ -991,7 +992,7 @@ Expr expandSequenceShifts(Ctx &c, Expr e, Expr n)
     }
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(expandSequenceShifts(c, c.child(e, i), n));
@@ -1001,10 +1002,10 @@ Expr expandSequenceShifts(Ctx &c, Expr e, Expr n)
     return e;
 }
 
-bool certifyRecurrence(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
+bool certifyRecurrence(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs,
                        Expr y, Expr n)
 {
-    std::vector<Expr> lhsTerms;
+    keel::Array<Expr> lhsTerms;
     for (keel::usize k = 0; k < coeffs.size(); ++k) {
         if (c.isZero(coeffs[k]))
             continue;
@@ -1027,25 +1028,25 @@ bool certifyRecurrence(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
 
 } // namespace
 
-RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
-                       Expr n, const std::vector<Expr> &initVals,
+RsolveResult rsolveIVP(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs,
+                       Expr n, keel::ArrayRef<Expr> initVals,
                        Budget *budget)
 {
     RsolveResult out;
     if (coeffs.size() < 2 || rhs.isNull() || n.isNull() ||
         c.kind(n) != NodeKind::Symbol) {
-        out.reason = "invalid recurrence specification";
+        out.reason.assign("invalid recurrence specification");
         return out;
     }
     keel::usize orderK = coeffs.size() - 1;
     while (orderK > 0 && c.isZero(coeffs[orderK]))
         --orderK;
     if (orderK == 0) {
-        out.reason = "leading recurrence coefficient is zero";
+        out.reason.assign("leading recurrence coefficient is zero");
         return out;
     }
     if (initVals.size() < orderK) {
-        out.reason = "insufficient initial values for recurrence order";
+        out.reason.assign("insufficient initial values for recurrence order");
         return out;
     }
     if (!checkZBudget(c, budget, out.reason))
@@ -1054,8 +1055,8 @@ RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
     const Expr z = c.symbol("_z_rsolve");
     // Build characteristic polynomial P(z) = sum_{k=0}^K a_k * z^k
     // and initial-condition numerator I(z) = sum_{k=1}^K a_k * sum_{j=0}^{k-1} y(j) * z^(k - j).
-    std::vector<Expr> pTerms;
-    std::vector<Expr> initTerms;
+    keel::Array<Expr> pTerms;
+    keel::Array<Expr> initTerms;
     for (keel::usize k = 0; k <= orderK; ++k) {
         if (c.isZero(coeffs[k]))
             continue;
@@ -1078,8 +1079,7 @@ RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
     if (!c.isZero(rhs)) {
         const ZTransResult zr = ztrans(c, rhs, n, z, budget);
         if (!zr.proved()) {
-            out.reason = "unable to Z-transform recurrence right-hand side: " +
-                         zr.reason;
+            out.reason = keel::format("unable to Z-transform recurrence right-hand side: {}", zr.reason);
             return out;
         }
         rhsZ = zr.F;
@@ -1088,16 +1088,13 @@ RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
     const Expr yZ = simplifyRationalExpr(c, c.div(c.add({rhsZ, initZ}), pZ));
     const ZTransResult inv = iztrans(c, yZ, z, n, budget);
     if (!inv.proved()) {
-        out.reason = "unable to invert Z-transform of recurrence solution: " +
-                     inv.reason;
+        out.reason = keel::format("unable to invert Z-transform of recurrence solution: {}", inv.reason);
         return out;
     }
 
-    std::vector<Expr> trimmedCoeffs(coeffs.begin(),
-                                    coeffs.begin() +
-                                        static_cast<keel::isize>(orderK + 1));
+    keel::ArrayRef<Expr> trimmedCoeffs = coeffs.slice(0, orderK + 1);
     if (!certifyRecurrence(c, trimmedCoeffs, rhs, inv.F, n)) {
-        out.reason = "recurrence solution failed residual certificate";
+        out.reason.assign("recurrence solution failed residual certificate");
         return out;
     }
     for (keel::usize j = 0; j < orderK; ++j) {
@@ -1105,7 +1102,7 @@ RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
             evalDiscreteAtInt(c, inv.F, n, static_cast<keel::i64>(j));
         const Expr err = c.simplify(c.add({yAtJ, c.neg(initVals[j])}));
         if (err.isNull() || !c.isZero(err)) {
-            out.reason = "recurrence solution failed initial value certificate";
+            out.reason.assign("recurrence solution failed initial value certificate");
             return out;
         }
     }
@@ -1115,27 +1112,27 @@ RsolveResult rsolveIVP(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs,
     return out;
 }
 
-RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
+RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                     Budget *budget)
 {
     RsolveResult out;
     if (coeffs.size() < 2 || rhs.isNull() || n.isNull() ||
         c.kind(n) != NodeKind::Symbol) {
-        out.reason = "invalid recurrence specification";
+        out.reason.assign("invalid recurrence specification");
         return out;
     }
     keel::usize orderK = coeffs.size() - 1;
     while (orderK > 0 && c.isZero(coeffs[orderK]))
         --orderK;
     if (orderK == 0) {
-        out.reason = "leading recurrence coefficient is zero";
+        out.reason.assign("leading recurrence coefficient is zero");
         return out;
     }
     if (!checkZBudget(c, budget, out.reason))
         return out;
 
     const Expr z = c.symbol("_z_char");
-    std::vector<Expr> pTerms;
+    keel::Array<Expr> pTerms;
     for (keel::usize k = 0; k <= orderK; ++k) {
         if (!c.isZero(coeffs[k])) {
             pTerms.push_back(
@@ -1148,7 +1145,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
     const Expr pZ = c.add(pTerms);
 
     // Build K homogeneous basis modes from the roots/factors of P(z).
-    std::vector<Expr> basis;
+    keel::Array<Expr> basis;
     UPoly pNum, pDen;
     if (toRational(c, pZ, z, pNum, pDen) && pDen.isConst() && !pNum.isZero()) {
         int zeroMult = 0;
@@ -1161,15 +1158,15 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
             basis.push_back(c.func("kroneckerDelta", deltaArg));
             ++zeroMult;
         }
-        std::vector<Rational> nzCoeffs;
+        keel::Array<Rational> nzCoeffs;
         for (int i = zeroMult; i <= pNum.deg(); ++i)
             nzCoeffs.push_back(pNum.coeff(static_cast<keel::usize>(i)));
-        UPoly nzPoly(nzCoeffs);
+        UPoly nzPoly(keel::move(nzCoeffs));
         nzPoly.makeMonic();
         if (nzPoly.deg() >= 1) {
-            std::vector<UPoly> irreds = factorOverQ(nzPoly, budget);
+            keel::Array<UPoly> irreds = factorOverQ(nzPoly, budget);
             if (budget && !budget->ok()) {
-                out.reason = "budget exhausted during characteristic factorization";
+                out.reason.assign("budget exhausted during characteristic factorization");
                 return out;
             }
             struct FactorMult
@@ -1177,7 +1174,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
                 UPoly q;
                 int mult = 0;
             };
-            std::vector<FactorMult> fms;
+            keel::Array<FactorMult> fms;
             for (const UPoly &ir : irreds) {
                 bool found = false;
                 for (auto &fm : fms) {
@@ -1253,7 +1250,7 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
     // Symbolic root fallback when P(z) contains parameters.
     if (basis.size() != orderK) {
         basis.clear();
-        const std::vector<Expr> roots = solveSymbolic(c, pZ, z, budget);
+        const keel::Array<Expr> roots = solveSymbolic(c, pZ, z, budget);
         for (const Expr &r : roots) {
             if (c.isZero(r))
                 continue;
@@ -1280,33 +1277,31 @@ RsolveResult rsolve(Ctx &c, const std::vector<Expr> &coeffs, Expr rhs, Expr n,
     }
 
     if (basis.size() != orderK) {
-        out.reason = "unable to construct complete homogeneous recurrence basis";
+        out.reason.assign("unable to construct complete homogeneous recurrence basis");
         return out;
     }
 
-    std::vector<Expr> solTerms;
+    keel::Array<Expr> solTerms;
     for (keel::usize i = 0; i < orderK; ++i) {
-        const Expr ci = c.symbol("C" + std::to_string(i + 1));
+        const Expr ci = c.symbol(keel::format("C{}", i + 1));
         solTerms.push_back(c.mul({ci, basis[i]}));
     }
 
     if (!c.isZero(rhs)) {
-        std::vector<Expr> zeroInits(orderK, c.zero());
+        keel::Array<Expr> zeroInits(orderK, c.zero());
         const RsolveResult part =
             rsolveIVP(c, coeffs, rhs, n, zeroInits, budget);
         if (!part.proved()) {
-            out.reason = part.reason;
+            out.reason = part.reason.clone();
             return out;
         }
         solTerms.push_back(part.y);
     }
 
     const Expr ySol = c.simplify(c.add(solTerms));
-    std::vector<Expr> trimmedCoeffs(coeffs.begin(),
-                                    coeffs.begin() +
-                                        static_cast<keel::isize>(orderK + 1));
+    keel::ArrayRef<Expr> trimmedCoeffs = coeffs.slice(0, orderK + 1);
     if (!certifyRecurrence(c, trimmedCoeffs, rhs, ySol, n)) {
-        out.reason = "general recurrence solution failed residual certificate";
+        out.reason.assign("general recurrence solution failed residual certificate");
         return out;
     }
 

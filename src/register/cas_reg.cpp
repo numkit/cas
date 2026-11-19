@@ -1,15 +1,15 @@
 // src/register/cas_reg.cpp — Registration hub for Symbolic Math Toolbox (numkit::cas).
+#include <keel/array.h>
 #include <keel/core.h>
 #include <keel/memory.h>
 #include <keel/ref.h>
+#include <keel/string.h>
 #include <numkit/cas/library.hpp>
 #include <numkit/cas/sym_value.hpp>
 #include <numkit/sys/plugin.hpp>
 #include <numkit/value/argcheck.hpp>
 
-#include <string>
 #include <utility>
-#include <vector>
 
 namespace numkit::cas::detail {
 
@@ -27,7 +27,7 @@ void sym_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArray
 void syms_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 64, "syms");
-    std::vector<std::pair<std::string, Value>> bindings;
+    keel::Array<std::pair<keel::String, Value>> bindings;
     symsCommand(args, bindings, mrOf(ctx));
     if (ctx.engine) {
         auto *pluginCtx = reinterpret_cast<PluginContext *>(ctx.engine);

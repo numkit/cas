@@ -1,9 +1,11 @@
 // include/numkit/cas/sym_value.hpp — Value bridge and BuiltinClass for numkit::cas.
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
 #include <keel/memory.h>
 #include <keel/ref.h>
+#include <keel/smart_ptr.h>
 #include <keel/string.h>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/linalg/symmatrix.hpp>
@@ -11,21 +13,18 @@
 #include <numkit/value/value.hpp>
 
 #include <cstddef>
-#include <memory>
-#include <string>
 #include <utility>
-#include <vector>
 
 namespace numkit::cas {
 
 struct SymPayload : public numkit::NativePayload
 {
-    std::shared_ptr<Ctx> ctx;
+    keel::Arc<Ctx> ctx;
     Expr expr;
 
     SymPayload() = default;
-    SymPayload(std::shared_ptr<Ctx> c, Expr e)
-        : ctx(std::move(c)), expr(e)
+    SymPayload(keel::Arc<Ctx> c, Expr e)
+        : ctx(keel::move(c)), expr(e)
     {
     }
 
@@ -36,19 +35,19 @@ struct SymPayload : public numkit::NativePayload
 };
 
 // Shared symbolic context for the current session.
-std::shared_ptr<Ctx> defaultCtx();
+keel::Arc<Ctx> defaultCtx();
 
 // Conversion helpers between numkit::Value and numkit::cas::Expr / SymMatrix.
 bool isSymValue(const numkit::Value &v) noexcept;
 Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName = "sym");
 SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName = "sym");
-std::vector<Expr> toSymVector(const numkit::Value &v, Ctx &c, const char *fnName = "sym");
+keel::Array<Expr> toSymVector(const numkit::Value &v, Ctx &c, const char *fnName = "sym");
 
-numkit::Value fromSymExpr(const std::shared_ptr<Ctx> &c, Expr e,
+numkit::Value fromSymExpr(const keel::Arc<Ctx> &c, Expr e,
                           keel::Allocator *mr = nullptr);
-numkit::Value fromSymMatrix(const std::shared_ptr<Ctx> &c, const SymMatrix &M,
+numkit::Value fromSymMatrix(const keel::Arc<Ctx> &c, const SymMatrix &M,
                             keel::Allocator *mr = nullptr);
-numkit::Value fromSymVector(const std::shared_ptr<Ctx> &c, const std::vector<Expr> &vec,
+numkit::Value fromSymVector(const keel::Arc<Ctx> &c, keel::ArrayRef<Expr> vec,
                             bool column = true,
                             keel::Allocator *mr = nullptr);
 
@@ -59,7 +58,7 @@ numkit::BuiltinClass makeSymBuiltinClass();
 numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
                         keel::Allocator *mr = nullptr);
 void symsCommand(keel::ArrayRef<numkit::Value> args,
-                 std::vector<std::pair<std::string, numkit::Value>> &bindingsOut,
+                 keel::Array<std::pair<keel::String, numkit::Value>> &bindingsOut,
                  keel::Allocator *mr = nullptr);
 numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
                         keel::Allocator *mr = nullptr);

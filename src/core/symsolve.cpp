@@ -13,8 +13,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
-#include <string>
-#include <vector>
+#include <keel/array.h>
+#include <keel/string.h>
 
 namespace numkit::cas {
 
@@ -114,7 +114,7 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, keel::i64 n)
             }
         }
         if (hasExactPowerChild) {
-            std::vector<Expr> parts;
+            keel::Array<Expr> parts;
             for (keel::usize i = 0; i < c.childCount(rhs); ++i)
                 parts.push_back(nthRootSymbolic(c, c.child(rhs, i), n));
             return c.simplify(c.mul(parts));
@@ -145,7 +145,7 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, keel::i64 n)
     return c.simplify(c.pow(rhs, c.number(Rational(keel::i64{1}, BigInt(n)))));
 }
 
-void addUniqueRoot(Ctx &c, std::vector<Expr> &roots, Expr cand)
+void addUniqueRoot(Ctx &c, keel::Array<Expr> &roots, Expr cand)
 {
     if (cand.isNull())
         return;
@@ -210,7 +210,7 @@ bool hasPoleAt(Ctx &c, Expr e, Expr var, Expr root)
 // symbols/parameters). Returns false if `poly` is not a polynomial in `var`
 // of degree <= maxDeg.
 bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
-                            std::vector<Expr> &coeffs)
+                            keel::Array<Expr> &coeffs)
 {
     const Expr expd = c.expand(poly);
     if (expd.isNull())
@@ -220,7 +220,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
         return true;
     }
 
-    std::vector<std::vector<Expr>> buckets(static_cast<keel::usize>(maxDeg + 1));
+    keel::Array<keel::Array<Expr>> buckets(static_cast<keel::usize>(maxDeg + 1));
 
     auto processTerm = [&](Expr term) -> bool {
         if (!mentionsVar(c, term, var)) {
@@ -246,7 +246,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
         }
         if (c.kind(term) == NodeKind::Mul) {
             keel::i64 deg = 0;
-            std::vector<Expr> cofactors;
+            keel::Array<Expr> cofactors;
             for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr f = c.child(term, i);
                 if (!mentionsVar(c, f, var)) {
@@ -299,7 +299,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
 // Peel a single-occurrence equation `lhs(var) == rhs` where `var` appears
 // once in `lhs` and does not appear in `rhs`.
 bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
-                           std::vector<Expr> &out)
+                           keel::Array<Expr> &out)
 {
     if (lhs == var) {
         addUniqueRoot(c, out, rhs);
@@ -308,7 +308,7 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
     switch (c.kind(lhs)) {
     case NodeKind::Add: {
         keel::usize varIdx = c.childCount(lhs);
-        std::vector<Expr> rest;
+        keel::Array<Expr> rest;
         for (keel::usize i = 0; i < c.childCount(lhs); ++i) {
             const Expr ch = c.child(lhs, i);
             if (mentionsVar(c, ch, var)) {
@@ -327,7 +327,7 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
     }
     case NodeKind::Mul: {
         keel::usize varIdx = c.childCount(lhs);
-        std::vector<Expr> rest;
+        keel::Array<Expr> rest;
         for (keel::usize i = 0; i < c.childCount(lhs); ++i) {
             const Expr ch = c.child(lhs, i);
             if (mentionsVar(c, ch, var)) {
@@ -400,7 +400,7 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
         return false;
     }
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(lhs);
+        const keel::String &fn = c.funcName(lhs);
         const Expr arg = c.child(lhs, 0);
         if (fn == "exp") {
             if (isZeroAfterSimplify(c, rhs) ||
@@ -469,7 +469,7 @@ bool solveSingleOccurrence(Ctx &c, Expr lhs, Expr rhs, Expr var,
 }
 
 void solveQuadraticCoeffs(Ctx &c, Expr c0, Expr c1, Expr c2,
-                          std::vector<Expr> &out)
+                          keel::Array<Expr> &out)
 {
     // c2 * x^2 + c1 * x + c0 = 0
     const Expr four = c.number(keel::i64{4});
@@ -488,9 +488,10 @@ void solveQuadraticCoeffs(Ctx &c, Expr c0, Expr c1, Expr c2,
     addUniqueRoot(c, out, c.div(c.add({c.neg(c1), sqrtDisc}), twoA));
 }
 
-void solvePolyCoeffs(Ctx &c, std::vector<Expr> coeffs,
-                     std::vector<Expr> &out)
+void solvePolyCoeffs(Ctx &c, keel::ArrayRef<Expr> coeffsIn,
+                     keel::Array<Expr> &out)
 {
+    keel::Array<Expr> coeffs = keel::Array<Expr>::from(coeffsIn);
     while (coeffs.size() > 1 && isZeroAfterSimplify(c, coeffs.back()))
         coeffs.pop_back();
     if (coeffs.size() <= 1)
@@ -502,8 +503,7 @@ void solvePolyCoeffs(Ctx &c, std::vector<Expr> coeffs,
         ++low;
     if (low > 0) {
         addUniqueRoot(c, out, c.zero());
-        coeffs.erase(coeffs.begin(),
-                     coeffs.begin() + static_cast<keel::isize>(low));
+        coeffs = keel::Array<Expr>::from(coeffs.slice(low));
     }
     if (coeffs.size() <= 1)
         return;
@@ -553,7 +553,7 @@ void solvePolyCoeffs(Ctx &c, std::vector<Expr> coeffs,
     // Biquadratic degree 4: c4 * x^4 + c2 * x^2 + c0 = 0 (c1 == 0, c3 == 0).
     if (deg == 4 && isZeroAfterSimplify(c, coeffs[1]) &&
         isZeroAfterSimplify(c, coeffs[3])) {
-        std::vector<Expr> uRoots;
+        keel::Array<Expr> uRoots;
         solveQuadraticCoeffs(c, coeffs[0], coeffs[2], coeffs[4], uRoots);
         const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
         for (const Expr &u : uRoots) {
@@ -570,7 +570,7 @@ void solvePolyCoeffs(Ctx &c, std::vector<Expr> coeffs,
     }
 }
 
-void collectAllSymbols(const Ctx &c, Expr e, std::vector<Expr> &syms)
+void collectAllSymbols(const Ctx &c, Expr e, keel::Array<Expr> &syms)
 {
     if (e.isNull())
         return;
@@ -584,7 +584,7 @@ void collectAllSymbols(const Ctx &c, Expr e, std::vector<Expr> &syms)
 }
 
 void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
-              std::vector<Expr> &candidates)
+              keel::Array<Expr> &candidates)
 {
     if (e.isNull() || !checkSolveBudget(c, budget))
         return;
@@ -628,7 +628,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
     const Expr rat = simplifyRationalExpr(c, e);
     Expr numExpr = rat.isNull() ? e : rat;
     if (c.kind(numExpr) == NodeKind::Mul) {
-        std::vector<Expr> numFactors;
+        keel::Array<Expr> numFactors;
         for (keel::usize i = 0; i < c.childCount(numExpr); ++i) {
             const Expr ch = c.child(numExpr, i);
             if (c.kind(ch) == NodeKind::Pow &&
@@ -642,7 +642,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
     }
 
     // 4. Univariate polynomial over Q[var]: factor via Zassenhaus `factorOverQ`.
-    std::vector<Expr> syms;
+    keel::Array<Expr> syms;
     collectAllSymbols(c, numExpr, syms);
     if (syms.size() == 1 && syms[0] == var) {
         UPoly upN, upD;
@@ -650,7 +650,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
             !upN.isZero()) {
             UPoly sq = upN.squarefreePart();
             sq.makeMonic();
-            const std::vector<UPoly> factors = factorOverQ(sq, budget);
+            const keel::Array<UPoly> factors = factorOverQ(sq, budget);
             for (const UPoly &f : factors) {
                 if (f.deg() == 1) {
                     addUniqueRoot(c, candidates,
@@ -667,10 +667,10 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
                                      c.number(f.coeff(4))},
                                     candidates);
                 } else if (f.deg() >= 3) {
-                    const std::vector<RootInterval> ivs = isolateRealRoots(f);
+                    const keel::Array<RootInterval> ivs = isolateRealRoots(f);
                     for (keel::usize idx = 0; idx < ivs.size(); ++idx) {
                         addUniqueRoot(c, candidates,
-                                      c.rootOf(f.coeffs(), static_cast<int>(idx)));
+                                      c.rootOf(f.coeffs().clone(), static_cast<int>(idx)));
                     }
                 }
             }
@@ -679,7 +679,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
     }
 
     // 5. Symbolic polynomial in `var` with symbolic parameters (degree <= 8).
-    std::vector<Expr> coeffs;
+    keel::Array<Expr> coeffs;
     if (extractPolyCoeffsInVar(c, numExpr, var, 8, coeffs)) {
         solvePolyCoeffs(c, std::move(coeffs), candidates);
     }
@@ -687,15 +687,15 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
 
 } // namespace
 
-std::vector<Expr> solveSymbolic(Ctx &c, Expr eqn, Expr var, Budget *budget)
+keel::Array<Expr> solveSymbolic(Ctx &c, Expr eqn, Expr var, Budget *budget)
 {
-    std::vector<Expr> raw;
+    keel::Array<Expr> raw;
     if (eqn.isNull() || var.isNull())
         return raw;
     solveRaw(c, eqn, var, budget, raw);
 
     // Filter out extraneous roots that hit poles of the original equation.
-    std::vector<Expr> valid;
+    keel::Array<Expr> valid;
     for (const Expr &r : raw) {
         if (!hasPoleAt(c, eqn, var, r))
             addUniqueRoot(c, valid, r);
@@ -705,10 +705,10 @@ std::vector<Expr> solveSymbolic(Ctx &c, Expr eqn, Expr var, Budget *budget)
     return valid;
 }
 
-std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
+keel::Array<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
                                                 Expr x, Expr y, Budget *budget)
 {
-    std::vector<std::pair<Expr, Expr>> solutions;
+    keel::Array<std::pair<Expr, Expr>> solutions;
     if (eq1.isNull() || eq2.isNull() || x.isNull() || y.isNull())
         return solutions;
 
@@ -718,7 +718,7 @@ std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
         const Expr src = rat.isNull() ? e : rat;
         if (c.kind(src) != NodeKind::Mul)
             return src;
-        std::vector<Expr> numFactors;
+        keel::Array<Expr> numFactors;
         for (keel::usize i = 0; i < c.childCount(src); ++i) {
             const Expr ch = c.child(src, i);
             if (c.kind(ch) == NodeKind::Pow &&
@@ -733,7 +733,7 @@ std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
     const Expr F = numeratorPart(eq1);
     const Expr G = numeratorPart(eq2);
 
-    std::vector<Expr> aCoeffs, bCoeffs;
+    keel::Array<Expr> aCoeffs, bCoeffs;
     if (!extractPolyCoeffsInVar(c, F, y, 4, aCoeffs) ||
         !extractPolyCoeffsInVar(c, G, y, 4, bCoeffs)) {
         return solutions;
@@ -744,7 +744,7 @@ std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
     if (m < 0 || n < 0 || (m == 0 && n == 0))
         return solutions;
 
-    std::vector<Expr> xCandidates;
+    keel::Array<Expr> xCandidates;
     if (m == 0) {
         // F depends only on x: solve F(x) == 0 directly.
         xCandidates = solveSymbolic(c, F, x, budget);
@@ -784,8 +784,8 @@ std::vector<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
             break;
         const Expr Fy = c.simplify(c.subs(F, x, xVal));
         const Expr Gy = c.simplify(c.subs(G, x, xVal));
-        std::vector<Expr> yCands = solveSymbolic(c, Fy, y, budget);
-        const std::vector<Expr> yCands2 = solveSymbolic(c, Gy, y, budget);
+        keel::Array<Expr> yCands = solveSymbolic(c, Fy, y, budget);
+        const keel::Array<Expr> yCands2 = solveSymbolic(c, Gy, y, budget);
         for (const Expr &yc : yCands2)
             addUniqueRoot(c, yCands, yc);
 
@@ -820,7 +820,7 @@ Expr extractNumeratorExpr(Ctx &c, Expr e)
     const Expr src = rat.isNull() ? e : rat;
     if (c.kind(src) != NodeKind::Mul)
         return src;
-    std::vector<Expr> numFactors;
+    keel::Array<Expr> numFactors;
     for (keel::usize i = 0; i < c.childCount(src); ++i) {
         const Expr ch = c.child(src, i);
         if (c.kind(ch) == NodeKind::Pow &&
@@ -832,9 +832,9 @@ Expr extractNumeratorExpr(Ctx &c, Expr e)
     return numFactors.empty() ? c.one() : c.mul(numFactors);
 }
 
-bool certifySystemTuple(Ctx &c, const std::vector<Expr> &eqs,
-                        const std::vector<Expr> &vars,
-                        const std::vector<Expr> &sol)
+bool certifySystemTuple(Ctx &c, keel::ArrayRef<Expr> eqs,
+                        keel::ArrayRef<Expr> vars,
+                        keel::ArrayRef<Expr> sol)
 {
     if (sol.size() != vars.size())
         return false;
@@ -851,8 +851,8 @@ bool certifySystemTuple(Ctx &c, const std::vector<Expr> &eqs,
     return true;
 }
 
-void addUniqueSystemTuple(Ctx &c, std::vector<std::vector<Expr>> &out,
-                          const std::vector<Expr> &cand)
+void addUniqueSystemTuple(Ctx &c, keel::Array<keel::Array<Expr>> &out,
+                          keel::ArrayRef<Expr> cand)
 {
     for (const auto &existing : out) {
         if (existing.size() != cand.size())
@@ -867,16 +867,16 @@ void addUniqueSystemTuple(Ctx &c, std::vector<std::vector<Expr>> &out,
         if (same)
             return;
     }
-    out.push_back(cand);
+    out.push_back(keel::Array<Expr>::from(cand));
 }
 
 // Recursive triangular back-substitution over a Lex Groebner basis `basis`
 // from `idx = k - 1` down to `0`.
-void backSubstituteLexBasis(Ctx &c, const std::vector<Expr> &basis,
-                            const std::vector<Expr> &origEqs,
-                            const std::vector<Expr> &vars, int idx,
-                            std::vector<Expr> &partial, Budget *budget,
-                            std::vector<std::vector<Expr>> &out)
+void backSubstituteLexBasis(Ctx &c, keel::ArrayRef<Expr> basis,
+                            keel::ArrayRef<Expr> origEqs,
+                            keel::ArrayRef<Expr> vars, int idx,
+                            keel::Array<Expr> &partial, Budget *budget,
+                            keel::Array<keel::Array<Expr>> &out)
 {
     if (!checkSolveBudget(c, budget))
         return;
@@ -891,7 +891,7 @@ void backSubstituteLexBasis(Ctx &c, const std::vector<Expr> &basis,
 
     // Specialize all basis polynomials at already-bound variables vars[idx + 1 .. k - 1],
     // and collect those that depend on `curVar` and on NO earlier variables vars[0 .. idx - 1].
-    std::vector<Expr> uniPolys;
+    keel::Array<Expr> uniPolys;
     for (const Expr &g : basis) {
         Expr spec = g;
         for (keel::usize j = uIdx + 1; j < vars.size(); ++j)
@@ -924,7 +924,7 @@ void backSubstituteLexBasis(Ctx &c, const std::vector<Expr> &basis,
     auto bestIt = std::min_element(
         uniPolys.begin(), uniPolys.end(),
         [&](Expr a, Expr b) { return c.exprCost(a) < c.exprCost(b); });
-    const std::vector<Expr> roots = solveSymbolic(c, *bestIt, curVar, budget);
+    const keel::Array<Expr> roots = solveSymbolic(c, *bestIt, curVar, budget);
     for (const Expr &r : roots) {
         bool allVanish = true;
         for (const Expr &up : uniPolys) {
@@ -943,12 +943,12 @@ void backSubstituteLexBasis(Ctx &c, const std::vector<Expr> &basis,
 
 } // namespace
 
-std::vector<std::vector<Expr>> solveSystem(Ctx &c,
-                                           const std::vector<Expr> &eqs,
-                                           const std::vector<Expr> &vars,
+keel::Array<keel::Array<Expr>> solveSystem(Ctx &c,
+                                           keel::ArrayRef<Expr> eqs,
+                                           keel::ArrayRef<Expr> vars,
                                            Budget *budget)
 {
-    std::vector<std::vector<Expr>> solutions;
+    keel::Array<keel::Array<Expr>> solutions;
     if (eqs.empty() || vars.empty() || !checkSolveBudget(c, budget))
         return solutions;
     for (const Expr &eq : eqs) {
@@ -966,10 +966,10 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
 
     // 1. Single-variable case
     if (vars.size() == 1) {
-        const std::vector<Expr> roots =
+        const keel::Array<Expr> roots =
             solveSymbolic(c, eqs[0], vars[0], budget);
         for (const Expr &r : roots) {
-            const std::vector<Expr> tup = {r};
+            const keel::Array<Expr> tup = {r};
             if (certifySystemTuple(c, eqs, vars, tup))
                 addUniqueSystemTuple(c, solutions, tup);
         }
@@ -977,7 +977,7 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
     }
 
     // 2. Lexicographic Groebner basis triangular elimination over Q[vars]
-    std::vector<Expr> numEqs;
+    keel::Array<Expr> numEqs;
     numEqs.reserve(eqs.size());
     for (const Expr &eq : eqs)
         numEqs.push_back(extractNumeratorExpr(c, eq));
@@ -987,7 +987,7 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
     if (gb.proved()) {
         if (gb.basis.size() == 1 && gb.basis[0] == c.one())
             return solutions; // inconsistent system (<1> unit ideal)
-        std::vector<Expr> partial(vars.size());
+        keel::Array<Expr> partial(vars.size());
         backSubstituteLexBasis(c, gb.basis, eqs, vars,
                                static_cast<int>(vars.size()) - 1, partial,
                                budget, solutions);
@@ -1000,7 +1000,7 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
     //    eliminate `vars[j]` and recurse on the remaining N - 1 variables.
     for (keel::usize eqIdx = 0; eqIdx < numEqs.size(); ++eqIdx) {
         for (keel::usize vIdx = 0; vIdx < vars.size(); ++vIdx) {
-            std::vector<Expr> lCoeffs;
+            keel::Array<Expr> lCoeffs;
             if (!extractPolyCoeffsInVar(c, numEqs[eqIdx], vars[vIdx], 1,
                                         lCoeffs) ||
                 lCoeffs.size() != 2) {
@@ -1018,14 +1018,14 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
                 continue;
 
             const Expr exprForVj = c.simplify(c.div(c.neg(lCoeffs[0]), a1));
-            std::vector<Expr> subEqs;
+            keel::Array<Expr> subEqs;
             for (keel::usize i = 0; i < eqs.size(); ++i) {
                 if (i == eqIdx)
                     continue;
                 subEqs.push_back(
                     c.simplify(c.subs(eqs[i], vars[vIdx], exprForVj)));
             }
-            std::vector<Expr> remVars;
+            keel::Array<Expr> remVars;
             for (keel::usize i = 0; i < vars.size(); ++i) {
                 if (i != vIdx)
                     remVars.push_back(vars[i]);
@@ -1038,7 +1038,7 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
                 for (keel::usize i = 0; i < remVars.size(); ++i)
                     valVj = c.subs(valVj, remVars[i], subTup[i]);
                 valVj = c.simplify(valVj);
-                std::vector<Expr> fullTup;
+                keel::Array<Expr> fullTup;
                 fullTup.reserve(vars.size());
                 keel::usize remCursor = 0;
                 for (keel::usize i = 0; i < vars.size(); ++i) {
@@ -1060,7 +1060,7 @@ std::vector<std::vector<Expr>> solveSystem(Ctx &c,
         const auto pairs =
             solveSystem2(c, eqs[0], eqs[1], vars[0], vars[1], budget);
         for (const auto &pr : pairs) {
-            const std::vector<Expr> tup = {pr.first, pr.second};
+            const keel::Array<Expr> tup = {pr.first, pr.second};
             if (certifySystemTuple(c, eqs, vars, tup))
                 addUniqueSystemTuple(c, solutions, tup);
         }

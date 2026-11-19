@@ -38,7 +38,7 @@ struct ExprTest : public ::testing::Test
         z = c.symbol("z");
     }
 
-    std::string str(Expr e) const { return c.toString(e); }
+    std::string str(Expr e) const { return std::string(c.toString(e).as_ref()); }
 
     Expr clone(Expr e)
     {
@@ -318,8 +318,8 @@ TEST_F(RandomExprTest, CloneRebuildIsIdentical)
         const Expr e = rnd(4);
         const keel::usize before = c.nodeCount();
         const Expr again = clone(e);
-        ASSERT_EQ(again, e) << "iter " << iter << ": " << c.toString(e)
-                            << " vs " << c.toString(again);
+        ASSERT_EQ(again, e) << "iter " << iter << ": " << c.toString(e).c_str()
+                            << " vs " << c.toString(again).c_str();
         ASSERT_EQ(c.nodeCount(), before) << "interner grew on rebuild";
         ASSERT_EQ(c.toString(again), c.toString(e));
         ASSERT_EQ(c.compare(again, e), 0);
@@ -333,7 +333,7 @@ TEST_F(RandomExprTest, CompareAntisymmetryAndIdentity)
         const Expr b = rnd(4);
         const int ab = c.compare(a, b);
         const int ba = c.compare(b, a);
-        ASSERT_EQ(ab, -ba) << c.toString(a) << " vs " << c.toString(b);
+        ASSERT_EQ(ab, -ba) << c.toString(a).c_str() << " vs " << c.toString(b).c_str();
         ASSERT_EQ(ab == 0, a == b);
     }
 }
@@ -355,7 +355,7 @@ TEST_F(RandomExprTest, RepeatedBuildIsIdentical)
         const Expr b = rnd(3);
         const Expr e1 = c.add({a, b, a});
         const Expr e2 = c.add({clone(a), clone(b), clone(a)});
-        ASSERT_EQ(e1, e2) << c.toString(e1) << " vs " << c.toString(e2);
+        ASSERT_EQ(e1, e2) << c.toString(e1).c_str() << " vs " << c.toString(e2).c_str();
     }
 }
 

@@ -1,11 +1,10 @@
 // core/simplify.hpp — cost-guided algebraic and transcendental simplification.
 #pragma once
 
+#include <keel/array.h>
+#include <keel/string.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
-
-#include <string>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -32,9 +31,26 @@ NumDenResult numden(Ctx &c, Expr e, Budget *budget = nullptr);
 
 struct PolyCoeffsResult
 {
-    std::vector<Expr> coefficients; // non-zero coefficients in ascending power order (MATLAB `[c, t] = coeffs(p, x)`)
-    std::vector<Expr> terms;        // corresponding monomials `var^k`
-    std::vector<Expr> dense;        // dense coefficient vector `[c_0, c_1, ..., c_d]` from degree 0 to d
+    keel::Array<Expr> coefficients; // non-zero coefficients in ascending power order (MATLAB `[c, t] = coeffs(p, x)`)
+    keel::Array<Expr> terms;        // corresponding monomials `var^k`
+    keel::Array<Expr> dense;        // dense coefficient vector `[c_0, c_1, ..., c_d]` from degree 0 to d
+
+    PolyCoeffsResult() noexcept = default;
+    PolyCoeffsResult(const PolyCoeffsResult &o)
+        : coefficients(o.coefficients.clone()), terms(o.terms.clone()), dense(o.dense.clone())
+    {
+    }
+    PolyCoeffsResult &operator=(const PolyCoeffsResult &o)
+    {
+        if (this != &o) {
+            coefficients = o.coefficients.clone();
+            terms = o.terms.clone();
+            dense = o.dense.clone();
+        }
+        return *this;
+    }
+    PolyCoeffsResult(PolyCoeffsResult &&) noexcept = default;
+    PolyCoeffsResult &operator=(PolyCoeffsResult &&) noexcept = default;
 };
 
 // Extract polynomial coefficients and monomial terms of `e` with respect to
@@ -54,14 +70,14 @@ Expr partfrac(Ctx &c, Expr e, Expr var, Budget *budget = nullptr);
 
 // Render `e` as publication-ready LaTeX math (`\frac`, `\sqrt`, Greek symbols,
 // trigonometric/special functions).
-std::string toLatex(const Ctx &c, Expr e);
+keel::String toLatex(const Ctx &c, Expr e);
 
-inline std::string latex(const Ctx &c, Expr e) { return toLatex(c, e); }
+inline keel::String latex(const Ctx &c, Expr e) { return toLatex(c, e); }
 
 // Render `e` as valid C/C++ floating-point expression code (`std::pow`,
 // `std::sqrt`, `std::sin`, `std::cos`, `std::tgamma`, etc.).
-std::string toCCode(const Ctx &c, Expr e);
+keel::String toCCode(const Ctx &c, Expr e);
 
-inline std::string ccode(const Ctx &c, Expr e) { return toCCode(c, e); }
+inline keel::String ccode(const Ctx &c, Expr e) { return toCCode(c, e); }
 
 } // namespace numkit::cas

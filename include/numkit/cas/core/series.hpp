@@ -1,11 +1,10 @@
 // core/series.hpp — truncated Taylor/Laurent power series and symbolic limits.
 #pragma once
 
+#include <keel/array.h>
+#include <keel/string.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
-
-#include <string>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -43,7 +42,25 @@ struct LimitResult
     Status status = Status::Unevaluated;
     Expr value; // limit value when status == Proved; null otherwise
     int poleOrder = 0; // positive pole order when status == Divergent
-    std::string reason;
+    keel::String reason;
+
+    LimitResult() noexcept = default;
+    LimitResult(const LimitResult &o)
+        : status(o.status), value(o.value), poleOrder(o.poleOrder), reason(o.reason.clone())
+    {
+    }
+    LimitResult &operator=(const LimitResult &o)
+    {
+        if (this != &o) {
+            status = o.status;
+            value = o.value;
+            poleOrder = o.poleOrder;
+            reason = o.reason.clone();
+        }
+        return *this;
+    }
+    LimitResult(LimitResult &&) noexcept = default;
+    LimitResult &operator=(LimitResult &&) noexcept = default;
 
     bool proved() const { return status == Status::Proved; }
 };
@@ -81,7 +98,25 @@ struct SymSumResult
     Status status = Status::Unevaluated;
     Expr value;    // closed-form sum when status == ProvedSymbolic
     Expr antidiff; // discrete antidifference G(var) with G(var + 1) - G(var) == f(var) when applicable
-    std::string reason;
+    keel::String reason;
+
+    SymSumResult() noexcept = default;
+    SymSumResult(const SymSumResult &o)
+        : status(o.status), value(o.value), antidiff(o.antidiff), reason(o.reason.clone())
+    {
+    }
+    SymSumResult &operator=(const SymSumResult &o)
+    {
+        if (this != &o) {
+            status = o.status;
+            value = o.value;
+            antidiff = o.antidiff;
+            reason = o.reason.clone();
+        }
+        return *this;
+    }
+    SymSumResult(SymSumResult &&) noexcept = default;
+    SymSumResult &operator=(SymSumResult &&) noexcept = default;
 
     bool proved() const { return status == Status::ProvedSymbolic; }
 };
@@ -111,7 +146,26 @@ struct PadeResult
     Expr value;       // R_{m,n}(var) = numerator / denominator when proved
     Expr numerator;   // P_m(var - x0) of degree <= m
     Expr denominator; // Q_n(var - x0) of degree <= n with Q_n(x0) == 1
-    std::string reason;
+    keel::String reason;
+
+    PadeResult() noexcept = default;
+    PadeResult(const PadeResult &o)
+        : status(o.status), value(o.value), numerator(o.numerator), denominator(o.denominator), reason(o.reason.clone())
+    {
+    }
+    PadeResult &operator=(const PadeResult &o)
+    {
+        if (this != &o) {
+            status = o.status;
+            value = o.value;
+            numerator = o.numerator;
+            denominator = o.denominator;
+            reason = o.reason.clone();
+        }
+        return *this;
+    }
+    PadeResult(PadeResult &&) noexcept = default;
+    PadeResult &operator=(PadeResult &&) noexcept = default;
 
     bool proved() const { return status == Status::ProvedSymbolic; }
 };
@@ -132,8 +186,8 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n,
 // singularities), falling back to exact iterated partial differentiation.
 // Returns a null Expr if `order < 0`, `vars.size() != x0s.size()`, or if `f`
 // is singular at `x0s`.
-Expr mtaylor(Ctx &c, Expr f, const std::vector<Expr> &vars,
-             const std::vector<Expr> &x0s, int order,
+Expr mtaylor(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
+             keel::ArrayRef<Expr> x0s, int order,
              Budget *budget = nullptr);
 
 // Forward finite difference operator of order `order` (>= 0) with step `step`

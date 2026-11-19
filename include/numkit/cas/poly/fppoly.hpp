@@ -1,12 +1,12 @@
 // poly/fppoly.hpp — dense univariate polynomials over F_p.
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
 #include <numkit/cas/num/bigint.hpp>
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -21,8 +21,20 @@ namespace numkit::cas {
 class FpPoly
 {
 public:
-    FpPoly() = default;
-    FpPoly(keel::u64 p, std::vector<keel::u64> coeffs);
+    FpPoly() noexcept = default;
+    FpPoly(const FpPoly &o) : p_(o.p_), c_(o.c_.clone()) {}
+    FpPoly &operator=(const FpPoly &o)
+    {
+        if (this != &o) {
+            p_ = o.p_;
+            c_ = o.c_.clone();
+        }
+        return *this;
+    }
+    FpPoly(FpPoly &&) noexcept = default;
+    FpPoly &operator=(FpPoly &&) noexcept = default;
+
+    FpPoly(keel::u64 p, keel::Array<keel::u64> coeffs);
 
     static FpPoly constant(keel::u64 p, keel::u64 c);
     static FpPoly monomial(keel::u64 p, keel::u64 c, keel::usize exp);
@@ -66,7 +78,7 @@ public:
     // Complete factorization into monic irreducibles. Multiplicities
     // are dropped (the squarefree part of the input is factored).
     // Deterministic: the EDF randomizer is a fixed-seed PRNG.
-    static std::vector<FpPoly> factor(const FpPoly &f);
+    static keel::Array<FpPoly> factor(const FpPoly &f);
 
     // Irreducibility criterion for a monic squarefree g of degree d:
     // x^(p^d) = x (mod g) and gcd(x^(p^(d/q)) - x, g) = 1 for every
@@ -74,7 +86,7 @@ public:
     bool isIrreducible() const;
 
     keel::usize size() const { return c_.size(); }
-    const std::vector<keel::u64> &coeffsAll() const { return c_; }
+    const keel::Array<keel::u64> &coeffsAll() const { return c_; }
 
 private:
     static void checkSameField(const FpPoly &a, const FpPoly &b);
@@ -83,7 +95,7 @@ private:
     // visible for the anonymous-namespace factoring helpers
 
     keel::u64 p_ = 0;
-    std::vector<keel::u64> c_;
+    keel::Array<keel::u64> c_;
 };
 
 } // namespace numkit::cas

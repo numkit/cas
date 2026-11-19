@@ -1,11 +1,11 @@
 // integrate/ratint.hpp — rational function integration with certificate.
 #pragma once
 
+#include <keel/array.h>
+#include <keel/string.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/poly/upoly.hpp>
-
-#include <string>
 
 namespace numkit::cas {
 
@@ -34,7 +34,24 @@ struct RationalIntegral
 
     Status status = Status::Unevaluated;
     Expr F;           // antiderivative; null unless ProvedSymbolic
-    std::string reason;
+    keel::String reason;
+
+    RationalIntegral() noexcept = default;
+    RationalIntegral(const RationalIntegral &o)
+        : status(o.status), F(o.F), reason(o.reason.clone())
+    {
+    }
+    RationalIntegral &operator=(const RationalIntegral &o)
+    {
+        if (this != &o) {
+            status = o.status;
+            F = o.F;
+            reason = o.reason.clone();
+        }
+        return *this;
+    }
+    RationalIntegral(RationalIntegral &&) noexcept = default;
+    RationalIntegral &operator=(RationalIntegral &&) noexcept = default;
 
     bool proved() const { return status == Status::ProvedSymbolic; }
 };
@@ -89,7 +106,25 @@ struct DefiniteIntegral
     Status status = Status::Unevaluated;
     Expr value; // definite integral value when ProvedSymbolic
     Expr F;     // certified indefinite antiderivative used
-    std::string reason;
+    keel::String reason;
+
+    DefiniteIntegral() noexcept = default;
+    DefiniteIntegral(const DefiniteIntegral &o)
+        : status(o.status), value(o.value), F(o.F), reason(o.reason.clone())
+    {
+    }
+    DefiniteIntegral &operator=(const DefiniteIntegral &o)
+    {
+        if (this != &o) {
+            status = o.status;
+            value = o.value;
+            F = o.F;
+            reason = o.reason.clone();
+        }
+        return *this;
+    }
+    DefiniteIntegral(DefiniteIntegral &&) noexcept = default;
+    DefiniteIntegral &operator=(DefiniteIntegral &&) noexcept = default;
 
     bool proved() const { return status == Status::ProvedSymbolic; }
 };
@@ -114,7 +149,7 @@ struct DefiniteBound
 // Iterated indefinite integration int ... int f(vars) d(vars[0]) ... d(vars[k-1]),
 // certified by verifying the mixed partial derivative
 // d^k F / (d(vars[k-1]) ... d(vars[0])) == f.
-RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
+RationalIntegral integrateMulti(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
                                 Budget *budget = nullptr);
 
 // Iterated definite integration from innermost bound `bounds[0]` to
@@ -123,34 +158,34 @@ RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
 // where inner limits `a_i, b_i` may depend on outer integration variables
 // `var_{i+1}, ..., var_{k-1}` (triangles, disks, tetrahedra, spheres, etc.).
 DefiniteIntegral definiteIntegrateMulti(
-    Ctx &c, Expr f, const std::vector<DefiniteBound> &bounds,
+    Ctx &c, Expr f, keel::ArrayRef<DefiniteBound> bounds,
     Budget *budget = nullptr);
 
 // Line integral of the 1st kind (with respect to arc length ds):
 //   int_C f(vars) ds = int_a^b f(r(t)) * ||r'(t)|| dt
 DefiniteIntegral lineIntegralScalar(Ctx &c, Expr f,
-                                    const std::vector<Expr> &vars,
-                                    const std::vector<Expr> &curve, Expr t,
+                                    keel::ArrayRef<Expr> vars,
+                                    keel::ArrayRef<Expr> curve, Expr t,
                                     Expr a, Expr b, Budget *budget = nullptr);
 
 // Line integral of the 2nd kind (work/circulation of vector field F along C):
 //   int_C F(r) . dr = int_a^b sum_{i=0}^{n-1} F_i(r(t)) * r_i'(t) dt
-DefiniteIntegral lineIntegralVector(Ctx &c, const std::vector<Expr> &field,
-                                    const std::vector<Expr> &vars,
-                                    const std::vector<Expr> &curve, Expr t,
+DefiniteIntegral lineIntegralVector(Ctx &c, keel::ArrayRef<Expr> field,
+                                    keel::ArrayRef<Expr> vars,
+                                    keel::ArrayRef<Expr> curve, Expr t,
                                     Expr a, Expr b, Budget *budget = nullptr);
 
 inline DefiniteIntegral lineIntegral(Ctx &c, Expr f,
-                                     const std::vector<Expr> &vars,
-                                     const std::vector<Expr> &curve, Expr t,
+                                     keel::ArrayRef<Expr> vars,
+                                     keel::ArrayRef<Expr> curve, Expr t,
                                      Expr a, Expr b, Budget *budget = nullptr)
 {
     return lineIntegralScalar(c, f, vars, curve, t, a, b, budget);
 }
 
-inline DefiniteIntegral lineIntegral(Ctx &c, const std::vector<Expr> &field,
-                                     const std::vector<Expr> &vars,
-                                     const std::vector<Expr> &curve, Expr t,
+inline DefiniteIntegral lineIntegral(Ctx &c, keel::ArrayRef<Expr> field,
+                                     keel::ArrayRef<Expr> vars,
+                                     keel::ArrayRef<Expr> curve, Expr t,
                                      Expr a, Expr b, Budget *budget = nullptr)
 {
     return lineIntegralVector(c, field, vars, curve, t, a, b, budget);
@@ -163,8 +198,8 @@ inline DefiniteIntegral lineIntegral(Ctx &c, const std::vector<Expr> &field,
 // `uBound` is the inner parameter bound (whose limits may depend on `vBound.var`),
 // and `vBound` is the outer parameter bound.
 DefiniteIntegral surfaceIntegralScalar(Ctx &c, Expr f,
-                                       const std::vector<Expr> &vars,
-                                       const std::vector<Expr> &surface,
+                                       keel::ArrayRef<Expr> vars,
+                                       keel::ArrayRef<Expr> surface,
                                        const DefiniteBound &uBound,
                                        const DefiniteBound &vBound,
                                        Budget *budget = nullptr);
@@ -173,16 +208,16 @@ DefiniteIntegral surfaceIntegralScalar(Ctx &c, Expr f,
 // by N = dr/du x dr/dv):
 //   iint_S F(r) . dS = int_{vBound.a}^{vBound.b} int_{uBound.a}^{uBound.b}
 //                        F(r(u, v)) . (dr/du x dr/dv) du dv
-DefiniteIntegral surfaceIntegralVector(Ctx &c, const std::vector<Expr> &field,
-                                       const std::vector<Expr> &vars,
-                                       const std::vector<Expr> &surface,
+DefiniteIntegral surfaceIntegralVector(Ctx &c, keel::ArrayRef<Expr> field,
+                                       keel::ArrayRef<Expr> vars,
+                                       keel::ArrayRef<Expr> surface,
                                        const DefiniteBound &uBound,
                                        const DefiniteBound &vBound,
                                        Budget *budget = nullptr);
 
 inline DefiniteIntegral surfaceIntegral(Ctx &c, Expr f,
-                                        const std::vector<Expr> &vars,
-                                        const std::vector<Expr> &surface,
+                                        keel::ArrayRef<Expr> vars,
+                                        keel::ArrayRef<Expr> surface,
                                         const DefiniteBound &uBound,
                                         const DefiniteBound &vBound,
                                         Budget *budget = nullptr)
@@ -190,9 +225,9 @@ inline DefiniteIntegral surfaceIntegral(Ctx &c, Expr f,
     return surfaceIntegralScalar(c, f, vars, surface, uBound, vBound, budget);
 }
 
-inline DefiniteIntegral surfaceIntegral(Ctx &c, const std::vector<Expr> &field,
-                                        const std::vector<Expr> &vars,
-                                        const std::vector<Expr> &surface,
+inline DefiniteIntegral surfaceIntegral(Ctx &c, keel::ArrayRef<Expr> field,
+                                        keel::ArrayRef<Expr> vars,
+                                        keel::ArrayRef<Expr> surface,
                                         const DefiniteBound &uBound,
                                         const DefiniteBound &vBound,
                                         Budget *budget = nullptr)
@@ -203,17 +238,52 @@ inline DefiniteIntegral surfaceIntegral(Ctx &c, const std::vector<Expr> &field,
 
 struct ParametricCurveSegment
 {
-    std::vector<Expr> curve;
+    keel::Array<Expr> curve;
     Expr t;
     Expr a;
     Expr b;
+
+    ParametricCurveSegment() = default;
+    ParametricCurveSegment(keel::Array<Expr> curveIn, Expr tIn, Expr aIn, Expr bIn)
+        : curve(keel::move(curveIn)), t(tIn), a(aIn), b(bIn) {}
+    ParametricCurveSegment(const ParametricCurveSegment &o)
+        : curve(o.curve.clone()), t(o.t), a(o.a), b(o.b) {}
+    ParametricCurveSegment &operator=(const ParametricCurveSegment &o)
+    {
+        if (this != &o) {
+            curve = o.curve.clone();
+            t = o.t;
+            a = o.a;
+            b = o.b;
+        }
+        return *this;
+    }
+    ParametricCurveSegment(ParametricCurveSegment &&) noexcept = default;
+    ParametricCurveSegment &operator=(ParametricCurveSegment &&) noexcept = default;
 };
 
 struct ParametricSurfacePatch
 {
-    std::vector<Expr> surface;
+    keel::Array<Expr> surface;
     DefiniteBound uBound;
     DefiniteBound vBound;
+
+    ParametricSurfacePatch() = default;
+    ParametricSurfacePatch(keel::Array<Expr> surfaceIn, DefiniteBound uIn, DefiniteBound vIn)
+        : surface(keel::move(surfaceIn)), uBound(uIn), vBound(vIn) {}
+    ParametricSurfacePatch(const ParametricSurfacePatch &o)
+        : surface(o.surface.clone()), uBound(o.uBound), vBound(o.vBound) {}
+    ParametricSurfacePatch &operator=(const ParametricSurfacePatch &o)
+    {
+        if (this != &o) {
+            surface = o.surface.clone();
+            uBound = o.uBound;
+            vBound = o.vBound;
+        }
+        return *this;
+    }
+    ParametricSurfacePatch(ParametricSurfacePatch &&) noexcept = default;
+    ParametricSurfacePatch &operator=(ParametricSurfacePatch &&) noexcept = default;
 };
 
 struct IntegralTheoremResult
@@ -221,80 +291,84 @@ struct IntegralTheoremResult
     bool proved = false;
     Expr lhs; // boundary integral (circulation or flux)
     Expr rhs; // interior integral (curl or divergence integral)
-    std::string reason;
+    keel::String reason;
 };
 
 // Symbolic verification of Green's theorem in the plane:
 //   oint_{dD} (P dx + Q dy) == iint_D (dQ/dx - dP/dy) dA
 IntegralTheoremResult verifyGreenTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<ParametricCurveSegment> &boundaryCurves,
-    const std::vector<DefiniteBound> &domainBounds, Budget *budget = nullptr);
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<ParametricCurveSegment> boundaryCurves,
+    keel::ArrayRef<DefiniteBound> domainBounds, Budget *budget = nullptr);
 
 inline IntegralTheoremResult verifyGreenTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<Expr> &boundaryCurve, Expr t, Expr a, Expr b,
-    const std::vector<DefiniteBound> &domainBounds, Budget *budget = nullptr)
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<Expr> boundaryCurve, Expr t, Expr a, Expr b,
+    keel::ArrayRef<DefiniteBound> domainBounds, Budget *budget = nullptr)
 {
+    ParametricCurveSegment seg{keel::Array<Expr>::from(boundaryCurve), t, a, b};
     return verifyGreenTheorem(
-        c, field, vars, {ParametricCurveSegment{boundaryCurve, t, a, b}},
+        c, field, vars, keel::ArrayRef<ParametricCurveSegment>(&seg, 1),
         domainBounds, budget);
 }
 
 // Symbolic verification of Kelvin-Stokes' theorem in R^3:
 //   oint_{dS} F . dr == iint_S (curl F) . dS
 IntegralTheoremResult verifyStokesTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<ParametricCurveSegment> &boundaryCurves,
-    const std::vector<Expr> &surface, const DefiniteBound &uBound,
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<ParametricCurveSegment> boundaryCurves,
+    keel::ArrayRef<Expr> surface, const DefiniteBound &uBound,
     const DefiniteBound &vBound, Budget *budget = nullptr);
 
 inline IntegralTheoremResult verifyStokesTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<Expr> &boundaryCurve, Expr t, Expr a, Expr b,
-    const std::vector<Expr> &surface, const DefiniteBound &uBound,
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<Expr> boundaryCurve, Expr t, Expr a, Expr b,
+    keel::ArrayRef<Expr> surface, const DefiniteBound &uBound,
     const DefiniteBound &vBound, Budget *budget = nullptr)
 {
+    ParametricCurveSegment seg{keel::Array<Expr>::from(boundaryCurve), t, a, b};
     return verifyStokesTheorem(
-        c, field, vars, {ParametricCurveSegment{boundaryCurve, t, a, b}},
+        c, field, vars, keel::ArrayRef<ParametricCurveSegment>(&seg, 1),
         surface, uBound, vBound, budget);
 }
 
 // Symbolic verification of the Gauss-Ostrogradsky divergence theorem in R^3:
 //   oiint_{dV} F . dS == iiint_V (div F) dV
 IntegralTheoremResult verifyGaussDivergenceTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<ParametricSurfacePatch> &boundaryPatches,
-    const std::vector<DefiniteBound> &volumeBounds, Budget *budget = nullptr);
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<ParametricSurfacePatch> boundaryPatches,
+    keel::ArrayRef<DefiniteBound> volumeBounds, Budget *budget = nullptr);
 
 // Overload with a curvilinear volume coordinate transformation `volumeMap`
 // (e.g. spherical or cylindrical coordinates) whose Jacobian determinant
 // |det(d(vars)/d(paramVars))| is computed symbolically.
 IntegralTheoremResult verifyGaussDivergenceTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<ParametricSurfacePatch> &boundaryPatches,
-    const std::vector<Expr> &volumeMap,
-    const std::vector<DefiniteBound> &volumeBounds, Budget *budget = nullptr);
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<ParametricSurfacePatch> boundaryPatches,
+    keel::ArrayRef<Expr> volumeMap,
+    keel::ArrayRef<DefiniteBound> volumeBounds, Budget *budget = nullptr);
 
 inline IntegralTheoremResult verifyGaussDivergenceTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<Expr> &closedSurface, const DefiniteBound &uBound,
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<Expr> closedSurface, const DefiniteBound &uBound,
     const DefiniteBound &vBound,
-    const std::vector<DefiniteBound> &volumeBounds, Budget *budget = nullptr)
+    keel::ArrayRef<DefiniteBound> volumeBounds, Budget *budget = nullptr)
 {
+    ParametricSurfacePatch patch{keel::Array<Expr>::from(closedSurface), uBound, vBound};
     return verifyGaussDivergenceTheorem(
-        c, field, vars, {ParametricSurfacePatch{closedSurface, uBound, vBound}},
+        c, field, vars, keel::ArrayRef<ParametricSurfacePatch>(&patch, 1),
         volumeBounds, budget);
 }
 
 inline IntegralTheoremResult verifyGaussDivergenceTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<Expr> &closedSurface, const DefiniteBound &uBound,
-    const DefiniteBound &vBound, const std::vector<Expr> &volumeMap,
-    const std::vector<DefiniteBound> &volumeBounds, Budget *budget = nullptr)
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<Expr> closedSurface, const DefiniteBound &uBound,
+    const DefiniteBound &vBound, keel::ArrayRef<Expr> volumeMap,
+    keel::ArrayRef<DefiniteBound> volumeBounds, Budget *budget = nullptr)
 {
+    ParametricSurfacePatch patch{keel::Array<Expr>::from(closedSurface), uBound, vBound};
     return verifyGaussDivergenceTheorem(
-        c, field, vars, {ParametricSurfacePatch{closedSurface, uBound, vBound}},
+        c, field, vars, keel::ArrayRef<ParametricSurfacePatch>(&patch, 1),
         volumeMap, volumeBounds, budget);
 }
 

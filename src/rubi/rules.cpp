@@ -18,9 +18,10 @@
 
 #include <algorithm>
 #include <array>
-#include <functional>
+#include <keel/function_ref.h>
 #include <numeric>
-#include <vector>
+#include <keel/array.h>
+#include <keel/string.h>
 
 #include "rubi_tables_1111.inc"
 
@@ -56,9 +57,9 @@ bool exprMatchesTerm(const RuleTables &t, Ctx &c, Expr e, Expr var,
         // takes the exact kinds only.
         const char *op = t.str(valId);
         switch (c.kind(e)) {
-        case NodeKind::Add: return op == std::string("+");
-        case NodeKind::Mul: return op == std::string("*");
-        case NodeKind::Pow: return op == std::string("^");
+        case NodeKind::Add: return keel::StringRef(op) == "+";
+        case NodeKind::Mul: return keel::StringRef(op) == "*";
+        case NodeKind::Pow: return keel::StringRef(op) == "^";
         default: return false;
         }
     }
@@ -67,8 +68,8 @@ bool exprMatchesTerm(const RuleTables &t, Ctx &c, Expr e, Expr var,
     }
 }
 
-const Binding *findBinding(const std::vector<Binding> &acc,
-                           const std::string &name)
+const Binding *findBinding(keel::ArrayRef<Binding> acc,
+                           keel::StringRef name)
 {
     for (const Binding &b : acc)
         if (b.name == name)
@@ -76,7 +77,7 @@ const Binding *findBinding(const std::vector<Binding> &acc,
     return nullptr;
 }
 
-void upsertBinding(std::vector<Binding> &acc, const std::string &name,
+void upsertBinding(keel::Array<Binding> &acc, keel::StringRef name,
                    Expr val)
 {
     for (Binding &b : acc) {
@@ -89,7 +90,7 @@ void upsertBinding(std::vector<Binding> &acc, const std::string &name,
 }
 
 using LeafCallback =
-    std::function<bool(keel::i32 firstRule, const std::vector<Binding> &bnd)>;
+    keel::FunctionRef<bool(keel::i32 firstRule, keel::ArrayRef<Binding> bnd)>;
 
 // Prefix-trie walker with full backtracking over a pending-expression
 // stack `work` (stored in reverse so `work.back()` is the next Expr
@@ -99,7 +100,7 @@ using LeafCallback =
 // whenever `work` empties at a leaf node; stops and returns true as
 // soon as `onLeaf` accepts.
 bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
-               std::vector<Expr> &work, std::vector<Binding> &acc,
+               keel::Array<Expr> &work, keel::Array<Binding> &acc,
                const LeafCallback &onLeaf, bool inMul = false)
 {
     if (work.empty()) {
@@ -120,7 +121,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
         for (int ei = first; ei < first + nEdges; ++ei) {
             if (t.edgeRow(ei, 0) != kTagAny || !t.edgeRow(ei, 4))
                 continue;
-            const std::string vName = t.str(t.edgeRow(ei, 1));
+            const keel::StringRef vName = t.str(t.edgeRow(ei, 1));
             const Binding *existing = findBinding(acc, vName);
             if (!existing || !(existing->value == one))
                 continue;
@@ -132,7 +133,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
         for (int ei = first; ei < first + nEdges; ++ei) {
             if (t.edgeRow(ei, 0) != kTagAny || !t.edgeRow(ei, 4))
                 continue;
-            const std::string vName = t.str(t.edgeRow(ei, 1));
+            const keel::StringRef vName = t.str(t.edgeRow(ei, 1));
             if (findBinding(acc, vName) != nullptr)
                 continue;
             work.pop_back();
@@ -196,7 +197,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
         const Expr one = c.one();
         for (int ei = first; ei < first + nEdges; ++ei) {
             if (t.edgeRow(ei, 0) != kTagOp ||
-                std::string(t.str(t.edgeRow(ei, 1))) != "*" ||
+                keel::StringRef(t.str(t.edgeRow(ei, 1))) != "*" ||
                 t.edgeRow(ei, 3) != 2)
                 continue;
             const keel::i32 next = t.edgeRow(ei, 2);
@@ -205,7 +206,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
             for (int ve = vFirst; ve < vFirst + vCount; ++ve) {
                 if (t.edgeRow(ve, 0) != kTagAny || !t.edgeRow(ve, 4))
                     continue;
-                const std::string vName = t.str(t.edgeRow(ve, 1));
+                const keel::StringRef vName = t.str(t.edgeRow(ve, 1));
                 const keel::i32 afterV = t.edgeRow(ve, 2);
                 const Binding *existing = findBinding(acc, vName);
                 if (existing && !(existing->value == one))
@@ -224,7 +225,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
         const Expr zero = c.zero();
         for (int ei = first; ei < first + nEdges; ++ei) {
             if (t.edgeRow(ei, 0) != kTagOp ||
-                std::string(t.str(t.edgeRow(ei, 1))) != "+" ||
+                keel::StringRef(t.str(t.edgeRow(ei, 1))) != "+" ||
                 t.edgeRow(ei, 3) != 3)
                 continue;
             const keel::i32 next = t.edgeRow(ei, 2);
@@ -233,7 +234,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
             for (int ve = vFirst; ve < vFirst + vCount; ++ve) {
                 if (t.edgeRow(ve, 0) != kTagAny || !t.edgeRow(ve, 4))
                     continue;
-                const std::string vName = t.str(t.edgeRow(ve, 1));
+                const keel::StringRef vName = t.str(t.edgeRow(ve, 1));
                 const keel::i32 afterV = t.edgeRow(ve, 2);
                 const Binding *existing = findBinding(acc, vName);
                 if (existing && !(existing->value == zero))
@@ -261,7 +262,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
         const Expr zero = c.zero();
         for (int ei = first; ei < first + nEdges; ++ei) {
             if (t.edgeRow(ei, 0) != kTagOp ||
-                std::string(t.str(t.edgeRow(ei, 1))) != "+" ||
+                keel::StringRef(t.str(t.edgeRow(ei, 1))) != "+" ||
                 t.edgeRow(ei, 3) != 2)
                 continue;
             const keel::i32 next = t.edgeRow(ei, 2);
@@ -270,7 +271,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
             for (int ve = vFirst; ve < vFirst + vCount; ++ve) {
                 if (t.edgeRow(ve, 0) != kTagAny || !t.edgeRow(ve, 4))
                     continue;
-                const std::string vName = t.str(t.edgeRow(ve, 1));
+                const keel::StringRef vName = t.str(t.edgeRow(ve, 1));
                 const keel::i32 afterV = t.edgeRow(ve, 2);
                 const Binding *existing = findBinding(acc, vName);
                 if (existing && !(existing->value == zero))
@@ -289,7 +290,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
         c.kind(e) != NodeKind::Pow && c.kind(e) != NodeKind::Number) {
         for (int ei = first; ei < first + nEdges; ++ei) {
             if (t.edgeRow(ei, 0) != kTagOp ||
-                std::string(t.str(t.edgeRow(ei, 1))) != "^" ||
+                keel::StringRef(t.str(t.edgeRow(ei, 1))) != "^" ||
                 t.edgeRow(ei, 3) != 2)
                 continue;
             work.pop_back();
@@ -306,7 +307,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
     for (int ei = first; ei < first + nEdges; ++ei) {
         if (t.edgeRow(ei, 0) != kTagAny)
             continue;
-        const std::string vName = t.str(t.edgeRow(ei, 1));
+        const keel::StringRef vName = t.str(t.edgeRow(ei, 1));
         const Binding *existing = findBinding(acc, vName);
         if (!existing || !(existing->value == e))
             continue;
@@ -319,7 +320,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
     for (int ei = first; ei < first + nEdges; ++ei) {
         if (t.edgeRow(ei, 0) != kTagAny)
             continue;
-        const std::string vName = t.str(t.edgeRow(ei, 1));
+        const keel::StringRef vName = t.str(t.edgeRow(ei, 1));
         if (findBinding(acc, vName) != nullptr)
             continue;
         work.pop_back();
@@ -336,15 +337,15 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
 } // namespace
 
 int matchFirst(const RuleTables &t, Ctx &c, Expr e,
-               std::vector<Binding> &bindings)
+               keel::Array<Binding> &bindings)
 {
     int matchedRule = -1;
-    std::vector<Expr> work{e};
-    std::vector<Binding> acc;
+    keel::Array<Expr> work{e};
+    keel::Array<Binding> acc;
     matchStep(t, c, c.symbol("x"), 0, work, acc,
-              [&](keel::i32 rule, const std::vector<Binding> &bnd) {
+              [&](keel::i32 rule, keel::ArrayRef<Binding> bnd) {
                   matchedRule = rule;
-                  bindings = bnd;
+                  bindings = keel::Array<Binding>::from(bnd);
                   return true;
               });
     return matchedRule;
@@ -415,7 +416,7 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
                     Budget *budget = nullptr);
 
 bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
-                   Expr currentE, Expr var, const std::vector<Binding> &bnd,
+                   Expr currentE, Expr var, keel::ArrayRef<Binding> bnd,
                    keel::i32 term, int depth);
 
 // Exact non-negative integer n-th root of a non-negative BigInt `m` (n >= 2).
@@ -476,7 +477,7 @@ Expr extractNumerDenom(Ctx &c, Expr arg, bool isDenom)
         return c.pow(c.number(Rational(part, BigInt(1))), c.number(-e));
     }
     if (c.kind(arg) == NodeKind::Mul) {
-        std::vector<Expr> parts;
+        keel::Array<Expr> parts;
         parts.reserve(c.childCount(arg));
         for (keel::usize i = 0; i < c.childCount(arg); ++i) {
             const Expr p = extractNumerDenom(c, c.child(arg, i), isDenom);
@@ -495,7 +496,7 @@ Expr distributeMul(Ctx &c, Expr u, Expr v)
     if (u.isNull() || v.isNull())
         return Expr();
     if (c.kind(u) == NodeKind::Add) {
-        std::vector<Expr> parts;
+        keel::Array<Expr> parts;
         parts.reserve(c.childCount(u));
         for (keel::usize i = 0; i < c.childCount(u); ++i)
             parts.push_back(c.mul({v, c.child(u, i)}));
@@ -514,7 +515,7 @@ Expr expandPolyTimesBinomialPow(Ctx &c, const UPoly &P, const UPoly &B,
         return c.zero();
     UPoly cur = P;
     Rational expK = r;
-    std::vector<Expr> sumTerms;
+    keel::Array<Expr> sumTerms;
     while (!cur.isZero()) {
         UPoly Q, R;
         UPoly::divMod(cur, B, Q, R);
@@ -581,7 +582,7 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
         Rational exp;
     };
     UPoly polyProd(Rational(keel::i64{1}));
-    std::vector<BinomFactor> nonPoly;
+    keel::Array<BinomFactor> nonPoly;
     for (keel::usize i = 0; i < c.childCount(u); ++i) {
         const Expr ch = c.child(u, i);
         UPoly nCh, dCh;
@@ -626,7 +627,7 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
         }
         if (allNegInt) {
             // Compute D_i = B_i^{|r_i|} for each factor.
-            std::vector<UPoly> denFactors;
+            keel::Array<UPoly> denFactors;
             UPoly totalDen(Rational(keel::i64{1}));
             for (const BinomFactor &bf : nonPoly) {
                 keel::i64 m = 0;
@@ -640,7 +641,7 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
             }
             UPoly quot, rem;
             UPoly::divMod(polyProd, totalDen, quot, rem);
-            std::vector<Expr> pieces;
+            keel::Array<Expr> pieces;
             if (!quot.isZero())
                 pieces.push_back(c.expand(toExpr(c, quot, var)));
 
@@ -686,7 +687,7 @@ Expr expandIntegrandExpr(Ctx &c, Expr u, Expr var)
 // operations (honest decline).
 Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                       Expr currentE, Expr var,
-                      const std::vector<Binding> &bnd,
+                      keel::ArrayRef<Binding> bnd,
                       keel::i32 term, int depth, Budget *budget = nullptr)
 {
     if (budget && !budget->ok())
@@ -702,7 +703,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
         return c.number(r);
     }
     case kTagSym: {
-        const std::string s = t.str(valId);
+        const keel::StringRef s = t.str(valId);
         for (const Binding &b : bnd)
             if (b.name == s)
                 return b.value;
@@ -714,7 +715,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
         return Expr(); // genuinely unbound
     }
     case kTagHead: {
-        const std::string head = t.str(valId);
+        const keel::StringRef head = t.str(valId);
         if (nkids == 1 && (head == "Exp" || head == "Log" ||
                            head == "ArcTan" || head == "ArcCot" ||
                            head == "ArcTanh" || head == "ArcCoth" ||
@@ -831,7 +832,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                 const bool isFree = !mentionsVarRec(c, u, xArg);
                 return (isFree == wantFree) ? u : c.one();
             }
-            std::vector<Expr> parts;
+            keel::Array<Expr> parts;
             for (keel::usize i = 0; i < c.childCount(u); ++i) {
                 const Expr ch = c.child(u, i);
                 const bool isFree = !mentionsVarRec(c, ch, xArg);
@@ -852,16 +853,16 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
         if (nkids == 2 && (head == "With" || head == "Module")) {
             const keel::i32 listTerm = childOf(terms, term, 0);
             if (t.termRow(terms, listTerm, 0) != kTagOp ||
-                std::string(t.str(t.termRow(terms, listTerm, 1))) != "list")
+                keel::StringRef(t.str(t.termRow(terms, listTerm, 1))) != "list")
                 return Expr();
-            std::vector<Binding> localBnd = bnd;
+            keel::Array<Binding> localBnd = keel::Array<Binding>::from(bnd);
             const keel::i32 nDecls = t.termRow(terms, listTerm, 3);
             for (int i = 0; i < nDecls; ++i) {
                 const keel::i32 decl = childOf(terms, listTerm, i);
                 if (t.termRow(terms, decl, 0) == kTagSym)
                     continue; // uninitialized Module variable
                 if (t.termRow(terms, decl, 0) != kTagOp ||
-                    std::string(t.str(t.termRow(terms, decl, 1))) != "bind" ||
+                    keel::StringRef(t.str(t.termRow(terms, decl, 1))) != "bind" ||
                     t.termRow(terms, decl, 3) != 2)
                     return Expr();
                 const keel::i32 lhs = childOf(terms, decl, 0);
@@ -897,7 +898,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
         if (nkids == 2 && head == "ReplaceAll") {
             const keel::i32 ruleTerm = childOf(terms, term, 1);
             if (t.termRow(terms, ruleTerm, 0) != kTagOp ||
-                std::string(t.str(t.termRow(terms, ruleTerm, 1))) != "->" ||
+                keel::StringRef(t.str(t.termRow(terms, ruleTerm, 1))) != "->" ||
                 t.termRow(terms, ruleTerm, 3) != 2)
                 return Expr();
             const Expr u = buildReplacement(
@@ -941,7 +942,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
             if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero())
                 return Expr();
             const keel::usize ku = static_cast<keel::usize>(k);
-            std::vector<Rational> coeffs(N.deg() / ku + 1, Rational(0));
+            keel::Array<Rational> coeffs(N.deg() / ku + 1, Rational(0));
             for (keel::usize i = 0; i <= N.deg(); ++i) {
                 if (N.coeff(i).isZero())
                     continue;
@@ -949,7 +950,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                     return Expr();
                 coeffs[i / ku] = N.coeff(i) / D.coeff(0);
             }
-            return toExpr(c, UPoly(coeffs), var);
+            return toExpr(c, UPoly(keel::move(coeffs)), var);
         }
         if (nkids == 2 && (head == "Expon" || head == "Exponent")) {
             const Expr u = buildReplacement(
@@ -1184,15 +1185,15 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
             const Rational content(numGcd, denLcm);
             if (content.isZero())
                 return u;
-            std::vector<Rational> prim;
+            keel::Array<Rational> prim;
             for (const Rational &q : N.coeffs())
                 prim.push_back(q / content);
-            return toExpr(c, UPoly(prim), xArg);
+            return toExpr(c, UPoly(keel::move(prim)), xArg);
         }
         return Expr();
     }
     case kTagOp: {
-        const std::string op = t.str(valId);
+        const keel::StringRef op = t.str(valId);
         if (nkids == 1 && op == "neg") {
             const Expr a = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
@@ -1211,9 +1212,9 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
         }
         if (op == ";") {
             const keel::i32 stmt = childOf(terms, term, 0);
-            std::vector<Binding> localBnd = bnd;
+            keel::Array<Binding> localBnd = keel::Array<Binding>::from(bnd);
             if (t.termRow(terms, stmt, 0) == kTagOp &&
-                std::string(t.str(t.termRow(terms, stmt, 1))) == "bind" &&
+                keel::StringRef(t.str(t.termRow(terms, stmt, 1))) == "bind" &&
                 t.termRow(terms, stmt, 3) == 2) {
                 const keel::i32 lhs = childOf(terms, stmt, 0);
                 const keel::i32 rhs = childOf(terms, stmt, 1);
@@ -1272,14 +1273,14 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
 }
 
 bool termMentionsVar(const RuleTables &t, const keel::i32 *terms, Ctx &c,
-                     Expr var, const std::vector<Binding> &bnd,
+                     Expr var, keel::ArrayRef<Binding> bnd,
                      keel::i32 term)
 {
     const keel::i32 tag = t.termRow(terms, term, 0);
     const keel::i32 valId = t.termRow(terms, term, 1);
     const keel::i32 nkids = t.termRow(terms, term, 3);
     if (tag == kTagSym) {
-        const std::string s = t.str(valId);
+        const keel::StringRef s = t.str(valId);
         for (const Binding &b : bnd)
             if (b.name == s)
                 return mentionsVarRec(c, b.value, var);
@@ -1292,14 +1293,14 @@ bool termMentionsVar(const RuleTables &t, const keel::i32 *terms, Ctx &c,
 }
 
 bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
-                   Expr currentE, Expr var, const std::vector<Binding> &bnd,
+                   Expr currentE, Expr var, keel::ArrayRef<Binding> bnd,
                    keel::i32 term, int depth)
 {
     const keel::i32 tag = t.termRow(terms, term, 0);
     const keel::i32 valId = t.termRow(terms, term, 1);
     const keel::i32 nkids = t.termRow(terms, term, 3);
     if (tag == kTagOp) {
-        const std::string op = t.str(valId);
+        const keel::StringRef op = t.str(valId);
         if ((op == "&&" || op == "||") && nkids == 2) {
             const bool l = evalCondition(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth);
@@ -1343,7 +1344,7 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
     }
     if (tag != kTagHead || nkids < 1)
         return false;
-    const std::string pred = t.str(valId);
+    const keel::StringRef pred = t.str(valId);
     if (pred == "If" && nkids == 3) {
         return evalCondition(t, terms, c, currentE, var, bnd,
                              childOf(terms, term, 0), depth)
@@ -1437,7 +1438,7 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                    N.deg() == 1;
         };
         if (t.termRow(terms, uTerm, 0) == kTagOp &&
-            std::string(t.str(t.termRow(terms, uTerm, 1))) == "list") {
+            keel::StringRef(t.str(t.termRow(terms, uTerm, 1))) == "list") {
             const keel::i32 nItems = t.termRow(terms, uTerm, 3);
             for (int i = 0; i < nItems; ++i)
                 if (!checkOneLinear(childOf(terms, uTerm, i)))
@@ -1729,7 +1730,7 @@ Expr factorRationalPower(Ctx &c, const Rational &v, const Rational &exp)
 {
     if (v == Rational(keel::i64{1}) || exp.isZero())
         return c.one();
-    std::vector<Expr> parts;
+    keel::Array<Expr> parts;
     for (const auto &pk : BigInt::factorize(v.num())) {
         parts.push_back(
             c.pow(c.number(Rational(pk.first, BigInt(1))),
@@ -1753,14 +1754,14 @@ Expr normalizeRadicals(Ctx &c, Expr e, Expr var)
         return Expr();
     switch (c.kind(e)) {
     case NodeKind::Add: {
-        std::vector<Expr> items;
+        keel::Array<Expr> items;
         items.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             items.push_back(normalizeRadicals(c, c.child(e, i), var));
         return c.add(items);
     }
     case NodeKind::Mul: {
-        std::vector<Expr> items;
+        keel::Array<Expr> items;
         items.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             items.push_back(normalizeRadicals(c, c.child(e, i), var));
@@ -1788,12 +1789,12 @@ Expr normalizeRadicals(Ctx &c, Expr e, Expr var)
                     }
                     const Rational content(numGcd, denLcm);
                     if (!content.isZero()) {
-                        std::vector<Rational> primCoeffs;
+                        keel::Array<Rational> primCoeffs;
                         primCoeffs.reserve(P.coeffs().size());
                         for (const Rational &q : P.coeffs())
                             primCoeffs.push_back(q / content);
                         const Expr primExpr =
-                            toExpr(c, UPoly(primCoeffs), var);
+                            toExpr(c, UPoly(keel::move(primCoeffs)), var);
                         return c.mul({factorRationalPower(c, content, r),
                                       c.pow(primExpr, exp)});
                     }
@@ -1838,7 +1839,7 @@ keel::i64 radicalExponentLcm(const Ctx &c, Expr q)
 
 // Exact real sign (-1, +1, or 0 when zero/undefined/outside principal
 // real domain) of a radical product `q` at `var = x0`.
-int evalRadicalProductSign(Ctx &c, Expr e, const std::string &varName,
+int evalRadicalProductSign(Ctx &c, Expr e, keel::StringRef varName,
                            const Rational &x0)
 {
     switch (c.kind(e)) {
@@ -1922,7 +1923,7 @@ Expr substLinearRadical(Ctx &c, Expr e, Expr var, Expr radBase,
         return c.pow(tSym, c.number(newExp));
     }
     if (c.kind(e) == NodeKind::Add || c.kind(e) == NodeKind::Mul) {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         kids.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(substLinearRadical(c, c.child(e, i), var, radBase,
@@ -1963,7 +1964,7 @@ bool checkNormalizedCertificate(Ctx &c, Expr dF, Expr e, Expr var)
         if (toRational(c, QL, var, nQL, dQL) && !dQL.isZero() && nQL == dQL) {
             if (L % 2 != 0)
                 return true;
-            const std::string &varName = c.symbolName(var);
+            const keel::String &varName = c.symbolName(var);
             const std::array<Rational, 10> kSignSamples = {{
                 Rational(keel::i64{0}),
                 Rational(keel::i64{1}, BigInt(8)),
@@ -1993,14 +1994,14 @@ Expr rewriteTrigToSinCos(Ctx &c, Expr e)
     case NodeKind::Symbol:
         return e;
     case NodeKind::Add: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
         return c.add(ch);
     }
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
@@ -2011,14 +2012,14 @@ Expr rewriteTrigToSinCos(Ctx &c, Expr e)
                      rewriteTrigToSinCos(c, c.child(e, 1)));
     case NodeKind::Func: {
         if (c.childCount(e) != 1) {
-            std::vector<Expr> args;
+            keel::Array<Expr> args;
             args.reserve(c.childCount(e));
             for (keel::usize i = 0; i < c.childCount(e); ++i)
                 args.push_back(rewriteTrigToSinCos(c, c.child(e, i)));
             return c.func(c.funcName(e), args);
         }
         const Expr u = rewriteTrigToSinCos(c, c.child(e, 0));
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         if (fn == "tan")
             return c.mul(
                 {c.func("sin", u), c.pow(c.func("cos", u), c.number(-1))});
@@ -2052,14 +2053,14 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
     case NodeKind::Symbol:
         return e;
     case NodeKind::Add: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(clearNestedDenominators(c, c.child(e, i)));
         return c.add(ch);
     }
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(clearNestedDenominators(c, c.child(e, i)));
@@ -2071,7 +2072,7 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
         if (c.kind(b) == NodeKind::Add && c.kind(p) == NodeKind::Number) {
             const Rational &pr = c.numberValue(p);
             if (pr.den() == BigInt(1) && pr.num().isNegative()) {
-                std::vector<std::pair<Expr, Rational>> denBases;
+                keel::Array<std::pair<Expr, Rational>> denBases;
                 auto recordFactor = [&](Expr f) {
                     if (c.kind(f) == NodeKind::Pow &&
                         c.kind(c.child(f, 1)) == NodeKind::Number) {
@@ -2100,7 +2101,7 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
                     }
                 }
                 if (!denBases.empty()) {
-                    std::vector<Expr> dFactors;
+                    keel::Array<Expr> dFactors;
                     dFactors.reserve(denBases.size());
                     for (const auto &kv : denBases)
                         dFactors.push_back(c.pow(kv.first, c.number(kv.second)));
@@ -2115,7 +2116,7 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
         return c.pow(b, p);
     }
     case NodeKind::Func: {
-        std::vector<Expr> args;
+        keel::Array<Expr> args;
         args.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             args.push_back(clearNestedDenominators(c, c.child(e, i)));
@@ -2134,7 +2135,7 @@ bool isZeroOrClearedZero(Ctx &c, Expr delta, Expr var)
         return true;
 
     if (c.kind(delta) == NodeKind::Add) {
-        std::vector<std::pair<Expr, Rational>> denBases;
+        keel::Array<std::pair<Expr, Rational>> denBases;
         auto recordNegPow = [&](Expr f) {
             if (c.kind(f) == NodeKind::Pow &&
                 c.kind(c.child(f, 1)) == NodeKind::Number) {
@@ -2163,7 +2164,7 @@ bool isZeroOrClearedZero(Ctx &c, Expr delta, Expr var)
             }
         }
         if (!denBases.empty()) {
-            std::vector<Expr> dFactors;
+            keel::Array<Expr> dFactors;
             dFactors.reserve(denBases.size());
             for (const auto &kv : denBases)
                 dFactors.push_back(c.pow(kv.first, c.number(kv.second)));
@@ -2261,7 +2262,7 @@ Expr rubiLinearityFallback(const RuleTables &t, Ctx &c, Expr e, Expr var,
                    c.pow(var, c.number(keel::i64{2}))});
     } else if (c.kind(e) == NodeKind::Mul &&
                c.kind(c.child(e, 0)) == NodeKind::Number) {
-        std::vector<Expr> rest;
+        keel::Array<Expr> rest;
         for (keel::usize i = 1; i < c.childCount(e); ++i)
             rest.push_back(c.child(e, i));
         const Expr inner =
@@ -2270,7 +2271,7 @@ Expr rubiLinearityFallback(const RuleTables &t, Ctx &c, Expr e, Expr var,
             return Expr();
         F = c.mul({c.child(e, 0), inner});
     } else if (c.kind(e) == NodeKind::Add) {
-        std::vector<Expr> pieces;
+        keel::Array<Expr> pieces;
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr p =
                 rubiApplyDepth(t, c, c.child(e, i), var, depth + 1, budget);
@@ -2300,7 +2301,7 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
     // the binomial rules expect.
     if (c.kind(e) == NodeKind::Mul && c.childCount(e) >= 2 &&
         c.kind(c.child(e, 0)) == NodeKind::Number) {
-        std::vector<Expr> rest;
+        keel::Array<Expr> rest;
         rest.reserve(c.childCount(e) - 1);
         for (keel::usize i = 1; i < c.childCount(e); ++i)
             rest.push_back(c.child(e, i));
@@ -2315,17 +2316,17 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, int depth,
     struct CandidateHit
     {
         keel::i32 rule;
-        std::vector<Binding> bnd;
+        keel::Array<Binding> bnd;
     };
-    std::vector<CandidateHit> hits;
-    std::vector<Expr> work{e};
-    std::vector<Binding> acc;
+    keel::Array<CandidateHit> hits;
+    keel::Array<Expr> work{e};
+    keel::Array<Binding> acc;
     matchStep(
         t, c, var, 0, work, acc,
-        [&](keel::i32 firstRule, const std::vector<Binding> &bnd) {
+        [&](keel::i32 firstRule, keel::ArrayRef<Binding> bnd) {
             for (keel::i32 rule = firstRule; rule >= 0;
                  rule = t.ruleRow(rule, 3)) {
-                hits.push_back(CandidateHit{rule, bnd});
+                hits.push_back(CandidateHit{rule, keel::Array<Binding>::from(bnd)});
             }
             return false;
         });

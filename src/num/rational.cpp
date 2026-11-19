@@ -185,18 +185,21 @@ bool Rational::fitsInt64(keel::i64 &out) const
     return num().fitsInt64(out);
 }
 
-std::string Rational::toString() const
+keel::String Rational::toString() const
 {
     if (den() == BigInt(1))
         return num().toString();
-    return num().toString() + "/" + den().toString();
+    keel::String out = num().toString();
+    out.push_back('/');
+    out.append(den().toString());
+    return out;
 }
 
-bool Rational::tryParse(Rational &out, const std::string &s)
+bool Rational::tryParse(Rational &out, keel::StringRef s)
 {
     out = Rational();
     const keel::usize slash = s.find('/');
-    if (slash == std::string::npos) {
+    if (slash == keel::kInvalidIndex) {
         BigInt v;
         if (!BigInt::tryParse(v, s))
             return false;

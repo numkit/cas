@@ -1,10 +1,9 @@
 // transform/fourier.hpp — symbolic bilateral Fourier and inverse Fourier transforms.
 #pragma once
 
+#include <keel/string.h>
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
-
-#include <string>
 
 namespace numkit::cas {
 
@@ -14,7 +13,7 @@ struct FourierResult
 
     Status status = Status::Unevaluated;
     Expr F;             // transformed expression in `w` (fourier) or `t` (ifourier)
-    std::string reason; // populated on Unevaluated
+    keel::String reason; // populated on Unevaluated
 
     bool proved() const { return status == Status::ProvedSymbolic; }
 };

@@ -2,11 +2,11 @@
 #pragma once
 
 #include <keel/core.h>
+#include <keel/string.h>
 #include <numkit/cas/core/expr.hpp>
 
 #include <cstddef>
 #include <stdexcept>
-#include <string>
 
 namespace numkit::cas {
 
@@ -14,8 +14,8 @@ namespace numkit::cas {
 // of the offending character (or src.size() for unexpected end).
 class ParseError : public std::runtime_error {
 public:
-    ParseError(keel::usize pos, const std::string &msg)
-        : std::runtime_error(msg), pos_(pos)
+    ParseError(keel::usize pos, keel::StringRef msg)
+        : std::runtime_error(keel::String::from(msg).c_str()), pos_(pos)
     {
     }
     keel::usize pos() const { return pos_; }
@@ -42,6 +42,6 @@ private:
 // from text: a "RootOf(...)" call parses as an ordinary Func node.
 //
 // After a complete expression only whitespace may remain.
-Expr parseExpr(Ctx &c, const std::string &src);
+Expr parseExpr(Ctx &c, keel::StringRef src);
 
 } // namespace numkit::cas

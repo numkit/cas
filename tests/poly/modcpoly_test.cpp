@@ -30,7 +30,7 @@ Rational rr(keel::u64 &state, int range)
 // Ascending rational csv -> UPoly.
 UPoly P(const std::string &csv)
 {
-    std::vector<Rational> cs;
+    keel::Array<Rational> cs;
     keel::usize pos = 0;
     while (pos <= csv.size()) {
         const keel::usize comma = csv.find(',', pos);
@@ -54,7 +54,7 @@ std::string S(const UPoly &p)
     for (const Rational &c : p.coeffs()) {
         if (!out.empty())
             out += ",";
-        out += c.toString();
+        out += c.toString().c_str();
     }
     return out;
 }
@@ -62,7 +62,7 @@ std::string S(const UPoly &p)
 ModCPoly MP(const ModCRing &ring, const std::string &spec)
 {
     // "p0|p1|..." with each pi an ascending rational csv ("-" = zero poly).
-    std::vector<UPoly> cs;
+    keel::Array<UPoly> cs;
     keel::usize pos = 0;
     while (pos <= spec.size()) {
         const keel::usize bar = spec.find('|', pos);
@@ -221,7 +221,7 @@ TEST(ModCPolyProperty, RingAndDivision)
                              std::to_string(static_cast<int>(nextU64(state) % 9) - 4)));
     };
     const auto rndPoly = [&](int maxDeg) {
-        std::vector<UPoly> cs;
+        keel::Array<UPoly> cs;
         const int deg = static_cast<int>(nextU64(state) % (maxDeg + 1));
         for (int i = 0; i <= deg; ++i)
             cs.push_back(rndElem());
@@ -266,10 +266,10 @@ TEST(ModCPolyFixed, GcdOverQuadraticField)
     // Over Q[t]/(t^2+1): gcd((x + t)(x + 1), (x + t)(x + 2)) = x + t.
     const ModCRing ring(P("1,0,1"));
     const UPoly t = ring.reduce(P("0,1"));
-    const ModCPoly xt = ModCPoly(ring, std::vector<UPoly>{t, ring.one()});
-    const ModCPoly x1 = ModCPoly(ring, std::vector<UPoly>{
+    const ModCPoly xt = ModCPoly(ring, keel::Array<UPoly>{t, ring.one()});
+    const ModCPoly x1 = ModCPoly(ring, keel::Array<UPoly>{
                                 ring.one(), ring.one()});
-    const ModCPoly x2 = ModCPoly(ring, std::vector<UPoly>{
+    const ModCPoly x2 = ModCPoly(ring, keel::Array<UPoly>{
                                 UPoly(Rational(keel::i64{2})), ring.one()});
     const ModCPoly f = xt * x1;
     const ModCPoly g = xt * x2;

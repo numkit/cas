@@ -9,21 +9,21 @@
 
 namespace numkit::cas {
 
-std::vector<RealRootSolution> solveRealRoots(const UPoly &p)
+keel::Array<RealRootSolution> solveRealRoots(const UPoly &p)
 {
     assert(!p.isZero() && "solveRealRoots of the zero polynomial");
-    std::vector<RealRootSolution> out;
+    keel::Array<RealRootSolution> out;
     if (p.deg() < 1)
         return out; // non-zero constant: no roots
 
     UPoly sq = p.squarefreePart();
     sq.makeMonic();
-    const std::vector<RootInterval> ivs = isolateRealRoots(sq); // ascending
+    const keel::Array<RootInterval> ivs = isolateRealRoots(sq); // ascending
 
     // Exact rational roots through the full factorization: a root r
     // of the linear factors of the squarefree part. The interval
     // bracket identifies which isolated root it is.
-    std::vector<Rational> rationals;
+    keel::Array<Rational> rationals;
     for (const UPoly &f : factorOverQ(sq))
         if (f.deg() == 1)
             rationals.push_back(f.coeff(0) * Rational(keel::i64{-1}));

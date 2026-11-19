@@ -1,10 +1,9 @@
 // poly/algebraic.hpp — real algebraic numbers (exact).
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
 #include <numkit/cas/poly/sturm.hpp>
-
-#include <vector>
 
 namespace numkit::cas {
 
@@ -29,7 +28,7 @@ public:
     // root of p (strictly inside, or the exact rational root itself).
     Algebraic(UPoly p, RootInterval iv);
 
-    static std::vector<Algebraic> realRoots(const UPoly &p);
+    static keel::Array<Algebraic> realRoots(const UPoly &p);
 
     bool isRational() const { return poly_.deg() <= 1; }
     Rational rationalValue() const; // asserts isRational
@@ -48,7 +47,7 @@ public:
     keel::f64 approx() const;
 
 private:
-    static bool containsRoot(const UPoly &g, const std::vector<UPoly> &sturmG,
+    static bool containsRoot(const UPoly &g, keel::ArrayRef<UPoly> sturmG,
                              const Algebraic &a);
     int positionCompare(const Algebraic &other) const;
     void refineStep();

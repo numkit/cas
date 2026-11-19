@@ -16,7 +16,9 @@
 #include <cassert>
 #include <cmath>
 #include <numeric>
-#include <vector>
+#include <keel/array.h>
+#include <keel/format.h>
+#include <keel/string.h>
 
 namespace numkit::cas {
 
@@ -50,10 +52,10 @@ Expr sqrtExpr(Ctx &c, const Rational &d)
 
 // Power sums s_k = sum of k-th powers of the roots of the MONIC poly
 // c (ascending coeffs), for k = 0..deg-1, by Newton's identities.
-std::vector<Rational> newtonPowerSums(const std::vector<Rational> &c)
+keel::Array<Rational> newtonPowerSums(const keel::Array<Rational> &c)
 {
     const int d = static_cast<int>(c.size()) - 1;
-    std::vector<Rational> s;
+    keel::Array<Rational> s;
     s.push_back(Rational(static_cast<keel::i64>(d))); // s_0 = d
     for (int k = 1; k < d; ++k) {
         // Newton: s_k = -(c_{d-1} s_{k-1} + ... + c_{d-k+1} s_1)
@@ -69,7 +71,7 @@ std::vector<Rational> newtonPowerSums(const std::vector<Rational> &c)
 }
 
 // Trace of a field element given by its t-coordinates (deg < d).
-Rational fieldTrace(const UPoly &p, const std::vector<Rational> &s)
+Rational fieldTrace(const UPoly &p, const keel::Array<Rational> &s)
 {
     Rational acc(keel::i64{0});
     for (keel::usize j = 0; j < p.coeffs().size() && j < s.size(); ++j)
@@ -79,11 +81,11 @@ Rational fieldTrace(const UPoly &p, const std::vector<Rational> &s)
 
 // Exact Lagrange interpolation over the rationals: the unique
 // polynomial of degree < xs.size() through the given points.
-UPoly interpolateRational(const std::vector<Rational> &xs,
-                          const std::vector<Rational> &ys)
+UPoly interpolateRational(const keel::Array<Rational> &xs,
+                          const keel::Array<Rational> &ys)
 {
     assert(xs.size() == ys.size());
-    std::vector<Rational> coeffs(xs.size(), R0());
+    keel::Array<Rational> coeffs(xs.size(), R0());
     for (keel::usize i = 0; i < xs.size(); ++i) {
         if (ys[i].isZero())
             continue;
@@ -92,14 +94,14 @@ UPoly interpolateRational(const std::vector<Rational> &xs,
         for (keel::usize j = 0; j < xs.size(); ++j) {
             if (j == i)
                 continue;
-            num = num * UPoly(std::vector<Rational>{Rational(-xs[j]), R1()});
+            num = num * UPoly(keel::Array<Rational>{Rational(-xs[j]), R1()});
             den = den * (xs[i] - xs[j]);
         }
         const Rational scale = ys[i] / den;
         for (keel::usize k = 0; k < num.coeffs().size() && k < coeffs.size(); ++k)
             coeffs[k] = coeffs[k] + num.coeff(k) * scale;
     }
-    return UPoly(coeffs);
+    return UPoly(keel::move(coeffs));
 }
 
 UPoly pmod(const UPoly &a, const UPoly &b)
@@ -111,10 +113,10 @@ UPoly pmod(const UPoly &a, const UPoly &b)
 
 // Partial fractions over pairwise-coprime moduli: N/(P1*..*Pk) =
 // sum Bi/Pi with deg Bi < deg Pi.
-std::vector<UPoly> partialFractions(const UPoly &N,
-                                    const std::vector<UPoly> &Ps)
+keel::Array<UPoly> partialFractions(const UPoly &N,
+                                    const keel::Array<UPoly> &Ps)
 {
-    std::vector<UPoly> Bs;
+    keel::Array<UPoly> Bs;
     UPoly rem = N;
     for (keel::usize idx = 0; idx < Ps.size(); ++idx) {
         if (idx + 1 == Ps.size()) {
@@ -151,7 +153,7 @@ void fracAdd(UPoly &n1, UPoly &d1, const UPoly &n2, const UPoly &d2)
 
 UPoly polyIntegral(const UPoly &p)
 {
-    std::vector<Rational> cs{R0()};
+    keel::Array<Rational> cs{R0()};
     for (keel::usize i = 0; i < p.coeffs().size(); ++i)
         cs.push_back(p.coeff(i) / Rational(static_cast<keel::i64>(i + 1)));
     return UPoly(std::move(cs));
@@ -159,7 +161,7 @@ UPoly polyIntegral(const UPoly &p)
 
 // All divisors of |n| by trial division; false if |n| exceeds the
 // search budget (bit length).
-bool smallDivisors(const BigInt &n, std::vector<BigInt> &out)
+bool smallDivisors(const BigInt &n, keel::Array<BigInt> &out)
 {
     out.assign(1, BigInt(1));
     BigInt m = n.abs();
@@ -207,13 +209,13 @@ bool findOneRationalRoot(const UPoly &F, Rational &root, bool &ok)
     BigInt L(1);
     for (const Rational &c : F.coeffs())
         L = BigInt::lcm(L, c.den());
-    std::vector<BigInt> ic;
+    keel::Array<BigInt> ic;
     for (const Rational &c : F.coeffs()) {
         BigInt q, r;
         BigInt::divMod(L, c.den(), q, r);
         ic.push_back(c.num() * q);
     }
-    std::vector<BigInt> ps, qs;
+    keel::Array<BigInt> ps, qs;
     if (!smallDivisors(ic.front() .isZero() ? BigInt(1) : ic.front().abs(), ps))
         return ok = false, false;
     if (!smallDivisors(ic.back().abs(), qs))
@@ -247,10 +249,10 @@ struct Piece
 // reduced to the leftover factors) over rational roots and at most one
 // monic quadratic; false with a reason outside that scope.
 bool integrateSplitting(const UPoly &A, const UPoly &F,
-                        std::vector<Piece> &pieces, std::string &reason)
+                        keel::Array<Piece> &pieces, keel::String &reason)
 {
     // Strip rational roots one by one.
-    std::vector<Rational> roots;
+    keel::Array<Rational> roots;
     UPoly rest = F;
     while (!rest.isConst()) {
         Rational rt;
@@ -260,34 +262,34 @@ bool integrateSplitting(const UPoly &A, const UPoly &F,
             ok = true;
         } else if (!findOneRationalRoot(rest, rt, ok)) {
             if (!ok) {
-                reason = "rational root search budget exceeded";
+                reason.assign("rational root search budget exceeded");
                 return false;
             }
             break;
         }
         roots.push_back(rt);
         UPoly q, r;
-        UPoly::divMod(rest, UPoly(std::vector<Rational>{Rational(-rt), R1()}), q, r);
+        UPoly::divMod(rest, UPoly(keel::Array<Rational>{Rational(-rt), R1()}), q, r);
         assert(r.isZero());
         rest = q;
     }
 
-    std::vector<UPoly> mods;
+    keel::Array<UPoly> mods;
     for (const Rational &rt : roots)
-        mods.push_back(UPoly(std::vector<Rational>{Rational(-rt), R1()}));
+        mods.push_back(UPoly(keel::Array<Rational>{Rational(-rt), R1()}));
     if (!rest.isConst())
         mods.push_back(rest);
     if (mods.empty())
         return true; // A must be zero here (deg A < 0); nothing to do
 
-    const std::vector<UPoly> parts = partialFractions(A, mods);
+    const keel::Array<UPoly> parts = partialFractions(A, mods);
     for (keel::usize i = 0; i < roots.size(); ++i) {
         if (parts[i].isZero())
             continue;
         Piece p;
         p.kind = Piece::Log;
         p.coeff = parts[i].coeff(0);
-        p.v = UPoly(std::vector<Rational>{Rational(-roots[i]), R1()});
+        p.v = UPoly(keel::Array<Rational>{Rational(-roots[i]), R1()});
         p.scale = R1();
         pieces.push_back(p);
     }
@@ -295,7 +297,7 @@ bool integrateSplitting(const UPoly &A, const UPoly &F,
     if (rest.isConst())
         return true;
     if (rest.deg() > 2) {
-        reason = "irreducible factor of degree > 2 (needs algebraic residues)";
+        reason.assign("irreducible factor of degree > 2 (needs algebraic residues)");
         return false;
     }
 
@@ -304,13 +306,13 @@ bool integrateSplitting(const UPoly &A, const UPoly &F,
     const Rational c0 = rest.coeff(0);
     const Rational disc = Rational(keel::i64{4}) * c0 - b * b;
     if (disc.signum() <= 0) {
-        reason = "quadratic factor with non-positive 4c-b^2";
+        reason.assign("quadratic factor with non-positive 4c-b^2");
         return false;
     }
     BigInt sn, sd;
     if (!disc.num().sqrtExact(sn) || !disc.den().sqrtExact(sd)) {
-        reason = "quadratic factor with non-square 4c-b^2 "
-                 "(needs algebraic extension)";
+        reason.assign("quadratic factor with non-square 4c-b^2 "
+                 "(needs algebraic extension)");
         return false;
     }
     const Rational s(sn, sd);
@@ -331,23 +333,23 @@ bool integrateSplitting(const UPoly &A, const UPoly &F,
         Piece ap;
         ap.kind = Piece::Atan;
         ap.coeff = aCoef;
-        ap.v = UPoly(std::vector<Rational>{b, Rational(keel::i64{2})}); // 2x + b
+        ap.v = UPoly(keel::Array<Rational>{b, Rational(keel::i64{2})}); // 2x + b
         ap.scale = s;
         pieces.push_back(ap);
     }
     return true;
 }
 
-bool checkBudget(const Ctx &c, Budget *budget, std::string &reason)
+bool checkBudget(const Ctx &c, Budget *budget, keel::String &reason)
 {
     if (!budget)
         return true;
     if (!budget->step()) {
-        reason = "step budget exhausted";
+        reason.assign("step budget exhausted");
         return false;
     }
     if (!budget->recordArenaBytes(c.nodeCount() * 32)) {
-        reason = "arena byte budget exhausted";
+        reason.assign("arena byte budget exhausted");
         return false;
     }
     return true;
@@ -359,8 +361,8 @@ bool checkBudget(const Ctx &c, Budget *budget, std::string &reason)
 // all poles with that residue. Whatever is left falls through to the
 // per-root/quadratic splitting path.
 bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
-                         std::vector<Piece> &pieces, std::vector<Expr> &extraTerms,
-                         UPoly &certN, UPoly &certD, std::string &reason,
+                         keel::Array<Piece> &pieces, keel::Array<Expr> &extraTerms,
+                         UPoly &certN, UPoly &certD, keel::String &reason,
                          Budget *budget)
 {
     if (A.isZero())
@@ -374,14 +376,14 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
 
     // Rational residues from the FULL factorization of the squarefree
     // resultant (Zassenhaus): no search budget, nothing missed.
-    std::vector<Rational> residues;
+    keel::Array<Rational> residues;
     for (const UPoly &fact : factorOverQ(Rsq, budget))
         if (fact.deg() == 1)
             residues.push_back(fact.coeff(0) * Rational(keel::i64{-1}));
     if (budget && !budget->ok()) {
-        reason = budget->status() == BudgetStatus::StepExhausted
+        reason.assign(budget->status() == BudgetStatus::StepExhausted
                      ? "step budget exhausted"
-                     : "arena byte budget exhausted";
+                     : "arena byte budget exhausted");
         return false;
     }
 
@@ -420,12 +422,12 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
         const UPoly dL = d0.derivative();
         UPoly Rsq2 = resultantT(n0, dL, d0).squarefreePart();
 
-        std::vector<Rational> res2;
-        const std::vector<UPoly> facts2 = factorOverQ(Rsq2, budget);
+        keel::Array<Rational> res2;
+        const keel::Array<UPoly> facts2 = factorOverQ(Rsq2, budget);
         if (budget && !budget->ok()) {
-            reason = budget->status() == BudgetStatus::StepExhausted
+            reason.assign(budget->status() == BudgetStatus::StepExhausted
                          ? "step budget exhausted"
-                         : "arena byte budget exhausted";
+                         : "arena byte budget exhausted");
             return false;
         }
         for (const UPoly &fact : facts2)
@@ -480,9 +482,9 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 const Rational D = pc * pc - Rational(keel::i64{4}) * qc;
                 const UPoly dLpair = leftD.derivative();
                 const ModCRing ring(c2);
-                const UPoly tEl = ring.reduce(UPoly(std::vector<Rational>{R0(), R1()}));
+                const UPoly tEl = ring.reduce(UPoly(keel::Array<Rational>{R0(), R1()}));
                 const auto lift = [&](const UPoly &q, bool mulT) {
-                    std::vector<UPoly> cs;
+                    keel::Array<UPoly> cs;
                     for (keel::usize i = 0; i < q.coeffs().size(); ++i)
                         cs.push_back(mulT ? ring.mul(tEl, UPoly(q.coeff(i)))
                                           : UPoly(q.coeff(i)));
@@ -491,14 +493,14 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 const ModCPoly v =
                     ModCPoly::gcd(lift(leftN, false) - lift(dLpair, true),
                                   lift(leftD, false));
-                std::vector<Rational> aCs, bCs;
+                keel::Array<Rational> aCs, bCs;
                 if (v.deg() >= 1) {
                     for (keel::usize i = 0; i <= static_cast<keel::usize>(v.deg()); ++i) {
                         aCs.push_back(v.coeff(i).coeff(0));
                         bCs.push_back(v.coeff(i).coeff(1));
                     }
                 }
-                const UPoly Aq(aCs), Bq(bCs);
+                const UPoly Aq(keel::move(aCs)), Bq(keel::move(bCs));
                 if (v.deg() >= 1)
                 if (v.deg() < 1 || Bq.isZero())
                     continue;
@@ -571,11 +573,11 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             if (!checkBudget(c, budget, reason))
                 return false;
             const int d = fact.deg();
-            const std::vector<Rational> s = newtonPowerSums(fact.coeffs());
+            const keel::Array<Rational> s = newtonPowerSums(fact.coeffs());
             const ModCRing ring(fact);
-            const UPoly tEl = ring.reduce(UPoly(std::vector<Rational>{R0(), R1()}));
+            const UPoly tEl = ring.reduce(UPoly(keel::Array<Rational>{R0(), R1()}));
             const auto lift = [&](const UPoly &q, bool mulT) {
-                std::vector<UPoly> cs;
+                keel::Array<UPoly> cs;
                 for (keel::usize i = 0; i < q.coeffs().size(); ++i)
                     cs.push_back(mulT ? ring.mul(tEl, UPoly(q.coeff(i)))
                                       : UPoly(q.coeff(i)));
@@ -599,7 +601,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             const int qDeg = d * v.deg();
             const int pDeg = 2 * d * v.deg() - 1;
             const int need = (qDeg > pDeg ? qDeg : pDeg) + 1;
-            std::vector<Rational> xs, qs, ps;
+            keel::Array<Rational> xs, qs, ps;
             for (int x0 = 1; static_cast<int>(xs.size()) < need && x0 < 6 * need + 10; ++x0) {
                 const Rational x0r(static_cast<keel::i64>(x0));
                 // v(x0, t) as a plain Q[t] polynomial (degree < d in t)
@@ -639,13 +641,13 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 ps.push_back(tTrace * qv);
             }
             if (static_cast<int>(xs.size()) < need) {
-                reason = "degree >= 3 factor: not enough interpolation points";
+                reason.assign("degree >= 3 factor: not enough interpolation points");
                 return false;
             }
             const UPoly Qpoly = interpolateRational(xs, qs);
             const UPoly Ppoly = interpolateRational(xs, ps);
             if (Qpoly.isZero()) {
-                reason = "degree >= 3 factor: vanishing norm";
+                reason.assign("degree >= 3 factor: vanishing norm");
                 return false;
             }
 
@@ -671,13 +673,13 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             // the WHOLE contribution); the form merely becomes real.
             bool riobooPair = false;
             if (d == 3) {
-                const std::vector<RootInterval> rts =
+                const keel::Array<RootInterval> rts =
                     isolateRealRoots(fact);
                 if (rts.size() == 1)
                     riobooPair = true;
             }
             const auto ringToExpr = [&](const UPoly &e, const Expr &atom) {
-                std::vector<Expr> terms;
+                keel::Array<Expr> terms;
                 for (keel::usize j = 0; j < e.coeffs().size(); ++j)
                     if (!e.coeff(j).isZero())
                         terms.push_back(j == 0
@@ -690,8 +692,8 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 return c.add(terms);
             };
             const auto polyInXExpr =
-                [&](const std::vector<UPoly> &ringCoeffs, const Expr &atom) {
-                std::vector<Expr> terms;
+                [&](const keel::Array<UPoly> &ringCoeffs, const Expr &atom) {
+                keel::Array<Expr> terms;
                 for (keel::usize k = 0; k < ringCoeffs.size(); ++k) {
                     if (ringCoeffs[k].isZero())
                         continue;
@@ -717,12 +719,12 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             };
 
             if (riobooPair) {
-                const Expr rho = c.rootOf(fact.coeffs(), 0); // unique
+                const Expr rho = c.rootOf(fact.coeffs().clone(), 0); // unique
                 const Rational cp = fact.coeff(2), cs = fact.coeff(0);
                 // ring elements of Q[rho]: s1 = -p - rho, s2 = -s/rho
                 const UPoly s1({Rational(-cp), Rational(keel::i64{-1})});
                 const UPoly tEl2 = ring.reduce(
-                    UPoly(std::vector<Rational>{R0(), R1()}));
+                    UPoly(keel::Array<Rational>{R0(), R1()}));
                 const UPoly s2 = ring.mul(UPoly(Rational(-cs)),
                                            ring.inv(tEl2));
                 const UPoly half(Rational(keel::i64{1}, BigInt(2)));
@@ -735,7 +737,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 // R(x), I(x) with Q[rho] coefficients:
                 // Re(w_k) = a2*(s1^2-2s2)/2 + a1*s1/2 + a0
                 // Im(w_k)/b = a2*s1 + a1
-                std::vector<UPoly> Rk(v.deg() + 1), Ik(v.deg() + 1);
+                keel::Array<UPoly> Rk(v.deg() + 1), Ik(v.deg() + 1);
                 for (int k = 0; k <= v.deg(); ++k) {
                     const UPoly wk = v.coeff(static_cast<keel::usize>(k));
                     const UPoly wa2(wk.coeff(2)), wa1(wk.coeff(1));
@@ -749,7 +751,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                     Ik[k] = ring.add(ring.mul(wa2, s1), wa1);
                 }
                 // real-root term rho * log(v(x, rho))
-                std::vector<Expr> argTerms;
+                keel::Array<Expr> argTerms;
                 for (int k = 0; k <= v.deg(); ++k) {
                     const UPoly rk = v.coeff(static_cast<keel::usize>(k));
                     if (rk.isZero())
@@ -768,7 +770,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                             c.mul({rho, c.func("log", arg)}));
                 }
                 // N2 = R^2 + w2 I^2 (convolution in the ring)
-                std::vector<UPoly> N2(2 * v.deg() + 1, ring.zero());
+                keel::Array<UPoly> N2(2 * v.deg() + 1, ring.zero());
                 for (int i = 0; i <= v.deg(); ++i)
                     for (int j = 0; j <= v.deg(); ++j) {
                         N2[i + j] = ring.add(N2[i + j],
@@ -798,8 +800,8 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             } else {
                 // general d: emit sum_i RootOf(c, i) * log(v(x, ...))
                 for (int i = 0; i < d; ++i) {
-                    const Expr rootExpr = c.rootOf(fact.coeffs(), i);
-                    std::vector<Expr> argTerms;
+                    const Expr rootExpr = c.rootOf(fact.coeffs().clone(), i);
+                    keel::Array<Expr> argTerms;
                     for (keel::usize k = 0;
                          k <= static_cast<keel::usize>(v.deg()); ++k) {
                         const UPoly rk = v.coeff(k);
@@ -840,21 +842,21 @@ UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M)
     if (n < 1)
         return UPoly(R1()); // res of anything with a constant is 1 by convention
 
-    std::vector<Rational> ys;
+    keel::Array<Rational> ys;
     for (int i = 0; i <= n; ++i) {
         const Rational t(static_cast<keel::i64>(i));
         ys.push_back(UPoly::resultant(P - t * Q, M));
     }
 
     // Lagrange interpolation over t = 0..n.
-    std::vector<Rational> coeffs(static_cast<keel::usize>(n) + 1, R0());
+    keel::Array<Rational> coeffs(static_cast<keel::usize>(n) + 1, R0());
     for (int i = 0; i <= n; ++i) {
         UPoly num(R1());
         Rational den(R1());
         for (int j = 0; j <= n; ++j) {
             if (j == i)
                 continue;
-            num = num * UPoly(std::vector<Rational>{
+            num = num * UPoly(keel::Array<Rational>{
                             Rational(-static_cast<keel::i64>(j)), R1()});
             den = den * Rational(static_cast<keel::i64>(i - j));
         }
@@ -862,14 +864,14 @@ UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M)
         for (keel::usize k = 0; k < num.coeffs().size(); ++k)
             coeffs[k] += num.coeff(k) * scale;
     }
-    return UPoly(coeffs);
+    return UPoly(keel::move(coeffs));
 }
 
 // ── Expr <-> Q(x) ─────────────────────────────────────────────
 
 Expr toExpr(Ctx &c, const UPoly &p, Expr var)
 {
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     for (keel::usize k = 0; k < p.coeffs().size(); ++k) {
         if (p.coeff(k).isZero())
             continue;
@@ -892,7 +894,7 @@ bool toRational(Ctx &c, Expr e, Expr var, UPoly &num, UPoly &den)
         return true;
     case NodeKind::Symbol:
         if (e == var) {
-            num = UPoly(std::vector<Rational>{R0(), R1()});
+            num = UPoly(keel::Array<Rational>{R0(), R1()});
             return true;
         }
         return false;
@@ -971,15 +973,15 @@ HermiteResult hermiteReduce(const UPoly &N0, const UPoly &D0)
     }
 
     // Work with the monic associate of D: D = lc * prod F_i^i.
-    const std::vector<UPoly> fs = D0.squarefreeDecomposition();
+    const keel::Array<UPoly> fs = D0.squarefreeDecomposition();
     const UPoly N = pr * (R1() / D0.lc());
 
-    std::vector<UPoly> Ps;
+    keel::Array<UPoly> Ps;
     for (keel::usize i = 0; i < fs.size(); ++i) {
         Ps.push_back(fs[i].powUInt(i + 1));
         out.S = out.S * fs[i];
     }
-    const std::vector<UPoly> Bs = partialFractions(N, Ps);
+    const keel::Array<UPoly> Bs = partialFractions(N, Ps);
 
     out.gn = UPoly();
     for (keel::usize idx = 0; idx < fs.size(); ++idx) {
@@ -988,7 +990,7 @@ HermiteResult hermiteReduce(const UPoly &N0, const UPoly &D0)
         const UPoly dF = F.derivative();
 
         // Peel B into level numerators A_j (j = mult..1).
-        std::vector<UPoly> A(static_cast<keel::usize>(mult) + 1);
+        keel::Array<UPoly> A(static_cast<keel::usize>(mult) + 1);
         UPoly B = Bs[idx];
         for (int j = mult; j >= 1; --j) {
             UPoly q, r;
@@ -1076,7 +1078,7 @@ Expr substituteExpVar(Ctx &c, Expr e, Expr var, Expr t, bool &ok)
                      substituteExpVar(c, c.child(e, 1), var, t, ok));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(substituteExpVar(c, c.child(e, i), var, t, ok));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
@@ -1103,7 +1105,7 @@ Expr substituteBack(Ctx &c, Expr e, Expr t, Expr expVar)
                      substituteBack(c, c.child(e, 1), t, expVar));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(substituteBack(c, c.child(e, i), t, expVar));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
@@ -1152,7 +1154,7 @@ Expr substituteLogVar(Ctx &c, Expr e, Expr var, Expr t)
                      substituteLogVar(c, c.child(e, 1), var, t));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(substituteLogVar(c, c.child(e, i), var, t));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
@@ -1183,13 +1185,13 @@ static RationalIntegral integrateLogRational(Ctx &c, Expr f, Expr var,
     const Expr g = substituteLogVar(c, f, var, t);
     const Expr gx = c.mul({g, var}); // canonical: x*x^-1 folds away
     if (mentionsVar(c, gx, var)) {
-        out.reason = "integrand is not R(log(var))/var";
+        out.reason.assign("integrand is not R(log(var))/var");
         return out;
     }
     const RationalIntegral r = integrateRational(c, gx, t, budget);
     if (!r.proved()) {
-        out.reason = (budget && !budget->ok()) ? r.reason
-                                               : "log substitution: " + r.reason;
+        out.reason = (budget && !budget->ok()) ? r.reason.clone()
+                                               : keel::format("log substitution: {}", r.reason);
         return out;
     }
     const Expr logVar = c.func("log", var);
@@ -1198,7 +1200,7 @@ static RationalIntegral integrateLogRational(Ctx &c, Expr f, Expr var,
     // F has no bare x (r.F is rational in t only), so this forward
     // substitution is exact and must reconstruct the kernel answer.
     if (substituteLogVar(c, F, var, t) != r.F) {
-        out.reason = "log substitution certificate failed";
+        out.reason.assign("log substitution certificate failed");
         return out;
     }
     (void)ok;
@@ -1219,13 +1221,13 @@ static RationalIntegral integrateExpRational(Ctx &c, Expr f, Expr var,
     bool ok = true;
     const Expr g = substituteExpVar(c, f, var, t, ok);
     if (!ok) {
-        out.reason = "integrand mixes the variable outside exp(var)";
+        out.reason.assign("integrand mixes the variable outside exp(var)");
         return out;
     }
     const RationalIntegral r = integrateRational(c, c.div(g, t), t, budget);
     if (!r.proved()) {
-        out.reason = (budget && !budget->ok()) ? r.reason
-                                               : "exp substitution: " + r.reason;
+        out.reason = (budget && !budget->ok()) ? r.reason.clone()
+                                               : keel::format("exp substitution: {}", r.reason);
         return out;
     }
     const Expr expVar = c.func("exp", var);
@@ -1248,7 +1250,7 @@ static RationalIntegral integrateExpRational(Ctx &c, Expr f, Expr var,
     if (!polyGate) {
         bool ok2 = true;
         if (substituteExpVar(c, F, var, t, ok2) != r.F || !ok2) {
-            out.reason = "exp substitution certificate failed";
+            out.reason.assign("exp substitution certificate failed");
             return out;
         }
     }
@@ -1293,7 +1295,7 @@ Expr substituteTangent(Ctx &c, Expr e, Expr var, Expr t, bool &ok)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        const std::string &name = c.funcName(e);
+        const keel::String &name = c.funcName(e);
         const Expr arg = c.child(e, 0);
         if (arg == var) {
             const Expr one = c.one();
@@ -1324,7 +1326,7 @@ Expr substituteTangent(Ctx &c, Expr e, Expr var, Expr t, bool &ok)
                      substituteTangent(c, c.child(e, 1), var, t, ok));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(substituteTangent(c, c.child(e, i), var, t, ok));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
@@ -1426,7 +1428,7 @@ Expr radicalRebuild(Ctx &c, Expr e, Expr var, Expr t, int L)
                       radicalRebuild(c, c.child(e, 0), var, t, L));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> kids;
+        keel::Array<Expr> kids;
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             kids.push_back(radicalRebuild(c, c.child(e, i), var, t, L));
         return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
@@ -1447,9 +1449,9 @@ static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var,
     if (L < 2) {
         // L == 1: a plain rational (the old path owns it); L < 0:
         // the variable escapes the x^(p/q) shape.
-        out.reason = L < 0
+        out.reason.assign(L < 0
                          ? "integrand is not rational in a fractional power of the variable"
-                         : "integrand has no fractional powers";
+                         : "integrand has no fractional powers");
         return out;
     }
     const Expr t = c.symbol("#r");
@@ -1462,8 +1464,8 @@ static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var,
         t, budget);
     if (!r.proved()) {
         out.reason = (budget && !budget->ok())
-                         ? r.reason
-                         : "radical substitution: " + r.reason;
+                         ? r.reason.clone()
+                         : keel::format("radical substitution: {}", r.reason);
         return out;
     }
     const Expr root = c.pow(var, c.number(
@@ -1476,7 +1478,7 @@ static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var,
     // the kernel's own certificate, the Jacobian was attached
     // exactly, and rebuilding F with the SAME L must return r.F.
     if (radicalRebuild(c, F, var, t, L) != r.F) {
-        out.reason = "radical substitution certificate failed";
+        out.reason.assign("radical substitution certificate failed");
         return out;
     }
     out.F = F;
@@ -1494,7 +1496,7 @@ static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var,
     bool ok = true;
     const Expr g = substituteTangent(c, f, var, t, ok);
     if (!ok) {
-        out.reason = "integrand is not rational in sin/cos of the variable";
+        out.reason.assign("integrand is not rational in sin/cos of the variable");
         return out;
     }
     // Jacobian dx = 2 dt / (1 + t^2).
@@ -1503,8 +1505,8 @@ static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var,
     const RationalIntegral r = integrateRational(
         c, c.div(c.mul({c.number(keel::i64{2}), g}), t2p1), t, budget);
     if (!r.proved()) {
-        out.reason = (budget && !budget->ok()) ? r.reason
-                                               : "tan substitution: " + r.reason;
+        out.reason = (budget && !budget->ok()) ? r.reason.clone()
+                                               : keel::format("tan substitution: {}", r.reason);
         return out;
     }
     const Expr halfTan = c.func("tan", halfArg(c, var));
@@ -1520,7 +1522,7 @@ static RationalIntegral integrateTanRational(Ctx &c, Expr f, Expr var,
     if (!polyGate) {
         bool ok2 = true;
         if (substituteTangent(c, F, var, t, ok2) != r.F || !ok2) {
-            out.reason = "tan substitution certificate failed";
+            out.reason.assign("tan substitution certificate failed");
             return out;
         }
     }
@@ -1542,29 +1544,31 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var, Budget *budget)
         // fresh substitution symbols forever (f*t cancels the symbol
         // again) until the stack dies.
         if (!mentionsVar(c, f, var)) {
-            out.reason = "integrand does not depend on the variable";
+            out.reason.assign("integrand does not depend on the variable");
             return out;
         }
         RationalIntegral r = integrateExpRational(c, f, var, budget);
         if (r.proved() || (budget && !budget->ok()))
             return r;
-        std::string why = r.reason;
+        keel::String why = r.reason.clone();
         r = integrateLogRational(c, f, var, budget);
         if (r.proved() || (budget && !budget->ok()))
             return r;
-        why += "; " + r.reason;
+        why.append("; ");
+        why.append(r.reason);
         r = integrateTanRational(c, f, var, budget);
         if (r.proved() || (budget && !budget->ok()))
             return r;
-        why += "; " + r.reason;
+        why.append("; ");
+        why.append(r.reason);
         r = integrateRadicalRational(c, f, var, budget);
         if (r.proved() || (budget && !budget->ok()))
             return r;
-        r.reason = why + "; " + r.reason;
+        r.reason = keel::format("{}; {}", why, r.reason);
         return r;
     }
     if (D.isZero()) {
-        out.reason = "zero denominator";
+        out.reason.assign("zero denominator");
         return out;
     }
     if (N.isZero()) {
@@ -1578,16 +1582,16 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var, Budget *budget)
     const HermiteResult h = hermiteReduce(N, D);
 
     // Split the squarefree residual over its factors.
-    const std::vector<UPoly> fs = D.squarefreeDecomposition();
-    std::vector<UPoly> sq;
+    const keel::Array<UPoly> fs = D.squarefreeDecomposition();
+    keel::Array<UPoly> sq;
     for (const UPoly &F : fs)
         if (!F.isConst())
             sq.push_back(F);
-    const std::vector<UPoly> gs = sq.empty() ? std::vector<UPoly>()
+    const keel::Array<UPoly> gs = sq.empty() ? keel::Array<UPoly>()
                                              : partialFractions(h.gn, sq);
 
-    std::vector<Piece> pieces;
-    std::vector<Expr> extraTerms;
+    keel::Array<Piece> pieces;
+    keel::Array<Expr> extraTerms;
     UPoly qcertN, qcertD(R1());
     for (keel::usize i = 0; i < sq.size(); ++i) {
         if (gs[i].isZero())
@@ -1610,11 +1614,11 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var, Budget *budget)
     }
     fracAdd(vn, vd, qcertN, qcertD);
     if (!(vn * D == vd * N)) {
-        out.reason = "internal certificate check failed";
+        out.reason.assign("internal certificate check failed");
         return out;
     }
     // Assemble the antiderivative.
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     if (!h.rn.isZero())
         terms.push_back(c.mul({toExpr(c, h.rn, var),
                                c.pow(toExpr(c, h.rd, var), c.number(keel::i64{-1}))}));
@@ -1645,7 +1649,7 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var, Budget *budget)
     if (tier2aFormCheck(c, out.F, f, var) == Tier2aStatus::Mismatch) {
         out.F = Expr();
         out.status = RationalIntegral::Status::Unevaluated;
-        out.reason = "internal interval form check failed";
+        out.reason.assign("internal interval form check failed");
         return out;
     }
 
@@ -1657,7 +1661,7 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var, Budget *budget)
 namespace {
 
 bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
-                      std::vector<Expr> &coeffsOut)
+                      keel::Array<Expr> &coeffsOut)
 {
     if (e.isNull() || maxDeg < 0)
         return false;
@@ -1693,7 +1697,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
             return false;
         }
         if (c.kind(term) == NodeKind::Mul) {
-            std::vector<Expr> others;
+            keel::Array<Expr> others;
             int deg = 0;
             for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr ch = c.child(term, i);
@@ -1725,7 +1729,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
         return false;
     };
 
-    std::vector<std::vector<Expr>> buckets(static_cast<keel::usize>(maxDeg + 1));
+    keel::Array<keel::Array<Expr>> buckets(static_cast<keel::usize>(maxDeg + 1));
     if (c.kind(ex) == NodeKind::Add) {
         for (keel::usize i = 0; i < c.childCount(ex); ++i) {
             int d = 0;
@@ -1754,9 +1758,9 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
     return true;
 }
 
-Expr evalSymbolicPoly(Ctx &c, const std::vector<Expr> &coeffs, Expr var)
+Expr evalSymbolicPoly(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr var)
 {
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     for (keel::usize d = 0; d < coeffs.size(); ++d) {
         if (c.isZero(coeffs[d]))
             continue;
@@ -1816,7 +1820,7 @@ void sqrtFactorPair(Ctx &c, Expr expr, Expr &sqrtOut, Expr &invSqrtOut)
         invS = c.pow(f, negHalf);
     };
     if (c.kind(expr) == NodeKind::Mul) {
-        std::vector<Expr> sFactors, invFactors;
+        keel::Array<Expr> sFactors, invFactors;
         for (keel::usize i = 0; i < c.childCount(expr); ++i) {
             Expr si, isi;
             single(c.child(expr, i), si, isi);
@@ -1840,7 +1844,7 @@ Expr expandFuncArgs(Ctx &c, Expr e)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        std::vector<Expr> args;
+        keel::Array<Expr> args;
         args.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             args.push_back(c.expand(expandFuncArgs(c, c.child(e, i))));
@@ -1851,7 +1855,7 @@ Expr expandFuncArgs(Ctx &c, Expr e)
                      expandFuncArgs(c, c.child(e, 1)));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(expandFuncArgs(c, c.child(e, i)));
@@ -1882,7 +1886,7 @@ bool integrateLinearLogOverLinearPole(Ctx &c, Expr logArg, Expr a, Expr b,
 {
     const Expr lSym = c.symbol("_L_dilog");
     const Expr varInL = c.div(c.add({lSym, c.neg(c0)}), c1);
-    std::vector<Expr> lPoly;
+    keel::Array<Expr> lPoly;
     if (!extractPolyInVar(c, c.subs(numExpr, var, varInL), lSym, 8, lPoly))
         return false;
 
@@ -1905,7 +1909,7 @@ bool integrateLinearLogOverLinearPole(Ctx &c, Expr logArg, Expr a, Expr b,
                     c.func("dilog", w)})});
     }
 
-    std::vector<Expr> pieces;
+    keel::Array<Expr> pieces;
     for (keel::usize j = 0; j < lPoly.size(); ++j) {
         if (c.isZero(lPoly[j]))
             continue;
@@ -1951,7 +1955,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
     const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
 
     // Collect top-level multiplicative factors of `f`.
-    std::vector<Expr> factors;
+    keel::Array<Expr> factors;
     if (c.kind(f) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(f); ++i)
             factors.push_back(c.child(f, i));
@@ -1960,8 +1964,8 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
     }
 
     // 1. Check for exp(...) factor (Gaussian erf/erfi or Exponential Integral Ei).
-    std::vector<Expr> expArgs;
-    std::vector<Expr> nonExpFactors;
+    keel::Array<Expr> expArgs;
+    keel::Array<Expr> nonExpFactors;
     for (const Expr &fac : factors) {
         if (c.kind(fac) == NodeKind::Func && c.funcName(fac) == "exp") {
             expArgs.push_back(c.child(fac, 0));
@@ -1978,10 +1982,10 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             expArgs.size() == 1 ? expArgs[0] : c.add(expArgs);
         const Expr rest =
             nonExpFactors.empty() ? c.one() : c.mul(nonExpFactors);
-        std::vector<Expr> qCoeffs;
+        keel::Array<Expr> qCoeffs;
         if (extractPolyInVar(c, qExpr, var, 2, qCoeffs)) {
             // 1a. Gaussian integral: int P(x) * exp(a*x^2 + b*x + d) dx.
-            std::vector<Expr> pCoeffs;
+            keel::Array<Expr> pCoeffs;
             if (qCoeffs.size() == 3 && !c.isZero(qCoeffs[2]) &&
                 extractPolyInVar(c, rest, var, 12, pCoeffs) &&
                 !pCoeffs.empty()) {
@@ -1989,7 +1993,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 const Expr b = qCoeffs[1];
                 const Expr a = qCoeffs[2];
                 const Expr twoA = c.mul({c.number(keel::i64{2}), a});
-                std::vector<Expr> qPoly(
+                keel::Array<Expr> qPoly(
                     pCoeffs.size() >= 2 ? pCoeffs.size() - 1 : 0, c.zero());
                 for (int m = static_cast<int>(pCoeffs.size()) - 1; m >= 1; --m) {
                     const Expr pm = pCoeffs[static_cast<keel::usize>(m)];
@@ -2038,7 +2042,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             if (qCoeffs.size() == 2 && !c.isZero(qCoeffs[1])) {
                 const Expr b = qCoeffs[0];
                 const Expr a = qCoeffs[1];
-                std::vector<Expr> numFacs;
+                keel::Array<Expr> numFacs;
                 Expr linBase;
                 keel::i64 poleK = 0;
                 for (const Expr &rf : nonExpFactors) {
@@ -2046,7 +2050,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                         c.kind(c.child(rf, 1)) == NodeKind::Number) {
                         const Rational &re = c.numberValue(c.child(rf, 1));
                         keel::i64 kVal = 0;
-                        std::vector<Expr> lCoeffs;
+                        keel::Array<Expr> lCoeffs;
                         if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
                             kVal <= -1 && kVal >= -6 &&
                             extractPolyInVar(c, c.child(rf, 0), var, 1, lCoeffs) &&
@@ -2059,7 +2063,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                     numFacs.push_back(rf);
                 }
                 if (poleK >= 1) {
-                    std::vector<Expr> lCoeffs;
+                    keel::Array<Expr> lCoeffs;
                     extractPolyInVar(c, linBase, var, 1, lCoeffs);
                     const Expr c0 = lCoeffs[0];
                     const Expr c1 = lCoeffs[1];
@@ -2069,13 +2073,13 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                     const Expr lSym = c.symbol("_L_ei");
                     const Expr varInL =
                         c.div(c.add({lSym, c.neg(c0)}), c1);
-                    std::vector<Expr> lPoly;
+                    keel::Array<Expr> lPoly;
                     if (extractPolyInVar(c, c.subs(numExpr, var, varInL), lSym,
                                          8, lPoly)) {
-                        std::vector<Expr> fPieces;
+                        keel::Array<Expr> fPieces;
                         bool okPieces = true;
                         // Precompute I_m = int exp(a*x+b) / L^m dx for m = 1..poleK.
-                        std::vector<Expr> iPow(static_cast<keel::usize>(poleK + 1));
+                        keel::Array<Expr> iPow(static_cast<keel::usize>(poleK + 1));
                         const Expr shiftExp = c.simplify(
                             c.add({b, c.neg(c.div(c.mul({a, c0}), c1))}));
                         const Expr uEi = c.mul({c.div(a, c1), linBase});
@@ -2134,7 +2138,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 //     int C * x^(s - 1) * exp(a*x + b) dx = -C * exp(b) * (-a)^(-s) * igamma(s, -a*x)
                 {
                     Expr xExp = c.zero();
-                    std::vector<Expr> cFacs;
+                    keel::Array<Expr> cFacs;
                     bool okMonom = true;
                     for (const Expr &rf : nonExpFactors) {
                         if (!mentionsVar(c, rf, var)) {
@@ -2187,7 +2191,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
     // 2. Logarithmic integral: int (a*x + b)^m / log(a*x + b) dx.
     {
         Expr logArg;
-        std::vector<Expr> restFacs;
+        keel::Array<Expr> restFacs;
         for (const Expr &fac : factors) {
             if (logArg.isNull() && c.kind(fac) == NodeKind::Pow &&
                 c.child(fac, 1) == c.number(keel::i64{-1}) &&
@@ -2198,7 +2202,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 restFacs.push_back(fac);
             }
         }
-        std::vector<Expr> lCoeffs;
+        keel::Array<Expr> lCoeffs;
         if (!logArg.isNull() && extractPolyInVar(c, logArg, var, 1, lCoeffs) &&
             lCoeffs.size() == 2 && !c.isZero(lCoeffs[1])) {
             const Expr a = lCoeffs[1];
@@ -2218,9 +2222,9 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             const Expr lSym = c.symbol("_L_li");
             const Expr varInL = c.div(c.add({lSym, c.neg(lCoeffs[0])}), a);
             const Expr restInL = c.simplify(c.subs(rest, var, varInL));
-            std::vector<Expr> mPoly;
+            keel::Array<Expr> mPoly;
             if (extractPolyInVar(c, restInL, lSym, 8, mPoly)) {
-                std::vector<Expr> pieces;
+                keel::Array<Expr> pieces;
                 for (keel::usize m = 0; m < mPoly.size(); ++m) {
                     if (c.isZero(mPoly[m]))
                         continue;
@@ -2249,9 +2253,9 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
 
     // 3. Sine/Cosine integrals (Si, Ci) and Fresnel integrals (FresnelS, FresnelC).
     {
-        std::string trigFn;
+        keel::StringRef trigFn;
         Expr trigArg;
-        std::vector<Expr> nonTrigFacs;
+        keel::Array<Expr> nonTrigFacs;
         for (const Expr &fac : factors) {
             if (trigFn.empty() && c.kind(fac) == NodeKind::Func &&
                 (c.funcName(fac) == "sin" || c.funcName(fac) == "cos")) {
@@ -2261,7 +2265,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 nonTrigFacs.push_back(fac);
             }
         }
-        std::vector<Expr> tCoeffs;
+        keel::Array<Expr> tCoeffs;
         if (!trigFn.empty() && extractPolyInVar(c, trigArg, var, 2, tCoeffs)) {
             const Expr rest =
                 nonTrigFacs.empty() ? c.one() : c.mul(nonTrigFacs);
@@ -2270,7 +2274,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             if (tCoeffs.size() == 2 && !c.isZero(tCoeffs[1])) {
                 const Expr b = tCoeffs[0];
                 const Expr a = tCoeffs[1];
-                std::vector<Expr> numFacs;
+                keel::Array<Expr> numFacs;
                 Expr linBase;
                 keel::i64 poleK = 0;
                 for (const Expr &rf : nonTrigFacs) {
@@ -2278,7 +2282,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                         c.kind(c.child(rf, 1)) == NodeKind::Number) {
                         const Rational &re = c.numberValue(c.child(rf, 1));
                         keel::i64 kVal = 0;
-                        std::vector<Expr> lCoeffs;
+                        keel::Array<Expr> lCoeffs;
                         if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
                             kVal <= -1 && kVal >= -4 &&
                             extractPolyInVar(c, c.child(rf, 0), var, 1, lCoeffs) &&
@@ -2291,7 +2295,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                     numFacs.push_back(rf);
                 }
                 if (poleK >= 1) {
-                    std::vector<Expr> lCoeffs;
+                    keel::Array<Expr> lCoeffs;
                     extractPolyInVar(c, linBase, var, 1, lCoeffs);
                     const Expr c0 = lCoeffs[0];
                     const Expr c1 = lCoeffs[1];
@@ -2299,7 +2303,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                         numFacs.empty() ? c.one() : c.mul(numFacs);
                     const Expr lSym = c.symbol("_L_si");
                     const Expr varInL = c.div(c.add({lSym, c.neg(c0)}), c1);
-                    std::vector<Expr> lPoly;
+                    keel::Array<Expr> lPoly;
                     if (extractPolyInVar(c, c.subs(numExpr, var, varInL), lSym,
                                          6, lPoly)) {
                         const Expr phi = c.simplify(
@@ -2308,9 +2312,9 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                                              ? trigArg
                                              : c.mul({c.div(a, c1), linBase});
                         const Expr invC1 = c.pow(c1, c.number(keel::i64{-1}));
-                        std::vector<Expr> sinInt(
+                        keel::Array<Expr> sinInt(
                             static_cast<keel::usize>(poleK + 1));
-                        std::vector<Expr> cosInt(
+                        keel::Array<Expr> cosInt(
                             static_cast<keel::usize>(poleK + 1));
                         if (c.isZero(phi)) {
                             sinInt[1] = c.mul({invC1, c.func("Si", uSi)});
@@ -2346,7 +2350,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                                      {c.div(a, denom),
                                       sinInt[static_cast<keel::usize>(m - 1)]}))});
                         }
-                        std::vector<Expr> fPieces;
+                        keel::Array<Expr> fPieces;
                         bool okPieces = true;
                         for (keel::usize j = 0; j < lPoly.size(); ++j) {
                             if (c.isZero(lPoly[j]))
@@ -2387,7 +2391,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             }
 
             // 3b. Fresnel integrals: int P(x) * sin(a*x^2 + b*x + d) dx and cos.
-            std::vector<Expr> pCoeffs;
+            keel::Array<Expr> pCoeffs;
             if (tCoeffs.size() == 3 && !c.isZero(tCoeffs[2]) &&
                 extractPolyInVar(c, rest, var, 8, pCoeffs) &&
                 !pCoeffs.empty()) {
@@ -2396,15 +2400,15 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 const Expr a = tCoeffs[2];
                 const Expr twoA = c.mul({c.number(keel::i64{2}), a});
                 const keel::usize degP = pCoeffs.size();
-                std::vector<Expr> sPoly(degP, c.zero());
-                std::vector<Expr> cPoly(degP, c.zero());
+                keel::Array<Expr> sPoly(degP, c.zero());
+                keel::Array<Expr> cPoly(degP, c.zero());
                 if (trigFn == "sin")
-                    sPoly = pCoeffs;
+                    sPoly = keel::move(pCoeffs);
                 else
-                    cPoly = pCoeffs;
+                    cPoly = keel::move(pCoeffs);
 
-                std::vector<Expr> elemSin(degP >= 2 ? degP - 1 : 0, c.zero());
-                std::vector<Expr> elemCos(degP >= 2 ? degP - 1 : 0, c.zero());
+                keel::Array<Expr> elemSin(degP >= 2 ? degP - 1 : 0, c.zero());
+                keel::Array<Expr> elemCos(degP >= 2 ? degP - 1 : 0, c.zero());
                 for (int m = static_cast<int>(degP) - 1; m >= 1; --m) {
                     const Expr sm = sPoly[static_cast<keel::usize>(m)];
                     if (!c.isZero(sm)) {
@@ -2491,7 +2495,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
     // 4. Dilogarithm (Spence's Li_2 / `dilog`).
     {
         Expr logArg;
-        std::vector<Expr> nonLogFacs;
+        keel::Array<Expr> nonLogFacs;
         for (const Expr &fac : factors) {
             if (logArg.isNull() && c.kind(fac) == NodeKind::Func &&
                 c.funcName(fac) == "log") {
@@ -2526,14 +2530,14 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             }
 
             // 4b. Rational-logarithmic integrand: int R(x) * log(a*x + b) dx.
-            std::vector<Expr> aCoeffs;
+            keel::Array<Expr> aCoeffs;
             if (extractPolyInVar(c, logArg, var, 1, aCoeffs) &&
                 aCoeffs.size() == 2 && !c.isZero(aCoeffs[1])) {
                 const Expr b = aCoeffs[0];
                 const Expr a = aCoeffs[1];
 
                 // Single symbolic/numeric linear pole (c1*x + c0)^(-poleK).
-                std::vector<Expr> numFacs;
+                keel::Array<Expr> numFacs;
                 Expr linBase;
                 keel::i64 poleK = 0;
                 for (const Expr &rf : nonLogFacs) {
@@ -2541,7 +2545,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                         c.kind(c.child(rf, 1)) == NodeKind::Number) {
                         const Rational &re = c.numberValue(c.child(rf, 1));
                         keel::i64 kVal = 0;
-                        std::vector<Expr> lCoeffs;
+                        keel::Array<Expr> lCoeffs;
                         if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
                             kVal <= -1 && kVal >= -6 &&
                             extractPolyInVar(c, c.child(rf, 0), var, 1, lCoeffs) &&
@@ -2554,7 +2558,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                     numFacs.push_back(rf);
                 }
                 if (poleK >= 1) {
-                    std::vector<Expr> lCoeffs;
+                    keel::Array<Expr> lCoeffs;
                     extractPolyInVar(c, linBase, var, 1, lCoeffs);
                     const Expr numExpr =
                         numFacs.empty() ? c.one() : c.mul(numFacs);
@@ -2589,14 +2593,14 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                     UPoly qPoly, rPoly;
                     UPoly::divMod(N, dMonic, qPoly, rPoly);
 
-                    std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+                    keel::Array<UPoly> irreds = factorOverQ(dMonic, budget);
                     struct LinFactor
                     {
                         UPoly lin;
                         int mult = 0;
                         UPoly linPow;
                     };
-                    std::vector<LinFactor> lfs;
+                    keel::Array<LinFactor> lfs;
                     bool allLinear = !(budget && !budget->ok());
                     for (const UPoly &ir : irreds) {
                         if (ir.deg() != 1) {
@@ -2616,7 +2620,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                             lfs.push_back(LinFactor{ir, 1, ir});
                     }
                     if (allLinear && !lfs.empty()) {
-                        std::vector<Expr> pfPieces;
+                        keel::Array<Expr> pfPieces;
                         bool okPF = true;
                         if (!qPoly.isZero()) {
                             const Expr elemPart = c.mul(
@@ -2672,7 +2676,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
         // 4c. Bose-Einstein / Fermi-Dirac / Debye integrand:
         //     int (p1*x + p0) / (A * exp(b*x + d) + B) dx.
         Expr expDenom;
-        std::vector<Expr> numFacs;
+        keel::Array<Expr> numFacs;
         for (const Expr &fac : factors) {
             if (expDenom.isNull() && c.kind(fac) == NodeKind::Pow &&
                 c.child(fac, 1) == c.number(keel::i64{-1}) &&
@@ -2685,7 +2689,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
         }
         if (!expDenom.isNull()) {
             const Expr numExpr = numFacs.empty() ? c.one() : c.mul(numFacs);
-            std::vector<Expr> pCoeffs;
+            keel::Array<Expr> pCoeffs;
             if (extractPolyInVar(c, numExpr, var, 1, pCoeffs) &&
                 pCoeffs.size() == 2 && !c.isZero(pCoeffs[1])) {
                 Expr term0 = c.child(expDenom, 0);
@@ -2700,7 +2704,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                         c.funcName(term1) == "exp") {
                         expArg = c.child(term1, 0);
                     } else if (c.kind(term1) == NodeKind::Mul) {
-                        std::vector<Expr> aFacs;
+                        keel::Array<Expr> aFacs;
                         for (keel::usize i = 0; i < c.childCount(term1); ++i) {
                             const Expr ch = c.child(term1, i);
                             if (expArg.isNull() && c.kind(ch) == NodeKind::Func &&
@@ -2714,7 +2718,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                             A = aFacs.size() == 1 ? aFacs[0] : c.mul(aFacs);
                         }
                     }
-                    std::vector<Expr> eCoeffs;
+                    keel::Array<Expr> eCoeffs;
                     if (!expArg.isNull() && !mentionsVar(c, A, var) &&
                         extractPolyInVar(c, expArg, var, 1, eCoeffs) &&
                         eCoeffs.size() == 2 && !c.isZero(eCoeffs[1])) {
@@ -2756,7 +2760,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
         //     int besselj(1, a*x) dx = -1/a * besselj(0, a*x)
         //     (and analogous formulas for bessely, besseli, besselk).
         Expr besselFac;
-        std::vector<Expr> otherFacs;
+        keel::Array<Expr> otherFacs;
         for (const Expr &fac : factors) {
             if (besselFac.isNull() && c.kind(fac) == NodeKind::Func &&
                 c.childCount(fac) == 2 &&
@@ -2768,17 +2772,17 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             }
         }
         if (!besselFac.isNull()) {
-            const std::string &bfn = c.funcName(besselFac);
+            const keel::String &bfn = c.funcName(besselFac);
             const Expr nu = c.child(besselFac, 0);
             const Expr bArg = c.child(besselFac, 1);
-            std::vector<Expr> bCoeffs;
+            keel::Array<Expr> bCoeffs;
             if (!mentionsVar(c, nu, var) &&
                 extractPolyInVar(c, bArg, var, 1, bCoeffs) &&
                 bCoeffs.size() == 2 && c.isZero(bCoeffs[0]) &&
                 !c.isZero(bCoeffs[1])) {
                 const Expr aCoeff = bCoeffs[1];
                 Expr xPowExp = c.zero();
-                std::vector<Expr> cFacs;
+                keel::Array<Expr> cFacs;
                 bool okOther = true;
                 for (const Expr &of : otherFacs) {
                     if (!mentionsVar(c, of, var)) {
@@ -2842,7 +2846,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
         //     More generally: (c0 + c1*sin(u)^2 + c2*cos(u)^2)^(+/-1/2)
         //     = (A * (1 - m*sin(u)^2))^(+/-1/2) where A = c0 + c2, m = (c2 - c1)/(c0 + c2).
         Expr radFac;
-        std::vector<Expr> radConstFacs;
+        keel::Array<Expr> radConstFacs;
         bool radOnly = true;
         for (const Expr &fac : factors) {
             if (!mentionsVar(c, fac, var)) {
@@ -2867,7 +2871,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             const bool isFirstKind =
                 (re == Rational(keel::i64{-1}, BigInt(2)));
             const Expr base = c.expand(c.child(radFac, 0));
-            std::vector<Expr> bTerms;
+            keel::Array<Expr> bTerms;
             if (c.kind(base) == NodeKind::Add) {
                 for (keel::usize i = 0; i < c.childCount(base); ++i)
                     bTerms.push_back(c.child(base, i));
@@ -2884,15 +2888,15 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                     c0 = c.add({c0, bt});
                     continue;
                 }
-                std::vector<Expr> tFacs;
+                keel::Array<Expr> tFacs;
                 if (c.kind(bt) == NodeKind::Mul) {
                     for (keel::usize i = 0; i < c.childCount(bt); ++i)
                         tFacs.push_back(c.child(bt, i));
                 } else {
                     tFacs.push_back(bt);
                 }
-                std::vector<Expr> coefFacs;
-                std::string trigFn;
+                keel::Array<Expr> coefFacs;
+                keel::StringRef trigFn;
                 Expr trigU;
                 bool matchedTerm = true;
                 for (const Expr &tf : tFacs) {
@@ -2927,7 +2931,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 else
                     c2 = c.add({c2, termCoef});
             }
-            std::vector<Expr> uCoeffs;
+            keel::Array<Expr> uCoeffs;
             if (okTrigQuad && !uArg.isNull() &&
                 extractPolyInVar(c, uArg, var, 1, uCoeffs) &&
                 uCoeffs.size() == 2 && !c.isZero(uCoeffs[1])) {
@@ -2977,7 +2981,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
         //     int rest(x) * dilog(u(x)) dx      = q * polylog(3, u(x))
         //     where q = rest(x) * u(x) / u'(x) is independent of `var`.
         Expr polylogFac;
-        std::vector<Expr> polylogOtherFacs;
+        keel::Array<Expr> polylogOtherFacs;
         for (const Expr &fac : factors) {
             if (polylogFac.isNull() && c.kind(fac) == NodeKind::Func &&
                 ((c.funcName(fac) == "polylog" && c.childCount(fac) == 2 &&
@@ -3029,7 +3033,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
         !mentionsVar(c, c.child(f, 0), var)) {
         const Expr nOrd = c.child(f, 0);
         const Expr uArg = c.child(f, 1);
-        std::vector<Expr> uCoeffs;
+        keel::Array<Expr> uCoeffs;
         if (extractPolyInVar(c, uArg, var, 1, uCoeffs) &&
             uCoeffs.size() == 2 && !c.isZero(uCoeffs[1])) {
             const Expr nP1 = c.simplify(c.add({nOrd, c.one()}));
@@ -3062,12 +3066,12 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
             }
         }
         const Expr uArg = c.child(f, nArgs - 1);
-        std::vector<Expr> uCoeffs;
+        keel::Array<Expr> uCoeffs;
         if (paramsFree && extractPolyInVar(c, uArg, var, 1, uCoeffs) &&
             uCoeffs.size() == 2 && !c.isZero(uCoeffs[1])) {
             const Expr kSlope = uCoeffs[1];
             const Expr m1 = c.number(keel::i64{-1});
-            std::vector<Expr> shiftedArgs;
+            keel::Array<Expr> shiftedArgs;
             bool validShift = true;
             for (keel::usize i = 0; i + 1 < nArgs; ++i) {
                 const Expr pm1 = c.simplify(c.add({c.child(f, i), m1}));
@@ -3123,9 +3127,9 @@ RationalIntegral integrate(Ctx &c, Expr f, Expr var, Budget *budget)
         return out;
     }
     if (budget && !budget->ok()) {
-        out.reason = budget->status() == BudgetStatus::StepExhausted
+        out.reason.assign(budget->status() == BudgetStatus::StepExhausted
                          ? "step budget exhausted"
-                         : "arena byte budget exhausted";
+                         : "arena byte budget exhausted");
         return out;
     }
 
@@ -3138,8 +3142,8 @@ RationalIntegral integrate(Ctx &c, Expr f, Expr var, Budget *budget)
     // 3. Constant-factor pull-out (`var`-free factors in a product whose
     //    remaining factors actually depend on `var`).
     if (c.kind(f) == NodeKind::Mul) {
-        std::vector<Expr> constFactors;
-        std::vector<Expr> varFactors;
+        keel::Array<Expr> constFactors;
+        keel::Array<Expr> varFactors;
         for (keel::usize i = 0; i < c.childCount(f); ++i) {
             const Expr ch = c.child(f, i);
             if (mentionsVar(c, ch, var))
@@ -3167,7 +3171,7 @@ RationalIntegral integrate(Ctx &c, Expr f, Expr var, Budget *budget)
     // 5. Additive linearity over `Add` (mixed sums where summands are
     //    handled by Rubi, the algebraic/Liouvillian kernel, or special functions).
     if (c.kind(f) == NodeKind::Add) {
-        std::vector<Expr> pieces;
+        keel::Array<Expr> pieces;
         pieces.reserve(c.childCount(f));
         for (keel::usize i = 0; i < c.childCount(f); ++i) {
             const RationalIntegral part =
@@ -3193,20 +3197,20 @@ bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out)
     // Monic factor powers of N and D plus the rational content:
     // e = (n_c / d_c) * prod f_i^m_i / prod g_j^e_j.
     const auto build = [&c, &var](const UPoly &p,
-                                  std::vector<Expr> &factors) -> Rational {
+                                  keel::Array<Expr> &factors) -> Rational {
         Rational content = p.lc();
-        std::vector<UPoly> fs = factorOverQ(p);
+        keel::Array<UPoly> fs = factorOverQ(p);
         for (const UPoly &f : fs)
             factors.push_back(toExpr(c, f, var));
         return content;
     };
-    std::vector<Expr> numFactors, denFactors;
+    keel::Array<Expr> numFactors, denFactors;
     const Rational numContent = build(N, numFactors);
     const Rational denContent = build(D, denFactors);
     // Multiplicities: count equal factors (factorOverQ emits each
     // multiplicity copy separately).
-    const auto withPowers = [&c](std::vector<Expr> &fs) {
-        std::vector<Expr> out;
+    const auto withPowers = [&c](keel::Array<Expr> &fs) {
+        keel::Array<Expr> out;
         std::sort(fs.begin(), fs.end(), [&c](Expr a, Expr b) {
             return c.compare(a, b) < 0;
         });
@@ -3222,15 +3226,15 @@ bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out)
         }
         return out;
     };
-    std::vector<Expr> numP = withPowers(numFactors);
-    std::vector<Expr> denP = withPowers(denFactors);
+    keel::Array<Expr> numP = withPowers(numFactors);
+    keel::Array<Expr> denP = withPowers(denFactors);
 
     // Assemble: content * prod(num) / prod(den).
-    std::vector<Expr> prod{c.number(numContent)};
+    keel::Array<Expr> prod{c.number(numContent)};
     for (Expr &f : numP)
         prod.push_back(f);
     if (!denP.empty()) {
-        std::vector<Expr> den{c.number(denContent)};
+        keel::Array<Expr> den{c.number(denContent)};
         for (Expr &f : denP)
             den.push_back(f);
         prod.push_back(c.pow(c.mul(den), c.number(keel::i64{-1})));
@@ -3246,7 +3250,7 @@ bool isInfBound(const Ctx &c, Expr e, int &dirOut)
     if (e.isNull())
         return false;
     if (c.kind(e) == NodeKind::Symbol) {
-        const std::string &nm = c.symbolName(e);
+        const keel::String &nm = c.symbolName(e);
         if (nm == "inf" || nm == "oo" || nm == "infinity") {
             dirOut = +1;
             return true;
@@ -3255,7 +3259,7 @@ bool isInfBound(const Ctx &c, Expr e, int &dirOut)
     if (c.kind(e) == NodeKind::Mul && c.childCount(e) == 2 &&
         c.kind(c.child(e, 0)) == NodeKind::Number &&
         c.kind(c.child(e, 1)) == NodeKind::Symbol) {
-        const std::string &nm = c.symbolName(c.child(e, 1));
+        const keel::String &nm = c.symbolName(c.child(e, 1));
         if (nm == "inf" || nm == "oo" || nm == "infinity") {
             const int s = c.numberValue(c.child(e, 0)).signum();
             if (s != 0) {
@@ -3268,7 +3272,7 @@ bool isInfBound(const Ctx &c, Expr e, int &dirOut)
 }
 
 void collectPoleDenominators(Ctx &c, Expr e, Expr var,
-                             std::vector<UPoly> &polysOut)
+                             keel::Array<UPoly> &polysOut)
 {
     UPoly n, d;
     if (toRational(c, e, var, n, d) && !d.isZero() && d.deg() >= 1) {
@@ -3300,14 +3304,14 @@ Expr realizeLogAbsAtEndpoint(Ctx &c, Expr e, Expr var, Expr pt)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Add: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(realizeLogAbsAtEndpoint(c, c.child(e, i), var, pt));
         return c.add(ch);
     }
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(realizeLogAbsAtEndpoint(c, c.child(e, i), var, pt));
@@ -3318,7 +3322,7 @@ Expr realizeLogAbsAtEndpoint(Ctx &c, Expr e, Expr var, Expr pt)
                      realizeLogAbsAtEndpoint(c, c.child(e, 1), var, pt));
     case NodeKind::Func: {
         if (c.childCount(e) != 1) {
-            std::vector<Expr> args;
+            keel::Array<Expr> args;
             args.reserve(c.childCount(e));
             for (keel::usize i = 0; i < c.childCount(e); ++i)
                 args.push_back(
@@ -3378,9 +3382,9 @@ Expr expandMultipleAngleTrig(Ctx &c, Expr e, Expr var)
     case NodeKind::RootOf:
         return e;
     case NodeKind::Func: {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         if (c.childCount(e) != 1) {
-            std::vector<Expr> args;
+            keel::Array<Expr> args;
             args.reserve(c.childCount(e));
             for (keel::usize i = 0; i < c.childCount(e); ++i)
                 args.push_back(expandMultipleAngleTrig(c, c.child(e, i), var));
@@ -3419,7 +3423,7 @@ Expr expandMultipleAngleTrig(Ctx &c, Expr e, Expr var)
                      expandMultipleAngleTrig(c, c.child(e, 1), var));
     case NodeKind::Add:
     case NodeKind::Mul: {
-        std::vector<Expr> ch;
+        keel::Array<Expr> ch;
         ch.reserve(c.childCount(e));
         for (keel::usize i = 0; i < c.childCount(e); ++i)
             ch.push_back(expandMultipleAngleTrig(c, c.child(e, i), var));
@@ -3434,7 +3438,7 @@ bool mentionsBranchTrigOrAtan(const Ctx &c, Expr e, Expr var)
     if (e.isNull() || !mentionsVar(c, e, var))
         return false;
     if (c.kind(e) == NodeKind::Func) {
-        const std::string &fn = c.funcName(e);
+        const keel::String &fn = c.funcName(e);
         if (fn == "atan" || fn == "acot" || fn == "tan" || fn == "cot" ||
             fn == "sec" || fn == "csc" || fn == "log") {
             return true;
@@ -3461,8 +3465,8 @@ Expr evalQuadraticFourierResidue(Ctx &c, Expr A, Expr B, Expr alpha,
     sqrtFactorPair(c, betaSq, beta, invBeta);
     const Expr piSym = c.symbol("pi");
     const Expr expDecay = c.func("exp", c.neg(c.mul({absOmega, beta})));
-    std::vector<Expr> J(static_cast<keel::usize>(k + 1));
-    std::vector<Expr> K(static_cast<keel::usize>(k + 1));
+    keel::Array<Expr> J(static_cast<keel::usize>(k + 1));
+    keel::Array<Expr> K(static_cast<keel::usize>(k + 1));
     J[1] = c.mul({piSym, invBeta, expDecay});
     K[1] = c.mul({piSym, expDecay});
     for (int m = 2; m <= k; ++m) {
@@ -3499,11 +3503,11 @@ Expr evalQuadraticFourierResidue(Ctx &c, Expr A, Expr B, Expr alpha,
 
 bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
 {
-    std::string why;
+    keel::String why;
     if (!checkBudget(c, budget, why))
         return false;
     if (c.kind(f) == NodeKind::Add) {
-        std::vector<Expr> parts;
+        keel::Array<Expr> parts;
         for (keel::usize i = 0; i < c.childCount(f); ++i) {
             Expr pi;
             if (!contourFourierTerm(c, c.child(f, i), var, budget, pi))
@@ -3514,7 +3518,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
         return true;
     }
 
-    std::vector<Expr> factors;
+    keel::Array<Expr> factors;
     if (c.kind(f) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(f); ++i)
             factors.push_back(c.child(f, i));
@@ -3522,9 +3526,9 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
         factors.push_back(f);
     }
 
-    std::string trigFn;
+    keel::StringRef trigFn;
     Expr trigArg;
-    std::vector<Expr> ratFacs;
+    keel::Array<Expr> ratFacs;
     for (const Expr &fac : factors) {
         if (trigFn.empty() && c.kind(fac) == NodeKind::Func &&
             (c.funcName(fac) == "sin" || c.funcName(fac) == "cos") &&
@@ -3538,7 +3542,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
     if (trigFn.empty())
         return false;
 
-    std::vector<Expr> wCoeffs;
+    keel::Array<Expr> wCoeffs;
     if (!extractPolyInVar(c, trigArg, var, 1, wCoeffs) ||
         wCoeffs.size() != 2 || c.isZero(wCoeffs[1]))
         return false;
@@ -3605,7 +3609,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
         if (N.deg() >= D.deg())
             return false;
 
-        std::vector<Expr> totalTerms;
+        keel::Array<Expr> totalTerms;
         // Handle removable singularity at x = 0 for sin(omega*x) / x * ...
         if (isSin && D.coeff(0).isZero()) {
             const UPoly xPoly({Rational(keel::i64{0}), Rational(keel::i64{1})});
@@ -3646,7 +3650,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
         N = N * UPoly({Rational(keel::i64{1}) / dLc});
 
         // Factor dMonic into distinct irreducible quadratics Q_j^{m_j}.
-        std::vector<UPoly> irreds = factorOverQ(dMonic, budget);
+        keel::Array<UPoly> irreds = factorOverQ(dMonic, budget);
         if (budget && !budget->ok())
             return false;
         struct QuadFactor
@@ -3655,7 +3659,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
             int mult = 0;
             UPoly qPow;
         };
-        std::vector<QuadFactor> qfs;
+        keel::Array<QuadFactor> qfs;
         for (const UPoly &ir : irreds) {
             if (ir.deg() != 2)
                 return false;
@@ -3711,7 +3715,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
     }
 
     // Path B: Symbolic parameter quadratic (A*x + B) / (a2*x^2 + a1*x + a0)^k.
-    std::vector<Expr> numFacs;
+    keel::Array<Expr> numFacs;
     Expr quadBase;
     int quadK = 0;
     for (const Expr &rf : ratFacs) {
@@ -3719,7 +3723,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
             c.kind(c.child(rf, 1)) == NodeKind::Number) {
             const Rational &re = c.numberValue(c.child(rf, 1));
             keel::i64 kVal = 0;
-            std::vector<Expr> qCoeffs;
+            keel::Array<Expr> qCoeffs;
             if (re.den() == BigInt(1) && re.num().fitsInt64(kVal) &&
                 kVal <= -1 && kVal >= -4 &&
                 extractPolyInVar(c, c.child(rf, 0), var, 2, qCoeffs) &&
@@ -3732,7 +3736,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
         numFacs.push_back(rf);
     }
     if (quadK >= 1) {
-        std::vector<Expr> qCoeffs, nCoeffs;
+        keel::Array<Expr> qCoeffs, nCoeffs;
         extractPolyInVar(c, quadBase, var, 2, qCoeffs);
         const Expr numExpr = numFacs.empty() ? c.one() : c.mul(numFacs);
         if (extractPolyInVar(c, numExpr, var, 1, nCoeffs)) {
@@ -3781,7 +3785,7 @@ bool matchMonomialInVar(Ctx &c, Expr e, Expr var, Expr &coefOut, Expr &expOut)
         return true;
     }
     if (c.kind(e) == NodeKind::Mul) {
-        std::vector<Expr> cFacs;
+        keel::Array<Expr> cFacs;
         Expr vExp;
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr ch = c.child(e, i);
@@ -3838,7 +3842,7 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
                            Expr &valOut, bool &isDivergent)
 {
     isDivergent = false;
-    std::vector<Expr> facs;
+    keel::Array<Expr> facs;
     if (c.kind(term) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(term); ++i)
             facs.push_back(c.child(term, i));
@@ -3846,8 +3850,8 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         facs.push_back(term);
     }
 
-    std::vector<Expr> constFacs;
-    std::vector<Expr> expArgs;
+    keel::Array<Expr> constFacs;
+    keel::Array<Expr> expArgs;
     Expr xExp = c.zero();
     keel::i64 logPow = 0;
     Expr sinExp = c.zero();
@@ -3912,14 +3916,14 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
                 vPart = c.child(sumNode, 0);
             }
             if (!cPart.isNull() && !vPart.isNull()) {
-                std::vector<Expr> vFacs;
+                keel::Array<Expr> vFacs;
                 if (c.kind(vPart) == NodeKind::Mul) {
                     for (keel::usize i = 0; i < c.childCount(vPart); ++i)
                         vFacs.push_back(c.child(vPart, i));
                 } else {
                     vFacs.push_back(vPart);
                 }
-                std::vector<Expr> c1Facs;
+                keel::Array<Expr> c1Facs;
                 Expr eArg;
                 bool okExpTerm = true;
                 for (const Expr &vf : vFacs) {
@@ -3946,7 +3950,7 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
             }
         }
         if (intervalKind == 3) {
-            std::string tFn;
+            keel::StringRef tFn;
             Expr tArg, tExp;
             if (c.kind(fac) == NodeKind::Func) {
                 tFn = c.funcName(fac);
@@ -4410,7 +4414,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     if (intervalKind != 1 && intervalKind != 3)
         return false;
 
-    std::vector<Expr> rawFacs;
+    keel::Array<Expr> rawFacs;
     if (c.kind(term) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(term); ++i)
             rawFacs.push_back(c.child(term, i));
@@ -4418,7 +4422,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         rawFacs.push_back(term);
     }
 
-    std::vector<Expr> facs;
+    keel::Array<Expr> facs;
     for (const Expr &rf : rawFacs) {
         if (c.kind(rf) == NodeKind::Pow &&
             c.kind(c.child(rf, 0)) == NodeKind::Mul &&
@@ -4431,7 +4435,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         }
         if (intervalKind == 1 && c.kind(rf) == NodeKind::Pow &&
             !mentionsVar(c, c.child(rf, 1), var)) {
-            std::vector<Expr> qCoeffs;
+            keel::Array<Expr> qCoeffs;
             if (extractPolyInVar(c, c.child(rf, 0), var, 4, qCoeffs) &&
                 qCoeffs.size() == 5 && qCoeffs[0] == c.one() &&
                 c.isZero(qCoeffs[1]) && c.isZero(qCoeffs[3])) {
@@ -4456,8 +4460,8 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         Expr param;
         Rational exp;
     };
-    std::vector<Expr> constFacs;
-    std::vector<QuadBinom> bins;
+    keel::Array<Expr> constFacs;
+    keel::Array<QuadBinom> bins;
 
     auto addBin = [&](Expr param, const Rational &re) {
         const Expr sp = c.simplify(param);
@@ -4484,7 +4488,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
             bExp = c.numberValue(c.child(fac, 1));
         }
         if (intervalKind == 1) {
-            std::vector<Expr> pCoeffs;
+            keel::Array<Expr> pCoeffs;
             if (!extractPolyInVar(c, bBase, var, 2, pCoeffs) ||
                 pCoeffs.size() != 3 || !(pCoeffs[0] == c.one()) ||
                 !c.isZero(pCoeffs[1]) || c.isZero(pCoeffs[2])) {
@@ -4506,14 +4510,14 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
             }
             if (!(cTerm == c.one()) || sTerm.isNull())
                 return false;
-            std::vector<Expr> sFacs;
+            keel::Array<Expr> sFacs;
             if (c.kind(sTerm) == NodeKind::Mul) {
                 for (keel::usize i = 0; i < c.childCount(sTerm); ++i)
                     sFacs.push_back(c.child(sTerm, i));
             } else {
                 sFacs.push_back(sTerm);
             }
-            std::vector<Expr> pFacs;
+            keel::Array<Expr> pFacs;
             bool hasSin2 = false;
             for (const Expr &sf : sFacs) {
                 if (!mentionsVar(c, sf, var)) {
@@ -4560,7 +4564,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         }
         if (unitIdx < 0)
             return false;
-        std::vector<QuadBinom> rem;
+        keel::Array<QuadBinom> rem;
         for (keel::usize i = 0; i < bins.size(); ++i) {
             if (static_cast<int>(i) != unitIdx && !bins[i].exp.isZero())
                 rem.push_back(bins[i]);
@@ -4597,7 +4601,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     }
 
     // intervalKind == 3 ([0, pi/2]):
-    std::vector<QuadBinom> nz;
+    keel::Array<QuadBinom> nz;
     for (const QuadBinom &qb : bins) {
         if (!qb.exp.isZero())
             nz.push_back(qb);
@@ -4697,7 +4701,7 @@ bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 
     const Expr fWork = c.expand(f);
     const Expr fUse = fWork.isNull() ? f : fWork;
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     if (c.kind(fUse) == NodeKind::Add) {
         for (keel::usize i = 0; i < c.childCount(fUse); ++i)
             terms.push_back(c.child(fUse, i));
@@ -4705,7 +4709,7 @@ bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
         terms.push_back(fUse);
     }
 
-    std::vector<Expr> pieceVals;
+    keel::Array<Expr> pieceVals;
     pieceVals.reserve(terms.size());
     for (const Expr &t : terms) {
         Expr val;
@@ -4714,7 +4718,7 @@ bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
             !tryEllipticDefiniteTerm(c, t, var, intervalKind, val)) {
             if (isDiv && terms.size() == 1) {
                 out.status = DefiniteIntegral::Status::Divergent;
-                out.reason = "divergent Euler Gamma/Beta integral";
+                out.reason.assign("divergent Euler Gamma/Beta integral");
                 return true;
             }
             return false;
@@ -4736,7 +4740,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 {
     DefiniteIntegral out;
     if (f.isNull() || var.isNull() || a.isNull() || b.isNull()) {
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
     if (!checkBudget(c, budget, out.reason))
@@ -4770,10 +4774,10 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     if (hasNumA && hasNumB) {
         const double xMin = std::min(aVal, bVal);
         const double xMax = std::max(aVal, bVal);
-        std::vector<UPoly> denPolys;
+        keel::Array<UPoly> denPolys;
         collectPoleDenominators(c, f, var, denPolys);
         for (const UPoly &D : denPolys) {
-            const std::vector<RealRootSolution> roots = solveRealRoots(D);
+            const keel::Array<RealRootSolution> roots = solveRealRoots(D);
             for (const RealRootSolution &rt : roots) {
                 double rLo = 0.0, rHi = 0.0;
                 if (rt.isRational) {
@@ -4793,7 +4797,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                             continue; // removable singularity
                     }
                     out.status = DefiniteIntegral::Status::Divergent;
-                    out.reason = "divergent interior pole on integration interval";
+                    out.reason.assign("divergent interior pole on integration interval");
                     return out;
                 }
             }
@@ -4832,7 +4836,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                         limitOneSided(c, f, var, c.symbol("pi"), -1, budget);
                     if (limPi.status == LimitResult::Status::Divergent) {
                         out.status = DefiniteIntegral::Status::Divergent;
-                        out.reason = "divergent trigonometric pole at pi";
+                        out.reason.assign("divergent trigonometric pole at pi");
                         return out;
                     }
                     const Expr t2p1 =
@@ -4903,7 +4907,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                                               bIsInf, bInfDir, out)) {
             return out;
         }
-        out.reason = indef.reason;
+        out.reason.assign(indef.reason);
         return out;
     }
     out.F = indef.F;
@@ -4926,7 +4930,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     const LimitResult limB = evalEndpoint(b, bIsInf, bInfDir, dirB);
     if (limB.status == LimitResult::Status::Divergent) {
         out.status = DefiniteIntegral::Status::Divergent;
-        out.reason = "divergent at upper integration bound";
+        out.reason.assign("divergent at upper integration bound");
         return out;
     }
     if (!limB.proved()) {
@@ -4934,16 +4938,16 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                                               bIsInf, bInfDir, out)) {
             return out;
         }
-        out.reason = limB.reason.empty()
-                         ? "unable to evaluate antiderivative at upper bound"
-                         : limB.reason;
+        out.reason.assign(limB.reason.empty()
+                         ? keel::StringRef("unable to evaluate antiderivative at upper bound")
+                         : limB.reason.as_ref());
         return out;
     }
 
     const LimitResult limA = evalEndpoint(a, aIsInf, aInfDir, dirA);
     if (limA.status == LimitResult::Status::Divergent) {
         out.status = DefiniteIntegral::Status::Divergent;
-        out.reason = "divergent at lower integration bound";
+        out.reason.assign("divergent at lower integration bound");
         return out;
     }
     if (!limA.proved()) {
@@ -4951,21 +4955,21 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                                               bIsInf, bInfDir, out)) {
             return out;
         }
-        out.reason = limA.reason.empty()
-                         ? "unable to evaluate antiderivative at lower bound"
-                         : limA.reason;
+        out.reason.assign(limA.reason.empty()
+                         ? keel::StringRef("unable to evaluate antiderivative at lower bound")
+                         : limA.reason.as_ref());
         return out;
     }
 
-    std::vector<Expr> jumpTerms{limB.value, c.neg(limA.value)};
+    keel::Array<Expr> jumpTerms{limB.value, c.neg(limA.value)};
     if (hasNumA && hasNumB) {
         const double xMin = std::min(aVal, bVal);
         const double xMax = std::max(aVal, bVal);
-        std::vector<UPoly> fDenPolys;
+        keel::Array<UPoly> fDenPolys;
         collectPoleDenominators(c, indef.F, var, fDenPolys);
-        std::vector<Rational> jumpPts;
+        keel::Array<Rational> jumpPts;
         for (const UPoly &D : fDenPolys) {
-            const std::vector<RealRootSolution> roots = solveRealRoots(D);
+            const keel::Array<RealRootSolution> roots = solveRealRoots(D);
             for (const RealRootSolution &rt : roots) {
                 if (!rt.isRational)
                     continue;
@@ -4999,23 +5003,23 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     return out;
 }
 
-RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
+RationalIntegral integrateMulti(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
                                 Budget *budget)
 {
     RationalIntegral out;
     if (!checkBudget(c, budget, out.reason))
         return out;
     if (f.isNull()) {
-        out.reason = "null integrand";
+        out.reason.assign("null integrand");
         return out;
     }
     if (vars.empty()) {
-        out.reason = "empty variable list";
+        out.reason.assign("empty variable list");
         return out;
     }
     for (Expr v : vars) {
         if (v.isNull() || c.kind(v) != NodeKind::Symbol) {
-            out.reason = "integration variable must be a symbol";
+            out.reason.assign("integration variable must be a symbol");
             return out;
         }
     }
@@ -5024,7 +5028,7 @@ RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
     for (Expr v : vars) {
         const RationalIntegral step = integrate(c, cur, v, budget);
         if (!step.proved()) {
-            out.reason = step.reason;
+            out.reason.assign(step.reason);
             return out;
         }
         cur = c.simplify(step.F);
@@ -5035,7 +5039,7 @@ RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
     for (keel::usize idx = vars.size(); idx > 0; --idx) {
         dF = c.diff(dF, vars[idx - 1]);
         if (dF.isNull()) {
-            out.reason = "mixed derivative certification failed";
+            out.reason.assign("mixed derivative certification failed");
             return out;
         }
     }
@@ -5045,7 +5049,7 @@ RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
         c.isZero(c.simplify(diffExpr)) ||
         c.isZero(simplifyRationalExpr(c, diffExpr));
     if (!certOk) {
-        out.reason = "mixed partial derivative certificate mismatch";
+        out.reason.assign("mixed partial derivative certificate mismatch");
         return out;
     }
 
@@ -5055,23 +5059,23 @@ RationalIntegral integrateMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
 }
 
 DefiniteIntegral definiteIntegrateMulti(
-    Ctx &c, Expr f, const std::vector<DefiniteBound> &bounds, Budget *budget)
+    Ctx &c, Expr f, keel::ArrayRef<DefiniteBound> bounds, Budget *budget)
 {
     DefiniteIntegral out;
     if (!checkBudget(c, budget, out.reason))
         return out;
     if (f.isNull()) {
-        out.reason = "null integrand";
+        out.reason.assign("null integrand");
         return out;
     }
     if (bounds.empty()) {
-        out.reason = "empty bounds list";
+        out.reason.assign("empty bounds list");
         return out;
     }
     for (const DefiniteBound &bnd : bounds) {
         if (bnd.var.isNull() || c.kind(bnd.var) != NodeKind::Symbol ||
             bnd.a.isNull() || bnd.b.isNull()) {
-            out.reason = "invalid definite integration bound";
+            out.reason.assign("invalid definite integration bound");
             return out;
         }
     }
@@ -5095,16 +5099,16 @@ DefiniteIntegral definiteIntegrateMulti(
 
 namespace {
 
-Expr subsVectorSimultaneous(Ctx &c, Expr e, const std::vector<Expr> &vars,
-                            const std::vector<Expr> &repls)
+Expr subsVectorSimultaneous(Ctx &c, Expr e, keel::ArrayRef<Expr> vars,
+                            keel::ArrayRef<Expr> repls)
 {
     if (e.isNull())
         return Expr();
-    std::vector<Expr> tmps;
+    keel::Array<Expr> tmps;
     tmps.reserve(vars.size());
     Expr cur = e;
     for (keel::usize i = 0; i < vars.size(); ++i) {
-        const Expr tmp = c.symbol("$li_tmp_" + std::to_string(i));
+        const Expr tmp = c.symbol(keel::format("$li_tmp_{}", i));
         tmps.push_back(tmp);
         cur = c.subs(cur, vars[i], tmp);
     }
@@ -5134,7 +5138,7 @@ Expr simplifySqrtOnInterval(Ctx &c, Expr speedSq, Expr t, Expr a, Expr b)
     const Expr midExpr =
         c.mul({half, c.add({a, b})});
 
-    std::vector<Expr> factors;
+    keel::Array<Expr> factors;
     if (c.kind(baseExpr) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(baseExpr); ++i)
             factors.push_back(c.child(baseExpr, i));
@@ -5142,8 +5146,8 @@ Expr simplifySqrtOnInterval(Ctx &c, Expr speedSq, Expr t, Expr a, Expr b)
         factors.push_back(baseExpr);
     }
 
-    std::vector<Expr> outFactors;
-    std::vector<Expr> remUnderSqrt;
+    keel::Array<Expr> outFactors;
+    keel::Array<Expr> remUnderSqrt;
     for (Expr fk : factors) {
         if (c.kind(fk) == NodeKind::Number) {
             const Rational &rv = c.numberValue(fk);
@@ -5199,8 +5203,8 @@ Expr simplifySqrtOnInterval(Ctx &c, Expr speedSq, Expr t, Expr a, Expr b)
 } // namespace
 
 DefiniteIntegral lineIntegralScalar(Ctx &c, Expr f,
-                                    const std::vector<Expr> &vars,
-                                    const std::vector<Expr> &curve, Expr t,
+                                    keel::ArrayRef<Expr> vars,
+                                    keel::ArrayRef<Expr> curve, Expr t,
                                     Expr a, Expr b, Budget *budget)
 {
     DefiniteIntegral out;
@@ -5208,25 +5212,25 @@ DefiniteIntegral lineIntegralScalar(Ctx &c, Expr f,
         return out;
     if (f.isNull() || t.isNull() || c.kind(t) != NodeKind::Symbol ||
         a.isNull() || b.isNull()) {
-        out.reason = "null argument in lineIntegralScalar";
+        out.reason.assign("null argument in lineIntegralScalar");
         return out;
     }
     if (vars.empty() || vars.size() != curve.size()) {
-        out.reason = "vars and curve dimensions must match and be non-empty";
+        out.reason.assign("vars and curve dimensions must match and be non-empty");
         return out;
     }
 
-    std::vector<Expr> sqTerms;
+    keel::Array<Expr> sqTerms;
     sqTerms.reserve(curve.size());
     for (keel::usize i = 0; i < curve.size(); ++i) {
         if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol ||
             curve[i].isNull()) {
-            out.reason = "invalid variable or curve component";
+            out.reason.assign("invalid variable or curve component");
             return out;
         }
         const Expr dr = c.diff(curve[i], t);
         if (dr.isNull()) {
-            out.reason = "failed to differentiate curve component";
+            out.reason.assign("failed to differentiate curve component");
             return out;
         }
         sqTerms.push_back(c.pow(dr, c.number(keel::i64{2})));
@@ -5235,7 +5239,7 @@ DefiniteIntegral lineIntegralScalar(Ctx &c, Expr f,
     const Expr speedSq = c.add(sqTerms);
     const Expr ds = simplifySqrtOnInterval(c, speedSq, t, a, b);
     if (ds.isNull()) {
-        out.reason = "failed to form arc-length element";
+        out.reason.assign("failed to form arc-length element");
         return out;
     }
 
@@ -5250,9 +5254,9 @@ DefiniteIntegral lineIntegralScalar(Ctx &c, Expr f,
     return definiteIntegrate(c, integrand, t, lo, hi, budget);
 }
 
-DefiniteIntegral lineIntegralVector(Ctx &c, const std::vector<Expr> &field,
-                                    const std::vector<Expr> &vars,
-                                    const std::vector<Expr> &curve, Expr t,
+DefiniteIntegral lineIntegralVector(Ctx &c, keel::ArrayRef<Expr> field,
+                                    keel::ArrayRef<Expr> vars,
+                                    keel::ArrayRef<Expr> curve, Expr t,
                                     Expr a, Expr b, Budget *budget)
 {
     DefiniteIntegral out;
@@ -5260,27 +5264,26 @@ DefiniteIntegral lineIntegralVector(Ctx &c, const std::vector<Expr> &field,
         return out;
     if (t.isNull() || c.kind(t) != NodeKind::Symbol || a.isNull() ||
         b.isNull()) {
-        out.reason = "null argument in lineIntegralVector";
+        out.reason.assign("null argument in lineIntegralVector");
         return out;
     }
     if (vars.empty() || field.size() != vars.size() ||
         curve.size() != vars.size()) {
-        out.reason =
-            "field, vars, and curve dimensions must match and be non-empty";
+        out.reason.assign("field, vars, and curve dimensions must match and be non-empty");
         return out;
     }
 
-    std::vector<Expr> dotTerms;
+    keel::Array<Expr> dotTerms;
     dotTerms.reserve(vars.size());
     for (keel::usize i = 0; i < vars.size(); ++i) {
         if (field[i].isNull() || vars[i].isNull() ||
             c.kind(vars[i]) != NodeKind::Symbol || curve[i].isNull()) {
-            out.reason = "invalid field, variable, or curve component";
+            out.reason.assign("invalid field, variable, or curve component");
             return out;
         }
         const Expr dr = c.diff(curve[i], t);
         if (dr.isNull()) {
-            out.reason = "failed to differentiate curve component";
+            out.reason.assign("failed to differentiate curve component");
             return out;
         }
         const Expr fiOnCurve = subsVectorSimultaneous(c, field[i], vars, curve);
@@ -5315,14 +5318,14 @@ DefiniteIntegral lineIntegralVector(Ctx &c, const std::vector<Expr> &field,
 
 namespace {
 
-bool computeSurfaceNormal(Ctx &c, const std::vector<Expr> &surface, Expr u,
-                          Expr v, std::vector<Expr> &normalOut)
+bool computeSurfaceNormal(Ctx &c, keel::ArrayRef<Expr> surface, Expr u,
+                          Expr v, keel::Array<Expr> &normalOut)
 {
     if (surface.size() != 3 || u.isNull() || v.isNull() ||
         c.kind(u) != NodeKind::Symbol || c.kind(v) != NodeKind::Symbol) {
         return false;
     }
-    std::vector<Expr> ru(3), rv(3);
+    keel::Array<Expr> ru(3), rv(3);
     for (keel::usize i = 0; i < 3; ++i) {
         if (surface[i].isNull())
             return false;
@@ -5342,7 +5345,7 @@ bool computeSurfaceNormal(Ctx &c, const std::vector<Expr> &surface, Expr u,
 }
 
 Expr simplifySqrtMultiOnBounds(Ctx &c, Expr sqExpr,
-                               const std::vector<DefiniteBound> &bounds)
+                               keel::ArrayRef<DefiniteBound> bounds)
 {
     const Expr simpSq = c.simplify(sqExpr);
     if (simpSq.isNull())
@@ -5361,8 +5364,8 @@ Expr simplifySqrtMultiOnBounds(Ctx &c, Expr sqExpr,
     }
 
     // Build interior midpoint substitutions from outermost bound to innermost.
-    std::vector<Expr> bVars;
-    std::vector<Expr> bMids;
+    keel::Array<Expr> bVars;
+    keel::Array<Expr> bMids;
     bVars.reserve(bounds.size());
     bMids.reserve(bounds.size());
     for (keel::usize idx = bounds.size(); idx > 0; --idx) {
@@ -5377,7 +5380,7 @@ Expr simplifySqrtMultiOnBounds(Ctx &c, Expr sqExpr,
         bMids.push_back(c.simplify(c.mul({half, c.add({aSub, bSub})})));
     }
 
-    std::vector<Expr> factors;
+    keel::Array<Expr> factors;
     if (c.kind(baseExpr) == NodeKind::Mul) {
         for (keel::usize i = 0; i < c.childCount(baseExpr); ++i)
             factors.push_back(c.child(baseExpr, i));
@@ -5385,8 +5388,8 @@ Expr simplifySqrtMultiOnBounds(Ctx &c, Expr sqExpr,
         factors.push_back(baseExpr);
     }
 
-    std::vector<Expr> outFactors;
-    std::vector<Expr> remUnderSqrt;
+    keel::Array<Expr> outFactors;
+    keel::Array<Expr> remUnderSqrt;
     Rational posNumFactor(keel::i64{1});
     for (Expr fk : factors) {
         if (c.kind(fk) == NodeKind::Number) {
@@ -5475,8 +5478,8 @@ bool exprEqualSymbolic(Ctx &c, Expr a, Expr b)
 } // namespace
 
 DefiniteIntegral surfaceIntegralScalar(Ctx &c, Expr f,
-                                       const std::vector<Expr> &vars,
-                                       const std::vector<Expr> &surface,
+                                       keel::ArrayRef<Expr> vars,
+                                       keel::ArrayRef<Expr> surface,
                                        const DefiniteBound &uBound,
                                        const DefiniteBound &vBound,
                                        Budget *budget)
@@ -5485,21 +5488,20 @@ DefiniteIntegral surfaceIntegralScalar(Ctx &c, Expr f,
     if (!checkBudget(c, budget, out.reason))
         return out;
     if (f.isNull() || vars.size() != 3 || surface.size() != 3) {
-        out.reason =
-            "surfaceIntegralScalar requires 3 spatial variables and 3 surface components";
+        out.reason.assign("surfaceIntegralScalar requires 3 spatial variables and 3 surface components");
         return out;
     }
     for (keel::usize i = 0; i < 3; ++i) {
         if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol ||
             surface[i].isNull()) {
-            out.reason = "invalid spatial variable or surface component";
+            out.reason.assign("invalid spatial variable or surface component");
             return out;
         }
     }
 
-    std::vector<Expr> normal;
+    keel::Array<Expr> normal;
     if (!computeSurfaceNormal(c, surface, uBound.var, vBound.var, normal)) {
-        out.reason = "failed to compute surface normal vector dr/du x dr/dv";
+        out.reason.assign("failed to compute surface normal vector dr/du x dr/dv");
         return out;
     }
 
@@ -5510,7 +5512,7 @@ DefiniteIntegral surfaceIntegralScalar(Ctx &c, Expr f,
                                c.pow(normal[2], c.number(keel::i64{2}))});
     const Expr dS = simplifySqrtMultiOnBounds(c, normSq, {uPos, vPos});
     if (dS.isNull()) {
-        out.reason = "failed to form surface area element dS";
+        out.reason.assign("failed to form surface area element dS");
         return out;
     }
 
@@ -5519,9 +5521,9 @@ DefiniteIntegral surfaceIntegralScalar(Ctx &c, Expr f,
     return definiteIntegrateMulti(c, integrand, {uPos, vPos}, budget);
 }
 
-DefiniteIntegral surfaceIntegralVector(Ctx &c, const std::vector<Expr> &field,
-                                       const std::vector<Expr> &vars,
-                                       const std::vector<Expr> &surface,
+DefiniteIntegral surfaceIntegralVector(Ctx &c, keel::ArrayRef<Expr> field,
+                                       keel::ArrayRef<Expr> vars,
+                                       keel::ArrayRef<Expr> surface,
                                        const DefiniteBound &uBound,
                                        const DefiniteBound &vBound,
                                        Budget *budget)
@@ -5530,25 +5532,24 @@ DefiniteIntegral surfaceIntegralVector(Ctx &c, const std::vector<Expr> &field,
     if (!checkBudget(c, budget, out.reason))
         return out;
     if (field.size() != 3 || vars.size() != 3 || surface.size() != 3) {
-        out.reason =
-            "surfaceIntegralVector requires 3D field, 3 spatial variables, and 3 surface components";
+        out.reason.assign("surfaceIntegralVector requires 3D field, 3 spatial variables, and 3 surface components");
         return out;
     }
     for (keel::usize i = 0; i < 3; ++i) {
         if (field[i].isNull() || vars[i].isNull() ||
             c.kind(vars[i]) != NodeKind::Symbol || surface[i].isNull()) {
-            out.reason = "invalid field, spatial variable, or surface component";
+            out.reason.assign("invalid field, spatial variable, or surface component");
             return out;
         }
     }
 
-    std::vector<Expr> normal;
+    keel::Array<Expr> normal;
     if (!computeSurfaceNormal(c, surface, uBound.var, vBound.var, normal)) {
-        out.reason = "failed to compute surface normal vector dr/du x dr/dv";
+        out.reason.assign("failed to compute surface normal vector dr/du x dr/dv");
         return out;
     }
 
-    std::vector<Expr> dotTerms;
+    keel::Array<Expr> dotTerms;
     dotTerms.reserve(3);
     for (keel::usize i = 0; i < 3; ++i) {
         const Expr fiOnSurf =
@@ -5560,35 +5561,34 @@ DefiniteIntegral surfaceIntegralVector(Ctx &c, const std::vector<Expr> &field,
 }
 
 IntegralTheoremResult verifyGreenTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<ParametricCurveSegment> &boundaryCurves,
-    const std::vector<DefiniteBound> &domainBounds, Budget *budget)
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<ParametricCurveSegment> boundaryCurves,
+    keel::ArrayRef<DefiniteBound> domainBounds, Budget *budget)
 {
     IntegralTheoremResult out;
     if (!checkBudget(c, budget, out.reason))
         return out;
     if (field.size() != 2 || vars.size() != 2 || domainBounds.size() != 2 ||
         boundaryCurves.empty()) {
-        out.reason =
-            "verifyGreenTheorem requires 2D field, 2 variables, non-empty boundary, and 2 domain bounds";
+        out.reason.assign("verifyGreenTheorem requires 2D field, 2 variables, non-empty boundary, and 2 domain bounds");
         return out;
     }
     if (field[0].isNull() || field[1].isNull() || vars[0].isNull() ||
         vars[1].isNull() || c.kind(vars[0]) != NodeKind::Symbol ||
         c.kind(vars[1]) != NodeKind::Symbol) {
-        out.reason = "invalid field or variable in verifyGreenTheorem";
+        out.reason.assign("invalid field or variable in verifyGreenTheorem");
         return out;
     }
 
-    std::vector<Expr> lhsParts;
+    keel::Array<Expr> lhsParts;
     lhsParts.reserve(boundaryCurves.size());
     for (const ParametricCurveSegment &seg : boundaryCurves) {
         const DefiniteIntegral segInt = lineIntegralVector(
             c, field, vars, seg.curve, seg.t, seg.a, seg.b, budget);
         if (!segInt.proved()) {
-            out.reason = segInt.reason.empty()
-                             ? "failed to evaluate boundary line integral"
-                             : segInt.reason;
+            out.reason.assign(segInt.reason.empty()
+                             ? keel::StringRef("failed to evaluate boundary line integral")
+                             : segInt.reason.as_ref());
             return out;
         }
         lhsParts.push_back(segInt.value);
@@ -5601,22 +5601,22 @@ IntegralTheoremResult verifyGreenTheorem(
     const DefiniteIntegral rhsInt =
         definiteIntegrateMulti(c, rot2D, domainBounds, budget);
     if (!rhsInt.proved()) {
-        out.reason = rhsInt.reason.empty()
-                         ? "failed to evaluate 2D area integral of dQ/dx - dP/dy"
-                         : rhsInt.reason;
+        out.reason.assign(rhsInt.reason.empty()
+                         ? keel::StringRef("failed to evaluate 2D area integral of dQ/dx - dP/dy")
+                         : rhsInt.reason.as_ref());
         return out;
     }
     out.rhs = c.simplify(rhsInt.value);
     out.proved = exprEqualSymbolic(c, out.lhs, out.rhs);
     if (!out.proved)
-        out.reason = "Green's theorem boundary and area integrals do not match";
+        out.reason.assign("Green's theorem boundary and area integrals do not match");
     return out;
 }
 
 IntegralTheoremResult verifyStokesTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<ParametricCurveSegment> &boundaryCurves,
-    const std::vector<Expr> &surface, const DefiniteBound &uBound,
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<ParametricCurveSegment> boundaryCurves,
+    keel::ArrayRef<Expr> surface, const DefiniteBound &uBound,
     const DefiniteBound &vBound, Budget *budget)
 {
     IntegralTheoremResult out;
@@ -5624,20 +5624,19 @@ IntegralTheoremResult verifyStokesTheorem(
         return out;
     if (field.size() != 3 || vars.size() != 3 || surface.size() != 3 ||
         boundaryCurves.empty()) {
-        out.reason =
-            "verifyStokesTheorem requires 3D field, 3 variables, non-empty boundary, and 3D surface";
+        out.reason.assign("verifyStokesTheorem requires 3D field, 3 variables, non-empty boundary, and 3D surface");
         return out;
     }
 
-    std::vector<Expr> lhsParts;
+    keel::Array<Expr> lhsParts;
     lhsParts.reserve(boundaryCurves.size());
     for (const ParametricCurveSegment &seg : boundaryCurves) {
         const DefiniteIntegral segInt = lineIntegralVector(
             c, field, vars, seg.curve, seg.t, seg.a, seg.b, budget);
         if (!segInt.proved()) {
-            out.reason = segInt.reason.empty()
-                             ? "failed to evaluate boundary circulation integral"
-                             : segInt.reason;
+            out.reason.assign(segInt.reason.empty()
+                             ? keel::StringRef("failed to evaluate boundary circulation integral")
+                             : segInt.reason.as_ref());
             return out;
         }
         lhsParts.push_back(segInt.value);
@@ -5646,58 +5645,57 @@ IntegralTheoremResult verifyStokesTheorem(
 
     const SymMatrix curlMat = curl(c, field, vars);
     if (curlMat.rows() != 3 || curlMat.cols() != 1) {
-        out.reason = "failed to compute curl(F)";
+        out.reason.assign("failed to compute curl(F)");
         return out;
     }
     const DefiniteIntegral rhsInt = surfaceIntegralVector(
         c, curlMat.data(), vars, surface, uBound, vBound, budget);
     if (!rhsInt.proved()) {
-        out.reason = rhsInt.reason.empty()
-                         ? "failed to evaluate surface flux of curl(F)"
-                         : rhsInt.reason;
+        out.reason.assign(rhsInt.reason.empty()
+                         ? keel::StringRef("failed to evaluate surface flux of curl(F)")
+                         : rhsInt.reason.as_ref());
         return out;
     }
     out.rhs = c.simplify(rhsInt.value);
     out.proved = exprEqualSymbolic(c, out.lhs, out.rhs);
     if (!out.proved)
-        out.reason = "Stokes' theorem circulation and curl-flux integrals do not match";
+        out.reason.assign("Stokes' theorem circulation and curl-flux integrals do not match");
     return out;
 }
 
 IntegralTheoremResult verifyGaussDivergenceTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<ParametricSurfacePatch> &boundaryPatches,
-    const std::vector<DefiniteBound> &volumeBounds, Budget *budget)
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<ParametricSurfacePatch> boundaryPatches,
+    keel::ArrayRef<DefiniteBound> volumeBounds, Budget *budget)
 {
     return verifyGaussDivergenceTheorem(c, field, vars, boundaryPatches, vars,
                                         volumeBounds, budget);
 }
 
 IntegralTheoremResult verifyGaussDivergenceTheorem(
-    Ctx &c, const std::vector<Expr> &field, const std::vector<Expr> &vars,
-    const std::vector<ParametricSurfacePatch> &boundaryPatches,
-    const std::vector<Expr> &volumeMap,
-    const std::vector<DefiniteBound> &volumeBounds, Budget *budget)
+    Ctx &c, keel::ArrayRef<Expr> field, keel::ArrayRef<Expr> vars,
+    keel::ArrayRef<ParametricSurfacePatch> boundaryPatches,
+    keel::ArrayRef<Expr> volumeMap,
+    keel::ArrayRef<DefiniteBound> volumeBounds, Budget *budget)
 {
     IntegralTheoremResult out;
     if (!checkBudget(c, budget, out.reason))
         return out;
     if (field.size() != 3 || vars.size() != 3 || boundaryPatches.empty() ||
         volumeMap.size() != 3 || volumeBounds.size() != 3) {
-        out.reason =
-            "verifyGaussDivergenceTheorem requires 3D field, 3 variables, non-empty boundary patches, and 3 volume bounds";
+        out.reason.assign("verifyGaussDivergenceTheorem requires 3D field, 3 variables, non-empty boundary patches, and 3 volume bounds");
         return out;
     }
 
-    std::vector<Expr> lhsParts;
+    keel::Array<Expr> lhsParts;
     lhsParts.reserve(boundaryPatches.size());
     for (const ParametricSurfacePatch &patch : boundaryPatches) {
         const DefiniteIntegral patchInt = surfaceIntegralVector(
             c, field, vars, patch.surface, patch.uBound, patch.vBound, budget);
         if (!patchInt.proved()) {
-            out.reason = patchInt.reason.empty()
-                             ? "failed to evaluate boundary flux integral"
-                             : patchInt.reason;
+            out.reason.assign(patchInt.reason.empty()
+                             ? keel::StringRef("failed to evaluate boundary flux integral")
+                             : patchInt.reason.as_ref());
             return out;
         }
         lhsParts.push_back(patchInt.value);
@@ -5706,7 +5704,7 @@ IntegralTheoremResult verifyGaussDivergenceTheorem(
 
     const Expr divF = divergence(c, field, vars);
     if (divF.isNull()) {
-        out.reason = "failed to compute divergence(F)";
+        out.reason.assign("failed to compute divergence(F)");
         return out;
     }
 
@@ -5720,7 +5718,7 @@ IntegralTheoremResult verifyGaussDivergenceTheorem(
 
     Expr volIntegrand = divF;
     if (!identityMap) {
-        std::vector<Expr> paramVars{volumeBounds[0].var, volumeBounds[1].var,
+        keel::Array<Expr> paramVars{volumeBounds[0].var, volumeBounds[1].var,
                                     volumeBounds[2].var};
         const SymMatrix J = jacobian(c, volumeMap, paramVars);
         const Expr detJ = c.simplify(det(c, J, budget));
@@ -5733,15 +5731,15 @@ IntegralTheoremResult verifyGaussDivergenceTheorem(
     const DefiniteIntegral rhsInt =
         definiteIntegrateMulti(c, volIntegrand, volumeBounds, budget);
     if (!rhsInt.proved()) {
-        out.reason = rhsInt.reason.empty()
-                         ? "failed to evaluate 3D volume integral of divergence(F)"
-                         : rhsInt.reason;
+        out.reason.assign(rhsInt.reason.empty()
+                         ? keel::StringRef("failed to evaluate 3D volume integral of divergence(F)")
+                         : rhsInt.reason.as_ref());
         return out;
     }
     out.rhs = c.simplify(rhsInt.value);
     out.proved = exprEqualSymbolic(c, out.lhs, out.rhs);
     if (!out.proved)
-        out.reason = "Gauss's theorem boundary flux and volume divergence integrals do not match";
+        out.reason.assign("Gauss's theorem boundary flux and volume divergence integrals do not match");
     return out;
 }
 

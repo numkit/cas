@@ -93,10 +93,10 @@ TEST(FourierTest, ForwardFourierFixedVectors)
         const Expr f = parseExpr(c, tc.f);
         const Expr want = parseExpr(c, tc.expected);
         const FourierResult r = fourier(c, f, t, w);
-        ASSERT_TRUE(r.proved()) << "f = " << tc.f << ": " << r.reason;
+        ASSERT_TRUE(r.proved()) << "f = " << tc.f << ": " << r.reason.c_str();
         EXPECT_TRUE(equivExpr(c, r.F, want))
-            << "f = " << tc.f << "\n  got:  " << c.toString(r.F)
-            << "\n  want: " << c.toString(want);
+            << "f = " << tc.f << "\n  got:  " << c.toString(r.F).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -134,10 +134,10 @@ TEST(FourierTest, InverseFourierFixedVectors)
         const Expr F = parseExpr(c, tc.F);
         const Expr want = parseExpr(c, tc.expected);
         const FourierResult r = ifourier(c, F, w, t);
-        ASSERT_TRUE(r.proved()) << "F = " << tc.F << ": " << r.reason;
+        ASSERT_TRUE(r.proved()) << "F = " << tc.F << ": " << r.reason.c_str();
         EXPECT_TRUE(equivExpr(c, r.F, want))
-            << "F = " << tc.F << "\n  got:  " << c.toString(r.F)
-            << "\n  want: " << c.toString(want);
+            << "F = " << tc.F << "\n  got:  " << c.toString(r.F).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -188,11 +188,11 @@ TEST(FourierTest, LinearityAndRoundTripProperty)
         EXPECT_TRUE(equivExpr(c, rComb.F, linWant));
 
         const FourierResult inv = ifourier(c, rComb.F, w, t);
-        ASSERT_TRUE(inv.proved()) << "F = " << c.toString(rComb.F) << ": "
-                                  << inv.reason;
+        ASSERT_TRUE(inv.proved()) << "F = " << c.toString(rComb.F).c_str() << ": "
+                                  << inv.reason.c_str();
         EXPECT_TRUE(equivExpr(c, inv.F, comb))
-            << "round-trip failed for " << c.toString(comb)
-            << "\n  got: " << c.toString(inv.F);
+            << "round-trip failed for " << c.toString(comb).c_str()
+            << "\n  got: " << c.toString(inv.F).c_str();
     }
 }
 

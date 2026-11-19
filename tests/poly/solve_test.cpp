@@ -124,9 +124,9 @@ TEST(SolveProperty, BuiltRationalRootsFoundExactly)
         for (keel::usize k = 0; k < rs.size(); ++k) {
             ASSERT_TRUE(rs[k].isRational)
                 << "iter " << iter << " root " << k << " want "
-                << roots[k].toString() << " got interval ("
-                << rs[k].interval.lo.toString() << ", "
-                << rs[k].interval.hi.toString() << "]";
+                << roots[k].toString().c_str() << " got interval ("
+                << rs[k].interval.lo.toString().c_str() << ", "
+                << rs[k].interval.hi.toString().c_str() << "]";
             EXPECT_EQ(rs[k].value, roots[k]) << "iter " << iter;
             if (k > 0)
                 EXPECT_LT(rs[k - 1].value, rs[k].value);

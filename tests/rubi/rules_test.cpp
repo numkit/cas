@@ -40,7 +40,7 @@ TEST(RubiMatcher, FixedVectors)
 
     // x^7: pattern x_^m_. -> bindings m = 7.
     {
-        std::vector<Binding> b;
+        keel::Array<Binding> b;
         const int r = matchFirst(t, c, c.pow(x, c.number(keel::i64{7})), b);
         ASSERT_GE(r, 0);
         ASSERT_EQ(b.size(), 1u);
@@ -55,7 +55,7 @@ TEST(RubiMatcher, FixedVectors)
             c.add({c.number(keel::i64{2}),
                    c.mul({c.number(keel::i64{3}), x})}),
             c.number(keel::i64{4}));
-        std::vector<Binding> b;
+        keel::Array<Binding> b;
         const int r = matchFirst(t, c, e, b);
         ASSERT_GE(r, 0); // the (a+b x)^m rule leads among linear ^-shapes
         // x_ binds nothing (Symbol edge); a, b, m remain.
@@ -73,7 +73,7 @@ TEST(RubiMatcher, BoundaryDeclines)
     Ctx c;
     const RuleTables t = sliceTables();
     const Expr x = c.symbol("x");
-    std::vector<Binding> b;
+    keel::Array<Binding> b;
 
     // 1/x canonicalizes to Pow(x,-1): the div-twin of 1/x_ (Pow[x_, -1])
     // beats x_^m_.
@@ -131,11 +131,11 @@ TEST(RubiMatcher, Property)
             {c.number(Rational(BigInt(a), BigInt(3))),
              c.mul({c.number(Rational(BigInt(b), BigInt(3))), x})});
         const Expr e = c.pow(base, c.number(Rational(BigInt(m), BigInt(3))));
-        std::vector<Binding> bs;
+        keel::Array<Binding> bs;
         const int r = matchFirst(t, c, e, bs);
-        ASSERT_GE(r, 0) << "iter " << iter << " e=" << c.toString(e);
+        ASSERT_GE(r, 0) << "iter " << iter << " e=" << c.toString(e).c_str();
         const Expr F = rubiApply(t, c, e, x);
-        ASSERT_FALSE(F.isNull()) << "iter " << iter << " e=" << c.toString(e);
+        ASSERT_FALSE(F.isNull()) << "iter " << iter << " e=" << c.toString(e).c_str();
         ASSERT_EQ(c.diff(F, x), e) << "iter " << iter;
     }
 }
@@ -444,8 +444,8 @@ TEST(RubiApply, PropertyPositivePowers)
         ASSERT_FALSE(F.isNull()) << "a=" << a << " b=" << b << " p=" << p;
         // round-trip: the printed form parses back to the same DAG.
         const Expr back = numkit::cas::parseExpr(c, c.toString(F));
-        ASSERT_FALSE(back.isNull()) << c.toString(F);
-        ASSERT_EQ(back, F) << c.toString(F);
+        ASSERT_FALSE(back.isNull()) << c.toString(F).c_str();
+        ASSERT_EQ(back, F) << c.toString(F).c_str();
     }
 }
 
@@ -466,7 +466,7 @@ TEST(RubiMatcher, NonlinearPatternRequiresEqualBindings)
             c.pow(c.add({c.one(), x}), c.number(keel::i64{2})),
             c.pow(c.add({c.one(), c.neg(x)}), c.number(keel::i64{2})),
         });
-        std::vector<Binding> b;
+        keel::Array<Binding> b;
         const int r = matchFirst(t, c, e, b);
         ASSERT_GE(r, 0);
         int mCount = 0, nCount = 0;
@@ -485,7 +485,7 @@ TEST(RubiMatcher, NonlinearPatternRequiresEqualBindings)
             c.pow(c.add({c.one(), x}), c.number(keel::i64{2})),
             c.pow(c.add({c.one(), c.neg(x)}), c.number(keel::i64{3})),
         });
-        std::vector<Binding> b;
+        keel::Array<Binding> b;
         const int r = matchFirst(t, c, e, b);
         ASSERT_GE(r, 0);
         int mCount = 0, nCount = 0;
@@ -659,9 +659,9 @@ TEST(RubiApply, PropertyR1aShapes)
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull())
             << "shape=" << shape << " a=" << a << " b=" << b
-            << " e=" << c.toString(e);
+            << " e=" << c.toString(e).c_str();
         const Expr back = numkit::cas::parseExpr(c, c.toString(F));
-        ASSERT_FALSE(back.isNull()) << c.toString(F);
+        ASSERT_FALSE(back.isNull()) << c.toString(F).c_str();
         ASSERT_EQ(back, F);
     }
 }
@@ -821,7 +821,7 @@ TEST(RubiApply, PropertyR1bR2Shapes)
         }
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull())
-            << "shape=" << shape << " e=" << c.toString(e);
+            << "shape=" << shape << " e=" << c.toString(e).c_str();
     }
 }
 
@@ -1022,7 +1022,7 @@ TEST(RubiApply, PropertyR3R4R5Shapes)
         }
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull())
-            << "shape=" << shape << " e=" << c.toString(e);
+            << "shape=" << shape << " e=" << c.toString(e).c_str();
     }
 }
 
@@ -1041,7 +1041,7 @@ TEST(RubiApply, AssumptionsSymbolicParameters)
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
         EXPECT_NE(c.toString(F).find("atan"), std::string::npos)
-            << c.toString(F);
+            << c.toString(F).c_str();
     }
 
     // When a > 0 and b < 0, NegQ[a/b] holds and Rt[-a/b, 2] evaluates to
@@ -1055,7 +1055,7 @@ TEST(RubiApply, AssumptionsSymbolicParameters)
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
         EXPECT_NE(c.toString(F).find("atanh"), std::string::npos)
-            << c.toString(F);
+            << c.toString(F).c_str();
     }
 }
 

@@ -1,8 +1,11 @@
 // src/bridge/sym_value.cpp — Value bridge and BuiltinClass for numkit::cas.
+#include <keel/algo.h>
 #include <keel/array.h>
 #include <keel/core.h>
+#include <keel/format.h>
 #include <keel/memory.h>
 #include <keel/ref.h>
+#include <keel/smart_ptr.h>
 #include <keel/string.h>
 #include <numkit/cas/sym_value.hpp>
 
@@ -29,25 +32,22 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
-#include <set>
-#include <sstream>
 #include <stdexcept>
-#include <string>
-#include <unordered_set>
-#include <vector>
+#include <utility>
 
 namespace numkit::cas {
 
 namespace {
 
-[[noreturn]] void casFail(const std::string &id, const std::string &msg)
+[[noreturn]] void casFail(keel::StringRef id, keel::StringRef msg)
 {
-    std::string fn = "sym";
-    auto p1 = id.find(':');
-    if (p1 != std::string::npos) {
-        auto p2 = id.find(':', p1 + 1);
-        if (p2 != std::string::npos) {
-            fn = id.substr(p1 + 1, p2 - p1 - 1);
+    keel::StringRef fn = "sym";
+    const keel::usize p1 = id.find(':');
+    if (p1 != keel::kInvalidIndex) {
+        const keel::StringRef rest = id.substr(p1 + 1);
+        const keel::usize p2 = rest.find(':');
+        if (p2 != keel::kInvalidIndex) {
+            fn = rest.substr(0, p2);
         }
     }
     argcheck::detail::fail(msg, fn, id);
@@ -58,36 +58,64 @@ keel::Allocator *resolveMr(keel::Allocator *mr) noexcept
     return mr ? mr : keel::default_allocator();
 }
 
-std::string trimStr(keel::StringRef s)
+keel::String trimStr(keel::StringRef s)
 {
     keel::usize a = 0, b = s.size();
     while (a < b && std::isspace(static_cast<unsigned char>(s.data()[a])))
         ++a;
     while (b > a && std::isspace(static_cast<unsigned char>(s.data()[b - 1])))
         --b;
-    return std::string(s.data() + a, b - a);
+    return keel::String::from(s.substr(a, b - a));
 }
 
-std::string toLowerStr(std::string s)
+keel::String toLowerStr(keel::String s)
 {
-    for (char &ch : s)
-        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    for (keel::usize i = 0; i < s.size(); ++i)
+        s[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
     return s;
 }
 
-bool isValidIdentifier(const std::string &s)
+bool isValidIdentifier(keel::StringRef s)
 {
     if (s.empty())
         return false;
     if (!(std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_'))
         return false;
     for (keel::usize i = 1; i < s.size(); ++i) {
-        char ch = s[i];
+        const char ch = s[i];
         if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_'))
             return false;
     }
     return true;
 }
+
+struct SymbolNameSet
+{
+    keel::Array<keel::String> items;
+
+    bool empty() const noexcept { return items.empty(); }
+    keel::usize size() const noexcept { return items.size(); }
+    const keel::String &front() const noexcept { return items[0]; }
+    const keel::String *begin() const noexcept { return items.begin(); }
+    const keel::String *end() const noexcept { return items.end(); }
+
+    void insert(keel::StringRef s)
+    {
+        keel::usize pos = 0;
+        while (pos < items.size()) {
+            const int cmp = items[pos].as_ref().compare(s);
+            if (cmp == 0)
+                return;
+            if (cmp > 0)
+                break;
+            ++pos;
+        }
+        items.push_back(keel::String::from(s));
+        for (keel::usize i = items.size() - 1; i > pos; --i) {
+            std::swap(items[i], items[i - 1]);
+        }
+    }
+};
 
 Rational doubleToRational(double v);
 
@@ -139,14 +167,14 @@ Rational doubleToRational(double v)
 
 Expr parseExprFlexible(Ctx &c, keel::StringRef rawRef, const char *fnName)
 {
-    std::string raw(rawRef.data(), rawRef.size());
-    std::string s = trimStr(rawRef);
+    keel::String raw = keel::String::from(rawRef);
+    keel::String s = trimStr(rawRef);
     if (s.empty())
-        casFail(std::string("nk:") + fnName + ":emptyExpr",
-                    std::string(fnName) + ": symbolic expression string must not be empty");
+        casFail(keel::format("nk:{}:emptyExpr", fnName),
+                keel::format("{}: symbolic expression string must not be empty", fnName));
 
     // Support equation strings "lhs == rhs" or "lhs = rhs" -> lhs - (rhs).
-    keel::usize eqPos = std::string::npos;
+    keel::usize eqPos = keel::kInvalidIndex;
     keel::usize eqLen = 0;
     int depth = 0;
     for (keel::usize i = 0; i < s.size(); ++i) {
@@ -167,40 +195,40 @@ Expr parseExprFlexible(Ctx &c, keel::StringRef rawRef, const char *fnName)
             break;
         }
     }
-    if (eqPos != std::string::npos) {
-        std::string lhsStr = trimStr(s.substr(0, eqPos));
-        std::string rhsStr = trimStr(s.substr(eqPos + eqLen));
+    if (eqPos != keel::kInvalidIndex) {
+        keel::String lhsStr = trimStr(s.as_ref().substr(0, eqPos));
+        keel::String rhsStr = trimStr(s.as_ref().substr(eqPos + eqLen));
         try {
             Expr lhs = parseExpr(c, lhsStr);
             Expr rhs = parseExpr(c, rhsStr);
             return c.add({lhs, c.neg(rhs)});
         } catch (const ParseError &e) {
-            casFail(std::string("nk:") + fnName + ":parseError",
-                        std::string(fnName) + ": parse error in '" + raw + "': " + e.what());
+            casFail(keel::format("nk:{}:parseError", fnName),
+                    keel::format("{}: parse error in '{}': {}", fnName, raw, e.what()));
         }
     }
 
     try {
         return parseExpr(c, s);
     } catch (const ParseError &e) {
-        casFail(std::string("nk:") + fnName + ":parseError",
-                    std::string(fnName) + ": parse error in '" + raw + "': " + e.what());
+        casFail(keel::format("nk:{}:parseError", fnName),
+                keel::format("{}: parse error in '{}': {}", fnName, raw, e.what()));
     }
 }
 
-bool isReservedConstantSymbol(const std::string &name)
+bool isReservedConstantSymbol(keel::StringRef name)
 {
     return name == "pi" || name == "e" || name == "inf" || name == "oo"
            || name == "infinity" || name == "Inf" || name == "i" || name == "j";
 }
 
-void collectSymbolsRec(const Ctx &c, Expr e, std::set<std::string> &out)
+void collectSymbolsRec(const Ctx &c, Expr e, SymbolNameSet &out)
 {
     if (e.isNull())
         return;
     const NodeKind k = c.kind(e);
     if (k == NodeKind::Symbol) {
-        const std::string &nm = c.symbolName(e);
+        const keel::String &nm = c.symbolName(e);
         if (!isReservedConstantSymbol(nm))
             out.insert(nm);
         return;
@@ -210,7 +238,7 @@ void collectSymbolsRec(const Ctx &c, Expr e, std::set<std::string> &out)
         collectSymbolsRec(c, c.child(e, i), out);
 }
 
-void collectSymbolsFromValue(const Value &v, Ctx &c, std::set<std::string> &out)
+void collectSymbolsFromValue(const Value &v, Ctx &c, SymbolNameSet &out)
 {
     if (isSymValue(v)) {
         const keel::usize n = v.objectCount();
@@ -229,7 +257,7 @@ void collectSymbolsFromValue(const Value &v, Ctx &c, std::set<std::string> &out)
 
 // Rank symbol names by proximity to 'x' (the reference engine's symvar order:
 // x, y, z, w, v, u, t, s, ...).
-int symvarDistance(const std::string &a)
+int symvarDistance(keel::StringRef a)
 {
     if (a.empty())
         return 1000;
@@ -241,16 +269,16 @@ int symvarDistance(const std::string &a)
 
 Expr defaultSymVar(Ctx &c, const Value &v, const char *fallback = "x")
 {
-    std::set<std::string> syms;
+    SymbolNameSet syms;
     collectSymbolsFromValue(v, c, syms);
     if (syms.empty())
         return c.symbol(fallback);
-    std::string best = *syms.begin();
+    keel::StringRef best = syms.front().as_ref();
     for (const auto &s : syms) {
         const int ds = symvarDistance(s);
         const int db = symvarDistance(best);
-        if (ds < db || (ds == db && s < best))
-            best = s;
+        if (ds < db || (ds == db && s.as_ref().compare(best) < 0))
+            best = s.as_ref();
     }
     return c.symbol(best);
 }
@@ -258,29 +286,29 @@ Expr defaultSymVar(Ctx &c, const Value &v, const char *fallback = "x")
 bool parseAssumeDomain(keel::StringRef raw, AssumeDomain &domOut, bool &isClearOut)
 {
     isClearOut = false;
-    const std::string s = toLowerStr(trimStr(raw));
-    if (s == "clear" || s == "any") {
+    const keel::String s = toLowerStr(trimStr(raw));
+    if (s.as_ref() == "clear" || s.as_ref() == "any") {
         domOut = AssumeDomain::Any;
-        isClearOut = (s == "clear");
+        isClearOut = (s.as_ref() == "clear");
         return true;
     }
-    if (s == "real") {
+    if (s.as_ref() == "real") {
         domOut = AssumeDomain::Real;
         return true;
     }
-    if (s == "positive") {
+    if (s.as_ref() == "positive") {
         domOut = AssumeDomain::Positive;
         return true;
     }
-    if (s == "negative") {
+    if (s.as_ref() == "negative") {
         domOut = AssumeDomain::Negative;
         return true;
     }
-    if (s == "nonnegative") {
+    if (s.as_ref() == "nonnegative") {
         domOut = AssumeDomain::NonNegative;
         return true;
     }
-    if (s == "integer") {
+    if (s.as_ref() == "integer") {
         domOut = AssumeDomain::Integer;
         return true;
     }
@@ -334,8 +362,8 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
         Expr in = parseExprFlexible(c, v.toString(), fnName);
         return fromSymExpr(ctxPtr, fn(in), mr);
     }
-    casFail(std::string("nk:") + fnName + ":invalidType",
-                std::string(fnName) + ": expected sym, numeric, or string argument");
+    casFail(keel::format("nk:{}:invalidType", fnName),
+            keel::format("{}: expected sym, numeric, or string argument", fnName));
 }
 
 template <typename BinaryFn>
@@ -366,8 +394,8 @@ Value mapSymElementwiseBinary(const Value &a, const Value &b, Ctx &c, BinaryFn &
         return fromSymMatrix(ctxPtr, out, mr);
     }
     if (A.rows() != B.rows() || A.cols() != B.cols()) {
-        casFail(std::string("nk:") + fnName + ":dimMismatch",
-                    std::string(fnName) + ": matrix dimensions must agree");
+        casFail(keel::format("nk:{}:dimMismatch", fnName),
+                keel::format("{}: matrix dimensions must agree", fnName));
     }
     SymMatrix out(A.rows(), A.cols(), c.zero());
     for (keel::usize r = 0; r < A.rows(); ++r)
@@ -382,9 +410,9 @@ Value mapSymElementwiseBinary(const Value &a, const Value &b, Ctx &c, BinaryFn &
 // SymPayload & conversion primitives
 // ============================================================================
 
-std::shared_ptr<Ctx> defaultCtx()
+keel::Arc<Ctx> defaultCtx()
 {
-    static std::shared_ptr<Ctx> instance = std::make_shared<Ctx>();
+    static keel::Arc<Ctx> instance = keel::make_arc<Ctx>();
     return instance;
 }
 
@@ -400,8 +428,8 @@ double SymPayload::asDouble() const
     double out = 0.0;
     if (!ctx->evalDouble(expr, {}, out)) {
         casFail("nk:sym:unresolvedSymbol",
-                    "double: symbolic expression '" + ctx->toString(expr)
-                        + "' contains unresolved symbols or cannot be evaluated to double");
+                keel::format("double: symbolic expression '{}' contains unresolved symbols or cannot be evaluated to double",
+                             ctx->toString(expr)));
     }
     return out;
 }
@@ -421,8 +449,8 @@ Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName)
 {
     if (isSymValue(v)) {
         if (v.objectCount() != 1) {
-            casFail(std::string("nk:") + fnName + ":expectedScalarSym",
-                        std::string(fnName) + ": expected scalar sym expression");
+            casFail(keel::format("nk:{}:expectedScalarSym", fnName),
+                    keel::format("{}: expected scalar sym expression", fnName));
         }
         const ObjectState *st = v.objectStateConst();
         if (!st || !st->native)
@@ -431,16 +459,16 @@ Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName)
     }
     if (v.isNumeric() || v.isLogical()) {
         if (!v.isScalar()) {
-            casFail(std::string("nk:") + fnName + ":expectedScalar",
-                        std::string(fnName) + ": expected scalar argument");
+            casFail(keel::format("nk:{}:expectedScalar", fnName),
+                    keel::format("{}: expected scalar argument", fnName));
         }
         return doubleToSymExpr(c, (v.toScalar()));
     }
     if (v.isChar() || v.isString()) {
         return parseExprFlexible(c, v.toString(), fnName);
     }
-    casFail(std::string("nk:") + fnName + ":invalidSymArg",
-                std::string(fnName) + ": cannot convert argument to symbolic expression");
+    casFail(keel::format("nk:{}:invalidSymArg", fnName),
+            keel::format("{}: cannot convert argument to symbolic expression", fnName));
 }
 
 SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
@@ -472,23 +500,33 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
         return M;
     }
     if (v.isChar() || v.isString()) {
-        std::string s = trimStr(v.toString());
-        if (s.size() >= 2 && s.front() == '[' && s.back() == ']') {
-            std::string body = s.substr(1, s.size() - 2);
-            std::vector<std::vector<Expr>> rowVecs;
-            std::stringstream rowSs(body);
-            std::string rowStr;
-            while (std::getline(rowSs, rowStr, ';')) {
-                std::vector<Expr> curRow;
-                std::stringstream colSs(rowStr);
-                std::string colStr;
-                while (std::getline(colSs, colStr, ',')) {
-                    std::string item = trimStr(colStr);
+        keel::String s = trimStr(v.toString());
+        if (s.size() >= 2 && s[0] == '[' && s[s.size() - 1] == ']') {
+            const keel::StringRef body = s.as_ref().substr(1, s.size() - 2);
+            keel::Array<keel::Array<Expr>> rowVecs;
+            keel::usize rowPos = 0;
+            while (rowPos <= body.size()) {
+                const keel::StringRef remRows = body.substr(rowPos);
+                const keel::usize semi = remRows.find(';');
+                const keel::StringRef rowStr = (semi == keel::kInvalidIndex) ? remRows : remRows.substr(0, semi);
+                keel::Array<Expr> curRow;
+                keel::usize colPos = 0;
+                while (colPos <= rowStr.size()) {
+                    const keel::StringRef remCols = rowStr.substr(colPos);
+                    const keel::usize comma = remCols.find(',');
+                    const keel::StringRef colStr = (comma == keel::kInvalidIndex) ? remCols : remCols.substr(0, comma);
+                    keel::String item = trimStr(colStr);
                     if (!item.empty())
                         curRow.push_back(parseExprFlexible(c, item, fnName));
+                    if (comma == keel::kInvalidIndex)
+                        break;
+                    colPos += comma + 1;
                 }
                 if (!curRow.empty())
                     rowVecs.push_back(std::move(curRow));
+                if (semi == keel::kInvalidIndex)
+                    break;
+                rowPos += semi + 1;
             }
             if (rowVecs.empty())
                 return SymMatrix(0, 0);
@@ -497,8 +535,8 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
             SymMatrix M(rows, cols, c.zero());
             for (keel::usize r = 0; r < rows; ++r) {
                 if (rowVecs[r].size() != cols)
-                    casFail(std::string("nk:") + fnName + ":inconsistentMatrixRow",
-                                std::string(fnName) + ": inconsistent row lengths in symbolic matrix string");
+                    casFail(keel::format("nk:{}:inconsistentMatrixRow", fnName),
+                            keel::format("{}: inconsistent row lengths in symbolic matrix string", fnName));
                 for (keel::usize col = 0; col < cols; ++col)
                     M(r, col) = rowVecs[r][col];
             }
@@ -516,21 +554,21 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
                 M(r, col) = toSymExpr(v.cellAt(col * rows + r), c, fnName);
         return M;
     }
-    casFail(std::string("nk:") + fnName + ":invalidMatrixArg",
-                std::string(fnName) + ": cannot convert argument to symbolic matrix");
+    casFail(keel::format("nk:{}:invalidMatrixArg", fnName),
+            keel::format("{}: cannot convert argument to symbolic matrix", fnName));
 }
 
-std::vector<Expr> toSymVector(const numkit::Value &v, Ctx &c, const char *fnName)
+keel::Array<Expr> toSymVector(const numkit::Value &v, Ctx &c, const char *fnName)
 {
     if (v.isCell()) {
-        std::vector<Expr> out;
+        keel::Array<Expr> out;
         out.reserve(v.numel());
         for (keel::usize i = 0; i < v.numel(); ++i)
             out.push_back(toSymExpr(v.cellAt(i), c, fnName));
         return out;
     }
     SymMatrix M = toSymMatrix(v, c, fnName);
-    std::vector<Expr> out;
+    keel::Array<Expr> out;
     out.reserve(M.rows() * M.cols());
     for (keel::usize r = 0; r < M.rows(); ++r)
         for (keel::usize col = 0; col < M.cols(); ++col)
@@ -538,7 +576,7 @@ std::vector<Expr> toSymVector(const numkit::Value &v, Ctx &c, const char *fnName
     return out;
 }
 
-numkit::Value fromSymExpr(const std::shared_ptr<Ctx> &c, Expr e,
+numkit::Value fromSymExpr(const keel::Arc<Ctx> &c, Expr e,
                           keel::Allocator *mr)
 {
     mr = resolveMr(mr);
@@ -547,7 +585,7 @@ numkit::Value fromSymExpr(const std::shared_ptr<Ctx> &c, Expr e,
     return Value::object("sym", std::move(st), /*isHandle=*/false, mr);
 }
 
-numkit::Value fromSymMatrix(const std::shared_ptr<Ctx> &c, const SymMatrix &M,
+numkit::Value fromSymMatrix(const keel::Arc<Ctx> &c, const SymMatrix &M,
                             keel::Allocator *mr)
 {
     mr = resolveMr(mr);
@@ -567,7 +605,7 @@ numkit::Value fromSymMatrix(const std::shared_ptr<Ctx> &c, const SymMatrix &M,
     return Value::objectArray("sym", Dims(rows, cols), std::move(states), /*isHandle=*/false, mr);
 }
 
-numkit::Value fromSymVector(const std::shared_ptr<Ctx> &c, const std::vector<Expr> &vec,
+numkit::Value fromSymVector(const keel::Arc<Ctx> &c, keel::ArrayRef<Expr> vec,
                             bool column, keel::Allocator *mr)
 {
     mr = resolveMr(mr);
@@ -605,14 +643,14 @@ void symAssume_argcheck(const Value &symVal, keel::StringRef domainStr)
 {
     if (!isSymValue(symVal) && !symVal.isChar() && !symVal.isString()) {
         casFail("nk:assume:invalidTarget",
-                    "assume: first argument must be a symbolic variable");
+                "assume: first argument must be a symbolic variable");
     }
     AssumeDomain dom = AssumeDomain::Any;
     bool isClr = false;
     if (!parseAssumeDomain(domainStr, dom, isClr)) {
         casFail("nk:assume:invalidDomain",
-                    "assume: unknown assumption domain '" + std::string(domainStr.data(), domainStr.size())
-                        + "' (expected 'real', 'positive', 'negative', 'nonnegative', 'integer', or 'clear')");
+                keel::format("assume: unknown assumption domain '{}' (expected 'real', 'positive', 'negative', 'nonnegative', 'integer', or 'clear')",
+                             domainStr));
     }
 }
 
@@ -774,10 +812,10 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
             bool isClr = false;
             if (!parseAssumeDomain(domStr, dom, isClr)) {
                 casFail("nk:sym:invalidAssumption",
-                            "sym: unknown assumption '" + std::string(domStr.as_ref()) + "'");
+                        keel::format("sym: unknown assumption '{}'", domStr));
             }
             Value out = symCreate(keel::ArrayRef<Value>(&a0, 1), mr);
-            std::set<std::string> syms;
+            SymbolNameSet syms;
             collectSymbolsFromValue(out, c, syms);
             for (const auto &nm : syms) {
                 c.assume(nm, dom);
@@ -785,10 +823,10 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
             return out;
         }
         if ((a0.isChar() || a0.isString()) && a1.isNumeric()) {
-            std::string base = trimStr(a0.toString());
+            keel::String base = trimStr(a0.toString());
             if (!isValidIdentifier(base)) {
                 casFail("nk:sym:invalidPrefix",
-                            "sym: matrix symbol prefix '" + base + "' must be a valid identifier");
+                        keel::format("sym: matrix symbol prefix '{}' must be a valid identifier", base));
             }
             keel::usize rows = 1, cols = 1;
             if (a1.numel() == 1) {
@@ -810,11 +848,11 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
             SymMatrix M(rows, cols, c.zero());
             for (keel::usize r = 0; r < rows; ++r) {
                 for (keel::usize col = 0; col < cols; ++col) {
-                    std::string elemName;
+                    keel::String elemName;
                     if (rows == 1 || cols == 1) {
-                        elemName = base + std::to_string(std::max(r, col) + 1);
+                        elemName = keel::format("{}{}", base, std::max(r, col) + 1);
                     } else {
-                        elemName = base + std::to_string(r + 1) + "_" + std::to_string(col + 1);
+                        elemName = keel::format("{}{}_{}", base, r + 1, col + 1);
                     }
                     M(r, col) = c.symbol(elemName);
                 }
@@ -822,14 +860,14 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
             return fromSymMatrix(ctxPtr, M, mr);
         }
         casFail("nk:sym:invalidSecondArg",
-                    "sym: second argument must be an assumption string or dimension vector");
+                "sym: second argument must be an assumption string or dimension vector");
     }
 
     if (isSymValue(a0))
         return a0;
     if (a0.isChar() || a0.isString()) {
-        std::string s = trimStr(a0.toString());
-        if (s.size() >= 2 && s.front() == '[' && s.back() == ']') {
+        keel::String s = trimStr(a0.toString());
+        if (s.size() >= 2 && s[0] == '[' && s[s.size() - 1] == ']') {
             return fromSymMatrix(ctxPtr, toSymMatrix(a0, c, "sym"), mr);
         }
         return fromSymExpr(ctxPtr, parseExprFlexible(c, s, "sym"), mr);
@@ -847,7 +885,7 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
 }
 
 void symsCommand(keel::ArrayRef<numkit::Value> args,
-                 std::vector<std::pair<std::string, numkit::Value>> &bindingsOut,
+                 keel::Array<std::pair<keel::String, numkit::Value>> &bindingsOut,
                  keel::Allocator *mr)
 {
     symsCommand_argcheck(args);
@@ -860,8 +898,8 @@ void symsCommand(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
 
     if (args.size() == 1 && (args[0].isChar() || args[0].isString())) {
-        std::string tok = toLowerStr(trimStr(args[0].toString()));
-        if (tok == "clear") {
+        keel::String tok = toLowerStr(trimStr(args[0].toString()));
+        if (tok.as_ref() == "clear") {
             c.clearAssumptions();
             return;
         }
@@ -881,18 +919,18 @@ void symsCommand(keel::ArrayRef<numkit::Value> args,
     for (keel::usize i = 0; i < varEnd; ++i) {
         if (!args[i].isChar() && !args[i].isString()) {
             casFail("nk:syms:invalidVarName",
-                        "syms: arguments must be variable names (strings)");
+                    "syms: arguments must be variable names (strings)");
         }
-        std::string name = trimStr(args[i].toString());
+        keel::String name = trimStr(args[i].toString());
         if (!isValidIdentifier(name)) {
             casFail("nk:syms:invalidIdentifier",
-                        "syms: '" + name + "' is not a valid variable name");
+                    keel::format("syms: '{}' is not a valid variable name", name));
         }
         Expr s = c.symbol(name);
         if (hasTrailingDomain) {
             c.assume(name, trailingDom);
         }
-        bindingsOut.emplace_back(name, fromSymExpr(ctxPtr, s, mr));
+        bindingsOut.emplace_back(std::move(name), fromSymExpr(ctxPtr, s, mr));
     }
 }
 
@@ -906,7 +944,7 @@ numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
     AssumeDomain dom = AssumeDomain::Any;
     bool isClr = false;
     parseAssumeDomain(domainStr, dom, isClr);
-    std::set<std::string> syms;
+    SymbolNameSet syms;
     collectSymbolsFromValue(symVal, c, syms);
     if (syms.empty()) {
         casFail("nk:assume:noSymbol", "assume: target does not contain any symbolic variable");
@@ -914,7 +952,7 @@ numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
     for (const auto &nm : syms) {
         c.assume(nm, dom);
     }
-    return fromSymExpr(ctxPtr, c.symbol(*syms.begin()), mr);
+    return fromSymExpr(ctxPtr, c.symbol(syms.front()), mr);
 }
 
 numkit::Value symAssumptions(const numkit::Value &symVal,
@@ -922,7 +960,7 @@ numkit::Value symAssumptions(const numkit::Value &symVal,
 {
     if (!isSymValue(symVal) && !symVal.isChar() && !symVal.isString()) {
         casFail("nk:assumptions:invalidTarget",
-                    "assumptions: expected a symbolic variable");
+                "assumptions: expected a symbolic variable");
     }
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
@@ -930,7 +968,7 @@ numkit::Value symAssumptions(const numkit::Value &symVal,
     Expr e = toSymExpr(symVal, c, "assumptions");
     if (c.kind(e) != NodeKind::Symbol) {
         casFail("nk:assumptions:notSymbol",
-                    "assumptions: expected a single symbolic variable");
+                "assumptions: expected a single symbolic variable");
     }
     switch (c.assumption(e)) {
     case AssumeDomain::Real:
@@ -974,8 +1012,7 @@ numkit::Value symDouble(const numkit::Value &v,
             double val = 0.0;
             if (!c.evalDouble(e, {}, val)) {
                 casFail("nk:double:unresolvedSymbol",
-                            "double: cannot convert symbolic expression '" + c.toString(e)
-                                + "' to double");
+                        keel::format("double: cannot convert symbolic expression '{}' to double", c.toString(e)));
             }
             return Value::scalar(val, mr);
         }
@@ -989,8 +1026,7 @@ numkit::Value symDouble(const numkit::Value &v,
             double val = 0.0;
             if (!c.evalDouble(e, {}, val)) {
                 casFail("nk:double:unresolvedSymbol",
-                            "double: cannot convert symbolic element '" + c.toString(e)
-                                + "' to double");
+                        keel::format("double: cannot convert symbolic element '{}' to double", c.toString(e)));
             }
             dst[i] = val;
         }
@@ -1000,8 +1036,7 @@ numkit::Value symDouble(const numkit::Value &v,
     double val = 0.0;
     if (!c.evalDouble(e, {}, val)) {
         casFail("nk:double:unresolvedSymbol",
-                    "double: cannot convert symbolic expression '" + c.toString(e)
-                        + "' to double");
+                keel::format("double: cannot convert symbolic expression '{}' to double", c.toString(e)));
     }
     return Value::scalar(val, mr);
 }
@@ -1076,7 +1111,7 @@ void symFactor(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "factor");
-    std::vector<Expr> vars;
+    keel::Array<Expr> vars;
     if (args.size() >= 2) {
         vars = toSymVector(args[1], c, "factor");
     }
@@ -1088,7 +1123,7 @@ void symFactor(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
         return;
     }
     if (nargout <= 1) {
-        std::vector<Expr> facList;
+        keel::Array<Expr> facList;
         if (res.content != Rational(keel::i64{1}) || res.factors.empty()) {
             facList.push_back(c.number(res.content));
         }
@@ -1098,8 +1133,8 @@ void symFactor(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
         }
         outs[0] = fromSymVector(ctxPtr, facList, /*column=*/false, mr);
     } else {
-        std::vector<Expr> facList;
-        std::vector<double> mults;
+        keel::Array<Expr> facList;
+        keel::Array<double> mults;
         if (res.content != Rational(keel::i64{1}) || res.factors.empty()) {
             facList.push_back(c.number(res.content));
             mults.push_back(1.0);
@@ -1190,8 +1225,8 @@ numkit::Value symSubs(keel::ArrayRef<numkit::Value> args,
     symSubs_argcheck(args);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> fromList;
-    std::vector<Expr> toList;
+    keel::Array<Expr> fromList;
+    keel::Array<Expr> toList;
     if (args.size() == 2) {
         fromList.push_back(defaultSymVar(c, args[0]));
         toList.push_back(toSymExpr(args[1], c, "subs"));
@@ -1200,7 +1235,7 @@ numkit::Value symSubs(keel::ArrayRef<numkit::Value> args,
         toList = toSymVector(args[2], c, "subs");
         if (fromList.size() != toList.size()) {
             casFail("nk:subs:lengthMismatch",
-                        "subs: old and new substitution lists must have the same number of elements");
+                    "subs: old and new substitution lists must have the same number of elements");
         }
     }
     return mapSymUnary(args[0], c, [&](Expr e) {
@@ -1218,20 +1253,20 @@ numkit::Value symSymvar(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::set<std::string> syms;
+    SymbolNameSet syms;
     collectSymbolsFromValue(args[0], c, syms);
-    std::vector<std::string> sorted(syms.begin(), syms.end());
+    keel::Array<keel::String> sorted = std::move(syms.items);
     if (args.size() == 2) {
         const keel::usize n = static_cast<keel::usize>(args[1].toScalar());
-        std::sort(sorted.begin(), sorted.end(), [](const std::string &a, const std::string &b) {
+        std::sort(sorted.begin(), sorted.end(), [](const keel::String &a, const keel::String &b) {
             const int da = symvarDistance(a);
             const int db = symvarDistance(b);
-            return (da != db) ? (da < db) : (a < b);
+            return (da != db) ? (da < db) : (a.as_ref().compare(b.as_ref()) < 0);
         });
-        if (sorted.size() > n)
-            sorted.resize(n);
+        while (sorted.size() > n)
+            sorted.pop_back();
     }
-    std::vector<Expr> exprs;
+    keel::Array<Expr> exprs;
     exprs.reserve(sorted.size());
     for (const auto &nm : sorted)
         exprs.push_back(c.symbol(nm));
@@ -1245,12 +1280,12 @@ numkit::Value symPoly2sym(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> cf = toSymVector(args[0], c, "poly2sym");
+    keel::Array<Expr> cf = toSymVector(args[0], c, "poly2sym");
     Expr var = (args.size() >= 2) ? toSymExpr(args[1], c, "poly2sym") : c.symbol("x");
     if (cf.empty())
         return fromSymExpr(ctxPtr, c.zero(), mr);
     const keel::usize n = cf.size();
-    std::vector<Expr> terms;
+    keel::Array<Expr> terms;
     terms.reserve(n);
     for (keel::usize i = 0; i < n; ++i) {
         const keel::usize deg = n - 1 - i;
@@ -1282,8 +1317,7 @@ numkit::Value symSym2poly(keel::ArrayRef<numkit::Value> args,
         double val = 0.0;
         if (!c.evalDouble(ce, {}, val)) {
             casFail("nk:sym2poly:nonNumericCoeff",
-                        "sym2poly: polynomial coefficient '" + c.toString(ce)
-                            + "' is not numeric");
+                    keel::format("sym2poly: polynomial coefficient '{}' is not numeric", c.toString(ce)));
         }
         dst[i] = val;
     }
@@ -1347,7 +1381,7 @@ numkit::Value symInt(keel::ArrayRef<numkit::Value> args,
 
     if (args.size() == 2) {
         if ((args[1].isNumeric() || isSymValue(args[1])) && args[1].numel() == 2) {
-            std::vector<Expr> bnds = toSymVector(args[1], c, "int");
+            keel::Array<Expr> bnds = toSymVector(args[1], c, "int");
             aBound = bnds[0];
             bBound = bnds[1];
             isDefinite = true;
@@ -1357,7 +1391,7 @@ numkit::Value symInt(keel::ArrayRef<numkit::Value> args,
     } else if (args.size() == 3) {
         if ((args[2].isNumeric() || isSymValue(args[2])) && args[2].numel() == 2) {
             var = toSymExpr(args[1], c, "int");
-            std::vector<Expr> bnds = toSymVector(args[2], c, "int");
+            keel::Array<Expr> bnds = toSymVector(args[2], c, "int");
             aBound = bnds[0];
             bBound = bnds[1];
             isDefinite = true;
@@ -1382,8 +1416,8 @@ numkit::Value symInt(keel::ArrayRef<numkit::Value> args,
             RationalIntegral ri = integrate(c, e, var);
             if (!ri.proved()) {
                 casFail("nk:int:unevaluated",
-                            "int: could not find closed-form antiderivative for '"
-                                + c.toString(e) + "' (" + ri.reason + ")");
+                        keel::format("int: could not find closed-form antiderivative for '{}' ({})",
+                                     c.toString(e), ri.reason));
             }
             return ri.F;
         }, mr, "int");
@@ -1393,11 +1427,11 @@ numkit::Value symInt(keel::ArrayRef<numkit::Value> args,
         DefiniteIntegral di = definiteIntegrate(c, e, var, aBound, bBound);
         if (di.status == DefiniteIntegral::Status::Divergent) {
             casFail("nk:int:divergent",
-                        "int: definite integral is divergent (" + di.reason + ")");
+                    keel::format("int: definite integral is divergent ({})", di.reason));
         }
         if (!di.proved()) {
             casFail("nk:int:unevaluated",
-                        "int: could not evaluate definite integral (" + di.reason + ")");
+                    keel::format("int: could not evaluate definite integral ({})", di.reason));
         }
         return di.value;
     }, mr, "int");
@@ -1423,16 +1457,16 @@ numkit::Value symLimit(keel::ArrayRef<numkit::Value> args,
         if (args.size() == 4) {
             if (!args[3].isChar() && !args[3].isString()) {
                 casFail("nk:limit:invalidDir",
-                            "limit: direction must be 'left' or 'right'");
+                        "limit: direction must be 'left' or 'right'");
             }
-            std::string dStr = toLowerStr(trimStr(args[3].toString()));
-            if (dStr == "right" || dStr == "+")
+            keel::String dStr = toLowerStr(trimStr(args[3].toString()));
+            if (dStr.as_ref() == "right" || dStr.as_ref() == "+")
                 dir = +1;
-            else if (dStr == "left" || dStr == "-")
+            else if (dStr.as_ref() == "left" || dStr.as_ref() == "-")
                 dir = -1;
             else
                 casFail("nk:limit:invalidDir",
-                            "limit: direction must be 'left' or 'right', got '" + dStr + "'");
+                        keel::format("limit: direction must be 'left' or 'right', got '{}'", dStr));
         }
     }
 
@@ -1443,7 +1477,7 @@ numkit::Value symLimit(keel::ArrayRef<numkit::Value> args,
     }
     if (!res.proved()) {
         casFail("nk:limit:unevaluated",
-                    "limit: could not determine symbolic limit (" + res.reason + ")");
+                keel::format("limit: could not determine symbolic limit ({})", res.reason));
     }
     return fromSymExpr(ctxPtr, res.value, mr);
 }
@@ -1464,8 +1498,8 @@ numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
     keel::usize posEnd = args.size();
     for (keel::usize i = 1; i + 1 < args.size(); ++i) {
         if (args[i].isChar() || args[i].isString()) {
-            std::string key = toLowerStr(trimStr(args[i].toString()));
-            if (key == "expansionpoint" || key == "order") {
+            keel::String key = toLowerStr(trimStr(args[i].toString()));
+            if (key.as_ref() == "expansionpoint" || key.as_ref() == "order") {
                 posEnd = i;
                 break;
             }
@@ -1491,16 +1525,17 @@ numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
     }
 
     for (keel::usize i = posEnd; i + 1 < args.size(); i += 2) {
-        std::string key = toLowerStr(trimStr(args[i].toString()));
-        if (key == "expansionpoint") {
+        keel::String key = toLowerStr(trimStr(args[i].toString()));
+        if (key.as_ref() == "expansionpoint") {
             x0 = toSymExpr(args[i + 1], c, "taylor");
-        } else if (key == "order") {
+        } else if (key.as_ref() == "order") {
             int ordArg = static_cast<int>(args[i + 1].toScalar());
             if (ordArg <= 0)
                 casFail("nk:taylor:invalidOrder", "taylor: 'Order' must be a positive integer");
             order = ordArg - 1;
         } else {
-            casFail("nk:taylor:unknownOption", "taylor: unknown option '" + std::string(args[i].toString().as_ref()) + "'");
+            casFail("nk:taylor:unknownOption",
+                    keel::format("taylor: unknown option '{}'", args[i].toString()));
         }
     }
 
@@ -1537,8 +1572,8 @@ numkit::Value symMtaylor(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "mtaylor");
-    std::vector<Expr> vars = toSymVector(args[1], c, "mtaylor");
-    std::vector<Expr> x0s(vars.size(), c.zero());
+    keel::Array<Expr> vars = toSymVector(args[1], c, "mtaylor");
+    keel::Array<Expr> x0s(vars.size(), c.zero());
     int order = 4;
     if (args.size() == 3) {
         if (args[2].isNumeric() && args[2].isScalar() && vars.size() > 1) {
@@ -1570,7 +1605,7 @@ void symPade(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
     Expr x0 = (args.size() >= 3) ? toSymExpr(args[2], c, "pade") : c.zero();
     int m = 3, n = 3;
     if (args.size() == 4) {
-        std::vector<Expr> ord = toSymVector(args[3], c, "pade");
+        keel::Array<Expr> ord = toSymVector(args[3], c, "pade");
         if (ord.size() == 2) {
             double md = 3.0, nd = 3.0;
             c.evalDouble(ord[0], {}, md);
@@ -1587,7 +1622,7 @@ void symPade(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
     }
     PadeResult res = pade(c, f, var, x0, m, n);
     if (!res.proved()) {
-        casFail("nk:pade:failed", "pade: could not construct Pade approximant (" + res.reason + ")");
+        casFail("nk:pade:failed", keel::format("pade: could not construct Pade approximant ({})", res.reason));
     }
     if (nargout == 2 && outs.size() >= 2) {
         outs[0] = fromSymExpr(ctxPtr, res.numerator, mr);
@@ -1641,7 +1676,7 @@ numkit::Value symSymsum(keel::ArrayRef<numkit::Value> args,
         return fromSymExpr(ctxPtr, c.symbol("inf"), mr);
     }
     if (!res.proved()) {
-        casFail("nk:symsum:unevaluated", "symsum: could not evaluate symbolic sum (" + res.reason + ")");
+        casFail("nk:symsum:unevaluated", keel::format("symsum: could not evaluate symbolic sum ({})", res.reason));
     }
     return fromSymExpr(ctxPtr, res.value, mr);
 }
@@ -1691,12 +1726,12 @@ void symSolve(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> eqs = toSymVector(args[0], c, "solve");
-    std::vector<Expr> vars;
+    keel::Array<Expr> eqs = toSymVector(args[0], c, "solve");
+    keel::Array<Expr> vars;
     if (args.size() >= 2) {
         vars = toSymVector(args[1], c, "solve");
     } else {
-        std::set<std::string> symSet;
+        SymbolNameSet symSet;
         for (const auto &eq : eqs)
             collectSymbolsRec(c, eq, symSet);
         if (eqs.size() == 1) {
@@ -1708,16 +1743,16 @@ void symSolve(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
     }
 
     if (eqs.size() == 1 && vars.size() == 1) {
-        std::vector<Expr> roots = solveSymbolic(c, eqs[0], vars[0]);
+        keel::Array<Expr> roots = solveSymbolic(c, eqs[0], vars[0]);
         outs[0] = fromSymVector(ctxPtr, roots, /*column=*/true, mr);
         return;
     }
 
-    std::vector<std::vector<Expr>> tuples = solveSystem(c, eqs, vars);
+    keel::Array<keel::Array<Expr>> tuples = solveSystem(c, eqs, vars);
     const keel::usize k = vars.size();
     if (nargout >= k && k > 1 && outs.size() >= k) {
         for (keel::usize j = 0; j < k; ++j) {
-            std::vector<Expr> colVec;
+            keel::Array<Expr> colVec;
             colVec.reserve(tuples.size());
             for (const auto &t : tuples)
                 if (j < t.size())
@@ -1729,14 +1764,14 @@ void symSolve(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
 
     Value s = Value::structure(mr);
     for (keel::usize j = 0; j < k; ++j) {
-        std::vector<Expr> colVec;
+        keel::Array<Expr> colVec;
         colVec.reserve(tuples.size());
         for (const auto &t : tuples)
             if (j < t.size())
                 colVec.push_back(t[j]);
-        const std::string &vname = (c.kind(vars[j]) == NodeKind::Symbol)
-                                       ? c.symbolName(vars[j])
-                                       : ("x" + std::to_string(j + 1));
+        const keel::String vname = (c.kind(vars[j]) == NodeKind::Symbol)
+                                       ? c.symbolName(vars[j]).clone()
+                                       : keel::format("x{}", j + 1);
         s.field(vname) = fromSymVector(ctxPtr, colVec, /*column=*/true, mr);
     }
     outs[0] = std::move(s);
@@ -1749,12 +1784,12 @@ numkit::Value symGroebner(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> polys = toSymVector(args[0], c, "groebner");
-    std::vector<Expr> vars;
+    keel::Array<Expr> polys = toSymVector(args[0], c, "groebner");
+    keel::Array<Expr> vars;
     if (args.size() >= 2) {
         vars = toSymVector(args[1], c, "groebner");
     } else {
-        std::set<std::string> symSet;
+        SymbolNameSet symSet;
         for (const auto &p : polys)
             collectSymbolsRec(c, p, symSet);
         for (const auto &nm : symSet)
@@ -1762,18 +1797,18 @@ numkit::Value symGroebner(keel::ArrayRef<numkit::Value> args,
     }
     MonomialOrder ord = MonomialOrder::Lex;
     if (args.size() >= 3 && (args[2].isChar() || args[2].isString())) {
-        std::string oStr = toLowerStr(trimStr(args[2].toString()));
-        if (oStr == "grevlex" || oStr == "grlex")
+        keel::String oStr = toLowerStr(trimStr(args[2].toString()));
+        if (oStr.as_ref() == "grevlex" || oStr.as_ref() == "grlex")
             ord = MonomialOrder::GrevLex;
-        else if (oStr == "lex")
+        else if (oStr.as_ref() == "lex")
             ord = MonomialOrder::Lex;
         else
             casFail("nk:groebner:invalidOrder",
-                        "groebner: monomial order must be 'lex' or 'grevlex'");
+                    "groebner: monomial order must be 'lex' or 'grevlex'");
     }
     GroebnerResult res = groebnerBasis(c, polys, vars, ord);
     if (!res.proved()) {
-        casFail("nk:groebner:failed", "groebner: failed to compute Groebner basis (" + res.reason + ")");
+        casFail("nk:groebner:failed", keel::format("groebner: failed to compute Groebner basis ({})", res.reason));
     }
     return fromSymVector(ctxPtr, res.basis, /*column=*/false, mr);
 }
@@ -1786,12 +1821,12 @@ numkit::Value symPolyReduce(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "polyreduce");
-    std::vector<Expr> G = toSymVector(args[1], c, "polyreduce");
-    std::vector<Expr> vars;
+    keel::Array<Expr> G = toSymVector(args[1], c, "polyreduce");
+    keel::Array<Expr> vars;
     if (args.size() >= 3) {
         vars = toSymVector(args[2], c, "polyreduce");
     } else {
-        std::set<std::string> symSet;
+        SymbolNameSet symSet;
         collectSymbolsRec(c, f, symSet);
         for (const auto &g : G)
             collectSymbolsRec(c, g, symSet);
@@ -1800,8 +1835,8 @@ numkit::Value symPolyReduce(keel::ArrayRef<numkit::Value> args,
     }
     MonomialOrder ord = MonomialOrder::Lex;
     if (args.size() >= 4 && (args[3].isChar() || args[3].isString())) {
-        std::string oStr = toLowerStr(trimStr(args[3].toString()));
-        if (oStr == "grevlex" || oStr == "grlex")
+        keel::String oStr = toLowerStr(trimStr(args[3].toString()));
+        if (oStr.as_ref() == "grevlex" || oStr.as_ref() == "grlex")
             ord = MonomialOrder::GrevLex;
     }
     Expr out = polyReduceMulti(c, f, G, vars, ord);
@@ -1861,20 +1896,20 @@ void symRsolve_argcheck(keel::ArrayRef<Value> args)
 void symMatrixSquare_argcheck(const char *fn, const Value &A)
 {
     if (!isSymValue(A) && !A.isNumeric() && !A.isLogical()) {
-        casFail(std::string("nk:") + fn + ":invalidType",
-                    std::string(fn) + ": expected symbolic or numeric matrix");
+        casFail(keel::format("nk:{}:invalidType", fn),
+                keel::format("{}: expected symbolic or numeric matrix", fn));
     }
     if (A.dims().rows() != A.dims().cols()) {
-        casFail(std::string("nk:") + fn + ":notSquare",
-                    std::string(fn) + ": matrix must be square");
+        casFail(keel::format("nk:{}:notSquare", fn),
+                keel::format("{}: matrix must be square", fn));
     }
 }
 
 void symMatrixAny_argcheck(const char *fn, const Value &A)
 {
     if (!isSymValue(A) && !A.isNumeric() && !A.isLogical()) {
-        casFail(std::string("nk:") + fn + ":invalidType",
-                    std::string(fn) + ": expected symbolic or numeric matrix");
+        casFail(keel::format("nk:{}:invalidType", fn),
+                keel::format("{}: expected symbolic or numeric matrix", fn));
     }
 }
 
@@ -1983,53 +2018,53 @@ numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
             Expr x = toSymExpr(args[1], c, "dsolve");
             OdeSystemResult res = dsolveSystem1Linear(c, A, x);
             if (!res.proved())
-                casFail("nk:dsolve:failed", "dsolve: linear system solve failed (" + res.reason + ")");
+                casFail("nk:dsolve:failed", keel::format("dsolve: linear system solve failed ({})", res.reason));
             return fromSymVector(ctxPtr, res.y, /*column=*/true, mr);
         }
         if (args.size() == 3) {
-            std::vector<Expr> f = toSymVector(args[1], c, "dsolve");
+            keel::Array<Expr> f = toSymVector(args[1], c, "dsolve");
             Expr x = toSymExpr(args[2], c, "dsolve");
             OdeSystemResult res = dsolveSystem1Linear(c, A, f, x);
             if (!res.proved())
-                casFail("nk:dsolve:failed", "dsolve: linear system solve failed (" + res.reason + ")");
+                casFail("nk:dsolve:failed", keel::format("dsolve: linear system solve failed ({})", res.reason));
             return fromSymVector(ctxPtr, res.y, /*column=*/true, mr);
         }
         if (args.size() == 4) {
             Expr x = toSymExpr(args[1], c, "dsolve");
             Expr x0 = toSymExpr(args[2], c, "dsolve");
-            std::vector<Expr> y0 = toSymVector(args[3], c, "dsolve");
+            keel::Array<Expr> y0 = toSymVector(args[3], c, "dsolve");
             OdeSystemResult res = dsolveSystem1LinearIVP(c, A, x, x0, y0);
             if (!res.proved())
-                casFail("nk:dsolve:failed", "dsolve: linear system IVP failed (" + res.reason + ")");
+                casFail("nk:dsolve:failed", keel::format("dsolve: linear system IVP failed ({})", res.reason));
             return fromSymVector(ctxPtr, res.y, /*column=*/true, mr);
         }
         if (args.size() == 5) {
-            std::vector<Expr> f = toSymVector(args[1], c, "dsolve");
+            keel::Array<Expr> f = toSymVector(args[1], c, "dsolve");
             Expr x = toSymExpr(args[2], c, "dsolve");
             Expr x0 = toSymExpr(args[3], c, "dsolve");
-            std::vector<Expr> y0 = toSymVector(args[4], c, "dsolve");
+            keel::Array<Expr> y0 = toSymVector(args[4], c, "dsolve");
             OdeSystemResult res = dsolveSystem1LinearIVP(c, A, f, x, x0, y0);
             if (!res.proved())
-                casFail("nk:dsolve:failed", "dsolve: linear system IVP failed (" + res.reason + ")");
+                casFail("nk:dsolve:failed", keel::format("dsolve: linear system IVP failed ({})", res.reason));
             return fromSymVector(ctxPtr, res.y, /*column=*/true, mr);
         }
     }
 
     // 2. N-th order constant-coefficient linear ODE: dsolve(coeffs_vec, f, x, [x0, initVals])
     if ((isSymValue(args[0]) || args[0].isNumeric()) && args[0].numel() > 1 && args.size() >= 3) {
-        std::vector<Expr> cf = toSymVector(args[0], c, "dsolve");
+        keel::Array<Expr> cf = toSymVector(args[0], c, "dsolve");
         Expr f = toSymExpr(args[1], c, "dsolve");
         Expr x = toSymExpr(args[2], c, "dsolve");
         OdeResult res;
         if (args.size() >= 5) {
             Expr x0 = toSymExpr(args[3], c, "dsolve");
-            std::vector<Expr> initVals = toSymVector(args[4], c, "dsolve");
+            keel::Array<Expr> initVals = toSymVector(args[4], c, "dsolve");
             res = dsolveNLinearIVP(c, cf, f, x, x0, initVals);
         } else {
             res = dsolveNLinear(c, cf, f, x);
         }
         if (!res.proved())
-            casFail("nk:dsolve:failed", "dsolve: N-th order ODE solve failed (" + res.reason + ")");
+            casFail("nk:dsolve:failed", keel::format("dsolve: N-th order ODE solve failed ({})", res.reason));
         return fromSymExpr(ctxPtr, res.y, mr);
     }
 
@@ -2040,7 +2075,7 @@ numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
         Expr y = (args.size() >= 3) ? toSymExpr(args[2], c, "dsolve") : c.symbol("y");
         OdeResult res = dsolve1(c, rhs, x, y);
         if (!res.proved())
-            casFail("nk:dsolve:failed", "dsolve: could not solve 1st-order ODE (" + res.reason + ")");
+            casFail("nk:dsolve:failed", keel::format("dsolve: could not solve 1st-order ODE ({})", res.reason));
         return fromSymExpr(ctxPtr, res.y, mr);
     }
     if (args.size() == 5 && args[3].isChar() == false) {
@@ -2049,8 +2084,8 @@ numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
         Expr a3 = toSymExpr(args[3], c, "dsolve");
         Expr a4 = toSymExpr(args[4], c, "dsolve");
         Expr a2 = toSymExpr(args[2], c, "dsolve");
-        if (c.kind(a2) == NodeKind::Symbol && c.symbolName(a2) == "y"
-            && !(c.kind(a4) == NodeKind::Symbol && c.symbolName(a4) == "x")) {
+        if (c.kind(a2) == NodeKind::Symbol && c.symbolName(a2).as_ref() == "y"
+            && !(c.kind(a4) == NodeKind::Symbol && c.symbolName(a4).as_ref() == "x")) {
             Expr rhs = toSymExpr(args[0], c, "dsolve");
             Expr x = toSymExpr(args[1], c, "dsolve");
             OdeResult res = dsolve1IVP(c, rhs, x, a2, a3, a4);
@@ -2069,7 +2104,7 @@ numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
         if (!res.proved())
             res = dsolve2Special(c, a, b, d, f, x);
         if (!res.proved())
-            casFail("nk:dsolve:failed", "dsolve: could not solve 2nd-order ODE (" + res.reason + ")");
+            casFail("nk:dsolve:failed", keel::format("dsolve: could not solve 2nd-order ODE ({})", res.reason));
         return fromSymExpr(ctxPtr, res.y, mr);
     }
     if (args.size() == 4) {
@@ -2080,7 +2115,7 @@ numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
         Expr dy = toSymExpr(args[3], c, "dsolve");
         OdeResult res = dsolve2Nonlinear(c, rhs, x, y, dy);
         if (!res.proved())
-            casFail("nk:dsolve:failed", "dsolve: could not solve 2nd-order nonlinear ODE (" + res.reason + ")");
+            casFail("nk:dsolve:failed", keel::format("dsolve: could not solve 2nd-order nonlinear ODE ({})", res.reason));
         return fromSymExpr(ctxPtr, res.y, mr);
     }
     if (args.size() == 7) {
@@ -2094,7 +2129,7 @@ numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
         Expr dy0 = toSymExpr(args[6], c, "dsolve");
         OdeResult res = dsolve2NonlinearIVP(c, rhs, x, y, dy, x0, y0, dy0);
         if (!res.proved())
-            casFail("nk:dsolve:failed", "dsolve: 2nd-order nonlinear IVP failed (" + res.reason + ")");
+            casFail("nk:dsolve:failed", keel::format("dsolve: 2nd-order nonlinear IVP failed ({})", res.reason));
         return fromSymExpr(ctxPtr, res.y, mr);
     }
     if (args.size() == 8) {
@@ -2113,7 +2148,7 @@ numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
         if (!res.proved())
             res = dsolve2SpecialIVP(c, a, b, d, f, x, x0, y0, dy0);
         if (!res.proved())
-            casFail("nk:dsolve:failed", "dsolve: 2nd-order IVP failed (" + res.reason + ")");
+            casFail("nk:dsolve:failed", keel::format("dsolve: 2nd-order IVP failed ({})", res.reason));
         return fromSymExpr(ctxPtr, res.y, mr);
     }
     casFail("nk:dsolve:invalidArgs", "dsolve: unsupported argument count");
@@ -2128,8 +2163,8 @@ numkit::Value symPdsolve(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
 
     if (args[0].isChar() || args[0].isString()) {
-        std::string kind = toLowerStr(trimStr(args[0].toString()));
-        if (kind == "wave") {
+        keel::String kind = toLowerStr(trimStr(args[0].toString()));
+        if (kind.as_ref() == "wave") {
             Expr cWave = toSymExpr(args[1], c, "pdsolve");
             Expr x = toSymExpr(args[2], c, "pdsolve");
             Expr t = toSymExpr(args[3], c, "pdsolve");
@@ -2138,10 +2173,10 @@ numkit::Value symPdsolve(keel::ArrayRef<numkit::Value> args,
             Expr forcing = (args.size() >= 7) ? toSymExpr(args[6], c, "pdsolve") : Expr{};
             PdeResult res = pdsolveWaveDalembert(c, cWave, x, t, phi, psi, forcing);
             if (!res.proved())
-                casFail("nk:pdsolve:failed", "pdsolve: wave PDE solve failed (" + res.reason + ")");
+                casFail("nk:pdsolve:failed", keel::format("pdsolve: wave PDE solve failed ({})", res.reason));
             return fromSymExpr(ctxPtr, res.u, mr);
         }
-        if (kind == "heat") {
+        if (kind.as_ref() == "heat") {
             if (args.size() < 6)
                 casFail("nk:pdsolve:tooFewArgs", "pdsolve('heat', alpha, L, initU, x, t): expected at least 6 arguments");
             Expr alpha = toSymExpr(args[1], c, "pdsolve");
@@ -2151,14 +2186,14 @@ numkit::Value symPdsolve(keel::ArrayRef<numkit::Value> args,
             Expr t = toSymExpr(args[5], c, "pdsolve");
             PdeBoundaryKind bc = PdeBoundaryKind::Dirichlet;
             if (args.size() >= 7 && (args[6].isChar() || args[6].isString())) {
-                std::string bStr = toLowerStr(trimStr(args[6].toString()));
-                if (bStr == "neumann")
+                keel::String bStr = toLowerStr(trimStr(args[6].toString()));
+                if (bStr.as_ref() == "neumann")
                     bc = PdeBoundaryKind::Neumann;
             }
             int maxModes = (args.size() >= 8) ? static_cast<int>(args[7].toScalar()) : 5;
             PdeResult res = pdsolveHeat1D(c, alpha, L, initU, x, t, bc, maxModes);
             if (!res.proved())
-                casFail("nk:pdsolve:failed", "pdsolve: heat PDE solve failed (" + res.reason + ")");
+                casFail("nk:pdsolve:failed", keel::format("pdsolve: heat PDE solve failed ({})", res.reason));
             return fromSymExpr(ctxPtr, res.u, mr);
         }
     }
@@ -2172,7 +2207,7 @@ numkit::Value symPdsolve(keel::ArrayRef<numkit::Value> args,
         Expr u = toSymExpr(args[5], c, "pdsolve");
         PdeResult res = pdsolve1Quasilinear(c, a, b, rhs, x, y, u);
         if (!res.proved())
-            casFail("nk:pdsolve:failed", "pdsolve: 1st-order PDE solve failed (" + res.reason + ")");
+            casFail("nk:pdsolve:failed", keel::format("pdsolve: 1st-order PDE solve failed ({})", res.reason));
         return fromSymExpr(ctxPtr, res.u, mr);
     }
     casFail("nk:pdsolve:invalidArgs", "pdsolve: unsupported PDE signature");
@@ -2190,7 +2225,7 @@ numkit::Value symLaplace(keel::ArrayRef<numkit::Value> args,
     Expr s = (args.size() >= 3) ? toSymExpr(args[2], c, "laplace") : c.symbol("s");
     LaplaceResult res = laplace(c, f, t, s);
     if (!res.proved())
-        casFail("nk:laplace:unevaluated", "laplace: could not compute Laplace transform (" + res.reason + ")");
+        casFail("nk:laplace:unevaluated", keel::format("laplace: could not compute Laplace transform ({})", res.reason));
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
@@ -2206,7 +2241,7 @@ numkit::Value symIlaplace(keel::ArrayRef<numkit::Value> args,
     Expr t = (args.size() >= 3) ? toSymExpr(args[2], c, "ilaplace") : c.symbol("t");
     LaplaceResult res = ilaplace(c, F, s, t);
     if (!res.proved())
-        casFail("nk:ilaplace:unevaluated", "ilaplace: could not compute inverse Laplace transform (" + res.reason + ")");
+        casFail("nk:ilaplace:unevaluated", keel::format("ilaplace: could not compute inverse Laplace transform ({})", res.reason));
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
@@ -2222,7 +2257,7 @@ numkit::Value symFourier(keel::ArrayRef<numkit::Value> args,
     Expr w = (args.size() >= 3) ? toSymExpr(args[2], c, "fourier") : c.symbol("w");
     FourierResult res = fourier(c, f, t, w);
     if (!res.proved())
-        casFail("nk:fourier:unevaluated", "fourier: could not compute Fourier transform (" + res.reason + ")");
+        casFail("nk:fourier:unevaluated", keel::format("fourier: could not compute Fourier transform ({})", res.reason));
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
@@ -2238,7 +2273,7 @@ numkit::Value symIfourier(keel::ArrayRef<numkit::Value> args,
     Expr t = (args.size() >= 3) ? toSymExpr(args[2], c, "ifourier") : c.symbol("t");
     FourierResult res = ifourier(c, F, w, t);
     if (!res.proved())
-        casFail("nk:ifourier:unevaluated", "ifourier: could not compute inverse Fourier transform (" + res.reason + ")");
+        casFail("nk:ifourier:unevaluated", keel::format("ifourier: could not compute inverse Fourier transform ({})", res.reason));
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
@@ -2254,7 +2289,7 @@ numkit::Value symZtrans(keel::ArrayRef<numkit::Value> args,
     Expr z = (args.size() >= 3) ? toSymExpr(args[2], c, "ztrans") : c.symbol("z");
     ZTransResult res = ztrans(c, f, n, z);
     if (!res.proved())
-        casFail("nk:ztrans:unevaluated", "ztrans: could not compute Z-transform (" + res.reason + ")");
+        casFail("nk:ztrans:unevaluated", keel::format("ztrans: could not compute Z-transform ({})", res.reason));
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
@@ -2270,7 +2305,7 @@ numkit::Value symIztrans(keel::ArrayRef<numkit::Value> args,
     Expr n = (args.size() >= 3) ? toSymExpr(args[2], c, "iztrans") : c.symbol("n");
     ZTransResult res = iztrans(c, F, z, n);
     if (!res.proved())
-        casFail("nk:iztrans:unevaluated", "iztrans: could not compute inverse Z-transform (" + res.reason + ")");
+        casFail("nk:iztrans:unevaluated", keel::format("iztrans: could not compute inverse Z-transform ({})", res.reason));
     return fromSymExpr(ctxPtr, res.F, mr);
 }
 
@@ -2281,18 +2316,18 @@ numkit::Value symRsolve(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> cf = toSymVector(args[0], c, "rsolve");
+    keel::Array<Expr> cf = toSymVector(args[0], c, "rsolve");
     Expr rhs = toSymExpr(args[1], c, "rsolve");
     Expr n = (args.size() >= 3) ? toSymExpr(args[2], c, "rsolve") : c.symbol("n");
     RsolveResult res;
     if (args.size() >= 4) {
-        std::vector<Expr> initVals = toSymVector(args[3], c, "rsolve");
+        keel::Array<Expr> initVals = toSymVector(args[3], c, "rsolve");
         res = rsolveIVP(c, cf, rhs, n, initVals);
     } else {
         res = rsolve(c, cf, rhs, n);
     }
     if (!res.proved())
-        casFail("nk:rsolve:failed", "rsolve: could not solve recurrence (" + res.reason + ")");
+        casFail("nk:rsolve:failed", keel::format("rsolve: could not solve recurrence ({})", res.reason));
     return fromSymExpr(ctxPtr, res.y, mr);
 }
 
@@ -2359,7 +2394,10 @@ numkit::Value symCharpoly(keel::ArrayRef<numkit::Value> args,
     Expr lam = c.symbol("__lambda_cp");
     Expr cp = charpoly(c, M, lam);
     PolyCoeffsResult res = coeffs(c, cp, lam);
-    std::vector<Expr> desc(res.dense.rbegin(), res.dense.rend());
+    keel::Array<Expr> desc;
+    desc.reserve(res.dense.size());
+    for (keel::usize i = res.dense.size(); i-- > 0;)
+        desc.push_back(res.dense[i]);
     return fromSymVector(ctxPtr, desc, /*column=*/false, mr);
 }
 
@@ -2383,7 +2421,7 @@ void symRref(const numkit::Value &A, keel::usize nargout,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix M = toSymMatrix(A, c, "rref");
-    std::vector<keel::usize> pivots;
+    keel::Array<keel::usize> pivots;
     SymMatrix R = rref(c, M, &pivots);
     outs[0] = fromSymMatrix(ctxPtr, R, mr);
     if (nargout >= 2 && outs.size() >= 2) {
@@ -2403,7 +2441,7 @@ numkit::Value symNull(const numkit::Value &A,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix M = toSymMatrix(A, c, "null");
-    std::vector<SymMatrix> basis = nullspace(c, M);
+    keel::Array<SymMatrix> basis = nullspace(c, M);
     if (basis.empty()) {
         return fromSymMatrix(ctxPtr, SymMatrix(M.cols(), 0), mr);
     }
@@ -2446,7 +2484,7 @@ void symLu(const numkit::Value &A, keel::usize nargout,
     SymMatrix M = toSymMatrix(A, c, "lu");
     LUDecomposition res = lu(c, M);
     if (!res.proved()) {
-        casFail("nk:lu:failed", "lu: symbolic LU decomposition failed (" + res.reason + ")");
+        casFail("nk:lu:failed", keel::format("lu: symbolic LU decomposition failed ({})", res.reason));
     }
     if (nargout <= 2) {
         outs[0] = fromSymMatrix(ctxPtr, res.P.transpose().mul(c, res.L), mr);
@@ -2470,7 +2508,7 @@ void symQr(const numkit::Value &A, keel::usize nargout,
     SymMatrix M = toSymMatrix(A, c, "qr");
     QRDecomposition res = qr(c, M);
     if (!res.proved()) {
-        casFail("nk:qr:failed", "qr: symbolic QR decomposition failed (" + res.reason + ")");
+        casFail("nk:qr:failed", keel::format("qr: symbolic QR decomposition failed ({})", res.reason));
     }
     outs[0] = fromSymMatrix(ctxPtr, res.Q, mr);
     if (nargout >= 2 && outs.size() >= 2)
@@ -2487,13 +2525,13 @@ void symEig(const numkit::Value &A, keel::usize nargout,
     Ctx &c = *ctxPtr;
     SymMatrix M = toSymMatrix(A, c, "eig");
     if (nargout <= 1) {
-        std::vector<Expr> vals = eigenvalues(c, M);
+        keel::Array<Expr> vals = eigenvalues(c, M);
         outs[0] = fromSymVector(ctxPtr, vals, /*column=*/true, mr);
         return;
     }
-    std::vector<EigenPair> pairs = eigenvectors(c, M);
-    std::vector<Expr> diagVals;
-    std::vector<SymMatrix> cols;
+    keel::Array<EigenPair> pairs = eigenvectors(c, M);
+    keel::Array<Expr> diagVals;
+    keel::Array<SymMatrix> cols;
     for (const auto &ep : pairs) {
         if (!ep.vectors.empty()) {
             for (const auto &v : ep.vectors) {
@@ -2527,7 +2565,7 @@ void symJordan(const numkit::Value &A, keel::usize nargout,
     SymMatrix M = toSymMatrix(A, c, "jordan");
     JordanDecomposition res = jordanForm(c, M);
     if (!res.proved()) {
-        casFail("nk:jordan:failed", "jordan: Jordan canonical form failed (" + res.reason + ")");
+        casFail("nk:jordan:failed", keel::format("jordan: Jordan canonical form failed ({})", res.reason));
     }
     if (nargout <= 1) {
         outs[0] = fromSymMatrix(ctxPtr, res.J, mr);
@@ -2568,12 +2606,12 @@ numkit::Value symJacobian(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> funcs = toSymVector(args[0], c, "jacobian");
-    std::vector<Expr> vars;
+    keel::Array<Expr> funcs = toSymVector(args[0], c, "jacobian");
+    keel::Array<Expr> vars;
     if (args.size() >= 2) {
         vars = toSymVector(args[1], c, "jacobian");
     } else {
-        std::set<std::string> symSet;
+        SymbolNameSet symSet;
         for (const auto &f : funcs)
             collectSymbolsRec(c, f, symSet);
         for (const auto &nm : symSet)
@@ -2592,11 +2630,11 @@ numkit::Value symGradient(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "gradient");
-    std::vector<Expr> vars;
+    keel::Array<Expr> vars;
     if (args.size() >= 2) {
         vars = toSymVector(args[1], c, "gradient");
     } else {
-        std::set<std::string> symSet;
+        SymbolNameSet symSet;
         collectSymbolsRec(c, f, symSet);
         for (const auto &nm : symSet)
             vars.push_back(c.symbol(nm));
@@ -2614,11 +2652,11 @@ numkit::Value symHessian(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "hessian");
-    std::vector<Expr> vars;
+    keel::Array<Expr> vars;
     if (args.size() >= 2) {
         vars = toSymVector(args[1], c, "hessian");
     } else {
-        std::set<std::string> symSet;
+        SymbolNameSet symSet;
         collectSymbolsRec(c, f, symSet);
         for (const auto &nm : symSet)
             vars.push_back(c.symbol(nm));
@@ -2634,11 +2672,11 @@ numkit::Value symDivergence(const numkit::Value &F, const numkit::Value &vars,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> fVec = toSymVector(F, c, "divergence");
-    std::vector<Expr> vVec = toSymVector(vars, c, "divergence");
+    keel::Array<Expr> fVec = toSymVector(F, c, "divergence");
+    keel::Array<Expr> vVec = toSymVector(vars, c, "divergence");
     if (fVec.size() != vVec.size() || fVec.empty()) {
         casFail("nk:divergence:dimMismatch",
-                    "divergence: vector field F and coordinate vector vars must have the same non-zero length");
+                "divergence: vector field F and coordinate vector vars must have the same non-zero length");
     }
     return fromSymExpr(ctxPtr, divergence(c, fVec, vVec), mr);
 }
@@ -2649,11 +2687,11 @@ numkit::Value symCurl(const numkit::Value &F, const numkit::Value &vars,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> fVec = toSymVector(F, c, "curl");
-    std::vector<Expr> vVec = toSymVector(vars, c, "curl");
+    keel::Array<Expr> fVec = toSymVector(F, c, "curl");
+    keel::Array<Expr> vVec = toSymVector(vars, c, "curl");
     if (fVec.size() != 3 || vVec.size() != 3) {
         casFail("nk:curl:expected3D",
-                    "curl: vector field F and coordinate vector vars must have 3 components");
+                "curl: vector field F and coordinate vector vars must have 3 components");
     }
     return fromSymMatrix(ctxPtr, curl(c, fVec, vVec), mr);
 }
@@ -2666,11 +2704,11 @@ numkit::Value symLaplacian(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "laplacian");
-    std::vector<Expr> vars;
+    keel::Array<Expr> vars;
     if (args.size() >= 2) {
         vars = toSymVector(args[1], c, "laplacian");
     } else {
-        std::set<std::string> symSet;
+        SymbolNameSet symSet;
         collectSymbolsRec(c, f, symSet);
         for (const auto &nm : symSet)
             vars.push_back(c.symbol(nm));
@@ -2687,7 +2725,7 @@ numkit::Value symWronskian(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> funcs = toSymVector(args[0], c, "wronskian");
+    keel::Array<Expr> funcs = toSymVector(args[0], c, "wronskian");
     Expr var = (args.size() >= 2) ? toSymExpr(args[1], c, "wronskian")
                                   : defaultSymVar(c, args[0]);
     return fromSymExpr(ctxPtr, wronskian(c, funcs, var), mr);
@@ -2699,12 +2737,12 @@ numkit::Value symPotential(const numkit::Value &F, const numkit::Value &vars,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> fVec = toSymVector(F, c, "potential");
-    std::vector<Expr> vVec = toSymVector(vars, c, "potential");
+    keel::Array<Expr> fVec = toSymVector(F, c, "potential");
+    keel::Array<Expr> vVec = toSymVector(vars, c, "potential");
     PotentialResult res = scalarPotential(c, fVec, vVec);
     if (!res.proved()) {
         casFail("nk:potential:notConservative",
-                    "potential: vector field is not conservative (" + res.reason + ")");
+                keel::format("potential: vector field is not conservative ({})", res.reason));
     }
     return fromSymExpr(ctxPtr, res.phi, mr);
 }
@@ -2718,10 +2756,10 @@ numkit::Value symEulerLagrange(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
     Expr L = toSymExpr(args[0], c, "eulerlagrange");
     Expr t = toSymExpr(args[1], c, "eulerlagrange");
-    std::vector<Expr> q = toSymVector(args[2], c, "eulerlagrange");
-    std::vector<Expr> dq = toSymVector(args[3], c, "eulerlagrange");
-    std::vector<Expr> ddq = (args.size() >= 5) ? toSymVector(args[4], c, "eulerlagrange")
-                                               : std::vector<Expr>{};
+    keel::Array<Expr> q = toSymVector(args[2], c, "eulerlagrange");
+    keel::Array<Expr> dq = toSymVector(args[3], c, "eulerlagrange");
+    keel::Array<Expr> ddq = (args.size() >= 5) ? toSymVector(args[4], c, "eulerlagrange")
+                                               : keel::Array<Expr>{};
     EulerLagrangeResult res = eulerLagrange(c, L, t, q, dq, ddq);
     return fromSymVector(ctxPtr, res.equations, /*column=*/true, mr);
 }
@@ -2734,11 +2772,11 @@ numkit::Value symHamiltonian(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr H = toSymExpr(args[0], c, "hamiltonian");
-    std::vector<Expr> q = toSymVector(args[1], c, "hamiltonian");
-    std::vector<Expr> p = toSymVector(args[2], c, "hamiltonian");
+    keel::Array<Expr> q = toSymVector(args[1], c, "hamiltonian");
+    keel::Array<Expr> p = toSymVector(args[2], c, "hamiltonian");
     HamiltonEquationsResult res = hamiltonEquations(c, H, q, p);
     if (!res.certified) {
-        casFail("nk:hamiltonian:failed", "hamiltonian: " + res.reason);
+        casFail("nk:hamiltonian:failed", keel::format("hamiltonian: {}", res.reason));
     }
     Value s = Value::structure(mr);
     s.field("H") = fromSymExpr(ctxPtr, res.H, mr);
@@ -2755,12 +2793,12 @@ numkit::Value symLegendreTransform(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr L = toSymExpr(args[0], c, "legendretransform");
-    std::vector<Expr> q = toSymVector(args[1], c, "legendretransform");
-    std::vector<Expr> dq = toSymVector(args[2], c, "legendretransform");
-    std::vector<Expr> p = toSymVector(args[3], c, "legendretransform");
+    keel::Array<Expr> q = toSymVector(args[1], c, "legendretransform");
+    keel::Array<Expr> dq = toSymVector(args[2], c, "legendretransform");
+    keel::Array<Expr> p = toSymVector(args[3], c, "legendretransform");
     HamiltonEquationsResult res = legendreTransform(c, L, q, dq, p);
     if (!res.certified) {
-        casFail("nk:legendretransform:failed", "legendretransform: " + res.reason);
+        casFail("nk:legendretransform:failed", keel::format("legendretransform: {}", res.reason));
     }
     Value s = Value::structure(mr);
     s.field("H") = fromSymExpr(ctxPtr, res.H, mr);
@@ -2778,8 +2816,8 @@ numkit::Value symPoissonBracket(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "poissonbracket");
     Expr g = toSymExpr(args[1], c, "poissonbracket");
-    std::vector<Expr> q = toSymVector(args[2], c, "poissonbracket");
-    std::vector<Expr> p = toSymVector(args[3], c, "poissonbracket");
+    keel::Array<Expr> q = toSymVector(args[2], c, "poissonbracket");
+    keel::Array<Expr> p = toSymVector(args[3], c, "poissonbracket");
     Expr out = poissonBracket(c, f, g, q, p);
     if (out.isNull()) {
         casFail("nk:poissonbracket:failed", "poissonbracket: q and p must have the same length");
@@ -2795,14 +2833,14 @@ numkit::Value symLagrangeExtrema(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "lagrangeextrema");
-    std::vector<Expr> vars = toSymVector(args[1], c, "lagrangeextrema");
-    std::vector<Expr> constraints = (args.size() >= 3) ? toSymVector(args[2], c, "lagrangeextrema")
-                                                       : std::vector<Expr>{};
+    keel::Array<Expr> vars = toSymVector(args[1], c, "lagrangeextrema");
+    keel::Array<Expr> constraints = (args.size() >= 3) ? toSymVector(args[2], c, "lagrangeextrema")
+                                                       : keel::Array<Expr>{};
     LagrangeExtremaResult res = lagrangeExtrema(c, f, vars, constraints);
     if (!res.proved()) {
-        casFail("nk:lagrangeextrema:failed", "lagrangeextrema: " + res.reason);
+        casFail("nk:lagrangeextrema:failed", keel::format("lagrangeextrema: {}", res.reason));
     }
-    std::vector<Expr> vals;
+    keel::Array<Expr> vals;
     vals.reserve(res.points.size());
     for (const auto &pt : res.points)
         vals.push_back(pt.value);
@@ -2816,12 +2854,12 @@ numkit::Value symFrenetSerret(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> curve = toSymVector(args[0], c, "frenetserret");
+    keel::Array<Expr> curve = toSymVector(args[0], c, "frenetserret");
     Expr t = (args.size() >= 2) ? toSymExpr(args[1], c, "frenetserret")
                                 : defaultSymVar(c, args[0], "t");
     FrenetSerretResult res = frenetSerret(c, curve, t);
     if (!res.certified) {
-        casFail("nk:frenetserret:failed", "frenetserret: " + res.reason);
+        casFail("nk:frenetserret:failed", keel::format("frenetserret: {}", res.reason));
     }
     Value s = Value::structure(mr);
     s.field("T") = fromSymVector(ctxPtr, res.T, /*column=*/true, mr);
@@ -2840,12 +2878,12 @@ numkit::Value symSurfaceCurvature(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> surf = toSymVector(args[0], c, "surfacecurvature");
+    keel::Array<Expr> surf = toSymVector(args[0], c, "surfacecurvature");
     Expr u = toSymExpr(args[1], c, "surfacecurvature");
     Expr v = toSymExpr(args[2], c, "surfacecurvature");
     SurfaceCurvatureResult res = surfaceCurvature(c, surf, u, v);
     if (!res.certified) {
-        casFail("nk:surfacecurvature:failed", "surfacecurvature: " + res.reason);
+        casFail("nk:surfacecurvature:failed", keel::format("surfacecurvature: {}", res.reason));
     }
     Value s = Value::structure(mr);
     s.field("firstForm") = fromSymMatrix(ctxPtr, res.firstForm, mr);
@@ -2865,10 +2903,10 @@ numkit::Value symChristoffel(const numkit::Value &metric, const numkit::Value &c
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix g = toSymMatrix(metric, c, "christoffel");
-    std::vector<Expr> x = toSymVector(coords, c, "christoffel");
+    keel::Array<Expr> x = toSymVector(coords, c, "christoffel");
     ChristoffelResult res = christoffelSymbols(c, g, x);
     if (!res.certified) {
-        casFail("nk:christoffel:failed", "christoffel: " + res.reason);
+        casFail("nk:christoffel:failed", keel::format("christoffel: {}", res.reason));
     }
     Value s = Value::structure(mr);
     s.field("inverseMetric") = fromSymMatrix(ctxPtr, res.inverseMetric, mr);
@@ -2887,10 +2925,10 @@ numkit::Value symRiemann(const numkit::Value &metric, const numkit::Value &coord
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix g = toSymMatrix(metric, c, "riemann");
-    std::vector<Expr> x = toSymVector(coords, c, "riemann");
+    keel::Array<Expr> x = toSymVector(coords, c, "riemann");
     RiemannCurvatureResult res = riemannTensor(c, g, x);
     if (!res.certified) {
-        casFail("nk:riemann:failed", "riemann: " + res.reason);
+        casFail("nk:riemann:failed", keel::format("riemann: {}", res.reason));
     }
     Value s = Value::structure(mr);
     s.field("ricci") = fromSymMatrix(ctxPtr, res.ricci, mr);
@@ -2907,7 +2945,7 @@ numkit::Value symRicci(const numkit::Value &metric, const numkit::Value &coords,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix g = toSymMatrix(metric, c, "ricci");
-    std::vector<Expr> x = toSymVector(coords, c, "ricci");
+    keel::Array<Expr> x = toSymVector(coords, c, "ricci");
     SymMatrix R = ricciTensor(c, g, x);
     if (R.empty() && !g.empty()) {
         casFail("nk:ricci:failed", "ricci: metric is singular or dimensions do not match coordinates");
@@ -2923,7 +2961,7 @@ numkit::Value symScalarCurvature(const numkit::Value &metric, const numkit::Valu
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix g = toSymMatrix(metric, c, "scalarcurvature");
-    std::vector<Expr> x = toSymVector(coords, c, "scalarcurvature");
+    keel::Array<Expr> x = toSymVector(coords, c, "scalarcurvature");
     Expr R = scalarCurvature(c, g, x);
     if (R.isNull()) {
         casFail("nk:scalarcurvature:failed", "scalarcurvature: metric is singular or dimensions do not match");
@@ -2940,12 +2978,12 @@ numkit::Value symGeodesic(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix g = toSymMatrix(args[0], c, "geodesic");
-    std::vector<Expr> x = toSymVector(args[1], c, "geodesic");
-    std::vector<Expr> vel = (args.size() >= 3) ? toSymVector(args[2], c, "geodesic") : std::vector<Expr>{};
-    std::vector<Expr> acc = (args.size() >= 4) ? toSymVector(args[3], c, "geodesic") : std::vector<Expr>{};
+    keel::Array<Expr> x = toSymVector(args[1], c, "geodesic");
+    keel::Array<Expr> vel = (args.size() >= 3) ? toSymVector(args[2], c, "geodesic") : keel::Array<Expr>{};
+    keel::Array<Expr> acc = (args.size() >= 4) ? toSymVector(args[3], c, "geodesic") : keel::Array<Expr>{};
     GeodesicResult res = geodesicEquations(c, g, x, vel, acc);
     if (!res.certified) {
-        casFail("nk:geodesic:failed", "geodesic: " + res.reason);
+        casFail("nk:geodesic:failed", keel::format("geodesic: {}", res.reason));
     }
     return fromSymVector(ctxPtr, res.equations, /*column=*/true, mr);
 }
@@ -2957,21 +2995,21 @@ numkit::Value symLineIntegral(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> vars = toSymVector(args[1], c, "lineintegral");
-    std::vector<Expr> curve = toSymVector(args[2], c, "lineintegral");
+    keel::Array<Expr> vars = toSymVector(args[1], c, "lineintegral");
+    keel::Array<Expr> curve = toSymVector(args[2], c, "lineintegral");
     Expr t = toSymExpr(args[3], c, "lineintegral");
     Expr a = toSymExpr(args[4], c, "lineintegral");
     Expr b = toSymExpr(args[5], c, "lineintegral");
     DefiniteIntegral res;
     if (args[0].numel() > 1) {
-        std::vector<Expr> field = toSymVector(args[0], c, "lineintegral");
+        keel::Array<Expr> field = toSymVector(args[0], c, "lineintegral");
         res = lineIntegralVector(c, field, vars, curve, t, a, b);
     } else {
         Expr f = toSymExpr(args[0], c, "lineintegral");
         res = lineIntegralScalar(c, f, vars, curve, t, a, b);
     }
     if (!res.proved()) {
-        casFail("nk:lineintegral:failed", "lineintegral: " + res.reason);
+        casFail("nk:lineintegral:failed", keel::format("lineintegral: {}", res.reason));
     }
     return fromSymExpr(ctxPtr, res.value, mr);
 }
@@ -2983,8 +3021,8 @@ numkit::Value symSurfaceIntegral(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::vector<Expr> vars = toSymVector(args[1], c, "surfaceintegral");
-    std::vector<Expr> surface = toSymVector(args[2], c, "surfaceintegral");
+    keel::Array<Expr> vars = toSymVector(args[1], c, "surfaceintegral");
+    keel::Array<Expr> surface = toSymVector(args[2], c, "surfaceintegral");
     DefiniteBound uBound{toSymExpr(args[3], c, "surfaceintegral"),
                          toSymExpr(args[4], c, "surfaceintegral"),
                          toSymExpr(args[5], c, "surfaceintegral")};
@@ -2993,14 +3031,14 @@ numkit::Value symSurfaceIntegral(keel::ArrayRef<numkit::Value> args,
                          toSymExpr(args[8], c, "surfaceintegral")};
     DefiniteIntegral res;
     if (args[0].numel() > 1) {
-        std::vector<Expr> field = toSymVector(args[0], c, "surfaceintegral");
+        keel::Array<Expr> field = toSymVector(args[0], c, "surfaceintegral");
         res = surfaceIntegralVector(c, field, vars, surface, uBound, vBound);
     } else {
         Expr f = toSymExpr(args[0], c, "surfaceintegral");
         res = surfaceIntegralScalar(c, f, vars, surface, uBound, vBound);
     }
     if (!res.proved()) {
-        casFail("nk:surfaceintegral:failed", "surfaceintegral: " + res.reason);
+        casFail("nk:surfaceintegral:failed", keel::format("surfaceintegral: {}", res.reason));
     }
     return fromSymExpr(ctxPtr, res.value, mr);
 }
@@ -3010,9 +3048,9 @@ numkit::Value symElemFunc1(keel::StringRef fnName, const numkit::Value &v,
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::string fnStr(fnName.data(), fnName.size());
+    keel::String fnStr = keel::String::from(fnName);
     return mapSymUnary(v, c, [&](Expr e) {
-        if (fnStr == "sqrt") {
+        if (fnStr.as_ref() == "sqrt") {
             return c.pow(e, c.number(Rational(1, 2)));
         }
         return c.func(fnStr, e);
@@ -3025,7 +3063,7 @@ numkit::Value symElemFunc2(keel::StringRef fnName, const numkit::Value &a,
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    std::string fnStr(fnName.data(), fnName.size());
+    keel::String fnStr = keel::String::from(fnName);
     return mapSymElementwiseBinary(a, b, c, [&](Expr x, Expr y) {
         return c.func(fnStr, x, y);
     }, mr, fnStr.c_str());
@@ -3051,10 +3089,9 @@ numkit::BuiltinClass makeSymBuiltinClass()
         Ctx &c = *ctxPtr;
         if (self.objectCount() == 0)
             return keel::String::from("  [empty sym]\n");
-        std::string body = (self.objectCount() == 1 && self.dims().rows() == 1 && self.dims().cols() == 1)
-                               ? ("  " + c.toString(toSymExpr(self, c, "disp")) + "\n")
-                               : ("  " + toSymMatrix(self, c, "disp").toString(c) + "\n");
-        return keel::String::from(body);
+        if (self.objectCount() == 1 && self.dims().rows() == 1 && self.dims().cols() == 1)
+            return keel::format("  {}\n", c.toString(toSymExpr(self, c, "disp")));
+        return keel::format("  {}\n", toSymMatrix(self, c, "disp").toString(c));
     };
 
     // Binary & unary operator overloads
@@ -3284,8 +3321,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
     for (const char *fn : kUnaryElemFns) {
         cls.methods.put(keel::String::from(fn), [fn](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
             if (!rest.empty()) {
-                std::string fnStr(fn);
-                casFail("nk:" + fnStr + ":tooManyInputs", fnStr + ": expected 1 input argument");
+                casFail(keel::format("nk:{}:tooManyInputs", fn),
+                        keel::format("{}: expected 1 input argument", fn));
             }
             keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
             outs[0] = symElemFunc1(fn, self, mr);
@@ -3311,8 +3348,8 @@ numkit::BuiltinClass makeSymBuiltinClass()
         const char *casName = entry.casName;
         cls.methods.put(keel::String::from(mName), [mName, casName](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
             if (rest.size() != 1) {
-                std::string mStr(mName);
-                casFail("nk:" + mStr + ":arity", mStr + ": expected 2 input arguments");
+                casFail(keel::format("nk:{}:arity", mName),
+                        keel::format("{}: expected 2 input arguments", mName));
             }
             keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
             outs[0] = symElemFunc2(casName, self, rest[0], mr);
@@ -3320,7 +3357,7 @@ numkit::BuiltinClass makeSymBuiltinClass()
     }
 
     auto prependSelf = [](const Value &self, keel::ArrayRef<Value> rest) {
-        std::vector<Value> all;
+        keel::Array<Value> all;
         all.reserve(1 + rest.size());
         all.push_back(self);
         for (keel::usize i = 0; i < rest.size(); ++i)

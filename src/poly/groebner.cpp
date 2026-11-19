@@ -8,34 +8,48 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <map>
 #include <numeric>
-#include <string>
+#include <keel/algo.h>
+#include <keel/string.h>
 #include <utility>
-#include <vector>
+#include <keel/array.h>
 
 namespace numkit::cas {
 namespace {
 
-bool checkGroebnerBudget(const Ctx &c, Budget *budget, std::string &reason)
+bool checkGroebnerBudget(const Ctx &c, Budget *budget, keel::String &reason)
 {
     if (!budget)
         return true;
     if (budget->step() && budget->recordArenaBytes(c.nodeCount() * 32))
         return true;
-    reason = budget->status() == BudgetStatus::StepExhausted
+    reason.assign(budget->status() == BudgetStatus::StepExhausted
                  ? "step budget exhausted"
-                 : "arena byte budget exhausted";
+                 : "arena byte budget exhausted");
     return false;
 }
 
 struct MTerm
 {
     Rational coeff;
-    std::vector<int> exp; // exponents of vars[0..k-1]
+    keel::Array<int> exp; // exponents of vars[0..k-1]
+
+    MTerm() noexcept = default;
+    MTerm(Rational c, keel::Array<int> e) noexcept : coeff(keel::move(c)), exp(keel::move(e)) {}
+    MTerm(const MTerm &o) : coeff(o.coeff), exp(o.exp.clone()) {}
+    MTerm &operator=(const MTerm &o)
+    {
+        if (this != &o) {
+            coeff = o.coeff;
+            exp = o.exp.clone();
+        }
+        return *this;
+    }
+    MTerm(MTerm &&) noexcept = default;
+    MTerm &operator=(MTerm &&) noexcept = default;
 };
 
-int totalDegree(const std::vector<int> &a)
+int totalDegree(const keel::Array<int> &a)
 {
     int s = 0;
     for (int e : a)
@@ -44,7 +58,7 @@ int totalDegree(const std::vector<int> &a)
 }
 
 // Return > 0 if monomial `a` > `b` under `order`, < 0 if `a` < `b`, 0 if `a == b`.
-int compareMonomial(const std::vector<int> &a, const std::vector<int> &b,
+int compareMonomial(const keel::Array<int> &a, const keel::Array<int> &b,
                     MonomialOrder order)
 {
     const keel::usize k = a.size();
@@ -69,8 +83,8 @@ int compareMonomial(const std::vector<int> &a, const std::vector<int> &b,
     return 0;
 }
 
-bool monomialDivides(const std::vector<int> &divisor,
-                     const std::vector<int> &target)
+bool monomialDivides(const keel::Array<int> &divisor,
+                     const keel::Array<int> &target)
 {
     for (keel::usize i = 0; i < divisor.size(); ++i) {
         if (divisor[i] > target[i])
@@ -79,7 +93,7 @@ bool monomialDivides(const std::vector<int> &divisor,
     return true;
 }
 
-bool monomialsCoprime(const std::vector<int> &a, const std::vector<int> &b)
+bool monomialsCoprime(const keel::Array<int> &a, const keel::Array<int> &b)
 {
     for (keel::usize i = 0; i < a.size(); ++i) {
         if (a[i] > 0 && b[i] > 0)
@@ -88,28 +102,28 @@ bool monomialsCoprime(const std::vector<int> &a, const std::vector<int> &b)
     return true;
 }
 
-std::vector<int> monomialLcm(const std::vector<int> &a,
-                             const std::vector<int> &b)
+keel::Array<int> monomialLcm(const keel::Array<int> &a,
+                             const keel::Array<int> &b)
 {
-    std::vector<int> out(a.size(), 0);
+    keel::Array<int> out(a.size(), 0);
     for (keel::usize i = 0; i < a.size(); ++i)
         out[i] = std::max(a[i], b[i]);
     return out;
 }
 
-std::vector<int> monomialSub(const std::vector<int> &a,
-                             const std::vector<int> &b)
+keel::Array<int> monomialSub(const keel::Array<int> &a,
+                             const keel::Array<int> &b)
 {
-    std::vector<int> out(a.size(), 0);
+    keel::Array<int> out(a.size(), 0);
     for (keel::usize i = 0; i < a.size(); ++i)
         out[i] = a[i] - b[i];
     return out;
 }
 
-std::vector<int> monomialAdd(const std::vector<int> &a,
-                             const std::vector<int> &b)
+keel::Array<int> monomialAdd(const keel::Array<int> &a,
+                             const keel::Array<int> &b)
 {
-    std::vector<int> out(a.size(), 0);
+    keel::Array<int> out(a.size(), 0);
     for (keel::usize i = 0; i < a.size(); ++i)
         out[i] = a[i] + b[i];
     return out;
@@ -119,7 +133,18 @@ std::vector<int> monomialAdd(const std::vector<int> &a,
 // monomial order (`terms[0]` is the leading term).
 struct MPoly
 {
-    std::vector<MTerm> terms;
+    keel::Array<MTerm> terms;
+
+    MPoly() noexcept = default;
+    MPoly(const MPoly &o) : terms(o.terms.clone()) {}
+    MPoly &operator=(const MPoly &o)
+    {
+        if (this != &o)
+            terms = o.terms.clone();
+        return *this;
+    }
+    MPoly(MPoly &&) noexcept = default;
+    MPoly &operator=(MPoly &&) noexcept = default;
 
     bool isZero() const { return terms.empty(); }
     const MTerm &lt() const { return terms.front(); }
@@ -133,7 +158,7 @@ void normalizeMPoly(MPoly &p, MonomialOrder order)
               [&](const MTerm &x, const MTerm &y) {
                   return compareMonomial(x.exp, y.exp, order) > 0;
               });
-    std::vector<MTerm> merged;
+    keel::Array<MTerm> merged;
     merged.reserve(p.terms.size());
     for (const MTerm &t : p.terms) {
         if (t.coeff.isZero())
@@ -163,7 +188,7 @@ MPoly mpolyAdd(const MPoly &a, const MPoly &b, MonomialOrder order)
         } else {
             const Rational c = a.terms[i].coeff + b.terms[j].coeff;
             if (!c.isZero())
-                out.terms.push_back(MTerm{c, a.terms[i].exp});
+                out.terms.push_back(MTerm{c, a.terms[i].exp.clone()});
             ++i;
             ++j;
         }
@@ -184,7 +209,7 @@ MPoly mpolySub(const MPoly &a, const MPoly &b, MonomialOrder order)
 }
 
 MPoly mpolyMulTerm(const MPoly &a, const Rational &c,
-                   const std::vector<int> &expShift)
+                   const keel::Array<int> &expShift)
 {
     MPoly out;
     if (c.isZero() || a.isZero())
@@ -226,9 +251,9 @@ void mpolyMakeMonic(MPoly &p)
 // S-polynomial S(f, g) = (lcm / LT(f)) * f - (lcm / LT(g)) * g
 MPoly mpolySPoly(const MPoly &f, const MPoly &g, MonomialOrder order)
 {
-    const std::vector<int> lcm = monomialLcm(f.lt().exp, g.lt().exp);
-    const std::vector<int> df = monomialSub(lcm, f.lt().exp);
-    const std::vector<int> dg = monomialSub(lcm, g.lt().exp);
+    const keel::Array<int> lcm = monomialLcm(f.lt().exp, g.lt().exp);
+    const keel::Array<int> df = monomialSub(lcm, f.lt().exp);
+    const keel::Array<int> dg = monomialSub(lcm, g.lt().exp);
     const Rational cf = Rational(keel::i64{1}) / f.lt().coeff;
     const Rational cg = Rational(keel::i64{1}) / g.lt().coeff;
     return mpolySub(mpolyMulTerm(f, cf, df), mpolyMulTerm(g, cg, dg), order);
@@ -236,9 +261,9 @@ MPoly mpolySPoly(const MPoly &f, const MPoly &g, MonomialOrder order)
 
 // Multivariate polynomial division of `f` by `G`: reduces all terms of `f`
 // modulo the leading terms of `G`, returning the normal form remainder `r`.
-bool mpolyReduce(const Ctx &c, const MPoly &f, const std::vector<MPoly> &G,
+bool mpolyReduce(const Ctx &c, const MPoly &f, const keel::Array<MPoly> &G,
                  MonomialOrder order, Budget *budget, MPoly &rOut,
-                 std::string &reason)
+                 keel::String &reason)
 {
     MPoly p = f;
     rOut.terms.clear();
@@ -247,7 +272,7 @@ bool mpolyReduce(const Ctx &c, const MPoly &f, const std::vector<MPoly> &G,
 
     while (!p.isZero()) {
         if (++iter > kMaxDivSteps) {
-            reason = "multivariate division step limit exceeded";
+            reason.assign("multivariate division step limit exceeded");
             return false;
         }
         if ((iter & 15u) == 0u && !checkGroebnerBudget(c, budget, reason))
@@ -260,7 +285,7 @@ bool mpolyReduce(const Ctx &c, const MPoly &f, const std::vector<MPoly> &G,
                 continue;
             if (monomialDivides(g.lt().exp, ltP.exp)) {
                 const Rational qCoeff = ltP.coeff / g.lt().coeff;
-                const std::vector<int> qExp = monomialSub(ltP.exp, g.lt().exp);
+                const keel::Array<int> qExp = monomialSub(ltP.exp, g.lt().exp);
                 p = mpolySub(p, mpolyMulTerm(g, qCoeff, qExp), order);
                 divided = true;
                 break;
@@ -268,13 +293,13 @@ bool mpolyReduce(const Ctx &c, const MPoly &f, const std::vector<MPoly> &G,
         }
         if (!divided) {
             rOut.terms.push_back(ltP);
-            p.terms.erase(p.terms.begin());
+            p.terms.remove_at(0);
         }
     }
     return true;
 }
 
-bool exprToMPolyRec(const Ctx &c, Expr e, const std::vector<Expr> &vars,
+bool exprToMPolyRec(const Ctx &c, Expr e, keel::ArrayRef<Expr> vars,
                     MonomialOrder order, MPoly &out)
 {
     if (e.isNull())
@@ -285,14 +310,14 @@ bool exprToMPolyRec(const Ctx &c, Expr e, const std::vector<Expr> &vars,
         out.terms.clear();
         const Rational &r = c.numberValue(e);
         if (!r.isZero())
-            out.terms.push_back(MTerm{r, std::vector<int>(k, 0)});
+            out.terms.push_back(MTerm{r, keel::Array<int>(k, 0)});
         return true;
     }
     case NodeKind::Symbol: {
         for (keel::usize i = 0; i < k; ++i) {
             if (e == vars[i]) {
                 out.terms.clear();
-                std::vector<int> exp(k, 0);
+                keel::Array<int> exp(k, 0);
                 exp[i] = 1;
                 out.terms.push_back(MTerm{Rational(keel::i64{1}), std::move(exp)});
                 return true;
@@ -313,7 +338,7 @@ bool exprToMPolyRec(const Ctx &c, Expr e, const std::vector<Expr> &vars,
     }
     case NodeKind::Mul: {
         MPoly acc;
-        acc.terms.push_back(MTerm{Rational(keel::i64{1}), std::vector<int>(k, 0)});
+        acc.terms.push_back(MTerm{Rational(keel::i64{1}), keel::Array<int>(k, 0)});
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
             MPoly sub;
             if (!exprToMPolyRec(c, c.child(e, i), vars, order, sub))
@@ -337,7 +362,7 @@ bool exprToMPolyRec(const Ctx &c, Expr e, const std::vector<Expr> &vars,
         if (!exprToMPolyRec(c, base, vars, order, bPoly))
             return false;
         MPoly acc;
-        acc.terms.push_back(MTerm{Rational(keel::i64{1}), std::vector<int>(k, 0)});
+        acc.terms.push_back(MTerm{Rational(keel::i64{1}), keel::Array<int>(k, 0)});
         for (keel::i64 i = 0; i < p; ++i)
             acc = mpolyMul(acc, bPoly, order);
         out = std::move(acc);
@@ -350,7 +375,7 @@ bool exprToMPolyRec(const Ctx &c, Expr e, const std::vector<Expr> &vars,
     return false;
 }
 
-bool exprToMPoly(Ctx &c, Expr e, const std::vector<Expr> &vars,
+bool exprToMPoly(Ctx &c, Expr e, keel::ArrayRef<Expr> vars,
                  MonomialOrder order, MPoly &out)
 {
     if (e.isNull())
@@ -365,14 +390,14 @@ bool exprToMPoly(Ctx &c, Expr e, const std::vector<Expr> &vars,
     return false;
 }
 
-Expr mpolyToExpr(Ctx &c, const MPoly &p, const std::vector<Expr> &vars)
+Expr mpolyToExpr(Ctx &c, const MPoly &p, keel::ArrayRef<Expr> vars)
 {
     if (p.isZero())
         return c.zero();
-    std::vector<Expr> addTerms;
+    keel::Array<Expr> addTerms;
     addTerms.reserve(p.terms.size());
     for (const MTerm &t : p.terms) {
-        std::vector<Expr> mulFacs;
+        keel::Array<Expr> mulFacs;
         if (t.coeff != Rational(keel::i64{1}))
             mulFacs.push_back(c.number(t.coeff));
         for (keel::usize i = 0; i < vars.size(); ++i) {
@@ -395,23 +420,23 @@ Expr mpolyToExpr(Ctx &c, const MPoly &p, const std::vector<Expr> &vars)
 
 } // namespace
 
-GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
-                             const std::vector<Expr> &vars,
+GroebnerResult groebnerBasis(Ctx &c, keel::ArrayRef<Expr> polys,
+                             keel::ArrayRef<Expr> vars,
                              MonomialOrder order, Budget *budget)
 {
     GroebnerResult out;
     if (vars.empty()) {
-        out.reason = "empty variable list";
+        out.reason.assign("empty variable list");
         return out;
     }
     for (keel::usize i = 0; i < vars.size(); ++i) {
         if (vars[i].isNull() || c.kind(vars[i]) != NodeKind::Symbol) {
-            out.reason = "all Groebner variables must be Symbol nodes";
+            out.reason.assign("all Groebner variables must be Symbol nodes");
             return out;
         }
         for (keel::usize j = i + 1; j < vars.size(); ++j) {
             if (vars[i] == vars[j]) {
-                out.reason = "duplicate variable in Groebner variable list";
+                out.reason.assign("duplicate variable in Groebner variable list");
                 return out;
             }
         }
@@ -419,16 +444,16 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
     if (!checkGroebnerBudget(c, budget, out.reason))
         return out;
 
-    std::vector<MPoly> F;
-    std::vector<MPoly> G;
+    keel::Array<MPoly> F;
+    keel::Array<MPoly> G;
     for (const Expr &pe : polys) {
         if (pe.isNull()) {
-            out.reason = "null polynomial in input list";
+            out.reason.assign("null polynomial in input list");
             return out;
         }
         MPoly mp;
         if (!exprToMPoly(c, pe, vars, order, mp)) {
-            out.reason = "input expression is not a polynomial in Q[vars]";
+            out.reason.assign("input expression is not a polynomial in Q[vars]");
             return out;
         }
         if (!mp.isZero()) {
@@ -450,7 +475,7 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
         keel::usize j;
         int lcmDeg;
     };
-    std::vector<Pair> pairs;
+    keel::Array<Pair> pairs;
     for (keel::usize i = 0; i < G.size(); ++i) {
         for (keel::usize j = i + 1; j < G.size(); ++j) {
             const int d = totalDegree(monomialLcm(G[i].lt().exp, G[j].lt().exp));
@@ -468,7 +493,7 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
             pairs.begin(), pairs.end(),
             [](const Pair &a, const Pair &b) { return a.lcmDeg < b.lcmDeg; });
         const Pair cur = *bestIt;
-        pairs.erase(bestIt);
+        pairs.remove_at(static_cast<keel::usize>(bestIt - pairs.begin()));
 
         const MPoly &gi = G[cur.i];
         const MPoly &gj = G[cur.j];
@@ -496,7 +521,7 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
         }
 
         if (G.size() >= kMaxBasisSize) {
-            out.reason = "Groebner basis size limit exceeded";
+            out.reason.assign("Groebner basis size limit exceeded");
             return out;
         }
         const keel::usize newIdx = G.size();
@@ -509,7 +534,7 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
     }
 
     // Minimalize the Groebner basis: remove any g_i whose LM is divisible by LM(g_j) (j != i).
-    std::vector<MPoly> minimal;
+    keel::Array<MPoly> minimal;
     for (keel::usize i = 0; i < G.size(); ++i) {
         if (G[i].isZero())
             continue;
@@ -533,7 +558,7 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
 
     // Interreduce to obtain the unique monic reduced Groebner basis.
     for (keel::usize i = 0; i < minimal.size(); ++i) {
-        std::vector<MPoly> others;
+        keel::Array<MPoly> others;
         others.reserve(minimal.size() - 1);
         for (keel::usize j = 0; j < minimal.size(); ++j) {
             if (j != i)
@@ -560,7 +585,7 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
         MPoly r;
         if (!mpolyReduce(c, f, minimal, order, budget, r, out.reason) ||
             !r.isZero()) {
-            out.reason = "input generator failed Groebner ideal membership certificate";
+            out.reason.assign("input generator failed Groebner ideal membership certificate");
             return out;
         }
     }
@@ -572,7 +597,7 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
             MPoly r;
             if (!mpolyReduce(c, s, minimal, order, budget, r, out.reason) ||
                 !r.isZero()) {
-                out.reason = "basis failed Buchberger S-polynomial certificate";
+                out.reason.assign("basis failed Buchberger S-polynomial certificate");
                 return out;
             }
         }
@@ -585,8 +610,8 @@ GroebnerResult groebnerBasis(Ctx &c, const std::vector<Expr> &polys,
     return out;
 }
 
-Expr polyReduceMulti(Ctx &c, Expr f, const std::vector<Expr> &G,
-                     const std::vector<Expr> &vars, MonomialOrder order,
+Expr polyReduceMulti(Ctx &c, Expr f, keel::ArrayRef<Expr> G,
+                     keel::ArrayRef<Expr> vars, MonomialOrder order,
                      Budget *budget)
 {
     if (f.isNull() || vars.empty())
@@ -598,7 +623,7 @@ Expr polyReduceMulti(Ctx &c, Expr f, const std::vector<Expr> &G,
     MPoly mf;
     if (!exprToMPoly(c, f, vars, order, mf))
         return Expr{};
-    std::vector<MPoly> mG;
+    keel::Array<MPoly> mG;
     mG.reserve(G.size());
     for (const Expr &ge : G) {
         if (ge.isNull())
@@ -610,7 +635,7 @@ Expr polyReduceMulti(Ctx &c, Expr f, const std::vector<Expr> &G,
             mG.push_back(std::move(mg));
     }
     MPoly rem;
-    std::string reason;
+    keel::String reason;
     if (!mpolyReduce(c, mf, mG, order, budget, rem, reason))
         return Expr{};
     return mpolyToExpr(c, rem, vars);
@@ -622,7 +647,7 @@ Expr polyReduceMulti(Ctx &c, Expr f, const std::vector<Expr> &G,
 
 namespace {
 
-void collectPolyVarsRec(const Ctx &c, Expr e, std::vector<Expr> &vars)
+void collectPolyVarsRec(const Ctx &c, Expr e, keel::Array<Expr> &vars)
 {
     if (e.isNull())
         return;
@@ -635,13 +660,13 @@ void collectPolyVarsRec(const Ctx &c, Expr e, std::vector<Expr> &vars)
         collectPolyVarsRec(c, c.child(e, i), vars);
 }
 
-std::vector<Expr> resolvePolyVars(const Ctx &c,
-                                  const std::vector<Expr> &exprs,
-                                  const std::vector<Expr> &userVars)
+keel::Array<Expr> resolvePolyVars(const Ctx &c,
+                                  keel::ArrayRef<Expr> exprs,
+                                  keel::ArrayRef<Expr> userVars)
 {
     if (!userVars.empty())
-        return userVars;
-    std::vector<Expr> vars;
+        return keel::Array<Expr>::from(userVars);
+    keel::Array<Expr> vars;
     for (const Expr &e : exprs)
         collectPolyVarsRec(c, e, vars);
     std::sort(vars.begin(), vars.end(),
@@ -653,7 +678,7 @@ MPoly mpolyConst(const Rational &r, keel::usize kVars)
 {
     MPoly out;
     if (!r.isZero())
-        out.terms.push_back(MTerm{r, std::vector<int>(kVars, 0)});
+        out.terms.push_back(MTerm{r, keel::Array<int>(kVars, 0)});
     return out;
 }
 
@@ -674,12 +699,12 @@ int mpolyDegInVar(const MPoly &p, keel::usize varIdx)
     return d;
 }
 
-std::vector<int> mpolyMinMonomial(const MPoly &p, keel::usize kVars)
+keel::Array<int> mpolyMinMonomial(const MPoly &p, keel::usize kVars)
 {
-    std::vector<int> minExp(kVars, 0);
+    keel::Array<int> minExp(kVars, 0);
     if (p.isZero())
         return minExp;
-    minExp = p.terms[0].exp;
+    minExp = p.terms[0].exp.clone();
     for (keel::usize i = 1; i < p.terms.size(); ++i) {
         for (keel::usize j = 0; j < kVars; ++j)
             minExp[j] = std::min(minExp[j], p.terms[i].exp[j]);
@@ -687,7 +712,7 @@ std::vector<int> mpolyMinMonomial(const MPoly &p, keel::usize kVars)
     return minExp;
 }
 
-MPoly mpolyShiftMonomial(const MPoly &p, const std::vector<int> &shift)
+MPoly mpolyShiftMonomial(const MPoly &p, const keel::Array<int> &shift)
 {
     MPoly out = p;
     for (MTerm &t : out.terms) {
@@ -723,8 +748,8 @@ bool mpolyDivExact(const MPoly &a, const MPoly &b, MonomialOrder order,
         if (!monomialDivides(ltB.exp, ltP.exp))
             return false;
         const Rational qCoeff = ltP.coeff / ltB.coeff;
-        const std::vector<int> qExp = monomialSub(ltP.exp, ltB.exp);
-        qOut.terms.push_back(MTerm{qCoeff, qExp});
+        const keel::Array<int> qExp = monomialSub(ltP.exp, ltB.exp);
+        qOut.terms.push_back(MTerm{qCoeff, qExp.clone()});
         p = mpolySub(p, mpolyMulTerm(divisor, qCoeff, qExp), order);
     }
     normalizeMPoly(qOut, order);
@@ -737,7 +762,7 @@ MPoly mpolyDiffInVar(const MPoly &p, keel::usize varIdx, MonomialOrder order)
     for (const MTerm &t : p.terms) {
         const int e = t.exp[varIdx];
         if (e > 0) {
-            std::vector<int> nExp = t.exp;
+            keel::Array<int> nExp = t.exp.clone();
             nExp[varIdx] = e - 1;
             out.terms.push_back(
                 MTerm{t.coeff * Rational(static_cast<keel::i64>(e)),
@@ -748,14 +773,14 @@ MPoly mpolyDiffInVar(const MPoly &p, keel::usize varIdx, MonomialOrder order)
     return out;
 }
 
-std::vector<MPoly> mpolyDecomposeInVar(const MPoly &p, keel::usize varIdx,
+keel::Array<MPoly> mpolyDecomposeInVar(const MPoly &p, keel::usize varIdx,
                                        keel::usize kVars, MonomialOrder order)
 {
     const int d = mpolyDegInVar(p, varIdx);
-    std::vector<MPoly> coeffs(static_cast<keel::usize>(d + 1));
+    keel::Array<MPoly> coeffs(static_cast<keel::usize>(d + 1));
     for (const MTerm &t : p.terms) {
         const int e = t.exp[varIdx];
-        std::vector<int> cExp = t.exp;
+        keel::Array<int> cExp = t.exp.clone();
         cExp[varIdx] = 0;
         coeffs[static_cast<keel::usize>(e)].terms.push_back(
             MTerm{t.coeff, std::move(cExp)});
@@ -766,13 +791,13 @@ std::vector<MPoly> mpolyDecomposeInVar(const MPoly &p, keel::usize varIdx,
     return coeffs;
 }
 
-MPoly mpolyComposeInVar(const std::vector<MPoly> &coeffs, keel::usize varIdx,
+MPoly mpolyComposeInVar(const keel::Array<MPoly> &coeffs, keel::usize varIdx,
                         MonomialOrder order)
 {
     MPoly out;
     for (keel::usize d = 0; d < coeffs.size(); ++d) {
         for (const MTerm &t : coeffs[d].terms) {
-            std::vector<int> nExp = t.exp;
+            keel::Array<int> nExp = t.exp.clone();
             nExp[varIdx] = static_cast<int>(d);
             out.terms.push_back(MTerm{t.coeff, std::move(nExp)});
         }
@@ -786,7 +811,7 @@ UPoly mpolyToUPolyInVar(const MPoly &p, keel::usize varIdx)
     if (p.isZero())
         return UPoly{};
     const int d = mpolyDegInVar(p, varIdx);
-    std::vector<Rational> coeffs(static_cast<keel::usize>(d + 1),
+    keel::Array<Rational> coeffs(static_cast<keel::usize>(d + 1),
                                  Rational(keel::i64{0}));
     for (const MTerm &t : p.terms) {
         coeffs[static_cast<keel::usize>(t.exp[varIdx])] += t.coeff;
@@ -803,7 +828,7 @@ MPoly upolyToMPolyInVar(const UPoly &u, keel::usize varIdx, keel::usize kVars,
     for (int d = 0; d <= u.deg(); ++d) {
         const Rational c = u.coeff(d);
         if (!c.isZero()) {
-            std::vector<int> exp(kVars, 0);
+            keel::Array<int> exp(kVars, 0);
             exp[varIdx] = d;
             out.terms.push_back(MTerm{c, std::move(exp)});
         }
@@ -820,7 +845,7 @@ MPoly mpolyContentInVar(const MPoly &p, keel::usize varIdx, keel::usize kVars,
 {
     if (p.isZero())
         return MPoly{};
-    const std::vector<MPoly> coeffs =
+    const keel::Array<MPoly> coeffs =
         mpolyDecomposeInVar(p, varIdx, kVars, order);
     MPoly g;
     for (const MPoly &cPoly : coeffs) {
@@ -873,10 +898,10 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
         return mpolyConst(Rational(keel::i64{1}), 0);
 
     // 1. Strip greatest common monomial factor x^gExp
-    const std::vector<int> minA = mpolyMinMonomial(a, kVars);
-    const std::vector<int> minB = mpolyMinMonomial(b, kVars);
-    std::vector<int> gExp(kVars, 0);
-    std::vector<int> negA(kVars, 0), negB(kVars, 0);
+    const keel::Array<int> minA = mpolyMinMonomial(a, kVars);
+    const keel::Array<int> minB = mpolyMinMonomial(b, kVars);
+    keel::Array<int> gExp(kVars, 0);
+    keel::Array<int> negA(kVars, 0), negB(kVars, 0);
     for (keel::usize i = 0; i < kVars; ++i) {
         gExp[i] = std::min(minA[i], minB[i]);
         negA[i] = -minA[i];
@@ -905,7 +930,7 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
         return finishWithMonomial(Q);
 
     // 2. Inspect active variables
-    std::vector<keel::usize> activeVars;
+    keel::Array<keel::usize> activeVars;
     for (keel::usize i = 0; i < kVars; ++i) {
         const int da = mpolyDegInVar(P, i);
         const int db = mpolyDegInVar(Q, i);
@@ -976,7 +1001,7 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
             P = Q;
             break;
         }
-        const std::vector<MPoly> qCoeffs =
+        const keel::Array<MPoly> qCoeffs =
             mpolyDecomposeInVar(Q, mainVar, kVars, order);
         const int dQ = static_cast<int>(qCoeffs.size()) - 1;
         const MPoly &lcQ = qCoeffs.back();
@@ -985,7 +1010,7 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
         int subSteps = 0;
         while (!R.isZero() && mpolyDegInVar(R, mainVar) >= dQ &&
                ++subSteps <= 64) {
-            const std::vector<MPoly> rCoeffs =
+            const keel::Array<MPoly> rCoeffs =
                 mpolyDecomposeInVar(R, mainVar, kVars, order);
             const int dR = static_cast<int>(rCoeffs.size()) - 1;
             const MPoly &lcR = rCoeffs.back();
@@ -998,7 +1023,7 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
                 mpolyDivExact(lcQ, gLc, order, mulR);
                 mpolyDivExact(lcR, gLc, order, mulQ);
             }
-            std::vector<int> shiftExp(kVars, 0);
+            keel::Array<int> shiftExp(kVars, 0);
             shiftExp[mainVar] = dR - dQ;
             const MPoly shiftedQ = mpolyShiftMonomial(Q, shiftExp);
             R = mpolySub(mpolyMul(mulR, R, order),
@@ -1040,7 +1065,7 @@ MPoly mpolyEvalVarAtRational(const MPoly &p, keel::usize varIdx,
                 BigInt::powUInt(val.den(), static_cast<keel::u64>(e));
             c = c * Rational(numP, denP);
         }
-        std::vector<int> nExp = t.exp;
+        keel::Array<int> nExp = t.exp.clone();
         nExp[varIdx] = 0;
         out.terms.push_back(MTerm{c, std::move(nExp)});
     }
@@ -1055,17 +1080,17 @@ MPoly mpolyShiftVarByRational(const MPoly &p, keel::usize varIdx,
 {
     if (p.isZero() || shift.isZero())
         return p;
-    const std::vector<MPoly> coeffs =
+    const keel::Array<MPoly> coeffs =
         mpolyDecomposeInVar(p, varIdx, kVars, order);
     if (coeffs.size() <= 1)
         return p;
 
     // Horner evaluation in (x_varIdx + shift)
     MPoly xPlusShift;
-    std::vector<int> e1(kVars, 0);
+    keel::Array<int> e1(kVars, 0);
     e1[varIdx] = 1;
-    xPlusShift.terms.push_back(MTerm{Rational(keel::i64{1}), e1});
-    xPlusShift.terms.push_back(MTerm{shift, std::vector<int>(kVars, 0)});
+    xPlusShift.terms.push_back(MTerm{Rational(keel::i64{1}), keel::move(e1)});
+    xPlusShift.terms.push_back(MTerm{shift, keel::Array<int>(kVars, 0)});
     normalizeMPoly(xPlusShift, order);
 
     MPoly acc = coeffs.back();
@@ -1079,16 +1104,16 @@ MPoly mpolyShiftVarByRational(const MPoly &p, keel::usize varIdx,
 MPoly mpolyScaleVarByMPoly(const MPoly &p, keel::usize mainVar, const MPoly &L,
                            keel::usize kVars, MonomialOrder order)
 {
-    const std::vector<MPoly> coeffs =
+    const keel::Array<MPoly> coeffs =
         mpolyDecomposeInVar(p, mainVar, kVars, order);
     if (coeffs.size() <= 1)
         return p;
-    std::vector<MPoly> lPows(coeffs.size());
+    keel::Array<MPoly> lPows(coeffs.size());
     lPows[0] = mpolyConst(Rational(keel::i64{1}), kVars);
     for (keel::usize i = 1; i < coeffs.size(); ++i)
         lPows[i] = mpolyMul(lPows[i - 1], L, order);
 
-    std::vector<MPoly> newCoeffs(coeffs.size());
+    keel::Array<MPoly> newCoeffs(coeffs.size());
     for (keel::usize i = 0; i < coeffs.size(); ++i)
         newCoeffs[i] = mpolyMul(coeffs[i], lPows[i], order);
     return mpolyComposeInVar(newCoeffs, mainVar, order);
@@ -1098,12 +1123,12 @@ MPoly mpolyScaleVarByMPoly(const MPoly &p, keel::usize mainVar, const MPoly &L,
 // monomial factors) into monic irreducible factors in Q[x_1, ..., x_k].
 void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
                                     MonomialOrder order, Budget *budget,
-                                    std::vector<MPoly> &irredOut)
+                                    keel::Array<MPoly> &irredOut)
 {
     if (S.isZero() || mpolyIsConstant(S))
         return;
 
-    std::vector<keel::usize> activeVars;
+    keel::Array<keel::usize> activeVars;
     for (keel::usize i = 0; i < kVars; ++i) {
         if (mpolyDegInVar(S, i) > 0)
             activeVars.push_back(i);
@@ -1115,7 +1140,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
     if (activeVars.size() == 1) {
         const keel::usize v = activeVars[0];
         const UPoly uS = mpolyToUPolyInVar(S, v);
-        const std::vector<UPoly> uFacs = factorOverQ(uS, budget);
+        const keel::Array<UPoly> uFacs = factorOverQ(uS, budget);
         for (const UPoly &uf : uFacs) {
             if (uf.deg() > 0) {
                 MPoly mf = upolyToMPolyInVar(uf, v, kVars, order);
@@ -1146,7 +1171,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
         return;
     }
 
-    std::vector<keel::usize> otherVars;
+    keel::Array<keel::usize> otherVars;
     for (keel::usize v : activeVars) {
         if (v != mainVar)
             otherVars.push_back(v);
@@ -1158,19 +1183,19 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
     MPoly curS = S;
     mpolyMakeMonic(curS);
 
-    const std::vector<MPoly> sCoeffs =
+    const keel::Array<MPoly> sCoeffs =
         mpolyDecomposeInVar(curS, mainVar, kVars, order);
     const int dX = static_cast<int>(sCoeffs.size()) - 1;
     const MPoly L = sCoeffs.back();
 
-    std::vector<MPoly> lPows(static_cast<keel::usize>(dX));
+    keel::Array<MPoly> lPows(static_cast<keel::usize>(dX));
     lPows[0] = mpolyConst(Rational(keel::i64{1}), kVars);
     for (int i = 1; i < dX; ++i) {
         lPows[static_cast<keel::usize>(i)] =
             mpolyMul(lPows[static_cast<keel::usize>(i - 1)], L, order);
     }
 
-    std::vector<MPoly> monicCoeffs(static_cast<keel::usize>(dX + 1));
+    keel::Array<MPoly> monicCoeffs(static_cast<keel::usize>(dX + 1));
     monicCoeffs[static_cast<keel::usize>(dX)] =
         mpolyConst(Rational(keel::i64{1}), kVars);
     for (int i = 0; i < dX; ++i) {
@@ -1183,7 +1208,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
     // 4. Find a small integer evaluation point `b` for `otherVars` such that
     //    L(b) != 0 and s0(X) = sMonic(X, b) is squarefree of degree dX.
     static const int kCandCoords[] = {0, 1, -1, 2, -2, 3, -3, 4, 5};
-    std::vector<Rational> evalPt(otherVars.size(), Rational(keel::i64{0}));
+    keel::Array<Rational> evalPt(otherVars.size(), Rational(keel::i64{0}));
     UPoly s0;
     bool foundPt = false;
     for (int trial = 0; trial < 45 && !foundPt; ++trial) {
@@ -1217,7 +1242,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
         return;
     }
 
-    std::vector<UPoly> uFactors = factorOverQ(s0, budget);
+    keel::Array<UPoly> uFactors = factorOverQ(s0, budget);
     if (uFactors.size() <= 1) {
         // Irreducible specialization => S is irreducible over Q[vars]
         irredOut.push_back(curS);
@@ -1231,7 +1256,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
                                            kVars, order);
     }
 
-    auto otherTotalDeg = [&](const std::vector<int> &exp) -> int {
+    auto otherTotalDeg = [&](const keel::Array<int> &exp) -> int {
         int d = 0;
         for (keel::usize v : otherVars)
             d += exp[v];
@@ -1246,7 +1271,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
     for (keel::usize subSize = 1; subSize <= uFactors.size() / 2; ++subSize) {
         if (uFactors.size() <= 1)
             break;
-        std::vector<bool> mask(uFactors.size(), false);
+        keel::Array<bool> mask(uFactors.size(), false);
         std::fill(mask.begin(),
                   mask.begin() + static_cast<keel::isize>(subSize), true);
 
@@ -1282,23 +1307,45 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
 
                 // Group terms of `err` that have total degree `degU` in `otherVars`
                 // by their `otherVars` exponent vector.
-                std::map<std::vector<int>, std::vector<Rational>> buckets;
+                struct Bucket
+                {
+                    keel::Array<int> uExp;
+                    keel::Array<Rational> coeffs;
+                };
+                keel::Array<Bucket> buckets;
                 for (const MTerm &t : err.terms) {
                     if (otherTotalDeg(t.exp) != degU)
                         continue;
-                    std::vector<int> uExp = t.exp;
+                    keel::Array<int> uExp = t.exp.clone();
                     uExp[mainVar] = 0;
-                    auto &vec = buckets[uExp];
+                    Bucket *found = nullptr;
+                    for (Bucket &b : buckets) {
+                        if (b.uExp == uExp) {
+                            found = &b;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        buckets.push_back(Bucket{keel::move(uExp), {}});
+                        found = &buckets.back();
+                    }
+                    auto &vec = found->coeffs;
                     const int xExp = t.exp[mainVar];
                     if (static_cast<int>(vec.size()) <= xExp)
                         vec.resize(static_cast<keel::usize>(xExp + 1),
                                    Rational(keel::i64{0}));
                     vec[static_cast<keel::usize>(xExp)] += t.coeff;
                 }
+                keel::sort(buckets, [](const Bucket &a, const Bucket &b) {
+                    for (keel::usize i = 0; i < a.uExp.size() && i < b.uExp.size(); ++i)
+                        if (a.uExp[i] != b.uExp[i])
+                            return a.uExp[i] < b.uExp[i];
+                    return a.uExp.size() < b.uExp.size();
+                });
 
-                for (const auto &kv : buckets) {
-                    const std::vector<int> &uExp = kv.first;
-                    const UPoly eAlpha(kv.second);
+                for (const Bucket &kv : buckets) {
+                    const keel::Array<int> &uExp = kv.uExp;
+                    const UPoly eAlpha(kv.coeffs.clone());
                     if (eAlpha.isZero())
                         continue;
                     UPoly qAlpha;
@@ -1360,18 +1407,18 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
 
 void factorArbitraryMPolyRec(const MPoly &P, int mult, keel::usize kVars,
                              MonomialOrder order, Budget *budget,
-                             std::vector<std::pair<MPoly, int>> &factorsOut)
+                             keel::Array<std::pair<MPoly, int>> &factorsOut)
 {
     if (P.isZero() || mpolyIsConstant(P))
         return;
 
     // 1. Strip monomial powers x_i^{m_i}
-    const std::vector<int> minExp = mpolyMinMonomial(P, kVars);
-    std::vector<int> negMin(kVars, 0);
+    const keel::Array<int> minExp = mpolyMinMonomial(P, kVars);
+    keel::Array<int> negMin(kVars, 0);
     for (keel::usize i = 0; i < kVars; ++i) {
         if (minExp[i] > 0) {
             MPoly varPoly;
-            std::vector<int> vExp(kVars, 0);
+            keel::Array<int> vExp(kVars, 0);
             vExp[i] = 1;
             varPoly.terms.push_back(
                 MTerm{Rational(keel::i64{1}), std::move(vExp)});
@@ -1444,7 +1491,7 @@ void factorArbitraryMPolyRec(const MPoly &P, int mult, keel::usize kVars,
         return;
 
     // 4. `cur` is now primitive in all variables and squarefree
-    std::vector<MPoly> irreds;
+    keel::Array<MPoly> irreds;
     factorPrimitiveSquarefreeMPoly(cur, kVars, order, budget, irreds);
     for (MPoly &ir : irreds) {
         mpolyMakeMonic(ir);
@@ -1455,12 +1502,12 @@ void factorArbitraryMPolyRec(const MPoly &P, int mult, keel::usize kVars,
 
 } // namespace
 
-Expr divExactMulti(Ctx &c, Expr f, Expr g, const std::vector<Expr> &vars,
+Expr divExactMulti(Ctx &c, Expr f, Expr g, keel::ArrayRef<Expr> vars,
                    Budget *budget)
 {
     if (f.isNull() || g.isNull())
         return Expr{};
-    const std::vector<Expr> allVars = resolvePolyVars(c, {f, g}, vars);
+    const keel::Array<Expr> allVars = resolvePolyVars(c, {f, g}, vars);
     const MonomialOrder order = MonomialOrder::Lex;
     MPoly mf, mg;
     if (!exprToMPoly(c, f, allVars, order, mf) ||
@@ -1474,12 +1521,12 @@ Expr divExactMulti(Ctx &c, Expr f, Expr g, const std::vector<Expr> &vars,
     return mpolyToExpr(c, mq, allVars);
 }
 
-Expr gcdMulti(Ctx &c, Expr f, Expr g, const std::vector<Expr> &vars,
+Expr gcdMulti(Ctx &c, Expr f, Expr g, keel::ArrayRef<Expr> vars,
               Budget *budget)
 {
     if (f.isNull() || g.isNull())
         return Expr{};
-    const std::vector<Expr> allVars = resolvePolyVars(c, {f, g}, vars);
+    const keel::Array<Expr> allVars = resolvePolyVars(c, {f, g}, vars);
     const MonomialOrder order = MonomialOrder::Lex;
     MPoly mf, mg;
     if (!exprToMPoly(c, f, allVars, order, mf) ||
@@ -1500,19 +1547,19 @@ Expr gcdMulti(Ctx &c, Expr f, Expr g, const std::vector<Expr> &vars,
     return mpolyToExpr(c, md, allVars);
 }
 
-FactorMultiResult factorMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
+FactorMultiResult factorMulti(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
                               Budget *budget)
 {
     FactorMultiResult out;
     if (f.isNull()) {
-        out.reason = "null input expression";
+        out.reason.assign("null input expression");
         return out;
     }
-    const std::vector<Expr> allVars = resolvePolyVars(c, {f}, vars);
+    const keel::Array<Expr> allVars = resolvePolyVars(c, {f}, vars);
     const MonomialOrder order = MonomialOrder::Lex;
     MPoly mf;
     if (!exprToMPoly(c, f, allVars, order, mf)) {
-        out.reason = "input is not a polynomial in Q[vars]";
+        out.reason.assign("input is not a polynomial in Q[vars]");
         return out;
     }
 
@@ -1530,11 +1577,11 @@ FactorMultiResult factorMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
         return out;
     }
 
-    std::vector<std::pair<MPoly, int>> rawFactors;
+    keel::Array<std::pair<MPoly, int>> rawFactors;
     factorArbitraryMPolyRec(mf, 1, allVars.size(), order, budget, rawFactors);
 
     // Combine identical monic irreducible factors
-    std::vector<FactorMultiItem> merged;
+    keel::Array<FactorMultiItem> merged;
     for (const auto &pf : rawFactors) {
         const Expr facExpr = mpolyToExpr(c, pf.first, allVars);
         bool found = false;
@@ -1565,7 +1612,7 @@ FactorMultiResult factorMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
         prodMonic.isZero() ? mf.lt().coeff
                            : (mf.lt().coeff / prodMonic.lt().coeff);
 
-    std::vector<Expr> mulParts;
+    keel::Array<Expr> mulParts;
     if (!(contentScalar == Rational(keel::i64{1})))
         mulParts.push_back(c.number(contentScalar));
     for (const FactorMultiItem &item : merged) {
@@ -1582,7 +1629,7 @@ FactorMultiResult factorMulti(Ctx &c, Expr f, const std::vector<Expr> &vars,
     // Proof-carrying identity certificate: expand(reconExpr - f) == 0
     const Expr diffCheck = c.expand(c.add({reconExpr, c.neg(f)}));
     if (!c.isZero(diffCheck)) {
-        out.reason = "multivariate factorization failed expansion certificate";
+        out.reason.assign("multivariate factorization failed expansion certificate");
         return out;
     }
 

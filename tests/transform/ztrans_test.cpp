@@ -68,10 +68,10 @@ TEST(ZTransTest, ForwardZTransFixedVectors)
         const Expr f = parseExpr(c, tc.f);
         const Expr want = parseExpr(c, tc.expected);
         const ZTransResult r = ztrans(c, f, n, z);
-        ASSERT_TRUE(r.proved()) << "f = " << tc.f << ": " << r.reason;
+        ASSERT_TRUE(r.proved()) << "f = " << tc.f << ": " << r.reason.c_str();
         EXPECT_TRUE(equivExpr(c, r.F, want))
-            << "f = " << tc.f << "\n  got:  " << c.toString(r.F)
-            << "\n  want: " << c.toString(want);
+            << "f = " << tc.f << "\n  got:  " << c.toString(r.F).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -114,7 +114,7 @@ TEST(ZTransTest, InverseZTransFixedVectors)
         const Expr F = parseExpr(c, tc.F);
         const Expr want = parseExpr(c, tc.expected);
         const ZTransResult r = iztrans(c, F, z, n);
-        ASSERT_TRUE(r.proved()) << "F = " << tc.F << ": " << r.reason;
+        ASSERT_TRUE(r.proved()) << "F = " << tc.F << ": " << r.reason.c_str();
         // Forward Z-transform of r.F is already certified equal to F(z).
         // Also check numerical agreement at n = 0, 1, 2, 3, 4, 5 for non-parametric cases.
         if (std::string(tc.F).find('a') == std::string::npos &&
@@ -125,13 +125,13 @@ TEST(ZTransTest, InverseZTransFixedVectors)
                 const Expr wantK = c.subs(want, n, kExpr);
                 EXPECT_TRUE(equivExpr(c, gotK, wantK))
                     << "F = " << tc.F << " at n = " << k
-                    << "\n  got:  " << c.toString(gotK)
-                    << "\n  want: " << c.toString(wantK);
+                    << "\n  got:  " << c.toString(gotK).c_str()
+                    << "\n  want: " << c.toString(wantK).c_str();
             }
         } else {
             EXPECT_TRUE(equivExpr(c, r.F, want))
-                << "F = " << tc.F << "\n  got:  " << c.toString(r.F)
-                << "\n  want: " << c.toString(want);
+                << "F = " << tc.F << "\n  got:  " << c.toString(r.F).c_str()
+                << "\n  want: " << c.toString(want).c_str();
         }
     }
 }
@@ -145,21 +145,21 @@ TEST(ZTransTest, RsolveFixedVectors)
     {
         const std::vector<Expr> coeffs = {c.number(-3), c.one()};
         const RsolveResult gen = rsolve(c, coeffs, c.zero(), n);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
 
         const RsolveResult ivp = rsolveIVP(c, coeffs, c.zero(), n, {c.number(5)});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(equivExpr(c, ivp.y, parseExpr(c, "5*3^n")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 2. First-order nonhomogeneous: -2*y(n) + y(n+1) = 1, y(0) = 0 => 2^n - 1
     {
         const std::vector<Expr> coeffs = {c.number(-2), c.one()};
         const RsolveResult ivp = rsolveIVP(c, coeffs, c.one(), n, {c.zero()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(equivExpr(c, ivp.y, parseExpr(c, "2^n - 1")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 3. Second-order distinct integer roots: 6*y(n) - 5*y(n+1) + y(n+2) = 0,
@@ -167,13 +167,13 @@ TEST(ZTransTest, RsolveFixedVectors)
     {
         const std::vector<Expr> coeffs = {c.number(6), c.number(-5), c.one()};
         const RsolveResult gen = rsolve(c, coeffs, c.zero(), n);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
 
         const RsolveResult ivp =
             rsolveIVP(c, coeffs, c.zero(), n, {c.one(), c.number(4)});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(equivExpr(c, ivp.y, parseExpr(c, "2*3^n - 2^n")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 
     // 4. Second-order repeated root: 4*y(n) - 4*y(n+1) + y(n+2) = 0,
@@ -181,11 +181,11 @@ TEST(ZTransTest, RsolveFixedVectors)
     {
         const std::vector<Expr> coeffs = {c.number(4), c.number(-4), c.one()};
         const RsolveResult gen = rsolve(c, coeffs, c.zero(), n);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
 
         const RsolveResult ivp =
             rsolveIVP(c, coeffs, c.zero(), n, {c.one(), c.number(6)});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         for (int k = 0; k <= 5; ++k) {
             const Expr gotK = c.subs(ivp.y, n, c.number(k));
             const Expr wantK =
@@ -199,16 +199,16 @@ TEST(ZTransTest, RsolveFixedVectors)
     {
         const std::vector<Expr> coeffs = {c.number(-1), c.number(-1), c.one()};
         const RsolveResult gen = rsolve(c, coeffs, c.zero(), n);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
 
         const RsolveResult ivp =
             rsolveIVP(c, coeffs, c.zero(), n, {c.zero(), c.one()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         const int fib[] = {0, 1, 1, 2, 3, 5, 8, 13, 21, 34};
         for (int k = 0; k < 10; ++k) {
             const Expr gotK = c.subs(ivp.y, n, c.number(k));
             EXPECT_TRUE(equivExpr(c, gotK, c.number(fib[k])))
-                << "k = " << k << ", got: " << c.toString(gotK);
+                << "k = " << k << ", got: " << c.toString(gotK).c_str();
         }
     }
 
@@ -217,7 +217,7 @@ TEST(ZTransTest, RsolveFixedVectors)
         const std::vector<Expr> coeffs = {c.number(-2), c.one()};
         const RsolveResult ivp =
             rsolveIVP(c, coeffs, parseExpr(c, "2^n"), n, {c.zero()});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         for (int k = 0; k <= 6; ++k) {
             const Expr gotK = c.subs(ivp.y, n, c.number(k));
             const Expr wantK =
@@ -232,13 +232,13 @@ TEST(ZTransTest, RsolveFixedVectors)
         const std::vector<Expr> coeffs = {c.number(-6), c.number(11),
                                           c.number(-6), c.one()};
         const RsolveResult gen = rsolve(c, coeffs, c.zero(), n);
-        ASSERT_TRUE(gen.proved()) << gen.reason;
+        ASSERT_TRUE(gen.proved()) << gen.reason.c_str();
 
         const RsolveResult ivp = rsolveIVP(
             c, coeffs, c.zero(), n, {c.number(3), c.number(6), c.number(14)});
-        ASSERT_TRUE(ivp.proved()) << ivp.reason;
+        ASSERT_TRUE(ivp.proved()) << ivp.reason.c_str();
         EXPECT_TRUE(equivExpr(c, ivp.y, parseExpr(c, "1 + 2^n + 3^n")))
-            << "got: " << c.toString(ivp.y);
+            << "got: " << c.toString(ivp.y).c_str();
     }
 }
 
@@ -275,10 +275,10 @@ TEST(ZTransTest, RoundTripProperty)
         });
 
         const ZTransResult zf = ztrans(c, f, n, z);
-        ASSERT_TRUE(zf.proved()) << "iter " << iter << ": " << zf.reason;
+        ASSERT_TRUE(zf.proved()) << "iter " << iter << ": " << zf.reason.c_str();
 
         const ZTransResult izf = iztrans(c, zf.F, z, n);
-        ASSERT_TRUE(izf.proved()) << "iter " << iter << ": " << izf.reason;
+        ASSERT_TRUE(izf.proved()) << "iter " << iter << ": " << izf.reason.c_str();
 
         // Check numerical agreement at n = 0, 1, 2, 3
         for (int k = 0; k <= 3; ++k) {
@@ -316,7 +316,7 @@ TEST(ZTransTest, RandomSecondOrderIVPProperty)
 
         const RsolveResult sol =
             rsolveIVP(c, coeffs, c.zero(), n, {c.number(a0), c.number(a1)});
-        ASSERT_TRUE(sol.proved()) << "iter " << iter << ": " << sol.reason;
+        ASSERT_TRUE(sol.proved()) << "iter " << iter << ": " << sol.reason.c_str();
 
         // Verify initial values and recurrence values up to n = 5
         int seq[6];

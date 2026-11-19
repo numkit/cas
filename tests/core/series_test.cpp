@@ -59,8 +59,8 @@ TEST(SeriesTest, TaylorElementaryMaclaurin)
         const Expr got = taylor(c, f, x, x0, tc.order);
         ASSERT_FALSE(got.isNull()) << "failed on " << tc.f;
         EXPECT_TRUE(exprEq(c, got, want))
-            << "f = " << tc.f << "\n  got:  " << c.toString(got)
-            << "\n  want: " << c.toString(want);
+            << "f = " << tc.f << "\n  got:  " << c.toString(got).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -90,8 +90,8 @@ TEST(SeriesTest, TaylorCompositeAndRemovableSingularities)
         const Expr got = taylor(c, f, x, x0, tc.order);
         ASSERT_FALSE(got.isNull()) << "failed on " << tc.f;
         EXPECT_TRUE(exprEq(c, got, want))
-            << "f = " << tc.f << "\n  got:  " << c.toString(got)
-            << "\n  want: " << c.toString(want);
+            << "f = " << tc.f << "\n  got:  " << c.toString(got).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -108,7 +108,7 @@ TEST(SeriesTest, TaylorNonZeroAndSymbolicPoints)
         const Expr want =
             parseExpr(c, "(x - 1) - 1/2*(x - 1)^2 + 1/3*(x - 1)^3");
         ASSERT_FALSE(got.isNull());
-        EXPECT_TRUE(exprEq(c, got, want)) << "got: " << c.toString(got);
+        EXPECT_TRUE(exprEq(c, got, want)) << "got: " << c.toString(got).c_str();
     }
 
     // 1/x around x0 = 2
@@ -118,7 +118,7 @@ TEST(SeriesTest, TaylorNonZeroAndSymbolicPoints)
         const Expr want =
             parseExpr(c, "1/2 - 1/4*(x - 2) + 1/8*(x - 2)^2 - 1/16*(x - 2)^3");
         ASSERT_FALSE(got.isNull());
-        EXPECT_TRUE(exprEq(c, got, want)) << "got: " << c.toString(got);
+        EXPECT_TRUE(exprEq(c, got, want)) << "got: " << c.toString(got).c_str();
     }
 
     // x^3 around symbolic x0 = a
@@ -128,7 +128,7 @@ TEST(SeriesTest, TaylorNonZeroAndSymbolicPoints)
         const Expr want =
             parseExpr(c, "a^3 + 3*a^2*(x - a) + 3*a*(x - a)^2 + (x - a)^3");
         ASSERT_FALSE(got.isNull());
-        EXPECT_TRUE(exprEq(c, got, want)) << "got: " << c.toString(got);
+        EXPECT_TRUE(exprEq(c, got, want)) << "got: " << c.toString(got).c_str();
     }
 }
 
@@ -145,7 +145,7 @@ TEST(SeriesTest, LaurentPolesAndMeromorphicCancellation)
         const Expr want = parseExpr(c, "1/x - 1/3*x - 1/45*x^3");
         ASSERT_FALSE(got.isNull());
         EXPECT_TRUE(exprEq(c, c.mul({got, x}), c.mul({want, x})))
-            << "got: " << c.toString(got);
+            << "got: " << c.toString(got).c_str();
     }
 
     // (exp(x) - 1)/x^3 = 1/x^2 + 1/(2*x) + 1/6 + 1/24*x + O(x^2)
@@ -156,7 +156,7 @@ TEST(SeriesTest, LaurentPolesAndMeromorphicCancellation)
         ASSERT_FALSE(got.isNull());
         const Expr x2 = c.pow(x, c.number(keel::i64{2}));
         EXPECT_TRUE(exprEq(c, c.mul({got, x2}), c.mul({want, x2})))
-            << "got: " << c.toString(got);
+            << "got: " << c.toString(got).c_str();
     }
 }
 
@@ -193,11 +193,11 @@ TEST(SeriesTest, LimitFixedVectors)
         const Expr want = parseExpr(c, tc.expected);
         const LimitResult r = limit(c, f, x, x0);
         ASSERT_EQ(r.status, LimitResult::Status::Proved)
-            << "failed on " << tc.f << " (" << r.reason << ")";
+            << "failed on " << tc.f << " (" << r.reason.c_str() << ")";
         EXPECT_TRUE(exprEq(c, r.value, want))
             << "f = " << tc.f << " at x0 = " << tc.x0
-            << "\n  got:  " << c.toString(r.value)
-            << "\n  want: " << c.toString(want);
+            << "\n  got:  " << c.toString(r.value).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -253,29 +253,29 @@ TEST(SeriesTest, LimitAtInfinityAndOneSidedVectors)
         const Expr want = parseExpr(c, tc.expected);
         const LimitResult r = limit(c, f, x, x0);
         ASSERT_EQ(r.status, LimitResult::Status::Proved)
-            << "failed on " << tc.f << " at " << tc.x0 << " (" << r.reason << ")";
+            << "failed on " << tc.f << " at " << tc.x0 << " (" << r.reason.c_str() << ")";
         EXPECT_TRUE(exprEq(c, c.simplify(r.value), c.simplify(want)))
             << "f = " << tc.f << " at x0 = " << tc.x0
-            << "\n  got:  " << c.toString(r.value)
-            << "\n  want: " << c.toString(want);
+            << "\n  got:  " << c.toString(r.value).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 
     // One-sided limits at branch points and finite points
     {
         const LimitResult r = limitOneSided(c, parseExpr(c, "sqrt(x)"), x, c.zero(), +1);
-        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason;
+        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason.c_str();
         EXPECT_EQ(r.value, c.zero());
     }
     {
         const LimitResult r =
             limitOneSided(c, parseExpr(c, "sqrt(1 - x)"), x, c.one(), -1);
-        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason;
+        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason.c_str();
         EXPECT_EQ(r.value, c.zero());
     }
     {
         const LimitResult r =
             limitOneSided(c, parseExpr(c, "x*log(x)"), x, c.zero(), +1);
-        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason;
+        ASSERT_EQ(r.status, LimitResult::Status::Proved) << r.reason.c_str();
         EXPECT_EQ(r.value, c.zero());
     }
     // Divergent polynomial at +inf
@@ -311,8 +311,8 @@ TEST(SeriesTest, PropertyPolynomialExactRecovery)
         const Expr t = taylor(c, poly, x, x0, 5);
         ASSERT_FALSE(t.isNull());
         EXPECT_TRUE(exprEq(c, t, poly))
-            << "iter " << iter << ": poly=" << c.toString(poly)
-            << ", x0=" << c.toString(x0) << ", taylor=" << c.toString(t);
+            << "iter " << iter << ": poly=" << c.toString(poly).c_str()
+            << ", x0=" << c.toString(x0).c_str() << ", taylor=" << c.toString(t).c_str();
     }
 }
 
@@ -340,8 +340,8 @@ TEST(SeriesTest, PropertyDerivativeCommutesWithTaylor)
         ASSERT_FALSE(t4_df.isNull());
         const Expr dt5 = c.diff(t5, x);
         EXPECT_TRUE(exprEq(c, dt5, t4_df))
-            << "f = " << src << "\n  d(T5)/dx: " << c.toString(dt5)
-            << "\n  T4(df):   " << c.toString(t4_df);
+            << "f = " << src << "\n  d(T5)/dx: " << c.toString(dt5).c_str()
+            << "\n  T4(df):   " << c.toString(t4_df).c_str();
     }
 }
 
@@ -591,11 +591,11 @@ TEST(SeriesTest, SymbolicSummationFiniteAndInfinite)
         const SymSumResult r = symsum(c, f, k, a, b);
         ASSERT_TRUE(r.proved())
             << "symsum failed for " << tc.f << " on [" << tc.a << ", " << tc.b
-            << "]: " << r.reason;
+            << "]: " << r.reason.c_str();
         EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
             << "for " << tc.f << " on [" << tc.a << ", " << tc.b
-            << "]: got " << c.toString(r.value) << ", expected "
-            << c.toString(expVal);
+            << "]: got " << c.toString(r.value).c_str() << ", expected "
+            << c.toString(expVal).c_str();
 
         // When upper bound is symbolic `n`, verify S(5) - S(4) == f(5).
         if (b == n) {
@@ -670,10 +670,10 @@ TEST(SeriesTest, PadeApproximantsAndCertificates)
         const PadeResult r = pade(c, f, x, x0, tc.m, tc.n);
         ASSERT_TRUE(r.proved())
             << "pade[" << tc.m << "/" << tc.n << "] failed for " << tc.f
-            << " at " << tc.x0 << ": " << r.reason;
+            << " at " << tc.x0 << ": " << r.reason.c_str();
         EXPECT_EQ(c.simplify(c.add({r.value, c.neg(expVal)})), c.zero())
             << "for " << tc.f << " [" << tc.m << "/" << tc.n << "]: got "
-            << c.toString(r.value) << ", expected " << c.toString(expVal);
+            << c.toString(r.value).c_str() << ", expected " << c.toString(expVal).c_str();
         EXPECT_EQ(
             c.simplify(taylor(c, c.add({r.value, c.neg(f)}), x, x0,
                               tc.m + tc.n)),
@@ -780,7 +780,7 @@ TEST(SeriesTest, PropertyPadeAndMultivariateTaylor)
              c.mul({q2, c.pow(x, c.number(keel::i64{2}))})});
         const Expr rat = c.div(P, Q);
         const PadeResult r = pade(c, rat, x, c.zero(), 2, 2);
-        ASSERT_TRUE(r.proved()) << "iter " << iter << ": " << r.reason;
+        ASSERT_TRUE(r.proved()) << "iter " << iter << ": " << r.reason.c_str();
         EXPECT_EQ(c.simplify(c.add({r.value, c.neg(rat)})), c.zero());
     }
 
@@ -852,19 +852,19 @@ TEST(SeriesTest, GammaDigammaLaurentResidueAndPolygammaSymsum)
     // 2. Closed-form finite rational sums via digamma and trigamma
     const SymSumResult sHarm =
         symsum(c, parseExpr(c, "1/k"), k, c.one(), n);
-    ASSERT_TRUE(sHarm.proved()) << sHarm.reason;
+    ASSERT_TRUE(sHarm.proved()) << sHarm.reason.c_str();
     EXPECT_TRUE(
         exprEq(c, sHarm.value, parseExpr(c, "digamma(n + 1) + euler_gamma")));
 
     const SymSumResult sSq =
         symsum(c, parseExpr(c, "1/k^2"), k, c.one(), n);
-    ASSERT_TRUE(sSq.proved()) << sSq.reason;
+    ASSERT_TRUE(sSq.proved()) << sSq.reason.c_str();
     EXPECT_TRUE(
         exprEq(c, sSq.value, parseExpr(c, "pi^2/6 - trigamma(n + 1)")));
 
     const SymSumResult sOdd =
         symsum(c, parseExpr(c, "1/(2*k - 1)"), k, c.one(), n);
-    ASSERT_TRUE(sOdd.proved()) << sOdd.reason;
+    ASSERT_TRUE(sOdd.proved()) << sOdd.reason.c_str();
     EXPECT_TRUE(exprEq(
         c, sOdd.value,
         parseExpr(c, "1/2*digamma(n + 1/2) + 1/2*euler_gamma + log(2)")));

@@ -1,11 +1,11 @@
 // poly/sturm.hpp — real root isolation over Q via Sturm sequences.
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <utility>
-#include <vector>
 
 namespace numkit::cas {
 
@@ -25,7 +25,7 @@ struct RootInterval
 };
 
 // Classical Sturm chain: s0 = p, s1 = p', s_{k+1} = -(s_{k-1} mod s_k).
-std::vector<UPoly> sturmSequence(const UPoly &p);
+keel::Array<UPoly> sturmSequence(const UPoly &p);
 
 // Cauchy root bound: every complex root z of p satisfies |z| < B.
 Rational cauchyRootBound(const UPoly &p);
@@ -34,13 +34,13 @@ Rational cauchyRootBound(const UPoly &p);
 // HALF-OPEN interval (a, b] (skip-zero variations: V(a) - V(b)).
 // Endpoints may be roots; a strict count needs the a/b root status
 // tracked by the caller.
-keel::usize countRealRoots(const std::vector<UPoly> &sturm,
+keel::usize countRealRoots(keel::ArrayRef<UPoly> sturm,
                            const Rational &a, const Rational &b);
 
 // Isolate all distinct real roots of p (multiplicities ignored; p is
 // reduced to its squarefree part internally). Returns pairwise disjoint
 // intervals, each containing exactly one root, ordered by position.
-std::vector<RootInterval> isolateRealRoots(const UPoly &p);
+keel::Array<RootInterval> isolateRealRoots(const UPoly &p);
 
 // Bisect one interval until its width is below the target; the root of
 // the squarefree p stays inside. Exact roots are returned unchanged.

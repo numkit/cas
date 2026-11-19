@@ -6,11 +6,11 @@
 // stays free of corpus concerns.
 #pragma once
 
+#include <keel/array.h>
 #include <keel/core.h>
+#include <keel/string.h>
 #include <cstddef>
 #include <cstdint>
-#include <string>
-#include <vector>
 
 namespace nkcorpus {
 
@@ -19,11 +19,38 @@ namespace nkcorpus {
 // or the 5-column form "id<TAB>var<TAB>op<TAB>expr<TAB>ref" where ref
 // is the reference antiderivative for Mean Leaf Ratio (MLR) auditing.
 struct CorpusTask {
-    std::string id;
-    std::string var;
-    std::string expr;
-    std::string op;  // "rubi" routes through the rule engine, "cascade" through integrate()
-    std::string ref; // optional reference antiderivative (5-column format)
+    keel::String id;
+    keel::String var;
+    keel::String expr;
+    keel::String op;  // "rubi" routes through the rule engine, "cascade" through integrate()
+    keel::String ref; // optional reference antiderivative (5-column format)
+
+    CorpusTask() noexcept = default;
+    CorpusTask(keel::StringRef id_, keel::StringRef var_, keel::StringRef expr_,
+               keel::StringRef op_ = {}, keel::StringRef ref_ = {})
+        : id(keel::String::from(id_)), var(keel::String::from(var_)),
+          expr(keel::String::from(expr_)), op(keel::String::from(op_)),
+          ref(keel::String::from(ref_))
+    {
+    }
+    CorpusTask(const CorpusTask &o)
+        : id(o.id.clone()), var(o.var.clone()), expr(o.expr.clone()),
+          op(o.op.clone()), ref(o.ref.clone())
+    {
+    }
+    CorpusTask &operator=(const CorpusTask &o)
+    {
+        if (this != &o) {
+            id = o.id.clone();
+            var = o.var.clone();
+            expr = o.expr.clone();
+            op = o.op.clone();
+            ref = o.ref.clone();
+        }
+        return *this;
+    }
+    CorpusTask(CorpusTask &&) noexcept = default;
+    CorpusTask &operator=(CorpusTask &&) noexcept = default;
 };
 
 enum class TaskStatus {
@@ -34,9 +61,9 @@ enum class TaskStatus {
 };
 
 struct TaskOutcome {
-    std::string id;
+    keel::String id;
     TaskStatus status = TaskStatus::MalformedLine;
-    std::string detail;           // reason / error message
+    keel::String detail;           // reason / error message
     keel::u64 micros = 0;     // parse+integrate wall time
     keel::usize answerNodes = 0;  // Ctx node count after a proved run
     keel::usize answerLeaves = 0; // Ctx::leafCount(F) after a proved run
@@ -68,23 +95,23 @@ struct CorpusReport {
 // without touching `out`; structurally broken lines yield false too
 // (the caller counts them separately by re-checking the raw line —
 // see lineKind()). Fields are trimmed; inner spaces survive in expr.
-bool parseCorpusLine(const std::string &line, CorpusTask &out);
+bool parseCorpusLine(keel::StringRef line, CorpusTask &out);
 
 // Classify a raw corpus line without producing a task.
 enum class LineKind { Task, Skip, Malformed };
-LineKind lineKind(const std::string &line);
+LineKind lineKind(keel::StringRef line);
 
 // Deterministic order statistics. medianOf: middle value; for an even
 // count the mean of the two middle values rounded up. percentileOf:
 // nearest-rank, p in (0, 1].
-keel::u64 medianOf(std::vector<keel::u64> vals);
-keel::u64 percentileOf(std::vector<keel::u64> vals, double p);
+keel::u64 medianOf(keel::ArrayRef<keel::u64> vals);
+keel::u64 percentileOf(keel::ArrayRef<keel::u64> vals, double p);
 
 // Run one task end to end: parse -> integrate -> certificate check.
 TaskOutcome runTask(const CorpusTask &t);
 
 // Run all tasks, filling per-task outcomes when requested.
-CorpusReport runCorpus(const std::vector<CorpusTask> &tasks,
-                       std::vector<TaskOutcome> *outcomes = nullptr);
+CorpusReport runCorpus(keel::ArrayRef<CorpusTask> tasks,
+                       keel::Array<TaskOutcome> *outcomes = nullptr);
 
 } // namespace nkcorpus

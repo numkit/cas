@@ -202,7 +202,7 @@ TEST(ParserProperty, PrintParseRoundTripSameNode)
     keel::u64 st = 0x9E3779B97F4A7C15ULL;
     for (int i = 0; i < 20000; ++i) {
         const Expr e = randomExpr(c, st, 4, x, y);
-        const std::string s = c.toString(e);
+        const std::string s(c.toString(e).as_ref());
         Expr p;
         try {
             p = numkit::cas::parseExpr(c, s);
@@ -227,7 +227,7 @@ TEST(ParserProperty, FractionalPowersRoundTrip)
             static_cast<keel::i64>(nextU64(st) % 4) + 1;
         const Expr e = c.pow(nextU64(st) & 1 ? x : f,
                              c.number(Rational(BigInt(num), BigInt(den))));
-        const std::string s = c.toString(e);
+        const std::string s(c.toString(e).as_ref());
         ASSERT_EQ(numkit::cas::parseExpr(c, s), e)
             << "round-trip broke on '" << s << "'";
     }

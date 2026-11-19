@@ -72,10 +72,10 @@ TEST(LaplaceTest, ForwardLaplaceFixedVectors)
         const Expr f = parseExpr(c, tc.f);
         const Expr want = parseExpr(c, tc.expected);
         const LaplaceResult r = laplace(c, f, t, s);
-        ASSERT_TRUE(r.proved()) << "f = " << tc.f << ": " << r.reason;
+        ASSERT_TRUE(r.proved()) << "f = " << tc.f << ": " << r.reason.c_str();
         EXPECT_TRUE(equivExpr(c, r.F, want))
-            << "f = " << tc.f << "\n  got:  " << c.toString(r.F)
-            << "\n  want: " << c.toString(want);
+            << "f = " << tc.f << "\n  got:  " << c.toString(r.F).c_str()
+            << "\n  want: " << c.toString(want).c_str();
     }
 }
 
@@ -117,13 +117,13 @@ TEST(LaplaceTest, InverseLaplaceFixedVectors)
         const Expr F = parseExpr(c, tc.F);
         const Expr want = parseExpr(c, tc.expected);
         const LaplaceResult r = ilaplace(c, F, s, t);
-        ASSERT_TRUE(r.proved()) << "F = " << tc.F << ": " << r.reason;
+        ASSERT_TRUE(r.proved()) << "F = " << tc.F << ": " << r.reason.c_str();
         // Both r.F and want must have identical Laplace transform F(s), and
         // simplify(r.F - want) == 0.
         const LaplaceResult fwdGot = laplace(c, r.F, t, s);
         ASSERT_TRUE(fwdGot.proved());
         EXPECT_TRUE(equivExpr(c, fwdGot.F, F))
-            << "F = " << tc.F << "\n  got f(t): " << c.toString(r.F);
+            << "F = " << tc.F << "\n  got f(t): " << c.toString(r.F).c_str();
     }
 }
 
@@ -162,18 +162,18 @@ TEST(LaplaceTest, PropertyLaplaceIlaplaceRoundTrip)
         const Expr f = c.add({term1, term2});
 
         const LaplaceResult fwd = laplace(c, f, t, s);
-        ASSERT_TRUE(fwd.proved()) << "iter " << iter << ": " << fwd.reason;
+        ASSERT_TRUE(fwd.proved()) << "iter " << iter << ": " << fwd.reason.c_str();
 
         // Combine into a single rational function in s and invert via ilaplace
         const Expr F_rat = simplifyRationalExpr(c, fwd.F);
         const LaplaceResult inv = ilaplace(c, F_rat, s, t);
         ASSERT_TRUE(inv.proved())
-            << "iter " << iter << " F_rat=" << c.toString(F_rat) << ": "
-            << inv.reason;
+            << "iter " << iter << " F_rat=" << c.toString(F_rat).c_str() << ": "
+            << inv.reason.c_str();
 
         EXPECT_TRUE(equivExpr(c, inv.F, f))
-            << "iter " << iter << "\n  orig: " << c.toString(f)
-            << "\n  inv:  " << c.toString(inv.F);
+            << "iter " << iter << "\n  orig: " << c.toString(f).c_str()
+            << "\n  inv:  " << c.toString(inv.F).c_str();
     }
 }
 

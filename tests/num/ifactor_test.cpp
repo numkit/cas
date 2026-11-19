@@ -41,10 +41,10 @@ void expectFactors(const BigInt &n,
                    const std::vector<std::pair<BigInt, int>> &want)
 {
     const auto got = BigInt::factorize(n);
-    ASSERT_EQ(got.size(), want.size()) << "n = " << n.toString();
+    ASSERT_EQ(got.size(), want.size()) << "n = " << n.toString().c_str();
     for (keel::usize i = 0; i < want.size(); ++i) {
-        EXPECT_EQ(got[i].first, want[i].first) << "n = " << n.toString();
-        EXPECT_EQ(got[i].second, want[i].second) << "n = " << n.toString();
+        EXPECT_EQ(got[i].first, want[i].first) << "n = " << n.toString().c_str();
+        EXPECT_EQ(got[i].second, want[i].second) << "n = " << n.toString().c_str();
     }
 }
 
@@ -137,9 +137,9 @@ TEST(FactorizeProperty, RandomSmoothNumbersExact)
         // exact comparison happens inside expectFactors; on mismatch
         // it fails with the number spelled out
         const auto got = BigInt::factorize(n);
-        ASSERT_EQ(got.size(), want.size()) << "n = " << n.toString();
+        ASSERT_EQ(got.size(), want.size()) << "n = " << n.toString().c_str();
         for (keel::usize i = 0; i < want.size(); ++i) {
-            EXPECT_EQ(got[i], want[i]) << "n = " << n.toString();
+            EXPECT_EQ(got[i], want[i]) << "n = " << n.toString().c_str();
         }
     }
 }
@@ -157,12 +157,12 @@ TEST(FactorizeProperty, DivisorListLaws)
         BigInt product(1);
         for (const auto &pe : f) {
             ASSERT_TRUE(BigInt::isPrime(pe.first))
-                << "factor not prime for n = " << n.toString();
+                << "factor not prime for n = " << n.toString().c_str();
             product = product * BigInt::powUInt(
                                     pe.first,
                                     static_cast<keel::u64>(pe.second));
         }
-        EXPECT_EQ(product, n) << "product of parts != n for " << n.toString();
+        EXPECT_EQ(product, n) << "product of parts != n for " << n.toString().c_str();
     }
 }
 

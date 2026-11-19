@@ -442,7 +442,7 @@ keel::Arc<numkit::NativePayload> SymPayload::fromScalarDouble(double v, keel::Al
 
 bool isSymValue(const numkit::Value &v) noexcept
 {
-    return v.isObject() && v.objectClassName().as_ref() == "sym";
+    return v.isObject() && v.objectClassNameRef() == "sym";
 }
 
 Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName)

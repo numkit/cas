@@ -7,6 +7,7 @@
 #include <keel/ref.h>
 #include <keel/smart_ptr.h>
 #include <keel/string.h>
+#include <keel/utf8.h>
 #include <numkit/cas/sym_value.hpp>
 
 #include <numkit/cas/core/parser.hpp>
@@ -29,7 +30,6 @@
 #include <numkit/value/error.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
@@ -61,9 +61,9 @@ keel::Allocator *resolveMr(keel::Allocator *mr) noexcept
 keel::String trimStr(keel::StringRef s)
 {
     keel::usize a = 0, b = s.size();
-    while (a < b && std::isspace(static_cast<unsigned char>(s.data()[a])))
+    while (a < b && keel::is_ascii_space(s.data()[a]))
         ++a;
-    while (b > a && std::isspace(static_cast<unsigned char>(s.data()[b - 1])))
+    while (b > a && keel::is_ascii_space(s.data()[b - 1]))
         --b;
     return keel::String::from(s.substr(a, b - a));
 }
@@ -71,7 +71,7 @@ keel::String trimStr(keel::StringRef s)
 keel::String toLowerStr(keel::String s)
 {
     for (keel::usize i = 0; i < s.size(); ++i)
-        s[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
+        s[i] = keel::to_ascii_lower(s[i]);
     return s;
 }
 
@@ -79,11 +79,11 @@ bool isValidIdentifier(keel::StringRef s)
 {
     if (s.empty())
         return false;
-    if (!(std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_'))
+    if (!(keel::is_ascii_alpha(s[0]) || s[0] == '_'))
         return false;
     for (keel::usize i = 1; i < s.size(); ++i) {
         const char ch = s[i];
-        if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_'))
+        if (!(keel::is_ascii_alnum(ch) || ch == '_'))
             return false;
     }
     return true;

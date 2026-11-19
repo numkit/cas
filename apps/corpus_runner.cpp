@@ -1,6 +1,7 @@
 // apps/corpus_runner.cpp — corpus machinery implementation.
 #include <keel/algo.h>
 #include <keel/core.h>
+#include <keel/time.h>
 #include "corpus_runner.hpp"
 
 #include <numkit/cas/core/parser.hpp>
@@ -8,7 +9,6 @@
 #include <numkit/cas/rubi/rules.hpp>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 
 namespace nkcorpus {
@@ -115,11 +115,10 @@ keel::u64 percentileOf(keel::ArrayRef<keel::u64> valsIn, double p)
 
 TaskOutcome runTask(const CorpusTask &t)
 {
-    using Clock = std::chrono::steady_clock;
     TaskOutcome o;
     o.id = t.id.clone();
     numkit::cas::Ctx ctx;
-    const auto start = Clock::now();
+    const keel::u64 startNs = keel::monotonic_ns();
     try {
         const numkit::cas::Expr f = numkit::cas::parseExpr(ctx, t.expr);
         const numkit::cas::Expr var = ctx.symbol(t.var);
@@ -147,10 +146,8 @@ TaskOutcome runTask(const CorpusTask &t)
             F = r.F;
             reason = keel::move(r.reason);
         }
-        const auto stop = Clock::now();
-        o.micros = static_cast<keel::u64>(
-            std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
-                .count());
+        const keel::u64 stopNs = keel::monotonic_ns();
+        o.micros = (stopNs >= startNs) ? (stopNs - startNs) / 1000ULL : 0ULL;
         if (proved) {
             o.status = TaskStatus::Proved;
             o.answerNodes = ctx.nodeCount();
@@ -169,10 +166,8 @@ TaskOutcome runTask(const CorpusTask &t)
             o.detail = reason.empty() ? keel::String::from("declined") : keel::move(reason);
         }
     } catch (const numkit::cas::ParseError &e) {
-        const auto stop = Clock::now();
-        o.micros = static_cast<keel::u64>(
-            std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
-                .count());
+        const keel::u64 stopNs = keel::monotonic_ns();
+        o.micros = (stopNs >= startNs) ? (stopNs - startNs) / 1000ULL : 0ULL;
         o.status = TaskStatus::ParseError;
         o.detail.assign(e.what());
     }

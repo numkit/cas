@@ -1615,7 +1615,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                         c.pow(oneMinusX, c.number(-(m + 1)));
                     if (m == 0)
                         return c.mul({xArg, denPow});
-                    keel::Array<BigInt> eul(static_cast<keel::usize>(m),
+                    keel::Array<BigInt> eul(m,
                                             BigInt(0));
                     eul[0] = BigInt(1);
                     for (keel::i64 i = 2; i <= m; ++i) {
@@ -2846,7 +2846,7 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
             return c.func(fn, args);
         };
 
-        keel::Array<Expr> seq(static_cast<keel::usize>(span + 1));
+        keel::Array<Expr> seq(span + 1);
         seq[0] = buildShiftedNode(0);
         seq[1] = buildShiftedNode(1);
 
@@ -3234,7 +3234,7 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
         buckets.emplace_back(deg, coef);
     }
 
-    res.dense.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
+    res.dense.assign(maxDeg + 1, c.zero());
     for (const auto &pr : buckets) {
         const keel::usize idx = static_cast<keel::usize>(pr.first);
         res.dense[idx] = c.add({res.dense[idx], pr.second});

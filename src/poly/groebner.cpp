@@ -777,7 +777,7 @@ keel::Array<MPoly> mpolyDecomposeInVar(const MPoly &p, keel::usize varIdx,
                                        keel::usize kVars, MonomialOrder order)
 {
     const int d = mpolyDegInVar(p, varIdx);
-    keel::Array<MPoly> coeffs(static_cast<keel::usize>(d + 1));
+    keel::Array<MPoly> coeffs(d + 1);
     for (const MTerm &t : p.terms) {
         const int e = t.exp[varIdx];
         keel::Array<int> cExp = t.exp.clone();
@@ -811,7 +811,7 @@ UPoly mpolyToUPolyInVar(const MPoly &p, keel::usize varIdx)
     if (p.isZero())
         return UPoly{};
     const int d = mpolyDegInVar(p, varIdx);
-    keel::Array<Rational> coeffs(static_cast<keel::usize>(d + 1),
+    keel::Array<Rational> coeffs(d + 1,
                                  Rational(keel::i64{0}));
     for (const MTerm &t : p.terms) {
         coeffs[static_cast<keel::usize>(t.exp[varIdx])] += t.coeff;
@@ -1188,14 +1188,14 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
     const int dX = static_cast<int>(sCoeffs.size()) - 1;
     const MPoly L = sCoeffs.back();
 
-    keel::Array<MPoly> lPows(static_cast<keel::usize>(dX));
+    keel::Array<MPoly> lPows(dX);
     lPows[0] = mpolyConst(Rational(keel::i64{1}), kVars);
     for (int i = 1; i < dX; ++i) {
         lPows[static_cast<keel::usize>(i)] =
             mpolyMul(lPows[static_cast<keel::usize>(i - 1)], L, order);
     }
 
-    keel::Array<MPoly> monicCoeffs(static_cast<keel::usize>(dX + 1));
+    keel::Array<MPoly> monicCoeffs(dX + 1);
     monicCoeffs[static_cast<keel::usize>(dX)] =
         mpolyConst(Rational(keel::i64{1}), kVars);
     for (int i = 0; i < dX; ++i) {
@@ -1332,7 +1332,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
                     auto &vec = found->coeffs;
                     const int xExp = t.exp[mainVar];
                     if (static_cast<int>(vec.size()) <= xExp)
-                        vec.resize(static_cast<keel::usize>(xExp + 1),
+                        vec.resize(xExp + 1,
                                    Rational(keel::i64{0}));
                     vec[static_cast<keel::usize>(xExp)] += t.coeff;
                 }

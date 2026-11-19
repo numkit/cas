@@ -264,7 +264,7 @@ Laurent addSeries(Ctx &c, const Laurent &a, const Laurent &b)
         out.val = out.maxDeg + 1;
         return out;
     }
-    out.coeffs.reserve(static_cast<keel::usize>(out.maxDeg - out.val + 1));
+    out.coeffs.reserve(out.maxDeg - out.val + 1);
     for (int d = out.val; d <= out.maxDeg; ++d) {
         out.coeffs.push_back(
             foldConst(c, c.add({coeffAt(c, a, d), coeffAt(c, b, d)})));
@@ -296,7 +296,7 @@ Laurent mulSeries(Ctx &c, const Laurent &a, const Laurent &b)
         return out;
     }
     const int len = out.maxDeg - out.val + 1;
-    out.coeffs.assign(static_cast<keel::usize>(len), c.zero());
+    out.coeffs.assign(len, c.zero());
     for (int i = 0; i < static_cast<int>(a.coeffs.size()) && i < len; ++i) {
         if (isZeroCoeff(c, a.coeffs[static_cast<keel::usize>(i)]))
             continue;
@@ -329,7 +329,7 @@ bool invSeries(Ctx &c, const Laurent &b, Laurent &out)
 
     out.val = -b.val;
     out.maxDeg = -b.val + relPrec;
-    out.coeffs.assign(static_cast<keel::usize>(relPrec + 1), c.zero());
+    out.coeffs.assign(relPrec + 1, c.zero());
     out.coeffs[0] = invB0;
     for (int k = 1; k <= relPrec; ++k) {
         keel::Array<Expr> terms;
@@ -1090,7 +1090,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
 
     if (fn == "airyAi" || fn == "airyBi" || fn == "airyAiPrime" ||
         fn == "airyBiPrime" || fn == "ellipticK" || fn == "ellipticE") {
-        keel::Array<Expr> mac(static_cast<keel::usize>(L + 1), c.zero());
+        keel::Array<Expr> mac(L + 1, c.zero());
         const Expr tSym = c.symbol("$t_series");
         Expr cur = c.func(fn, tSym);
         BigInt fact(1);
@@ -1259,7 +1259,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     out = sum;
                     return true;
                 }
-                keel::Array<Expr> mac(static_cast<keel::usize>(L + 1),
+                keel::Array<Expr> mac(L + 1,
                                       c.zero());
                 const Expr tSym = c.symbol("$t_series");
                 keel::Array<Expr> fnArgs;
@@ -1367,7 +1367,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                             : c.zero();
                     if (isZeroCoeff(c, n0) && isZeroCoeff(c, m0)) {
                         const int L = maxDeg;
-                        keel::Array<Rational> df(static_cast<keel::usize>(L + 1),
+                        keel::Array<Rational> df(L + 1,
                                                  Rational(1));
                         for (int k = 1; k <= L; ++k) {
                             df[static_cast<keel::usize>(k)] =
@@ -1375,9 +1375,9 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                                 Rational(BigInt(2 * k - 1), BigInt(2 * k));
                         }
                         keel::Array<Laurent> nPows(
-                            static_cast<keel::usize>(L + 1));
+                            L + 1);
                         keel::Array<Laurent> mPows(
-                            static_cast<keel::usize>(L + 1));
+                            L + 1);
                         nPows[0] = makeConstSeries(c, c.one(), L);
                         mPows[0] = makeConstSeries(c, c.one(), L);
                         for (int k = 1; k <= L; ++k) {
@@ -1439,7 +1439,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     Laurent u = argSeries;
                     if (u.val == 0 && !u.coeffs.empty())
                         u.coeffs[0] = c.zero();
-                    keel::Array<Expr> mac(static_cast<keel::usize>(L + 1),
+                    keel::Array<Expr> mac(L + 1,
                                           c.zero());
                     for (keel::i64 k = 0; 2 * k + n <= L; ++k) {
                         const keel::usize deg =
@@ -1524,7 +1524,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                 Laurent u = argSeries;
                 if (u.val == 0 && !u.coeffs.empty())
                     u.coeffs[0] = c.zero();
-                keel::Array<Expr> mac(static_cast<keel::usize>(L + 1),
+                keel::Array<Expr> mac(L + 1,
                                       c.zero());
                 const Expr tSym = c.symbol("$t_series");
                 Expr cur = c.func(fn, ord, tSym);
@@ -2310,7 +2310,7 @@ Rational binomRational(int n, int k)
 // Compute classical Bernoulli numbers B_0 = 1, B_1 = -1/2, B_2 = 1/6, B_3 = 0, ...
 keel::Array<Rational> bernoulliNumbers(int maxN)
 {
-    keel::Array<Rational> B(static_cast<keel::usize>(maxN + 1),
+    keel::Array<Rational> B(maxN + 1,
                             Rational(keel::i64{0}));
     B[0] = Rational(keel::i64{1});
     for (int m = 1; m <= maxN; ++m) {
@@ -2397,7 +2397,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
         if (deg > maxDeg)
             return false;
         if (static_cast<keel::usize>(deg) >= coeffs.size())
-            coeffs.resize(static_cast<keel::usize>(deg + 1), c.zero());
+            coeffs.resize(deg + 1, c.zero());
         const Expr cf = cFacs.empty() ? c.one() : c.mul(cFacs);
         coeffs[static_cast<keel::usize>(deg)] =
             c.add({coeffs[static_cast<keel::usize>(deg)], cf});
@@ -2609,7 +2609,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                 }
             } else {
                 const int d = static_cast<int>(polyP.size()) - 1;
-                keel::Array<Expr> qCoeffs(static_cast<keel::usize>(d + 1),
+                keel::Array<Expr> qCoeffs(d + 1,
                                           c.zero());
                 for (int m = d; m >= 0; --m) {
                     keel::Array<Expr> upperTerms;
@@ -2934,7 +2934,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         // Direct finite evaluation fallback for concrete integer spans <= 128.
         if (hasIntSpan && spanInt >= 0 && spanInt <= 128) {
             keel::Array<Expr> terms;
-            terms.reserve(static_cast<keel::usize>(spanInt + 1));
+            terms.reserve(spanInt + 1);
             for (keel::i64 j = 0; j <= spanInt; ++j) {
                 const Expr term =
                     safeSubsAndFold(c, f, var, c.add({a, c.number(j)}));
@@ -3433,7 +3433,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     // Convert P(k) into falling-factorial basis sum_{j=0}^d beta_j * k^(j)_falling
                     // using forward finite differences at k = 0: beta_j = Delta^j P(0) / j!.
                     const int d = static_cast<int>(polyP.size()) - 1;
-                    keel::Array<Expr> vals(static_cast<keel::usize>(d + 1));
+                    keel::Array<Expr> vals(d + 1);
                     for (int k = 0; k <= d; ++k) {
                         vals[static_cast<keel::usize>(k)] =
                             evalSymbolicPolyInVar(
@@ -3833,7 +3833,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
     }
 
     const int N = m + n;
-    keel::Array<Expr> coeffs(static_cast<keel::usize>(N + 1), c.zero());
+    keel::Array<Expr> coeffs(N + 1, c.zero());
     bool haveCoeffs = false;
     for (int pad : {8, 16}) {
         Laurent s;
@@ -3885,7 +3885,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
 
     // Solve Toeplitz linear system for denominator coefficients q_1, ..., q_n (q_0 = 1):
     //   sum_{j=1}^n c_{m + 1 + i - j} * q_j = -c_{m + 1 + i},  i = 0, ..., n - 1.
-    keel::Array<Expr> q(static_cast<keel::usize>(n + 1), c.zero());
+    keel::Array<Expr> q(n + 1, c.zero());
     q[0] = c.one();
     if (n > 0) {
         const keel::usize nSz = static_cast<keel::usize>(n);
@@ -3945,7 +3945,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
 
     // Compute numerator coefficients p_0, ..., p_m:
     //   p_k = sum_{j=0}^{min(k, n)} c_{k - j} * q_j.
-    keel::Array<Expr> p(static_cast<keel::usize>(m + 1), c.zero());
+    keel::Array<Expr> p(m + 1, c.zero());
     for (int k = 0; k <= m; ++k) {
         keel::Array<Expr> terms;
         const int jMax = std::min(k, n);
@@ -4096,7 +4096,7 @@ Expr finiteDiff(Ctx &c, Expr f, Expr var, int order, Expr step)
 
     const Expr h = step.isNull() ? c.one() : step;
     keel::Array<Expr> terms;
-    terms.reserve(static_cast<keel::usize>(order + 1));
+    terms.reserve(order + 1);
     for (int j = 0; j <= order; ++j) {
         Rational bin = binomRational(order, j);
         if ((order - j) % 2 != 0)

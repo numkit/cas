@@ -285,7 +285,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
             return false;
     }
 
-    coeffs.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
+    coeffs.assign(maxDeg + 1, c.zero());
     for (int d = 0; d <= maxDeg; ++d) {
         const auto &b = buckets[static_cast<keel::usize>(d)];
         if (!b.empty())

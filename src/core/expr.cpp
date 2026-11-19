@@ -639,7 +639,7 @@ bool bernoulliExact(keel::i64 n, Rational &out)
         return true;
     }
     // Akiyama-Tanigawa algorithm for B_n (with B_1 = -1/2 since n >= 2 is even).
-    keel::Array<Rational> a(static_cast<keel::usize>(n + 1));
+    keel::Array<Rational> a(n + 1);
     for (keel::i64 m = 0; m <= n; ++m) {
         a[static_cast<keel::usize>(m)] = Rational(1, BigInt(m + 1));
         for (keel::i64 j = m; j >= 1; --j) {
@@ -664,7 +664,7 @@ bool eulerExact(keel::i64 n, Rational &out)
         return true;
     }
     const keel::i64 mMax = n / 2;
-    keel::Array<BigInt> eEven(static_cast<keel::usize>(mMax + 1), BigInt(0));
+    keel::Array<BigInt> eEven(mMax + 1, BigInt(0));
     eEven[0] = BigInt(1);
     for (keel::i64 m = 1; m <= mMax; ++m) {
         BigInt sum(0);
@@ -740,7 +740,7 @@ bool evalPolylogNegIntExact(keel::i64 m, const Rational &z, Rational &out)
         out = z / den;
         return true;
     }
-    keel::Array<BigInt> eul(static_cast<keel::usize>(m), BigInt(0));
+    keel::Array<BigInt> eul(m, BigInt(0));
     eul[0] = BigInt(1);
     for (keel::i64 i = 2; i <= m; ++i) {
         for (keel::i64 k = i - 1; k >= 1; --k) {
@@ -919,7 +919,7 @@ bool Ctx::evalExact(
                         out = zero;
                         return true;
                     }
-                    keel::Array<BigInt> row(static_cast<keel::usize>(kInt + 1),
+                    keel::Array<BigInt> row(kInt + 1,
                                             BigInt(0));
                     row[0] = BigInt(1);
                     for (keel::i64 i = 1; i <= nInt; ++i) {
@@ -2431,7 +2431,7 @@ bool evalPolylogDouble(double s, double z, double &out)
             return std::isfinite(out);
         }
         if (m <= 20) {
-            keel::Array<double> eul(static_cast<keel::usize>(m), 0.0);
+            keel::Array<double> eul(m, 0.0);
             eul[0] = 1.0;
             for (keel::i64 i = 2; i <= m; ++i) {
                 for (keel::i64 k = i - 1; k >= 1; --k) {
@@ -2924,7 +2924,7 @@ bool evalDoubleRec(
                     res = 0.0;
                 } else {
                     keel::Array<BigInt> row(
-                        static_cast<keel::usize>(kInt + 1), BigInt(0));
+                        kInt + 1, BigInt(0));
                     row[0] = BigInt(1);
                     for (keel::i64 i = 1; i <= nInt; ++i) {
                         const keel::i64 jMax = std::min(i, kInt);
@@ -3304,7 +3304,7 @@ Expr Ctx::expand(Expr e)
                     return one();
                 if (kCount > 0) {
                     keel::Array<Expr> factors;
-                    factors.reserve(static_cast<keel::usize>(kCount));
+                    factors.reserve(kCount);
                     for (keel::i64 j = 0; j < kCount; ++j)
                         factors.push_back(add({args[0], number(j)}));
                     return expand(mul(factors));

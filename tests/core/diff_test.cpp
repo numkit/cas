@@ -61,6 +61,8 @@ struct DiffTest : public ::testing::Test
                 cs.push_back(clone(c.child(e, i)));
             return c.kind(e) == NodeKind::Add ? c.add(cs) : c.mul(cs);
         }
+        case NodeKind::RootOf:
+            return e;
         }
         return {};
     }

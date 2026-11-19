@@ -3095,7 +3095,7 @@ namespace {
 bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
                             Budget *budget, keel::Array<Expr> &coeffsOut)
 {
-    coeffsOut.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
+    coeffsOut.assign(maxDeg + 1, c.zero());
     const Expr tSym = c.symbol("_ode_jet_t");
     const Expr shifted = c.subs(exprInX, x, c.add({x0, tSym}));
     const Expr polyT = taylor(c, shifted, tSym, c.zero(), maxDeg, budget);
@@ -3209,7 +3209,7 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         return out;
     }
 
-    keel::Array<Expr> cCoeffs(static_cast<keel::usize>(order + 1), c.zero());
+    keel::Array<Expr> cCoeffs(order + 1, c.zero());
     cCoeffs[0] = y0;
     cCoeffs[1] = dy0;
 
@@ -3348,7 +3348,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
 
     keel::Array<Expr> branches;
     for (const Expr &rRoot : uniqueRoots) {
-        keel::Array<Expr> cCoeffs(static_cast<keel::usize>(order + 1), c.zero());
+        keel::Array<Expr> cCoeffs(order + 1, c.zero());
         cCoeffs[0] = c.one();
         bool validBranch = true;
         for (int n = 1; n <= order; ++n) {

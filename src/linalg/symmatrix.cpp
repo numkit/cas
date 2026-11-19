@@ -370,7 +370,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
         parsed.emplace_back(deg, rest.empty() ? c.one() : c.mul(rest));
     }
 
-    coeffsOut.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
+    coeffsOut.assign(maxDeg + 1, c.zero());
     for (const auto &pr : parsed) {
         const keel::usize idx = static_cast<keel::usize>(pr.first);
         coeffsOut[idx] = c.expand(c.add({coeffsOut[idx], pr.second}));

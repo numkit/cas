@@ -946,6 +946,7 @@ bool toRational(Ctx &c, Expr e, Expr var, UPoly &num, UPoly &den)
         return true;
     }
     case NodeKind::Func:
+    case NodeKind::RootOf:
         return false;
     }
     return false;
@@ -1746,7 +1747,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
         buckets[static_cast<keel::usize>(d)].push_back(cf);
     }
 
-    coeffsOut.assign(static_cast<keel::usize>(maxDeg + 1), c.zero());
+    coeffsOut.assign(maxDeg + 1, c.zero());
     for (int d = 0; d <= maxDeg; ++d) {
         const auto &b = buckets[static_cast<keel::usize>(d)];
         if (!b.empty())
@@ -2079,7 +2080,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                         keel::Array<Expr> fPieces;
                         bool okPieces = true;
                         // Precompute I_m = int exp(a*x+b) / L^m dx for m = 1..poleK.
-                        keel::Array<Expr> iPow(static_cast<keel::usize>(poleK + 1));
+                        keel::Array<Expr> iPow(poleK + 1);
                         const Expr shiftExp = c.simplify(
                             c.add({b, c.neg(c.div(c.mul({a, c0}), c1))}));
                         const Expr uEi = c.mul({c.div(a, c1), linBase});
@@ -2313,9 +2314,9 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                                              : c.mul({c.div(a, c1), linBase});
                         const Expr invC1 = c.pow(c1, c.number(keel::i64{-1}));
                         keel::Array<Expr> sinInt(
-                            static_cast<keel::usize>(poleK + 1));
+                            poleK + 1);
                         keel::Array<Expr> cosInt(
-                            static_cast<keel::usize>(poleK + 1));
+                            poleK + 1);
                         if (c.isZero(phi)) {
                             sinInt[1] = c.mul({invC1, c.func("Si", uSi)});
                             cosInt[1] = c.mul({invC1, c.func("Ci", uSi)});
@@ -3465,8 +3466,8 @@ Expr evalQuadraticFourierResidue(Ctx &c, Expr A, Expr B, Expr alpha,
     sqrtFactorPair(c, betaSq, beta, invBeta);
     const Expr piSym = c.symbol("pi");
     const Expr expDecay = c.func("exp", c.neg(c.mul({absOmega, beta})));
-    keel::Array<Expr> J(static_cast<keel::usize>(k + 1));
-    keel::Array<Expr> K(static_cast<keel::usize>(k + 1));
+    keel::Array<Expr> J(k + 1);
+    keel::Array<Expr> K(k + 1);
     J[1] = c.mul({piSym, invBeta, expDecay});
     K[1] = c.mul({piSym, expDecay});
     for (int m = 2; m <= k; ++m) {

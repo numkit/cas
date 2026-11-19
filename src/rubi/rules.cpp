@@ -2042,6 +2042,8 @@ Expr rewriteTrigToSinCos(Ctx &c, Expr e)
             return c.pow(c.func("sinh", u), c.number(-1));
         return c.func(fn, u);
     }
+    case NodeKind::RootOf:
+        return e;
     }
     return e;
 }
@@ -2122,6 +2124,8 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
             args.push_back(clearNestedDenominators(c, c.child(e, i)));
         return c.func(c.funcName(e), args);
     }
+    case NodeKind::RootOf:
+        return e;
     }
     return e;
 }

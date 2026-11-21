@@ -1,5 +1,5 @@
 // num/rational.hpp — canonical exact rational numbers over BigInt.
-// Thin adapter delegating to keel::Rational (<keel/rational.h>).
+// Thin adapter delegating to keel::bignum::Rational (<keel/rational.h>).
 #pragma once
 
 #include <keel/core.h>
@@ -12,24 +12,24 @@ namespace numkit::cas {
 class Rational {
 public:
     Rational() noexcept = default;
-    explicit Rational(keel::Rational raw) noexcept : v_(keel::move(raw)) {}
+    explicit Rational(keel::bignum::Rational raw) noexcept : v_(keel::move(raw)) {}
     Rational(keel::i64 v) noexcept : v_(v) {}
     Rational(keel::u64 v) noexcept : v_(v) {}
     Rational(int v) noexcept : v_(static_cast<keel::i64>(v)) {}
 
     Rational(BigInt p, BigInt q) : v_(keel::move(p.raw()), keel::move(q.raw())) {}
 
-    const keel::Rational &raw() const noexcept { return v_; }
-    keel::Rational &raw() noexcept { return v_; }
+    const keel::bignum::Rational &raw() const noexcept { return v_; }
+    keel::bignum::Rational &raw() noexcept { return v_; }
 
     static bool tryParse(Rational &out, keel::StringRef s)
     {
-        return keel::Rational::try_parse(out.v_, s);
+        return keel::bignum::Rational::try_parse(out.v_, s);
     }
 
     static Rational fromDoubleBits(keel::f64 v)
     {
-        return Rational(keel::Rational::from_f64_bits(v));
+        return Rational(keel::bignum::Rational::from_f64_bits(v));
     }
 
     keel::f64 toDouble() const { return v_.to_f64(); }
@@ -44,7 +44,7 @@ public:
 
     static Rational powUInt(const Rational &base, keel::u64 exp)
     {
-        return Rational(keel::Rational::pow_u64(base.v_, exp));
+        return Rational(keel::bignum::Rational::pow_u64(base.v_, exp));
     }
 
     keel::String toString() const { return v_.to_string(); }
@@ -70,7 +70,7 @@ public:
     friend bool operator>=(const Rational &a, const Rational &b) { return a.v_ >= b.v_; }
 
 private:
-    keel::Rational v_;
+    keel::bignum::Rational v_;
 };
 
 } // namespace numkit::cas

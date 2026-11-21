@@ -1,5 +1,5 @@
 // num/bigint.hpp — arbitrary-precision integer, exact arithmetic layer.
-// Thin adapter delegating to keel::BigInt (<keel/bigint.h>).
+// Thin adapter delegating to keel::bignum::BigInt (<keel/bigint.h>).
 #pragma once
 
 #include <keel/array.h>
@@ -13,7 +13,7 @@ namespace numkit::cas {
 class BigInt {
 public:
     BigInt() noexcept = default;
-    explicit BigInt(keel::BigInt raw) noexcept : v_(keel::move(raw)) {}
+    explicit BigInt(keel::bignum::BigInt raw) noexcept : v_(keel::move(raw)) {}
     BigInt(keel::i64 v) noexcept : v_(v) {}
     BigInt(keel::u64 v) noexcept : v_(v) {}
 
@@ -27,12 +27,12 @@ public:
                  keel::IsUnsigned<T> && !keel::IsSame<keel::RemoveCv<T>, keel::u64>)
     BigInt(T v) noexcept : v_(static_cast<keel::u64>(v)) {}
 
-    const keel::BigInt &raw() const noexcept { return v_; }
-    keel::BigInt &raw() noexcept { return v_; }
+    const keel::bignum::BigInt &raw() const noexcept { return v_; }
+    keel::bignum::BigInt &raw() noexcept { return v_; }
 
     static bool tryParse(BigInt &out, keel::StringRef s)
     {
-        return keel::BigInt::try_parse(out.v_, s);
+        return keel::bignum::BigInt::try_parse(out.v_, s);
     }
 
     bool isZero() const noexcept { return v_.is_zero(); }
@@ -73,27 +73,27 @@ public:
 
     static void divMod(const BigInt &a, const BigInt &b, BigInt &q, BigInt &r)
     {
-        keel::BigInt::div_mod(a.v_, b.v_, q.v_, r.v_);
+        keel::bignum::BigInt::div_mod(a.v_, b.v_, q.v_, r.v_);
     }
     static BigInt gcd(const BigInt &a, const BigInt &b)
     {
-        return BigInt(keel::BigInt::gcd(a.v_, b.v_));
+        return BigInt(keel::bignum::BigInt::gcd(a.v_, b.v_));
     }
     static BigInt powUInt(const BigInt &base, keel::u64 exp)
     {
-        return BigInt(keel::BigInt::pow_u64(base.v_, exp));
+        return BigInt(keel::bignum::BigInt::pow_u64(base.v_, exp));
     }
     static BigInt lcm(const BigInt &a, const BigInt &b)
     {
-        return BigInt(keel::BigInt::lcm(a.v_, b.v_));
+        return BigInt(keel::bignum::BigInt::lcm(a.v_, b.v_));
     }
     static bool isPrime(const BigInt &n)
     {
-        return keel::BigInt::is_prime(n.v_);
+        return keel::bignum::BigInt::is_prime(n.v_);
     }
     static keel::Array<std::pair<BigInt, int>> factorize(const BigInt &n)
     {
-        keel::Array<keel::PrimeFactor> raw = keel::BigInt::factorize(n.v_);
+        keel::Array<keel::bignum::PrimeFactor> raw = keel::bignum::BigInt::factorize(n.v_);
         keel::Array<std::pair<BigInt, int>> out;
         out.reserve(raw.size());
         for (keel::usize i = 0; i < raw.size(); ++i) {
@@ -106,7 +106,7 @@ public:
     keel::u64 hashBits() const noexcept { return v_.hash_bits(); }
 
 private:
-    keel::BigInt v_;
+    keel::bignum::BigInt v_;
 };
 
 } // namespace numkit::cas

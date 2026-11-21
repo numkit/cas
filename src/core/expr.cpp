@@ -119,7 +119,7 @@ Expr Ctx::rootOf(keel::Array<Rational> poly, int index)
             c = c / lc;
     assert(index < keel::as<int>(poly.size()) - 1);
 
-    keel::u32 hash = mix32(kFnvOffset, static_cast<keel::u32>(NodeKind::RootOf));
+    keel::u32 hash = mix32(kFnvOffset, keel::as<keel::u32>(NodeKind::RootOf));
     hash = mix32(hash, keel::as<keel::u32>(index));
     for (const Rational &c : poly) {
         const keel::u64 h64 = c.hashBits();
@@ -369,7 +369,7 @@ Expr Ctx::makeMul(keel::ArrayRef<Expr> children)
 Expr Ctx::makeNode(NodeKind kind, keel::u32 aux,
                    keel::ArrayRef<Expr> children, const Rational &num)
 {
-    keel::u32 hash = mix32(kFnvOffset, static_cast<keel::u32>(kind));
+    keel::u32 hash = mix32(kFnvOffset, keel::as<keel::u32>(kind));
     hash = mix32(hash, aux);
     if (kind == NodeKind::Number) {
         const keel::u64 h64 = num.hashBits();

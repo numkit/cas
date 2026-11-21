@@ -22,9 +22,9 @@ UPoly UPoly::monomial(Rational c, keel::u64 exp)
 {
     UPoly out;
     if (!c.isZero()) {
-        out.c_.assign(static_cast<keel::usize>(exp) + 1,
+        out.c_.assign(keel::as<keel::usize>(exp) + 1,
                       Rational(keel::i64{0}));
-        out.c_[static_cast<keel::usize>(exp)] = std::move(c);
+        out.c_[keel::as<keel::usize>(exp)] = std::move(c);
     }
     return out;
 }
@@ -125,15 +125,15 @@ void UPoly::divMod(const UPoly &a, const UPoly &b, UPoly &q, UPoly &r)
     q = UPoly();
     if (aCopy.isZero() || aCopy.deg() < bCopy.deg())
         return;
-    q.c_.assign(static_cast<keel::usize>(aCopy.deg() - bCopy.deg()) + 1,
+    q.c_.assign(keel::as<keel::usize>(aCopy.deg() - bCopy.deg()) + 1,
                 Rational(keel::i64{0}));
     const Rational blcInv = Rational(keel::i64{1}) / bCopy.lc();
     while (!r.isZero() && r.deg() >= bCopy.deg()) {
         const int shift = r.deg() - bCopy.deg();
         const Rational f = r.lc() * blcInv;
-        q.c_[static_cast<keel::usize>(shift)] += f;
+        q.c_[keel::as<keel::usize>(shift)] += f;
         for (keel::usize j = 0; j < bCopy.c_.size(); ++j)
-            r.c_[j + static_cast<keel::usize>(shift)] -= f * bCopy.c_[j];
+            r.c_[j + keel::as<keel::usize>(shift)] -= f * bCopy.c_[j];
         r.trim();
     }
 }
@@ -188,7 +188,7 @@ UPoly UPoly::derivative() const
         return out;
     out.c_.reserve(c_.size() - 1);
     for (keel::usize i = 1; i < c_.size(); ++i)
-        out.c_.push_back(c_[i] * Rational(static_cast<keel::i64>(i)));
+        out.c_.push_back(c_[i] * Rational(keel::as<keel::i64>(i)));
     out.trim();
     return out;
 }
@@ -286,22 +286,22 @@ Rational UPoly::resultant(const UPoly &a, const UPoly &b)
     const UPoly *hi = &a, *lo = &b;
     if (hi->deg() < lo->deg()) {
         std::swap(hi, lo);
-        const long long mn = static_cast<long long>(a.deg()) *
-                             static_cast<long long>(b.deg());
+        const long long mn = keel::as<long long>(a.deg()) *
+                             keel::as<long long>(b.deg());
         if (mn & 1)
             return -resultant(*hi, *lo);
         return resultant(*hi, *lo);
     }
 
     if (lo->deg() == 0)
-        return Rational::powUInt(lo->lc(), static_cast<keel::u64>(hi->deg()));
+        return Rational::powUInt(lo->lc(), keel::as<keel::u64>(hi->deg()));
 
     UPoly q, r;
     divMod(*hi, *lo, q, r);
     if (r.isZero())
         return Rational(keel::i64{0});
     const Rational factor = Rational::powUInt(
-        lo->lc(), static_cast<keel::u64>(hi->deg() - r.deg()));
+        lo->lc(), keel::as<keel::u64>(hi->deg() - r.deg()));
     return factor * resultant(r, *lo);
 }
 

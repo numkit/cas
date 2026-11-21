@@ -357,7 +357,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
     if (varFacs.size() == 2) {
         int uInvIdx = -1, uInv2Idx = -1, sinIdx = -1, oneMinusCosIdx = -1;
         for (int i = 0; i < 2; ++i) {
-            const Expr &f = varFacs[static_cast<keel::usize>(i)];
+            const Expr &f = varFacs[keel::as<keel::usize>(i)];
             if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == u &&
                 c.child(f, 1) == c.number(-1)) {
                 uInvIdx = i;
@@ -373,7 +373,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
         if (uInvIdx >= 0 && sinIdx >= 0) {
             Expr aLin, bLin;
             if (matchLinearInVar(
-                    c, c.child(varFacs[static_cast<keel::usize>(sinIdx)], 0), u,
+                    c, c.child(varFacs[keel::as<keel::usize>(sinIdx)], 0), u,
                     aLin, bLin) &&
                 c.isZero(bLin) && c.isAssumedPositive(aLin)) {
                 const Expr box = c.mul(
@@ -386,7 +386,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
         }
         if (uInv2Idx >= 0 && oneMinusCosIdx >= 0) {
             const Expr addNode =
-                varFacs[static_cast<keel::usize>(oneMinusCosIdx)];
+                varFacs[keel::as<keel::usize>(oneMinusCosIdx)];
             const Expr diffFromOne = c.simplify(c.add({c.one(), c.neg(addNode)}));
             if (c.kind(diffFromOne) == NodeKind::Func &&
                 c.funcName(diffFromOne) == "cos") {
@@ -510,7 +510,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
                 if (c.numberValue(c.child(f, 1)).den() == BigInt(1) &&
                     c.numberValue(c.child(f, 1)).num().fitsInt64(p)) {
                     inner = c.child(f, 0);
-                    hPow = static_cast<int>(p);
+                    hPow = keel::as<int>(p);
                 } else {
                     return false;
                 }
@@ -568,7 +568,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
         if (varFacs.size() == 2) {
             int uIdx = (varFacs[0] == u) ? 0 : ((varFacs[1] == u) ? 1 : -1);
             if (uIdx >= 0 &&
-                matchHypKernel(varFacs[static_cast<keel::usize>(1 - uIdx)],
+                matchHypKernel(varFacs[keel::as<keel::usize>(1 - uIdx)],
                                hFn, aVal, hPow) &&
                 hFn == "csch" && hPow == 1) {
                 const Expr dualArg =

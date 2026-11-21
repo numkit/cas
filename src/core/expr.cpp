@@ -26,7 +26,7 @@ keel::u32 hashName(keel::StringRef s)
 {
     keel::u32 h = kFnvOffset;
     for (char c : s)
-        h = mix32(h, static_cast<keel::u8>(c));
+        h = mix32(h, keel::as<keel::u8>(c));
     return h;
 }
 
@@ -76,7 +76,7 @@ keel::u32 Ctx::internName(keel::StringRef name,
 {
     if (const keel::u32 *hit = ids.get(name))
         return *hit;
-    const keel::u32 id = static_cast<keel::u32>(names.size());
+    const keel::u32 id = keel::as<keel::u32>(names.size());
     names.push_back(keel::String::from(name));
     ids.try_insert(keel::String::from(name), id);
     return id;
@@ -117,21 +117,21 @@ Expr Ctx::rootOf(keel::Array<Rational> poly, int index)
     if (!(lc == Rational(keel::i64{1})))
         for (Rational &c : poly)
             c = c / lc;
-    assert(index < static_cast<int>(poly.size()) - 1);
+    assert(index < keel::as<int>(poly.size()) - 1);
 
     keel::u32 hash = mix32(kFnvOffset, static_cast<keel::u32>(NodeKind::RootOf));
-    hash = mix32(hash, static_cast<keel::u32>(index));
+    hash = mix32(hash, keel::as<keel::u32>(index));
     for (const Rational &c : poly) {
         const keel::u64 h64 = c.hashBits();
-        hash = mix32(hash, static_cast<keel::u32>(h64));
-        hash = mix32(hash, static_cast<keel::u32>(h64 >> 32));
+        hash = mix32(hash, keel::as<keel::u32>(h64));
+        hash = mix32(hash, keel::as<keel::u32>(h64 >> 32));
     }
     for (const RootOfDesc &d : rootofs_) {
         if (d.index == index && d.poly == poly && d.nodeId != 0)
             return Expr(this, d.nodeId);
     }
     rootofs_.push_back(RootOfDesc{keel::move(poly), index, 0});
-    const auto tableIdx = static_cast<keel::u32>(rootofs_.size() - 1);
+    const auto tableIdx = keel::as<keel::u32>(rootofs_.size() - 1);
     const Expr made = makeNode(NodeKind::RootOf, tableIdx, {}, Rational(keel::i64{0}));
     rootofs_[tableIdx].nodeId = id(made);
     return made;
@@ -191,8 +191,8 @@ Expr Ctx::pow(Expr base, Expr exp)
         if (kind(base) == NodeKind::Number && isSmallInt) {
             const Rational &b = numberValue(base);
             if (n >= 0) {
-                Rational r(BigInt::powUInt(b.num(), static_cast<keel::u64>(n)),
-                           BigInt::powUInt(b.den(), static_cast<keel::u64>(n)));
+                Rational r(BigInt::powUInt(b.num(), keel::as<keel::u64>(n)),
+                           BigInt::powUInt(b.den(), keel::as<keel::u64>(n)));
                 return number(r);
             }
             if (b.isZero()) {
@@ -200,8 +200,8 @@ Expr Ctx::pow(Expr base, Expr exp)
                 return Expr(); // null in Release: no 0^-k garbage nodes
             }
             // b != 0, n < 0: (p/q)^n = q^|n| / p^|n|
-            Rational r(BigInt::powUInt(b.den(), static_cast<keel::u64>(-n)),
-                       BigInt::powUInt(b.num(), static_cast<keel::u64>(-n)));
+            Rational r(BigInt::powUInt(b.den(), keel::as<keel::u64>(-n)),
+                       BigInt::powUInt(b.num(), keel::as<keel::u64>(-n)));
             return number(r);
         }
 
@@ -373,8 +373,8 @@ Expr Ctx::makeNode(NodeKind kind, keel::u32 aux,
     hash = mix32(hash, aux);
     if (kind == NodeKind::Number) {
         const keel::u64 h64 = num.hashBits();
-        hash = mix32(hash, static_cast<keel::u32>(h64));
-        hash = mix32(hash, static_cast<keel::u32>(h64 >> 32));
+        hash = mix32(hash, keel::as<keel::u32>(h64));
+        hash = mix32(hash, keel::as<keel::u32>(h64 >> 32));
     }
     for (Expr c : children)
         hash = mix32(hash, node(c).hash);
@@ -391,14 +391,14 @@ Expr Ctx::makeNode(NodeKind kind, keel::u32 aux,
     Node n;
     n.kind = kind;
     n.aux = aux;
-    n.childOff = static_cast<keel::u32>(childArena_.size());
-    n.childCount = static_cast<keel::u32>(children.size());
+    n.childOff = keel::as<keel::u32>(childArena_.size());
+    n.childCount = keel::as<keel::u32>(children.size());
     n.hash = hash;
     n.num = num;
     for (Expr c : children)
         childArena_.push_back(c.id_);
 
-    const auto id = static_cast<keel::u32>(nodes_.size() + 1);
+    const auto id = keel::as<keel::u32>(nodes_.size() + 1);
     nodes_.push_back(std::move(n));
     const keel::u32 prevHead = internHead_.get(hash) ? *internHead_.get(hash) : 0u;
     internNext_.push_back(prevHead);
@@ -641,9 +641,9 @@ bool bernoulliExact(keel::i64 n, Rational &out)
     // Akiyama-Tanigawa algorithm for B_n (with B_1 = -1/2 since n >= 2 is even).
     keel::Array<Rational> a(n + 1);
     for (keel::i64 m = 0; m <= n; ++m) {
-        a[static_cast<keel::usize>(m)] = Rational(1, BigInt(m + 1));
+        a[keel::as<keel::usize>(m)] = Rational(1, BigInt(m + 1));
         for (keel::i64 j = m; j >= 1; --j) {
-            const keel::usize idx = static_cast<keel::usize>(j - 1);
+            const keel::usize idx = keel::as<keel::usize>(j - 1);
             a[idx] = Rational(j) * (a[idx] - a[idx + 1]);
         }
     }
@@ -675,11 +675,11 @@ bool eulerExact(keel::i64 n, Rational &out)
                          BigInt(2 * m - 2 * k + 1)) /
                         (BigInt(2 * k - 1) * BigInt(2 * k));
             }
-            sum = sum + binom * eEven[static_cast<keel::usize>(k)];
+            sum = sum + binom * eEven[keel::as<keel::usize>(k)];
         }
-        eEven[static_cast<keel::usize>(m)] = -sum;
+        eEven[keel::as<keel::usize>(m)] = -sum;
     }
-    out = Rational(eEven[static_cast<keel::usize>(mMax)], BigInt(1));
+    out = Rational(eEven[keel::as<keel::usize>(mMax)], BigInt(1));
     return true;
 }
 
@@ -698,7 +698,7 @@ bool evalBernoulliPolyExact(keel::i64 n, const Rational &x, Rational &out)
         if (!bk.isZero()) {
             sum = sum + Rational(binom, BigInt(1)) * bk *
                             Rational::powUInt(
-                                x, static_cast<keel::u64>(n - k));
+                                x, keel::as<keel::u64>(n - k));
         }
     }
     out = sum;
@@ -720,10 +720,10 @@ bool evalEulerPolyExact(keel::i64 n, const Rational &x, Rational &out)
             return false;
         if (!ek.isZero()) {
             const BigInt twoPow =
-                BigInt::powUInt(BigInt(2), static_cast<keel::usize>(k));
+                BigInt::powUInt(BigInt(2), keel::as<keel::usize>(k));
             sum = sum + Rational(binom, twoPow) * ek *
                             Rational::powUInt(
-                                xShift, static_cast<keel::u64>(n - k));
+                                xShift, keel::as<keel::u64>(n - k));
         }
     }
     out = sum;
@@ -735,7 +735,7 @@ bool evalPolylogNegIntExact(keel::i64 m, const Rational &z, Rational &out)
     if (m < 0 || m > 20 || z == Rational(1))
         return false;
     const Rational den =
-        Rational::powUInt(Rational(1) - z, static_cast<keel::u64>(m + 1));
+        Rational::powUInt(Rational(1) - z, keel::as<keel::u64>(m + 1));
     if (m == 0) {
         out = z / den;
         return true;
@@ -744,15 +744,15 @@ bool evalPolylogNegIntExact(keel::i64 m, const Rational &z, Rational &out)
     eul[0] = BigInt(1);
     for (keel::i64 i = 2; i <= m; ++i) {
         for (keel::i64 k = i - 1; k >= 1; --k) {
-            eul[static_cast<keel::usize>(k)] =
-                BigInt(k + 1) * eul[static_cast<keel::usize>(k)] +
-                BigInt(i - k) * eul[static_cast<keel::usize>(k - 1)];
+            eul[keel::as<keel::usize>(k)] =
+                BigInt(k + 1) * eul[keel::as<keel::usize>(k)] +
+                BigInt(i - k) * eul[keel::as<keel::usize>(k - 1)];
         }
     }
     Rational num(0);
     for (keel::i64 k = 0; k < m; ++k) {
-        num = num + Rational(eul[static_cast<keel::usize>(k)], BigInt(1)) *
-                        Rational::powUInt(z, static_cast<keel::u64>(m - k));
+        num = num + Rational(eul[keel::as<keel::usize>(k)], BigInt(1)) *
+                        Rational::powUInt(z, keel::as<keel::u64>(m - k));
     }
     out = num / den;
     return true;
@@ -925,7 +925,7 @@ bool Ctx::evalExact(
                     for (keel::i64 i = 1; i <= nInt; ++i) {
                         const keel::i64 jMax = std::min(i, kInt);
                         for (keel::i64 j = jMax; j >= 1; --j) {
-                            const auto ju = static_cast<keel::usize>(j);
+                            const auto ju = keel::as<keel::usize>(j);
                             if (name == "stirlingS1") {
                                 row[ju] = row[ju - 1] - BigInt(i - 1) * row[ju];
                             } else {
@@ -934,7 +934,7 @@ bool Ctx::evalExact(
                         }
                         row[0] = BigInt(0);
                     }
-                    out = Rational(row[static_cast<keel::usize>(kInt)], BigInt(1));
+                    out = Rational(row[keel::as<keel::usize>(kInt)], BigInt(1));
                     return true;
                 }
                 return false;
@@ -1127,7 +1127,7 @@ bool Ctx::evalExact(
                 if (!bernoulliExact(m + 1, bVal))
                     return false;
                 const BigInt twoPow =
-                    BigInt::powUInt(BigInt(2), static_cast<keel::usize>(m + 1));
+                    BigInt::powUInt(BigInt(2), keel::as<keel::usize>(m + 1));
                 const Rational sgn(m % 2 == 0 ? -1 : 1);
                 out = sgn * Rational(twoPow - BigInt(1), BigInt(m + 1)) * bVal;
                 return true;
@@ -1197,13 +1197,13 @@ bool Ctx::evalExact(
         if (!(ex.den() == BigInt(1)) || !ex.num().fitsInt64(k))
             return false; // fractional or huge exponent: irrational
         if (k >= 0) {
-            out = Rational::powUInt(base, static_cast<keel::u64>(k));
+            out = Rational::powUInt(base, keel::as<keel::u64>(k));
             return true;
         }
         if (base.isZero())
             return false; // 0^negative
         out = Rational(BigInt(1), BigInt(1)) /
-              Rational::powUInt(base, static_cast<keel::u64>(-k));
+              Rational::powUInt(base, keel::as<keel::u64>(-k));
         return true;
     }
     case NodeKind::Add:
@@ -1241,8 +1241,8 @@ double evalErfiDouble(double x)
     double term = ax;
     double sum = term;
     for (int n = 1; n <= 200; ++n) {
-        term *= x2 / static_cast<double>(n);
-        const double contrib = term / static_cast<double>(2 * n + 1);
+        term *= x2 / keel::as<double>(n);
+        const double contrib = term / keel::as<double>(2 * n + 1);
         sum += contrib;
         if (contrib <= sum * 1e-16)
             break;
@@ -1260,8 +1260,8 @@ bool evalEiDouble(double x, double &out)
         double sum = 0.0;
         double term = 1.0;
         for (int n = 1; n <= 300; ++n) {
-            term *= x / static_cast<double>(n);
-            const double contrib = term / static_cast<double>(n);
+            term *= x / keel::as<double>(n);
+            const double contrib = term / keel::as<double>(n);
             sum += contrib;
             if (contrib <= sum * 1e-16 && n > x)
                 break;
@@ -1274,8 +1274,8 @@ bool evalEiDouble(double x, double &out)
         double sum = 0.0;
         double term = 1.0;
         for (int n = 1; n <= 120; ++n) {
-            term *= x / static_cast<double>(n);
-            const double contrib = term / static_cast<double>(n);
+            term *= x / keel::as<double>(n);
+            const double contrib = term / keel::as<double>(n);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16)
                 break;
@@ -1290,7 +1290,7 @@ bool evalEiDouble(double x, double &out)
     double d = 1.0 / b;
     double h = d;
     for (int i = 1; i <= 100; ++i) {
-        const double a = -static_cast<double>(i * i);
+        const double a = -keel::as<double>(i * i);
         b += 2.0;
         d = a * d + b;
         if (keel::abs(d) < 1e-30)
@@ -1318,7 +1318,7 @@ double gauss8Integrate(Fn &&fn, double a, double b, int panels)
     static constexpr double kWeights[4] = {
         0.362683783378361983, 0.313706645877887287,
         0.222381034453374471, 0.101228536290376259};
-    const double h = (b - a) / static_cast<double>(panels);
+    const double h = (b - a) / keel::as<double>(panels);
     double total = 0.0;
     for (int p = 0; p < panels; ++p) {
         const double x0 = a + p * h;
@@ -1345,8 +1345,8 @@ double evalSiDouble(double x)
         double term = ax;
         double sum = term;
         for (int n = 1; n <= 50; ++n) {
-            term *= -x2 / static_cast<double>((2 * n) * (2 * n + 1));
-            const double contrib = term / static_cast<double>(2 * n + 1);
+            term *= -x2 / keel::as<double>((2 * n) * (2 * n + 1));
+            const double contrib = term / keel::as<double>(2 * n + 1);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16)
                 break;
@@ -1355,7 +1355,7 @@ double evalSiDouble(double x)
     }
     if (ax <= 32.0) {
         const double si4 = evalSiDouble(4.0);
-        const int panels = std::max(8, static_cast<int>(std::ceil((ax - 4.0) * 2.0)));
+        const int panels = std::max(8, keel::as<int>(std::ceil((ax - 4.0) * 2.0)));
         const double tail = gauss8Integrate(
             [](double t) { return std::sin(t) / t; }, 4.0, ax, panels);
         return sgn * (si4 + tail);
@@ -1365,11 +1365,11 @@ double evalSiDouble(double x)
     double fSum = 1.0, gSum = 1.0;
     double fTerm = 1.0, gTerm = 1.0;
     for (int k = 1; k <= 12; ++k) {
-        fTerm *= -static_cast<double>((2 * k - 1) * (2 * k)) * invZ2;
+        fTerm *= -keel::as<double>((2 * k - 1) * (2 * k)) * invZ2;
         if (keel::abs(fTerm) > 1e-3 && k > 4)
             break;
         fSum += fTerm;
-        gTerm *= -static_cast<double>((2 * k) * (2 * k + 1)) * invZ2;
+        gTerm *= -keel::as<double>((2 * k) * (2 * k + 1)) * invZ2;
         gSum += gTerm;
     }
     const double fVal = fSum / ax;
@@ -1386,8 +1386,8 @@ bool evalCiDouble(double x, double &out)
         double term = 1.0;
         double sum = 0.0;
         for (int n = 1; n <= 50; ++n) {
-            term *= -x2 / static_cast<double>((2 * n - 1) * (2 * n));
-            const double contrib = term / static_cast<double>(2 * n);
+            term *= -x2 / keel::as<double>((2 * n - 1) * (2 * n));
+            const double contrib = term / keel::as<double>(2 * n);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16)
                 break;
@@ -1398,7 +1398,7 @@ bool evalCiDouble(double x, double &out)
     if (x <= 32.0) {
         double ci4 = 0.0;
         evalCiDouble(4.0, ci4);
-        const int panels = std::max(8, static_cast<int>(std::ceil((x - 4.0) * 2.0)));
+        const int panels = std::max(8, keel::as<int>(std::ceil((x - 4.0) * 2.0)));
         const double tail = gauss8Integrate(
             [](double t) { return std::cos(t) / t; }, 4.0, x, panels);
         out = ci4 + tail;
@@ -1408,11 +1408,11 @@ bool evalCiDouble(double x, double &out)
     double fSum = 1.0, gSum = 1.0;
     double fTerm = 1.0, gTerm = 1.0;
     for (int k = 1; k <= 12; ++k) {
-        fTerm *= -static_cast<double>((2 * k - 1) * (2 * k)) * invZ2;
+        fTerm *= -keel::as<double>((2 * k - 1) * (2 * k)) * invZ2;
         if (keel::abs(fTerm) > 1e-3 && k > 4)
             break;
         fSum += fTerm;
-        gTerm *= -static_cast<double>((2 * k) * (2 * k + 1)) * invZ2;
+        gTerm *= -keel::as<double>((2 * k) * (2 * k + 1)) * invZ2;
         gSum += gTerm;
     }
     const double fVal = fSum / x;
@@ -1436,8 +1436,8 @@ double evalFresnelDouble(double x, bool isSine)
             double sum = term / 3.0;
             for (int n = 1; n <= 45; ++n) {
                 term *= -(halfPi * halfPi * x4) /
-                        static_cast<double>((2 * n) * (2 * n + 1));
-                const double contrib = term / static_cast<double>(4 * n + 3);
+                        keel::as<double>((2 * n) * (2 * n + 1));
+                const double contrib = term / keel::as<double>(4 * n + 3);
                 sum += contrib;
                 if (keel::abs(contrib) <= 1e-16)
                     break;
@@ -1448,8 +1448,8 @@ double evalFresnelDouble(double x, bool isSine)
         double sum = term;
         for (int n = 1; n <= 45; ++n) {
             term *= -(halfPi * halfPi * x4) /
-                    static_cast<double>((2 * n - 1) * (2 * n));
-            const double contrib = term / static_cast<double>(4 * n + 1);
+                    keel::as<double>((2 * n - 1) * (2 * n));
+            const double contrib = term / keel::as<double>(4 * n + 1);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16)
                 break;
@@ -1458,7 +1458,7 @@ double evalFresnelDouble(double x, bool isSine)
     }
     if (ax <= 12.0) {
         const double base = evalFresnelDouble(2.5, isSine);
-        const int panels = std::max(16, static_cast<int>(std::ceil((ax * ax - 6.25) * 4.0)));
+        const int panels = std::max(16, keel::as<int>(std::ceil((ax * ax - 6.25) * 4.0)));
         const double tail = gauss8Integrate(
             [isSine](double t) {
                 const double arg = 0.5 * kPiDouble * t * t;
@@ -1521,7 +1521,7 @@ bool evalDilogDouble(double x, double &out)
     double sum = 0.0;
     double xPow = x;
     for (int k = 1; k <= 60; ++k) {
-        const double kd = static_cast<double>(k);
+        const double kd = keel::as<double>(k);
         const double contrib = xPow / (kd * kd);
         sum += contrib;
         if (keel::abs(contrib) <= 1e-16 * keel::abs(sum))
@@ -1623,7 +1623,7 @@ bool evalBesselJDouble(double nu, double x, double &out)
     }
     double signFactor = 1.0;
     if (isIntNu && nu < 0.0) {
-        const long long nInt = static_cast<long long>(-nu);
+        const long long nInt = keel::as<long long>(-nu);
         if (nInt % 2 != 0)
             signFactor = -signFactor;
         nu = -nu;
@@ -1631,7 +1631,7 @@ bool evalBesselJDouble(double nu, double x, double &out)
     if (x < 0.0) {
         if (!isIntNu)
             return false;
-        const long long nInt = static_cast<long long>( keel::abs(nu) );
+        const long long nInt = keel::as<long long>( keel::abs(nu) );
         if (nInt % 2 != 0)
             signFactor = -signFactor;
         x = -x;
@@ -1644,18 +1644,18 @@ bool evalBesselJDouble(double nu, double x, double &out)
             double term = std::exp(nu * std::log(halfX) - std::lgamma(nu + 1.0));
             sum = term;
             for (int k = 1; k <= 160; ++k) {
-                term *= -halfX2 / (static_cast<double>(k) * (nu + static_cast<double>(k)));
+                term *= -halfX2 / (keel::as<double>(k) * (nu + keel::as<double>(k)));
                 sum += term;
                 if (keel::abs(term) <= keel::abs(sum) * 1e-16 && k > halfX)
                     break;
             }
         } else {
             for (int k = 0; k <= 160; ++k) {
-                const double gArg = nu + static_cast<double>(k) + 1.0;
+                const double gArg = nu + keel::as<double>(k) + 1.0;
                 const double gam = std::tgamma(gArg);
                 if (!std::isfinite(gam) || gam == 0.0)
                     continue;
-                double kFact = std::tgamma(static_cast<double>(k) + 1.0);
+                double kFact = std::tgamma(keel::as<double>(k) + 1.0);
                 double term = ((k % 2 == 0) ? 1.0 : -1.0) *
                               std::pow(halfX, 2.0 * k + nu) / (kFact * gam);
                 sum += term;
@@ -1672,8 +1672,8 @@ bool evalBesselJDouble(double nu, double x, double &out)
     double P = 1.0, Q = 0.0;
     double aTerm = 1.0;
     for (int m = 1; m <= 24; ++m) {
-        const double num = mu - static_cast<double>((2 * m - 1) * (2 * m - 1));
-        const double nextA = aTerm * num / (static_cast<double>(m) * 8.0 * x);
+        const double num = mu - keel::as<double>((2 * m - 1) * (2 * m - 1));
+        const double nextA = aTerm * num / (keel::as<double>(m) * 8.0 * x);
         if (m > 4 && keel::abs(nextA) > keel::abs(aTerm))
             break;
         aTerm = nextA;
@@ -1702,8 +1702,8 @@ bool evalBesselYDouble(double nu, double x, double &out)
         double P = 1.0, Q = 0.0;
         double aTerm = 1.0;
         for (int m = 1; m <= 24; ++m) {
-            const double num = mu - static_cast<double>((2 * m - 1) * (2 * m - 1));
-            const double nextA = aTerm * num / (static_cast<double>(m) * 8.0 * x);
+            const double num = mu - keel::as<double>((2 * m - 1) * (2 * m - 1));
+            const double nextA = aTerm * num / (keel::as<double>(m) * 8.0 * x);
             if (m > 4 && keel::abs(nextA) > keel::abs(aTerm))
                 break;
             aTerm = nextA;
@@ -1729,7 +1729,7 @@ bool evalBesselYDouble(double nu, double x, double &out)
         return std::isfinite(out);
     }
     double signFactor = 1.0;
-    int n = static_cast<int>(nu);
+    int n = keel::as<int>(nu);
     if (n < 0) {
         n = -n;
         if (n % 2 != 0)
@@ -1738,26 +1738,26 @@ bool evalBesselYDouble(double nu, double x, double &out)
     if (n > 30)
         return false;
     double jn = 0.0;
-    if (!evalBesselJDouble(static_cast<double>(n), x, jn))
+    if (!evalBesselJDouble(keel::as<double>(n), x, jn))
         return false;
     const double halfX = 0.5 * x;
     const double halfX2 = halfX * halfX;
     double poleSum = 0.0;
     for (int k = 0; k < n; ++k) {
-        const double numFact = std::tgamma(static_cast<double>(n - k));
-        const double denFact = std::tgamma(static_cast<double>(k + 1));
+        const double numFact = std::tgamma(keel::as<double>(n - k));
+        const double denFact = std::tgamma(keel::as<double>(k + 1));
         poleSum += (numFact / denFact) * std::pow(halfX, 2 * k - n);
     }
     double hN = 0.0;
     for (int j = 1; j <= n; ++j)
-        hN += 1.0 / static_cast<double>(j);
+        hN += 1.0 / keel::as<double>(j);
     double hK = 0.0;
-    double powTerm = std::pow(halfX, n) / std::tgamma(static_cast<double>(n + 1));
+    double powTerm = std::pow(halfX, n) / std::tgamma(keel::as<double>(n + 1));
     double regSum = (hK + hN) * powTerm;
     for (int k = 1; k <= 120; ++k) {
-        hK += 1.0 / static_cast<double>(k);
-        hN += 1.0 / static_cast<double>(n + k);
-        powTerm *= -halfX2 / (static_cast<double>(k) * static_cast<double>(n + k));
+        hK += 1.0 / keel::as<double>(k);
+        hN += 1.0 / keel::as<double>(n + k);
+        powTerm *= -halfX2 / (keel::as<double>(k) * keel::as<double>(n + k));
         const double contrib = (hK + hN) * powTerm;
         regSum += contrib;
         if (keel::abs(contrib) <= keel::abs(regSum) * 1e-16 && k > halfX)
@@ -1785,7 +1785,7 @@ bool evalBesselIDouble(double nu, double x, double &out)
     if (x < 0.0) {
         if (!isIntNu)
             return false;
-        const long long nInt = static_cast<long long>(keel::abs(nu));
+        const long long nInt = keel::as<long long>(keel::abs(nu));
         if (nInt % 2 != 0)
             signFactor = -1.0;
         x = -x;
@@ -1798,18 +1798,18 @@ bool evalBesselIDouble(double nu, double x, double &out)
             double term = std::exp(nu * std::log(halfX) - std::lgamma(nu + 1.0));
             sum = term;
             for (int k = 1; k <= 160; ++k) {
-                term *= halfX2 / (static_cast<double>(k) * (nu + static_cast<double>(k)));
+                term *= halfX2 / (keel::as<double>(k) * (nu + keel::as<double>(k)));
                 sum += term;
                 if (keel::abs(term) <= keel::abs(sum) * 1e-16 && k > halfX)
                     break;
             }
         } else {
             for (int k = 0; k <= 160; ++k) {
-                const double gArg = nu + static_cast<double>(k) + 1.0;
+                const double gArg = nu + keel::as<double>(k) + 1.0;
                 const double gam = std::tgamma(gArg);
                 if (!std::isfinite(gam) || gam == 0.0)
                     continue;
-                const double kFact = std::tgamma(static_cast<double>(k) + 1.0);
+                const double kFact = std::tgamma(keel::as<double>(k) + 1.0);
                 const double term = std::pow(halfX, 2.0 * k + nu) / (kFact * gam);
                 sum += term;
                 if (k > 10 && keel::abs(term) <= keel::abs(sum) * 1e-16 && k > halfX)
@@ -1822,8 +1822,8 @@ bool evalBesselIDouble(double nu, double x, double &out)
     const double mu = 4.0 * nu * nu;
     double sum = 1.0, term = 1.0;
     for (int k = 1; k <= 24; ++k) {
-        const double num = mu - static_cast<double>((2 * k - 1) * (2 * k - 1));
-        const double next = -term * num / (static_cast<double>(k) * 8.0 * x);
+        const double num = mu - keel::as<double>((2 * k - 1) * (2 * k - 1));
+        const double next = -term * num / (keel::as<double>(k) * 8.0 * x);
         if (k > 4 && keel::abs(next) > keel::abs(term))
             break;
         term = next;
@@ -1844,8 +1844,8 @@ bool evalBesselKDouble(double nu, double x, double &out)
         const double mu = 4.0 * nu * nu;
         double sum = 1.0, term = 1.0;
         for (int k = 1; k <= 24; ++k) {
-            const double num = mu - static_cast<double>((2 * k - 1) * (2 * k - 1));
-            const double next = term * num / (static_cast<double>(k) * 8.0 * x);
+            const double num = mu - keel::as<double>((2 * k - 1) * (2 * k - 1));
+            const double next = term * num / (keel::as<double>(k) * 8.0 * x);
             if (k > 4 && keel::abs(next) > keel::abs(term))
                 break;
             term = next;
@@ -1863,31 +1863,31 @@ bool evalBesselKDouble(double nu, double x, double &out)
         out = (0.5 * kPiDouble) * (iNeg - iPos) / std::sin(nu * kPiDouble);
         return std::isfinite(out);
     }
-    const int n = static_cast<int>(nu);
+    const int n = keel::as<int>(nu);
     if (n > 30)
         return false;
     double inVal = 0.0;
-    if (!evalBesselIDouble(static_cast<double>(n), x, inVal))
+    if (!evalBesselIDouble(keel::as<double>(n), x, inVal))
         return false;
     const double halfX = 0.5 * x;
     const double halfX2 = halfX * halfX;
     double poleSum = 0.0;
     for (int k = 0; k < n; ++k) {
         const double sgn = (k % 2 == 0) ? 1.0 : -1.0;
-        const double numFact = std::tgamma(static_cast<double>(n - k));
-        const double denFact = std::tgamma(static_cast<double>(k + 1));
+        const double numFact = std::tgamma(keel::as<double>(n - k));
+        const double denFact = std::tgamma(keel::as<double>(k + 1));
         poleSum += sgn * (numFact / denFact) * std::pow(halfX, 2 * k - n);
     }
     double hN = 0.0;
     for (int j = 1; j <= n; ++j)
-        hN += 1.0 / static_cast<double>(j);
+        hN += 1.0 / keel::as<double>(j);
     double hK = 0.0;
-    double powTerm = std::pow(halfX, n) / std::tgamma(static_cast<double>(n + 1));
+    double powTerm = std::pow(halfX, n) / std::tgamma(keel::as<double>(n + 1));
     double regSum = (hK + hN) * powTerm;
     for (int k = 1; k <= 120; ++k) {
-        hK += 1.0 / static_cast<double>(k);
-        hN += 1.0 / static_cast<double>(n + k);
-        powTerm *= halfX2 / (static_cast<double>(k) * static_cast<double>(n + k));
+        hK += 1.0 / keel::as<double>(k);
+        hN += 1.0 / keel::as<double>(n + k);
+        powTerm *= halfX2 / (keel::as<double>(k) * keel::as<double>(n + k));
         const double contrib = (hK + hN) * powTerm;
         regSum += contrib;
         if (keel::abs(contrib) <= keel::abs(regSum) * 1e-16 && k > halfX)
@@ -1912,12 +1912,12 @@ bool evalAiryDouble(keel::StringRef fn, double x, double &out)
         double f = 1.0, fp = 0.0, cTerm = 1.0;
         double g = x, gp = 1.0, dTerm = 1.0;
         for (int k = 1; k <= 60; ++k) {
-            cTerm *= x3 / static_cast<double>((3 * k - 1) * (3 * k));
+            cTerm *= x3 / keel::as<double>((3 * k - 1) * (3 * k));
             f += cTerm;
-            fp += static_cast<double>(3 * k) * (cTerm / x);
-            dTerm *= x3 / static_cast<double>((3 * k) * (3 * k + 1));
+            fp += keel::as<double>(3 * k) * (cTerm / x);
+            dTerm *= x3 / keel::as<double>((3 * k) * (3 * k + 1));
             g += dTerm * x;
-            gp += static_cast<double>(3 * k + 1) * dTerm;
+            gp += keel::as<double>(3 * k + 1) * dTerm;
             if (keel::abs(cTerm) <= 1e-16 && keel::abs(dTerm) <= 1e-16)
                 break;
         }
@@ -1998,7 +1998,7 @@ bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
 {
     if (!std::isfinite(nVal) || !std::isfinite(x) || std::floor(nVal) != nVal)
         return false;
-    int n = static_cast<int>(nVal);
+    int n = keel::as<int>(nVal);
     if (fn == "legendreP") {
         if (n < 0) n = -n - 1;
         if (n > 200) return false;
@@ -2331,7 +2331,7 @@ bool evalZetaDouble(double s, double &out)
         return true;
     }
     if (s < 0.0 && std::floor(s) == s) {
-        const keel::i64 m = static_cast<keel::i64>(-s);
+        const keel::i64 m = keel::as<keel::i64>(-s);
         if (m % 2 == 0) {
             out = 0.0;
             return true;
@@ -2358,8 +2358,8 @@ bool evalZetaDouble(double s, double &out)
     constexpr int N = 16;
     double sum = 0.0;
     for (int n = 1; n < N; ++n)
-        sum += std::pow(static_cast<double>(n), -s);
-    const double nD = static_cast<double>(N);
+        sum += std::pow(keel::as<double>(n), -s);
+    const double nD = keel::as<double>(N);
     const double nPowNegS = std::pow(nD, -s);
     sum += (nD * nPowNegS) / (s - 1.0) + 0.5 * nPowNegS;
 
@@ -2368,8 +2368,8 @@ bool evalZetaDouble(double s, double &out)
     double nFactor = nPowNegS / nD;
     for (int k = 1; k <= 8; ++k) {
         if (k > 1) {
-            poch *= (s + static_cast<double>(2 * k - 3)) *
-                    (s + static_cast<double>(2 * k - 2));
+            poch *= (s + keel::as<double>(2 * k - 3)) *
+                    (s + keel::as<double>(2 * k - 2));
             nFactor *= invN2;
         }
         const double contrib = kB2kOverFact[k - 1] * poch * nFactor;
@@ -2425,7 +2425,7 @@ bool evalPolylogDouble(double s, double z, double &out)
         return std::isfinite(out);
     }
     if (s <= 0.0 && std::floor(s) == s) {
-        const keel::i64 m = static_cast<keel::i64>(-s);
+        const keel::i64 m = keel::as<keel::i64>(-s);
         if (m == 0) {
             out = z / (1.0 - z);
             return std::isfinite(out);
@@ -2435,19 +2435,19 @@ bool evalPolylogDouble(double s, double z, double &out)
             eul[0] = 1.0;
             for (keel::i64 i = 2; i <= m; ++i) {
                 for (keel::i64 k = i - 1; k >= 1; --k) {
-                    eul[static_cast<keel::usize>(k)] =
-                        static_cast<double>(k + 1) *
-                            eul[static_cast<keel::usize>(k)] +
-                        static_cast<double>(i - k) *
-                            eul[static_cast<keel::usize>(k - 1)];
+                    eul[keel::as<keel::usize>(k)] =
+                        keel::as<double>(k + 1) *
+                            eul[keel::as<keel::usize>(k)] +
+                        keel::as<double>(i - k) *
+                            eul[keel::as<keel::usize>(k - 1)];
                 }
             }
             double num = 0.0;
             for (keel::i64 k = 0; k < m; ++k) {
-                num += eul[static_cast<keel::usize>(k)] *
-                       std::pow(z, static_cast<double>(m - k));
+                num += eul[keel::as<keel::usize>(k)] *
+                       std::pow(z, keel::as<double>(m - k));
             }
-            out = num / std::pow(1.0 - z, static_cast<double>(m + 1));
+            out = num / std::pow(1.0 - z, keel::as<double>(m + 1));
             return std::isfinite(out);
         }
     }
@@ -2455,7 +2455,7 @@ bool evalPolylogDouble(double s, double z, double &out)
         double sum = 0.0;
         double zPow = z;
         for (int k = 1; k <= 160; ++k) {
-            const double contrib = zPow * std::pow(static_cast<double>(k), -s);
+            const double contrib = zPow * std::pow(keel::as<double>(k), -s);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16 * keel::abs(sum))
                 break;
@@ -2468,7 +2468,7 @@ bool evalPolylogDouble(double s, double z, double &out)
         double sum = 0.0;
         double zPow = z;
         for (int k = 1; k <= 800; ++k) {
-            const double contrib = zPow * std::pow(static_cast<double>(k), -s);
+            const double contrib = zPow * std::pow(keel::as<double>(k), -s);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16 * keel::abs(sum))
                 break;
@@ -2485,7 +2485,7 @@ bool evalBernoulliEuler2ArgDouble(keel::StringRef fn, double nVal, double x,
 {
     if (!std::isfinite(nVal) || !std::isfinite(x) || std::floor(nVal) != nVal)
         return false;
-    const keel::i64 n = static_cast<keel::i64>(nVal);
+    const keel::i64 n = keel::as<keel::i64>(nVal);
     if (n < 0 || n > 40)
         return false;
     if (fn == "bernoulliB") {
@@ -2493,14 +2493,14 @@ bool evalBernoulliEuler2ArgDouble(keel::StringRef fn, double nVal, double x,
         double binom = 1.0;
         for (keel::i64 k = 0; k <= n; ++k) {
             if (k > 0)
-                binom = (binom * static_cast<double>(n - k + 1)) /
-                        static_cast<double>(k);
+                binom = (binom * keel::as<double>(n - k + 1)) /
+                        keel::as<double>(k);
             Rational bk;
             if (!bernoulliExact(k, bk))
                 return false;
             if (!bk.isZero()) {
                 sum += binom * bk.toDouble() *
-                       std::pow(x, static_cast<double>(n - k));
+                       std::pow(x, keel::as<double>(n - k));
             }
         }
         out = sum;
@@ -2512,15 +2512,15 @@ bool evalBernoulliEuler2ArgDouble(keel::StringRef fn, double nVal, double x,
         double binom = 1.0;
         for (keel::i64 k = 0; k <= n; ++k) {
             if (k > 0)
-                binom = (binom * static_cast<double>(n - k + 1)) /
-                        static_cast<double>(k);
+                binom = (binom * keel::as<double>(n - k + 1)) /
+                        keel::as<double>(k);
             Rational ek;
             if (!eulerExact(k, ek))
                 return false;
             if (!ek.isZero()) {
                 sum += binom * ek.toDouble() *
-                       std::pow(2.0, -static_cast<double>(k)) *
-                       std::pow(xShift, static_cast<double>(n - k));
+                       std::pow(2.0, -keel::as<double>(k)) *
+                       std::pow(xShift, keel::as<double>(n - k));
             }
         }
         out = sum;
@@ -2559,10 +2559,10 @@ bool evalPochhammerDouble(double a, double n, double &out)
     if (!std::isfinite(a) || !std::isfinite(n))
         return false;
     if (std::floor(n) == n && n >= 0.0 && n <= 60.0) {
-        const int k = static_cast<int>(n);
+        const int k = keel::as<int>(n);
         double prod = 1.0;
         for (int j = 0; j < k; ++j)
-            prod *= (a + static_cast<double>(j));
+            prod *= (a + keel::as<double>(j));
         out = prod;
         return std::isfinite(out);
     }
@@ -2594,7 +2594,7 @@ bool evalIncompleteGammaDouble(keel::StringRef fn, double s, double x,
         double sum = 1.0 / s;
         double term = sum;
         for (int k = 1; k <= 300; ++k) {
-            term *= x / (s + static_cast<double>(k));
+            term *= x / (s + keel::as<double>(k));
             sum += term;
             if (keel::abs(term) <= 1e-16 * keel::abs(sum))
                 break;
@@ -2609,7 +2609,7 @@ bool evalIncompleteGammaDouble(keel::StringRef fn, double s, double x,
         double d = 1.0 / b;
         double h = d;
         for (int i = 1; i <= 300; ++i) {
-            const double an = -static_cast<double>(i) * (static_cast<double>(i) - s);
+            const double an = -keel::as<double>(i) * (keel::as<double>(i) - s);
             b += 2.0;
             d = an * d + b;
             if (keel::abs(d) < tiny)
@@ -2638,7 +2638,7 @@ bool evalHypergeom0F1Double(double b, double z, double &out)
         return false;
     double sum = 1.0, term = 1.0;
     for (int k = 1; k <= 300; ++k) {
-        const double den = (b + static_cast<double>(k - 1)) * static_cast<double>(k);
+        const double den = (b + keel::as<double>(k - 1)) * keel::as<double>(k);
         if (den == 0.0)
             return false;
         term *= z / den;
@@ -2671,11 +2671,11 @@ bool evalHypergeom1F1Double(double a, double b, double z, double &out)
         out = std::exp(z) * kVal;
         return std::isfinite(out);
     }
-    const int maxSteps = aNegInt ? static_cast<int>(-a) : 400;
+    const int maxSteps = aNegInt ? keel::as<int>(-a) : 400;
     double sum = 1.0, term = 1.0;
     for (int k = 1; k <= maxSteps; ++k) {
-        const double num = a + static_cast<double>(k - 1);
-        const double den = (b + static_cast<double>(k - 1)) * static_cast<double>(k);
+        const double num = a + keel::as<double>(k - 1);
+        const double den = (b + keel::as<double>(k - 1)) * keel::as<double>(k);
         if (den == 0.0)
             return false;
         term *= (num * z) / den;
@@ -2702,11 +2702,11 @@ bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
     const bool terminates = aNegInt || bNegInt;
     int termCount = 500;
     if (aNegInt && bNegInt)
-        termCount = static_cast<int>(std::min(-a, -b));
+        termCount = keel::as<int>(std::min(-a, -b));
     else if (aNegInt)
-        termCount = static_cast<int>(-a);
+        termCount = keel::as<int>(-a);
     else if (bNegInt)
-        termCount = static_cast<int>(-b);
+        termCount = keel::as<int>(-b);
 
     if (!terminates) {
         if (c <= 0.0 && std::floor(c) == c)
@@ -2735,9 +2735,9 @@ bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
     double sum = 1.0, term = 1.0;
     for (int k = 1; k <= termCount; ++k) {
         const double num =
-            (a + static_cast<double>(k - 1)) * (b + static_cast<double>(k - 1));
+            (a + keel::as<double>(k - 1)) * (b + keel::as<double>(k - 1));
         const double den =
-            (c + static_cast<double>(k - 1)) * static_cast<double>(k);
+            (c + keel::as<double>(k - 1)) * keel::as<double>(k);
         if (den == 0.0)
             return false;
         term *= (num * z) / den;
@@ -2801,10 +2801,10 @@ bool evalDoubleRec(
         UPoly p = UPoly(poly.clone()).squarefreePart();
         p.makeMonic();
         const keel::Array<RootInterval> ivs = isolateRealRoots(p);
-        if (idx < 0 || idx >= static_cast<int>(ivs.size()))
+        if (idx < 0 || idx >= keel::as<int>(ivs.size()))
             return false;
         const RootInterval iv =
-            refineRoot(p, ivs[static_cast<keel::usize>(idx)],
+            refineRoot(p, ivs[keel::as<keel::usize>(idx)],
                        Rational(keel::i64{1}, BigInt(1) << 56));
         const Rational mid =
             (iv.lo + iv.hi) * Rational(keel::i64{1}, BigInt(2));
@@ -2824,7 +2824,7 @@ bool evalDoubleRec(
             if (er.den() == BigInt(1) && er.num().fitsInt64(p)) {
                 if (b == 0.0 && p <= 0)
                     return false;
-                res = std::pow(b, static_cast<double>(p));
+                res = std::pow(b, keel::as<double>(p));
                 if (!std::isfinite(res))
                     return false;
                 break;
@@ -2914,8 +2914,8 @@ bool evalDoubleRec(
                 if (std::floor(a0) != a0 || std::floor(a1) != a1 ||
                     a0 < 0.0 || a0 > 50.0)
                     return false;
-                const auto nInt = static_cast<keel::i64>(a0);
-                const auto kInt = static_cast<keel::i64>(a1);
+                const auto nInt = keel::as<keel::i64>(a0);
+                const auto kInt = keel::as<keel::i64>(a1);
                 if (kInt < 0 || kInt > nInt) {
                     res = 0.0;
                 } else if (nInt == 0 && kInt == 0) {
@@ -2929,7 +2929,7 @@ bool evalDoubleRec(
                     for (keel::i64 i = 1; i <= nInt; ++i) {
                         const keel::i64 jMax = std::min(i, kInt);
                         for (keel::i64 j = jMax; j >= 1; --j) {
-                            const auto ju = static_cast<keel::usize>(j);
+                            const auto ju = keel::as<keel::usize>(j);
                             if (fn == "stirlingS1") {
                                 row[ju] =
                                     row[ju - 1] - BigInt(i - 1) * row[ju];
@@ -2939,7 +2939,7 @@ bool evalDoubleRec(
                         }
                         row[0] = BigInt(0);
                     }
-                    res = Rational(row[static_cast<keel::usize>(kInt)],
+                    res = Rational(row[keel::as<keel::usize>(kInt)],
                                    BigInt(1))
                               .toDouble();
                 }
@@ -3082,7 +3082,7 @@ bool evalDoubleRec(
         } else if (fn == "bernoulliB" || fn == "eulerE") {
             if (std::floor(a) != a) return false;
             Rational rVal;
-            const keel::i64 nInt = static_cast<keel::i64>(a);
+            const keel::i64 nInt = keel::as<keel::i64>(a);
             if (!(fn == "bernoulliB" ? bernoulliExact(nInt, rVal)
                                      : eulerExact(nInt, rVal)))
                 return false;
@@ -3260,7 +3260,7 @@ Expr Ctx::expand(Expr e)
                         Rational ek;
                         if (eulerExact(k, ek) && !ek.isZero()) {
                             const BigInt twoPow = BigInt::powUInt(
-                                BigInt(2), static_cast<keel::usize>(k));
+                                BigInt(2), keel::as<keel::usize>(k));
                             const Rational coef =
                                 Rational(binom, twoPow) * ek;
                             const Expr xPow = pow(xShift, number(n - k));
@@ -3325,8 +3325,8 @@ Expr Ctx::expand(Expr e)
         }
         if (args.size() == 2 && fn == "beta") {
             for (int side = 0; side < 2; ++side) {
-                const Expr nSide = args[static_cast<keel::usize>(side)];
-                const Expr xSide = args[static_cast<keel::usize>(1 - side)];
+                const Expr nSide = args[keel::as<keel::usize>(side)];
+                const Expr xSide = args[keel::as<keel::usize>(1 - side)];
                 if (kind(nSide) == NodeKind::Number &&
                     numberValue(nSide).den() == BigInt(1)) {
                     keel::i64 nInt = 0;

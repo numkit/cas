@@ -134,7 +134,7 @@ Rational doubleToRational(double v)
         return Rational(keel::i64{0});
     const double fl = std::floor(v);
     if (fl == v && std::fabs(v) <= 9.0e15)
-        return Rational(static_cast<keel::i64>(v));
+        return Rational(keel::as<keel::i64>(v));
 
     const int sign = (v < 0.0) ? -1 : 1;
     const double av = std::fabs(v);
@@ -145,7 +145,7 @@ Rational doubleToRational(double v)
         const double aDbl = std::floor(x);
         if (aDbl > 1.0e12)
             break;
-        const keel::i64 a = static_cast<keel::i64>(aDbl);
+        const keel::i64 a = keel::as<keel::i64>(aDbl);
         const keel::i64 p2 = a * p1 + p0;
         const keel::i64 q2 = a * q1 + q0;
         if (q2 <= 0 || q2 > 1000000000LL)
@@ -154,7 +154,7 @@ Rational doubleToRational(double v)
         q0 = q1;
         p1 = p2;
         q1 = q2;
-        const double approx = static_cast<double>(p1) / static_cast<double>(q1);
+        const double approx = keel::as<double>(p1) / keel::as<double>(q1);
         if (std::fabs(approx - av) <= 1e-13 * std::max(1.0, av))
             break;
         const double rem = x - aDbl;
@@ -261,7 +261,7 @@ int symvarDistance(keel::StringRef a)
 {
     if (a.empty())
         return 1000;
-    const int d = static_cast<int>(static_cast<unsigned char>(a[0])) - static_cast<int>('x');
+    const int d = keel::as<int>(keel::as<unsigned char>(a[0])) - keel::as<int>('x');
     if (d == 0)
         return 0;
     return (d > 0) ? (2 * d - 1) : (-2 * d);
@@ -830,18 +830,18 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
             }
             keel::usize rows = 1, cols = 1;
             if (a1.numel() == 1) {
-                int n = static_cast<int>(a1.toScalar());
+                int n = keel::as<int>(a1.toScalar());
                 if (n < 0)
                     casFail("nk:sym:negativeSize", "sym: dimensions must be non-negative");
-                rows = static_cast<keel::usize>(n);
-                cols = static_cast<keel::usize>(n);
+                rows = keel::as<keel::usize>(n);
+                cols = keel::as<keel::usize>(n);
             } else if (a1.numel() == 2) {
-                int r = static_cast<int>(a1.elemAt(0).toScalar());
-                int col = static_cast<int>(a1.elemAt(1).toScalar());
+                int r = keel::as<int>(a1.elemAt(0).toScalar());
+                int col = keel::as<int>(a1.elemAt(1).toScalar());
                 if (r < 0 || col < 0)
                     casFail("nk:sym:negativeSize", "sym: dimensions must be non-negative");
-                rows = static_cast<keel::usize>(r);
-                cols = static_cast<keel::usize>(col);
+                rows = keel::as<keel::usize>(r);
+                cols = keel::as<keel::usize>(col);
             } else {
                 casFail("nk:sym:invalidSizeVec", "sym: dimension vector must have 1 or 2 elements");
             }
@@ -1141,7 +1141,7 @@ void symFactor(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
         }
         for (const auto &it : res.factors) {
             facList.push_back(it.factor);
-            mults.push_back(static_cast<double>(it.multiplicity));
+            mults.push_back(keel::as<double>(it.multiplicity));
         }
         outs[0] = fromSymVector(ctxPtr, facList, /*column=*/false, mr);
         Value mVal = Value::matrix(1, mults.size(), ValueType::DOUBLE, mr);
@@ -1257,7 +1257,7 @@ numkit::Value symSymvar(keel::ArrayRef<numkit::Value> args,
     collectSymbolsFromValue(args[0], c, syms);
     keel::Array<keel::String> sorted = std::move(syms.items);
     if (args.size() == 2) {
-        const keel::usize n = static_cast<keel::usize>(args[1].toScalar());
+        const keel::usize n = keel::as<keel::usize>(args[1].toScalar());
         std::sort(sorted.begin(), sorted.end(), [](const keel::String &a, const keel::String &b) {
             const int da = symvarDistance(a);
             const int db = symvarDistance(b);
@@ -1289,7 +1289,7 @@ numkit::Value symPoly2sym(keel::ArrayRef<numkit::Value> args,
     terms.reserve(n);
     for (keel::usize i = 0; i < n; ++i) {
         const keel::usize deg = n - 1 - i;
-        Expr mon = (deg == 0) ? c.one() : c.pow(var, c.number(static_cast<keel::i64>(deg)));
+        Expr mon = (deg == 0) ? c.one() : c.pow(var, c.number(keel::as<keel::i64>(deg)));
         terms.push_back(c.mul({cf[i], mon}));
     }
     return fromSymExpr(ctxPtr, c.add(terms), mr);
@@ -1334,20 +1334,20 @@ numkit::Value symDiff(keel::ArrayRef<numkit::Value> args,
     int order = 1;
     if (args.size() == 2) {
         if (args[1].isNumeric() && args[1].isScalar()) {
-            order = static_cast<int>(args[1].toScalar());
+            order = keel::as<int>(args[1].toScalar());
         } else {
             var = toSymExpr(args[1], c, "diff");
         }
     } else if (args.size() == 3) {
         if (args[1].isNumeric() && args[1].isScalar()) {
-            order = static_cast<int>(args[1].toScalar());
+            order = keel::as<int>(args[1].toScalar());
             var = toSymExpr(args[2], c, "diff");
         } else {
             var = toSymExpr(args[1], c, "diff");
             if (!args[2].isNumeric() || !args[2].isScalar()) {
                 casFail("nk:diff:invalidOrder", "diff: differentiation order must be a non-negative integer");
             }
-            order = static_cast<int>(args[2].toScalar());
+            order = keel::as<int>(args[2].toScalar());
         }
     }
     if (order < 0) {
@@ -1507,21 +1507,21 @@ numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
     }
     if (posEnd == 2) {
         if (args[1].isNumeric() && args[1].isScalar()) {
-            order = static_cast<int>(args[1].toScalar());
+            order = keel::as<int>(args[1].toScalar());
         } else {
             var = toSymExpr(args[1], c, "taylor");
         }
     } else if (posEnd == 3) {
         var = toSymExpr(args[1], c, "taylor");
         if (args[2].isNumeric() && args[2].isScalar()) {
-            order = static_cast<int>(args[2].toScalar());
+            order = keel::as<int>(args[2].toScalar());
         } else {
             x0 = toSymExpr(args[2], c, "taylor");
         }
     } else if (posEnd >= 4) {
         var = toSymExpr(args[1], c, "taylor");
         x0 = toSymExpr(args[2], c, "taylor");
-        order = static_cast<int>(args[3].toScalar());
+        order = keel::as<int>(args[3].toScalar());
     }
 
     for (keel::usize i = posEnd; i + 1 < args.size(); i += 2) {
@@ -1529,7 +1529,7 @@ numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
         if (key.as_ref() == "expansionpoint") {
             x0 = toSymExpr(args[i + 1], c, "taylor");
         } else if (key.as_ref() == "order") {
-            int ordArg = static_cast<int>(args[i + 1].toScalar());
+            int ordArg = keel::as<int>(args[i + 1].toScalar());
             if (ordArg <= 0)
                 casFail("nk:taylor:invalidOrder", "taylor: 'Order' must be a positive integer");
             order = ordArg - 1;
@@ -1556,7 +1556,7 @@ numkit::Value symLaurent(keel::ArrayRef<numkit::Value> args,
     Expr f = toSymExpr(args[0], c, "laurent");
     Expr var = (args.size() >= 2) ? toSymExpr(args[1], c, "laurent") : defaultSymVar(c, args[0]);
     Expr x0 = (args.size() >= 3) ? toSymExpr(args[2], c, "laurent") : c.zero();
-    int order = (args.size() >= 4) ? static_cast<int>(args[3].toScalar()) : 5;
+    int order = (args.size() >= 4) ? keel::as<int>(args[3].toScalar()) : 5;
     Expr out = laurent(c, f, var, x0, order);
     if (out.isNull()) {
         casFail("nk:laurent:failed", "laurent: series expansion failed");
@@ -1577,13 +1577,13 @@ numkit::Value symMtaylor(keel::ArrayRef<numkit::Value> args,
     int order = 4;
     if (args.size() == 3) {
         if (args[2].isNumeric() && args[2].isScalar() && vars.size() > 1) {
-            order = static_cast<int>(args[2].toScalar());
+            order = keel::as<int>(args[2].toScalar());
         } else {
             x0s = toSymVector(args[2], c, "mtaylor");
         }
     } else if (args.size() >= 4) {
         x0s = toSymVector(args[2], c, "mtaylor");
-        order = static_cast<int>(args[3].toScalar());
+        order = keel::as<int>(args[3].toScalar());
     }
     Expr out = mtaylor(c, f, vars, x0s, order);
     if (out.isNull()) {
@@ -1610,15 +1610,15 @@ void symPade(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
             double md = 3.0, nd = 3.0;
             c.evalDouble(ord[0], {}, md);
             c.evalDouble(ord[1], {}, nd);
-            m = static_cast<int>(md);
-            n = static_cast<int>(nd);
+            m = keel::as<int>(md);
+            n = keel::as<int>(nd);
         } else {
-            m = static_cast<int>(args[3].toScalar());
+            m = keel::as<int>(args[3].toScalar());
             n = m;
         }
     } else if (args.size() >= 5) {
-        m = static_cast<int>(args[3].toScalar());
-        n = static_cast<int>(args[4].toScalar());
+        m = keel::as<int>(args[3].toScalar());
+        n = keel::as<int>(args[4].toScalar());
     }
     PadeResult res = pade(c, f, var, x0, m, n);
     if (!res.proved()) {
@@ -1690,7 +1690,7 @@ numkit::Value symFiniteDiff(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "finitediff");
     Expr var = (args.size() >= 2) ? toSymExpr(args[1], c, "finitediff") : defaultSymVar(c, args[0]);
-    int order = (args.size() >= 3) ? static_cast<int>(args[2].toScalar()) : 1;
+    int order = (args.size() >= 3) ? keel::as<int>(args[2].toScalar()) : 1;
     Expr step = (args.size() >= 4) ? toSymExpr(args[3], c, "finitediff") : c.one();
     Expr out = finiteDiff(c, f, var, order, step);
     if (out.isNull()) {
@@ -1710,7 +1710,7 @@ numkit::Value symEulerMaclaurin(keel::ArrayRef<numkit::Value> args,
     Expr var = toSymExpr(args[1], c, "eulermaclaurin");
     Expr a = toSymExpr(args[2], c, "eulermaclaurin");
     Expr b = toSymExpr(args[3], c, "eulermaclaurin");
-    int order = (args.size() >= 5) ? static_cast<int>(args[4].toScalar()) : 4;
+    int order = (args.size() >= 5) ? keel::as<int>(args[4].toScalar()) : 4;
     EulerMaclaurinResult res = eulerMaclaurin(c, f, var, a, b, order);
     if (res.approximation.isNull()) {
         casFail("nk:eulermaclaurin:failed", "eulermaclaurin: could not construct Euler-Maclaurin expansion");
@@ -2190,7 +2190,7 @@ numkit::Value symPdsolve(keel::ArrayRef<numkit::Value> args,
                 if (bStr.as_ref() == "neumann")
                     bc = PdeBoundaryKind::Neumann;
             }
-            int maxModes = (args.size() >= 8) ? static_cast<int>(args[7].toScalar()) : 5;
+            int maxModes = (args.size() >= 8) ? keel::as<int>(args[7].toScalar()) : 5;
             PdeResult res = pdsolveHeat1D(c, alpha, L, initU, x, t, bc, maxModes);
             if (!res.proved())
                 casFail("nk:pdsolve:failed", keel::format("pdsolve: heat PDE solve failed ({})", res.reason));
@@ -2409,7 +2409,7 @@ numkit::Value symRank(const numkit::Value &A,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix M = toSymMatrix(A, c, "rank");
-    return Value::scalar(static_cast<double>(rank(c, M)), mr);
+    return Value::scalar(keel::as<double>(rank(c, M)), mr);
 }
 
 void symRref(const numkit::Value &A, keel::usize nargout,
@@ -2428,7 +2428,7 @@ void symRref(const numkit::Value &A, keel::usize nargout,
         Value jb = Value::matrix(1, pivots.size(), ValueType::DOUBLE, mr);
         double *jp = jb.doubleDataMut();
         for (keel::usize i = 0; i < pivots.size(); ++i)
-            jp[i] = static_cast<double>(pivots[i] + 1);
+            jp[i] = keel::as<double>(pivots[i] + 1);
         outs[1] = std::move(jb);
     }
 }
@@ -3244,7 +3244,7 @@ numkit::BuiltinClass makeSymBuiltinClass()
             casFail("nk:mpower:nonIntegerMatrixPower",
                         "mpower: matrix exponent must be an integer");
         }
-        int n = static_cast<int>(expI64);
+        int n = keel::as<int>(expI64);
         SymMatrix base = A;
         if (n < 0) {
             base = inv(c, A);

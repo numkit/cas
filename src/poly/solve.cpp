@@ -34,7 +34,7 @@ keel::Array<RealRootSolution> solveRealRoots(const UPoly &p)
     for (keel::usize k = 0; k < ivs.size(); ++k) {
         RealRootSolution s;
         s.carrier = sq;
-        s.realIndex = static_cast<int>(k);
+        s.realIndex = keel::as<int>(k);
         s.interval = ivs[k];
         // Matching rules against boundary ambiguity: a rational root
         // sitting ON a bracket boundary belongs to ITS OWN exact

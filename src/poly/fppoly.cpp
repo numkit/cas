@@ -160,7 +160,7 @@ keel::u64 FpPoly::invModP(keel::u64 a, keel::u64 p)
 {
     assert(a % p != 0);
     keel::i64 t = 0, newt = 1;
-    keel::i64 r = static_cast<keel::i64>(p), newr = static_cast<keel::i64>(a % p);
+    keel::i64 r = keel::as<keel::i64>(p), newr = keel::as<keel::i64>(a % p);
     while (newr != 0) {
         const keel::i64 q = r / newr;
         keel::i64 tmp = t - q * newt;
@@ -173,8 +173,8 @@ keel::u64 FpPoly::invModP(keel::u64 a, keel::u64 p)
     assert(r == 1 && "inverse of a non-invertible element");
     keel::i64 result = t;
     if (result < 0)
-        result += static_cast<keel::i64>(p);
-    return static_cast<keel::u64>(result);
+        result += keel::as<keel::i64>(p);
+    return keel::as<keel::u64>(result);
 }
 
 void FpPoly::divMod(const FpPoly &a, const FpPoly &b, FpPoly &q, FpPoly &r)
@@ -188,15 +188,15 @@ void FpPoly::divMod(const FpPoly &a, const FpPoly &b, FpPoly &q, FpPoly &r)
     q.p_ = p;
     if (a.isZero() || a.deg() < b.deg())
         return;
-    q.c_.assign(static_cast<keel::usize>(a.deg() - b.deg()) + 1, 0);
+    q.c_.assign(keel::as<keel::usize>(a.deg() - b.deg()) + 1, 0);
     const keel::u64 blcInv = invModP(b.lc(), p);
     while (!r.isZero() && r.deg() >= b.deg()) {
         const int shift = r.deg() - b.deg();
         const keel::u64 f = mulMod(r.lc(), blcInv, p);
-        q.c_[static_cast<keel::usize>(shift)] = addMod(q.c_[static_cast<keel::usize>(shift)], f, p);
+        q.c_[keel::as<keel::usize>(shift)] = addMod(q.c_[keel::as<keel::usize>(shift)], f, p);
         for (keel::usize j = 0; j < b.c_.size(); ++j)
-            r.c_[j + static_cast<keel::usize>(shift)] =
-                subMod(r.c_[j + static_cast<keel::usize>(shift)], mulMod(f, b.c_[j], p), p);
+            r.c_[j + keel::as<keel::usize>(shift)] =
+                subMod(r.c_[j + keel::as<keel::usize>(shift)], mulMod(f, b.c_[j], p), p);
         r.trim();
     }
 }
@@ -314,7 +314,7 @@ void edf(const FpPoly &g, int d, keel::Array<FpPoly> &out, keel::u64 &rng)
     const keel::u64 p = g.p();
     while (true) {
         // random poly of degree < deg(g), not constant
-        const int degA = 1 + static_cast<int>(fpNext(rng) % static_cast<keel::u64>(g.deg()));
+        const int degA = 1 + keel::as<int>(fpNext(rng) % keel::as<keel::u64>(g.deg()));
         keel::Array<keel::u64> cs;
         for (int i = 0; i <= degA; ++i)
             cs.push_back(fpNext(rng) % p);
@@ -322,7 +322,7 @@ void edf(const FpPoly &g, int d, keel::Array<FpPoly> &out, keel::u64 &rng)
         if (a.isZero() || a.deg() == 0)
             continue;
         // exponent (p^d - 1)/2
-        BigInt e = BigInt::powUInt(BigInt(p), static_cast<keel::u64>(d));
+        BigInt e = BigInt::powUInt(BigInt(p), keel::as<keel::u64>(d));
         e = (e - BigInt(1)) >> 1;
         const FpPoly b = a.powMod(e, g);
         const FpPoly h = FpPoly::gcd(b - FpPoly::constant(p, 1), g);
@@ -405,7 +405,7 @@ bool FpPoly::isIrreducible() const
     if (m.lc() != 1)
         m = m * invModP(m.lc(), p_);
     // x^(p^d) == x (mod g)?
-    const BigInt pd = BigInt::powUInt(BigInt(p_), static_cast<keel::u64>(deg()));
+    const BigInt pd = BigInt::powUInt(BigInt(p_), keel::as<keel::u64>(deg()));
     const FpPoly h = FpPoly::x(p_).powMod(pd, m);
     if ((h - FpPoly::x(p_)) % m != FpPoly())
         return false;
@@ -416,13 +416,13 @@ bool FpPoly::isIrreducible() const
             continue;
         while (dd % q == 0)
             dd /= q;
-        const BigInt pk = BigInt::powUInt(BigInt(p_), static_cast<keel::u64>(deg() / q));
+        const BigInt pk = BigInt::powUInt(BigInt(p_), keel::as<keel::u64>(deg() / q));
         const FpPoly hq = FpPoly::x(p_).powMod(pk, m);
         if (!(FpPoly::gcd(hq - FpPoly::x(p_), m)).isOne())
             return false;
     }
     if (dd > 1) {
-        const BigInt pk = BigInt::powUInt(BigInt(p_), static_cast<keel::u64>(deg() / dd));
+        const BigInt pk = BigInt::powUInt(BigInt(p_), keel::as<keel::u64>(deg() / dd));
         const FpPoly hq = FpPoly::x(p_).powMod(pk, m);
         if (!(FpPoly::gcd(hq - FpPoly::x(p_), m)).isOne())
             return false;

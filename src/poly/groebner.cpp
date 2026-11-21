@@ -405,7 +405,7 @@ Expr mpolyToExpr(Ctx &c, const MPoly &p, keel::ArrayRef<Expr> vars)
                 mulFacs.push_back(vars[i]);
             } else if (t.exp[i] > 1) {
                 mulFacs.push_back(
-                    c.pow(vars[i], c.number(static_cast<keel::i64>(t.exp[i]))));
+                    c.pow(vars[i], c.number(keel::as<keel::i64>(t.exp[i]))));
             }
         }
         if (mulFacs.empty())
@@ -493,7 +493,7 @@ GroebnerResult groebnerBasis(Ctx &c, keel::ArrayRef<Expr> polys,
             pairs.begin(), pairs.end(),
             [](const Pair &a, const Pair &b) { return a.lcmDeg < b.lcmDeg; });
         const Pair cur = *bestIt;
-        pairs.remove_at(static_cast<keel::usize>(bestIt - pairs.begin()));
+        pairs.remove_at(keel::as<keel::usize>(bestIt - pairs.begin()));
 
         const MPoly &gi = G[cur.i];
         const MPoly &gj = G[cur.j];
@@ -765,7 +765,7 @@ MPoly mpolyDiffInVar(const MPoly &p, keel::usize varIdx, MonomialOrder order)
             keel::Array<int> nExp = t.exp.clone();
             nExp[varIdx] = e - 1;
             out.terms.push_back(
-                MTerm{t.coeff * Rational(static_cast<keel::i64>(e)),
+                MTerm{t.coeff * Rational(keel::as<keel::i64>(e)),
                       std::move(nExp)});
         }
     }
@@ -782,7 +782,7 @@ keel::Array<MPoly> mpolyDecomposeInVar(const MPoly &p, keel::usize varIdx,
         const int e = t.exp[varIdx];
         keel::Array<int> cExp = t.exp.clone();
         cExp[varIdx] = 0;
-        coeffs[static_cast<keel::usize>(e)].terms.push_back(
+        coeffs[keel::as<keel::usize>(e)].terms.push_back(
             MTerm{t.coeff, std::move(cExp)});
     }
     for (MPoly &cPoly : coeffs)
@@ -798,7 +798,7 @@ MPoly mpolyComposeInVar(const keel::Array<MPoly> &coeffs, keel::usize varIdx,
     for (keel::usize d = 0; d < coeffs.size(); ++d) {
         for (const MTerm &t : coeffs[d].terms) {
             keel::Array<int> nExp = t.exp.clone();
-            nExp[varIdx] = static_cast<int>(d);
+            nExp[varIdx] = keel::as<int>(d);
             out.terms.push_back(MTerm{t.coeff, std::move(nExp)});
         }
     }
@@ -814,7 +814,7 @@ UPoly mpolyToUPolyInVar(const MPoly &p, keel::usize varIdx)
     keel::Array<Rational> coeffs(d + 1,
                                  Rational(keel::i64{0}));
     for (const MTerm &t : p.terms) {
-        coeffs[static_cast<keel::usize>(t.exp[varIdx])] += t.coeff;
+        coeffs[keel::as<keel::usize>(t.exp[varIdx])] += t.coeff;
     }
     return UPoly(std::move(coeffs));
 }
@@ -1003,7 +1003,7 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
         }
         const keel::Array<MPoly> qCoeffs =
             mpolyDecomposeInVar(Q, mainVar, kVars, order);
-        const int dQ = static_cast<int>(qCoeffs.size()) - 1;
+        const int dQ = keel::as<int>(qCoeffs.size()) - 1;
         const MPoly &lcQ = qCoeffs.back();
 
         MPoly R = P;
@@ -1012,7 +1012,7 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
                ++subSteps <= 64) {
             const keel::Array<MPoly> rCoeffs =
                 mpolyDecomposeInVar(R, mainVar, kVars, order);
-            const int dR = static_cast<int>(rCoeffs.size()) - 1;
+            const int dR = keel::as<int>(rCoeffs.size()) - 1;
             const MPoly &lcR = rCoeffs.back();
 
             // Cancel common factor between lcR and lcQ before cross-multiplying
@@ -1060,9 +1060,9 @@ MPoly mpolyEvalVarAtRational(const MPoly &p, keel::usize varIdx,
             if (val.isZero())
                 continue;
             const BigInt numP =
-                BigInt::powUInt(val.num(), static_cast<keel::u64>(e));
+                BigInt::powUInt(val.num(), keel::as<keel::u64>(e));
             const BigInt denP =
-                BigInt::powUInt(val.den(), static_cast<keel::u64>(e));
+                BigInt::powUInt(val.den(), keel::as<keel::u64>(e));
             c = c * Rational(numP, denP);
         }
         keel::Array<int> nExp = t.exp.clone();
@@ -1185,23 +1185,23 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
 
     const keel::Array<MPoly> sCoeffs =
         mpolyDecomposeInVar(curS, mainVar, kVars, order);
-    const int dX = static_cast<int>(sCoeffs.size()) - 1;
+    const int dX = keel::as<int>(sCoeffs.size()) - 1;
     const MPoly L = sCoeffs.back();
 
     keel::Array<MPoly> lPows(dX);
     lPows[0] = mpolyConst(Rational(keel::i64{1}), kVars);
     for (int i = 1; i < dX; ++i) {
-        lPows[static_cast<keel::usize>(i)] =
-            mpolyMul(lPows[static_cast<keel::usize>(i - 1)], L, order);
+        lPows[keel::as<keel::usize>(i)] =
+            mpolyMul(lPows[keel::as<keel::usize>(i - 1)], L, order);
     }
 
     keel::Array<MPoly> monicCoeffs(dX + 1);
-    monicCoeffs[static_cast<keel::usize>(dX)] =
+    monicCoeffs[keel::as<keel::usize>(dX)] =
         mpolyConst(Rational(keel::i64{1}), kVars);
     for (int i = 0; i < dX; ++i) {
-        monicCoeffs[static_cast<keel::usize>(i)] =
-            mpolyMul(sCoeffs[static_cast<keel::usize>(i)],
-                     lPows[static_cast<keel::usize>(dX - 1 - i)], order);
+        monicCoeffs[keel::as<keel::usize>(i)] =
+            mpolyMul(sCoeffs[keel::as<keel::usize>(i)],
+                     lPows[keel::as<keel::usize>(dX - 1 - i)], order);
     }
     const MPoly sMonic = mpolyComposeInVar(monicCoeffs, mainVar, order);
 
@@ -1215,7 +1215,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
         int code = trial;
         for (keel::usize j = 0; j < otherVars.size(); ++j) {
             evalPt[j] = Rational(
-                static_cast<keel::i64>(kCandCoords[code % 9]));
+                keel::as<keel::i64>(kCandCoords[code % 9]));
             code /= 9;
         }
         MPoly lEval = L;
@@ -1273,7 +1273,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
             break;
         keel::Array<bool> mask(uFactors.size(), false);
         std::fill(mask.begin(),
-                  mask.begin() + static_cast<keel::isize>(subSize), true);
+                  mask.begin() + keel::as<keel::isize>(subSize), true);
 
         bool factorFoundInPass = false;
         do {
@@ -1331,10 +1331,10 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
                     }
                     auto &vec = found->coeffs;
                     const int xExp = t.exp[mainVar];
-                    if (static_cast<int>(vec.size()) <= xExp)
+                    if (keel::as<int>(vec.size()) <= xExp)
                         vec.resize(xExp + 1,
                                    Rational(keel::i64{0}));
-                    vec[static_cast<keel::usize>(xExp)] += t.coeff;
+                    vec[keel::as<keel::usize>(xExp)] += t.coeff;
                 }
                 keel::sort(buckets, [](const Bucket &a, const Bucket &b) {
                     for (keel::usize i = 0; i < a.uExp.size() && i < b.uExp.size(); ++i)
@@ -1621,7 +1621,7 @@ FactorMultiResult factorMulti(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
         else
             mulParts.push_back(
                 c.pow(item.factor,
-                      c.number(static_cast<keel::i64>(item.multiplicity))));
+                      c.number(keel::as<keel::i64>(item.multiplicity))));
     }
     const Expr reconExpr =
         mulParts.empty() ? c.number(contentScalar) : c.mul(mulParts);

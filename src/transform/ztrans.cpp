@@ -564,7 +564,7 @@ Expr binomialExpr(Ctx &c, Expr n, int k)
     for (int j = 0; j < k; ++j) {
         fact = fact * BigInt(j + 1);
         numFactors.push_back(
-            j == 0 ? n : c.add({n, c.number(static_cast<keel::i64>(-j))}));
+            j == 0 ? n : c.add({n, c.number(keel::as<keel::i64>(-j))}));
     }
     numFactors.push_back(c.number(Rational(BigInt(1), fact)));
     return c.mul(numFactors);
@@ -581,7 +581,7 @@ Expr invertLinearZPole(Ctx &c, Expr r, int k, Expr n)
     const Expr rScale =
         (r == c.one())
             ? c.one()
-            : c.pow(r, c.number(static_cast<keel::i64>(-(k - 1))));
+            : c.pow(r, c.number(keel::as<keel::i64>(-(k - 1))));
     return c.mul({binom, rScale, rPowN});
 }
 
@@ -697,11 +697,11 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
 
     // Factor out z^p from D(z): D(z) = z^p * dTilde(z) with dTilde(0) != 0.
     int pZero = 0;
-    while (pZero <= D.deg() && D.coeff(static_cast<keel::usize>(pZero)).isZero())
+    while (pZero <= D.deg() && D.coeff(keel::as<keel::usize>(pZero)).isZero())
         ++pZero;
     keel::Array<Rational> dTildeCoeffs;
     for (int i = pZero; i <= D.deg(); ++i)
-        dTildeCoeffs.push_back(D.coeff(static_cast<keel::usize>(i)));
+        dTildeCoeffs.push_back(D.coeff(keel::as<keel::usize>(i)));
     UPoly dTilde(keel::move(dTildeCoeffs));
 
     // Require causal sequence: deg(N) <= deg(D).
@@ -711,14 +711,14 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     // Decompose F(z)/z = N(z) / (z^(pZero+1) * dTilde(z)):
     //   1. If dTilde is constant, F(z) = sum_{k=0}^pZero c_k * z^(-k).
     const UPoly zPow = UPoly::monomial(
-        Rational(keel::i64{1}), static_cast<keel::u64>(pZero + 1));
+        Rational(keel::i64{1}), keel::as<keel::u64>(pZero + 1));
     keel::Array<Expr> seqTerms;
 
     UPoly mPoly;
     if (dTilde.deg() == 0) {
         const Rational invC = Rational(keel::i64{1}) / dTilde.coeff(0);
         for (int i = 0; i <= N.deg(); ++i) {
-            const Rational ci = N.coeff(static_cast<keel::usize>(i)) * invC;
+            const Rational ci = N.coeff(keel::as<keel::usize>(i)) * invC;
             if (ci.isZero())
                 continue;
             const int kShift = pZero - i;
@@ -727,7 +727,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
             const Expr deltaArg =
                 (kShift == 0)
                     ? n
-                    : c.add({n, c.number(static_cast<keel::i64>(-kShift))});
+                    : c.add({n, c.number(keel::as<keel::i64>(-kShift))});
             seqTerms.push_back(
                 c.mul({c.number(ci), c.func("kroneckerDelta", deltaArg)}));
         }
@@ -745,7 +745,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     const UPoly invDTilde = UPoly::invMod(dTilde % zPow, zPow);
     const UPoly p0 = (N * invDTilde) % zPow;
     for (int i = 0; i <= p0.deg(); ++i) {
-        const Rational ci = p0.coeff(static_cast<keel::usize>(i));
+        const Rational ci = p0.coeff(keel::as<keel::usize>(i));
         if (ci.isZero())
             continue;
         const int kShift = pZero - i;
@@ -754,7 +754,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
         const Expr deltaArg =
             (kShift == 0)
                 ? n
-                : c.add({n, c.number(static_cast<keel::i64>(-kShift))});
+                : c.add({n, c.number(keel::as<keel::i64>(-kShift))});
         seqTerms.push_back(
             c.mul({c.number(ci), c.func("kroneckerDelta", deltaArg)}));
     }
@@ -857,7 +857,7 @@ bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
                 matchLinearInVar(c, c.child(fac, 0), z, c0, c1) &&
                 !c.isZero(c1)) {
                 linBase = c.child(fac, 0);
-                poleK = static_cast<int>(-kVal);
+                poleK = keel::as<int>(-kVal);
                 continue;
             }
         }
@@ -874,7 +874,7 @@ bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
     const Expr numExpr = numFacs.empty() ? c.one() : c.mul(numFacs);
     if (!mentionsSymbol(c, numExpr, z)) {
         const Expr scale =
-            c.mul({numExpr, c.pow(c1, c.number(static_cast<keel::i64>(-poleK)))});
+            c.mul({numExpr, c.pow(c1, c.number(keel::as<keel::i64>(-poleK)))});
         out = c.simplify(c.mul({scale, invertLinearZPole(c, r, poleK, n)}));
         return true;
     }
@@ -1010,7 +1010,7 @@ bool certifyRecurrence(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs,
         if (c.isZero(coeffs[k]))
             continue;
         const Expr nPlusK =
-            (k == 0) ? n : c.add({n, c.number(static_cast<keel::i64>(k))});
+            (k == 0) ? n : c.add({n, c.number(keel::as<keel::i64>(k))});
         const Expr yk = c.subs(y, n, nPlusK);
         lhsTerms.push_back(c.mul({coeffs[k], yk}));
     }
@@ -1063,13 +1063,13 @@ RsolveResult rsolveIVP(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs,
         pTerms.push_back(
             k == 0 ? coeffs[0]
                    : c.mul({coeffs[k],
-                            c.pow(z, c.number(static_cast<keel::i64>(k)))}));
+                            c.pow(z, c.number(keel::as<keel::i64>(k)))}));
         for (keel::usize j = 0; j < k; ++j) {
             if (c.isZero(initVals[j]))
                 continue;
             initTerms.push_back(c.mul(
                 {coeffs[k], initVals[j],
-                 c.pow(z, c.number(static_cast<keel::i64>(k - j)))}));
+                 c.pow(z, c.number(keel::as<keel::i64>(k - j)))}));
         }
     }
     const Expr pZ = pTerms.empty() ? c.zero() : c.add(pTerms);
@@ -1099,7 +1099,7 @@ RsolveResult rsolveIVP(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs,
     }
     for (keel::usize j = 0; j < orderK; ++j) {
         const Expr yAtJ =
-            evalDiscreteAtInt(c, inv.F, n, static_cast<keel::i64>(j));
+            evalDiscreteAtInt(c, inv.F, n, keel::as<keel::i64>(j));
         const Expr err = c.simplify(c.add({yAtJ, c.neg(initVals[j])}));
         if (err.isNull() || !c.isZero(err)) {
             out.reason.assign("recurrence solution failed initial value certificate");
@@ -1139,7 +1139,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                 k == 0
                     ? coeffs[0]
                     : c.mul({coeffs[k],
-                             c.pow(z, c.number(static_cast<keel::i64>(k)))}));
+                             c.pow(z, c.number(keel::as<keel::i64>(k)))}));
         }
     }
     const Expr pZ = c.add(pTerms);
@@ -1150,17 +1150,17 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
     if (toRational(c, pZ, z, pNum, pDen) && pDen.isConst() && !pNum.isZero()) {
         int zeroMult = 0;
         while (zeroMult <= pNum.deg() &&
-               pNum.coeff(static_cast<keel::usize>(zeroMult)).isZero()) {
+               pNum.coeff(keel::as<keel::usize>(zeroMult)).isZero()) {
             const Expr deltaArg =
                 (zeroMult == 0)
                     ? n
-                    : c.add({n, c.number(static_cast<keel::i64>(-zeroMult))});
+                    : c.add({n, c.number(keel::as<keel::i64>(-zeroMult))});
             basis.push_back(c.func("kroneckerDelta", deltaArg));
             ++zeroMult;
         }
         keel::Array<Rational> nzCoeffs;
         for (int i = zeroMult; i <= pNum.deg(); ++i)
-            nzCoeffs.push_back(pNum.coeff(static_cast<keel::usize>(i)));
+            nzCoeffs.push_back(pNum.coeff(keel::as<keel::usize>(i)));
         UPoly nzPoly(keel::move(nzCoeffs));
         nzPoly.makeMonic();
         if (nzPoly.deg() >= 1) {
@@ -1195,7 +1195,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                     for (int m = 0; m < fm.mult; ++m) {
                         const Expr nPowM =
                             (m == 0) ? c.one()
-                                     : c.pow(n, c.number(static_cast<keel::i64>(m)));
+                                     : c.pow(n, c.number(keel::as<keel::i64>(m)));
                         basis.push_back(c.mul({nPowM, rPowN}));
                     }
                 } else if (fm.q.deg() == 2) {
@@ -1216,7 +1216,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                             const Expr nPowM =
                                 (m == 0)
                                     ? c.one()
-                                    : c.pow(n, c.number(static_cast<keel::i64>(m)));
+                                    : c.pow(n, c.number(keel::as<keel::i64>(m)));
                             basis.push_back(c.mul({nPowM, c.pow(r1, n)}));
                             basis.push_back(c.mul({nPowM, c.pow(r2, n)}));
                         }
@@ -1237,7 +1237,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                             const Expr nPowM =
                                 (m == 0)
                                     ? c.one()
-                                    : c.pow(n, c.number(static_cast<keel::i64>(m)));
+                                    : c.pow(n, c.number(keel::as<keel::i64>(m)));
                             basis.push_back(c.mul({nPowM, rPowN, cosWn}));
                             basis.push_back(c.mul({nPowM, rPowN, sinWn}));
                         }
@@ -1257,7 +1257,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
             // Determine multiplicity of root r in P(z).
             int mult = 0;
             Expr curP = pZ;
-            while (mult < static_cast<int>(orderK)) {
+            while (mult < keel::as<int>(orderK)) {
                 const Expr val = c.simplify(c.subs(curP, z, r));
                 if (val.isNull() || !c.isZero(val))
                     break;
@@ -1270,7 +1270,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
             for (int m = 0; m < mult; ++m) {
                 const Expr nPowM =
                     (m == 0) ? c.one()
-                             : c.pow(n, c.number(static_cast<keel::i64>(m)));
+                             : c.pow(n, c.number(keel::as<keel::i64>(m)));
                 basis.push_back(c.mul({nPowM, rPowN}));
             }
         }

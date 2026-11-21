@@ -78,7 +78,7 @@ Expr upolyToExpr(Ctx &c, const UPoly &p, Expr var)
             terms.push_back(c.mul({c.number(k), var}));
         } else {
             terms.push_back(c.mul(
-                {c.number(k), c.pow(var, c.number(static_cast<keel::i64>(i)))}));
+                {c.number(k), c.pow(var, c.number(keel::as<keel::i64>(i)))}));
         }
     }
     return terms.empty() ? c.zero() : c.add(terms);
@@ -347,7 +347,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
                 keel::i64 k = 0;
                 if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 0 &&
                     k <= 24) {
-                    deg += static_cast<int>(k);
+                    deg += keel::as<int>(k);
                     return true;
                 }
                 return false;
@@ -372,7 +372,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
 
     coeffsOut.assign(maxDeg + 1, c.zero());
     for (const auto &pr : parsed) {
-        const keel::usize idx = static_cast<keel::usize>(pr.first);
+        const keel::usize idx = keel::as<keel::usize>(pr.first);
         coeffsOut[idx] = c.expand(c.add({coeffsOut[idx], pr.second}));
     }
     while (!coeffsOut.empty() && c.isZero(coeffsOut.back()))
@@ -412,18 +412,18 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, keel::ArrayRef<Expr> syms,
         return true;
     }
 
-    const int degP = static_cast<int>(pCoeffs.size()) - 1;
-    const int degQ = static_cast<int>(qCoeffs.size()) - 1;
+    const int degP = keel::as<int>(pCoeffs.size()) - 1;
+    const int degQ = keel::as<int>(qCoeffs.size()) - 1;
     if (degP < degQ)
         return false;
 
     if (degQ == 0) {
         keel::Array<Expr> terms;
         for (int k = 0; k <= degP; ++k) {
-            if (c.isZero(pCoeffs[static_cast<keel::usize>(k)]))
+            if (c.isZero(pCoeffs[keel::as<keel::usize>(k)]))
                 continue;
             Expr qk;
-            if (!polyDivExactMulti(c, pCoeffs[static_cast<keel::usize>(k)],
+            if (!polyDivExactMulti(c, pCoeffs[keel::as<keel::usize>(k)],
                                    qCoeffs[0], syms, symIdx + 1, qk))
                 return false;
             const Expr vPow =
@@ -431,7 +431,7 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, keel::ArrayRef<Expr> syms,
                     ? c.one()
                     : (k == 1
                            ? var
-                           : c.pow(var, c.number(static_cast<keel::i64>(k))));
+                           : c.pow(var, c.number(keel::as<keel::i64>(k))));
             terms.push_back(c.mul({qk, vPow}));
         }
         quotOut = terms.empty() ? c.zero() : c.expand(c.add(terms));
@@ -448,12 +448,12 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, keel::ArrayRef<Expr> syms,
             quotOut = qTerms.empty() ? c.zero() : c.expand(c.add(qTerms));
             return true;
         }
-        const int degR = static_cast<int>(rCoeffs.size()) - 1;
+        const int degR = keel::as<int>(rCoeffs.size()) - 1;
         if (degR < degQ)
             return false;
         Expr lcQuot;
-        if (!polyDivExactMulti(c, rCoeffs[static_cast<keel::usize>(degR)],
-                               qCoeffs[static_cast<keel::usize>(degQ)], syms,
+        if (!polyDivExactMulti(c, rCoeffs[keel::as<keel::usize>(degR)],
+                               qCoeffs[keel::as<keel::usize>(degQ)], syms,
                                symIdx + 1, lcQuot))
             return false;
         const int dDiff = degR - degQ;
@@ -463,7 +463,7 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, keel::ArrayRef<Expr> syms,
                 : (dDiff == 1
                        ? var
                        : c.pow(var,
-                               c.number(static_cast<keel::i64>(dDiff))));
+                               c.number(keel::as<keel::i64>(dDiff))));
         const Expr term = c.expand(c.mul({lcQuot, vPow}));
         qTerms.push_back(term);
         R = c.expand(c.add({R, c.neg(c.mul({term, Q}))}));
@@ -1056,7 +1056,7 @@ Expr charpoly(Ctx &c, const SymMatrix &A, Expr lambda, Budget *budget)
             terms.push_back(c.mul({coeffs[j], lambda}));
         } else {
             terms.push_back(c.mul(
-                {coeffs[j], c.pow(lambda, c.number(static_cast<keel::i64>(j)))}));
+                {coeffs[j], c.pow(lambda, c.number(keel::as<keel::i64>(j)))}));
         }
     }
     return terms.empty() ? c.zero() : simplifyRationalExpr(c, c.add(terms));
@@ -1160,7 +1160,7 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
             return SymMatrix();
 
         keel::usize pivotRow = m;
-        keel::usize bestCost = static_cast<keel::usize>(-1);
+        keel::usize bestCost = keel::as<keel::usize>(-1);
         for (keel::usize r = col; r < m; ++r) {
             const Expr cand = M.at(r, col);
             if (!isZeroSymbolic(c, cand)) {
@@ -1304,7 +1304,7 @@ bool computeRREF(Ctx &c, SymMatrix &M, keel::usize pivotColLimit,
             return false;
 
         keel::usize pivotRow = m;
-        keel::usize bestCost = static_cast<keel::usize>(-1);
+        keel::usize bestCost = keel::as<keel::usize>(-1);
         for (keel::usize r = curRow; r < m; ++r) {
             const Expr cand = M.at(r, col);
             if (!isZeroLinalg(c, cand, budget)) {
@@ -1746,14 +1746,14 @@ SymMatrix matrixExp(Ctx &c, const SymMatrix &A, Expr t, Budget *budget)
                     keel::i64 fact = 1;
                     for (keel::usize d = 0; d <= k; ++d) {
                         if (d > 1)
-                            fact *= static_cast<keel::i64>(d);
+                            fact *= keel::as<keel::i64>(d);
                         const Expr tFactor =
                             (d == 0)
                                 ? c.one()
                                 : c.mul({c.number(Rational(keel::i64{1},
                                                            BigInt(fact))),
                                          c.pow(t, c.number(
-                                                      static_cast<keel::i64>(
+                                                      keel::as<keel::i64>(
                                                           d)))});
                         colSum = colSum.add(
                             c, chain[k - d].scale(c, tFactor));
@@ -1843,7 +1843,7 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
             return out;
         }
         keel::usize pivotRow = m;
-        keel::usize bestCost = static_cast<keel::usize>(-1);
+        keel::usize bestCost = keel::as<keel::usize>(-1);
         for (keel::usize r = k; r < m; ++r) {
             const Expr cand = U.at(r, k);
             if (!isZeroLinalg(c, cand, budget)) {

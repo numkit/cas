@@ -40,7 +40,7 @@ public:
     explicit UPoly(keel::Array<Rational> coeffs);
     static UPoly monomial(Rational c, keel::u64 exp); // c * x^exp
 
-    int deg() const { return static_cast<int>(c_.size()) - 1; }
+    int deg() const { return keel::as<int>(c_.size()) - 1; }
     bool isZero() const { return c_.empty(); }
     bool isConst() const { return c_.size() <= 1; }
     Rational coeff(keel::usize i) const

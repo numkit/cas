@@ -164,7 +164,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
         const keel::i32 next = t.edgeRow(ei, 2);
         const keel::i32 arity = t.edgeRow(ei, 3);
         if (!exprMatchesTerm(t, c, e, var, tag, valId) ||
-            static_cast<keel::i32>(c.childCount(e)) != arity)
+            keel::as<keel::i32>(c.childCount(e)) != arity)
             continue;
 
         if ((c.kind(e) == NodeKind::Mul && arity >= 2 && arity <= 4) ||
@@ -175,13 +175,13 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
                 work.pop_back();
                 for (keel::i32 ci = arity; ci > 0; --ci)
                     work.push_back(
-                        c.child(e, perm[static_cast<keel::usize>(ci - 1)]));
+                        c.child(e, perm[keel::as<keel::usize>(ci - 1)]));
                 if (matchStep(t, c, var, next, work, acc, onLeaf, nextInMul))
                     return true;
-                work.resize(work.size() - static_cast<keel::usize>(arity));
+                work.resize(work.size() - keel::as<keel::usize>(arity));
                 work.push_back(e);
             } while (std::next_permutation(
-                perm.begin(), perm.begin() + static_cast<keel::usize>(arity)));
+                perm.begin(), perm.begin() + keel::as<keel::usize>(arity)));
         } else {
             work.pop_back();
             for (keel::usize ci = c.childCount(e); ci > 0; --ci)
@@ -526,7 +526,7 @@ Expr expandPolyTimesBinomialPow(Ctx &c, const UPoly &P, const UPoly &B,
                 Expr mono = c.number(R.coeff(i));
                 if (i > 0) {
                     mono = c.mul(
-                        {mono, c.pow(var, c.number(static_cast<keel::i64>(i)))});
+                        {mono, c.pow(var, c.number(keel::as<keel::i64>(i)))});
                 }
                 const Expr bPow = c.pow(BExpr, c.number(expK));
                 if (bPow.isNull())
@@ -941,7 +941,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
             UPoly N, D;
             if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero())
                 return Expr();
-            const keel::usize ku = static_cast<keel::usize>(k);
+            const keel::usize ku = keel::as<keel::usize>(k);
             keel::Array<Rational> coeffs(N.deg() / ku + 1, Rational(0));
             for (keel::usize i = 0; i <= N.deg(); ++i) {
                 if (N.coeff(i).isZero())
@@ -973,7 +973,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
             UPoly N, D;
             if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero())
                 return Expr();
-            return c.number(static_cast<keel::i64>(N.deg()) / k);
+            return c.number(keel::as<keel::i64>(N.deg()) / k);
         }
         if (nkids == 3 && (head == "Coeff" || head == "Coefficient")) {
             const Expr u = buildReplacement(
@@ -1005,7 +1005,7 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
             if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero())
                 return Expr();
             return c.number(
-                N.coeff(static_cast<keel::usize>(ki * step)) / D.coeff(0));
+                N.coeff(keel::as<keel::usize>(ki * step)) / D.coeff(0));
         }
         if (nkids == 3 && (head == "PolynomialQuotient" ||
                            head == "PolynomialRemainder" ||
@@ -1156,8 +1156,8 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                 return Expr();
             const Rational absV = v.signum() >= 0 ? v : -v;
             BigInt rn, rd;
-            if (nthRootExact(absV.num(), static_cast<keel::u64>(ni), rn) &&
-                nthRootExact(absV.den(), static_cast<keel::u64>(ni), rd)) {
+            if (nthRootExact(absV.num(), keel::as<keel::u64>(ni), rn) &&
+                nthRootExact(absV.den(), keel::as<keel::u64>(ni), rd)) {
                 const Rational rExact(v.signum() >= 0 ? rn : -rn, rd);
                 return c.number(rExact);
             }
@@ -1471,7 +1471,7 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
         if (!toRational(c, u, var, N, D) || !D.isConst() || D.isZero() ||
             N.deg() < 1)
             return false;
-        const keel::usize su = static_cast<keel::usize>(step);
+        const keel::usize su = keel::as<keel::usize>(step);
         for (keel::usize i = 0; i <= N.deg(); ++i)
             if (!N.coeff(i).isZero() && (i % su != 0))
                 return false;
@@ -1483,7 +1483,7 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                 !(c.numberValue(dExpr).den() == BigInt(1)) ||
                 !c.numberValue(dExpr).num().fitsInt64(di) || di < 0)
                 return false;
-            return N.deg() == static_cast<keel::usize>(di * step);
+            return N.deg() == keel::as<keel::usize>(di * step);
         }
         return true;
     }
@@ -1494,7 +1494,7 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
             if (ai.isNull() || c.kind(ai) != NodeKind::Number)
                 return false;
-            v[static_cast<keel::usize>(i)] = c.numberValue(ai);
+            v[keel::as<keel::usize>(i)] = c.numberValue(ai);
         }
         const auto isInt = [](const Rational &r) {
             return r.den() == BigInt(1);
@@ -1546,7 +1546,7 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
             if (ai.isNull() || c.kind(ai) != NodeKind::Number)
                 return false;
-            v[static_cast<keel::usize>(i)] = c.numberValue(ai);
+            v[keel::as<keel::usize>(i)] = c.numberValue(ai);
         }
         const auto isInt = [](const Rational &r) {
             return r.den() == BigInt(1);
@@ -1648,9 +1648,9 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
             if (ai.isNull())
                 return false;
-            exprs[static_cast<keel::usize>(i)] = ai;
+            exprs[keel::as<keel::usize>(i)] = ai;
             if (c.kind(ai) == NodeKind::Number)
-                vals[static_cast<keel::usize>(i)] = c.numberValue(ai);
+                vals[keel::as<keel::usize>(i)] = c.numberValue(ai);
             else
                 allNum = false;
         }
@@ -1734,12 +1734,12 @@ Expr factorRationalPower(Ctx &c, const Rational &v, const Rational &exp)
     for (const auto &pk : BigInt::factorize(v.num())) {
         parts.push_back(
             c.pow(c.number(Rational(pk.first, BigInt(1))),
-                  c.number(exp * Rational(static_cast<keel::i64>(pk.second)))));
+                  c.number(exp * Rational(keel::as<keel::i64>(pk.second)))));
     }
     for (const auto &pk : BigInt::factorize(v.den())) {
         parts.push_back(
             c.pow(c.number(Rational(pk.first, BigInt(1))),
-                  c.number(-exp * Rational(static_cast<keel::i64>(pk.second)))));
+                  c.number(-exp * Rational(keel::as<keel::i64>(pk.second)))));
     }
     return parts.empty() ? c.one() : c.mul(parts);
 }

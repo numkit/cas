@@ -133,7 +133,7 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, keel::i64 n)
                 const int half = pe.second / 2;
                 const int odd = pe.second % 2;
                 if (half > 0)
-                    sqOut *= BigInt::powUInt(pe.first, static_cast<keel::u64>(half));
+                    sqOut *= BigInt::powUInt(pe.first, keel::as<keel::u64>(half));
                 if (odd > 0)
                     rem *= pe.first;
             }
@@ -220,7 +220,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
         return true;
     }
 
-    keel::Array<keel::Array<Expr>> buckets(static_cast<keel::usize>(maxDeg + 1));
+    keel::Array<keel::Array<Expr>> buckets(keel::as<keel::usize>(maxDeg + 1));
 
     auto processTerm = [&](Expr term) -> bool {
         if (!mentionsVar(c, term, var)) {
@@ -239,7 +239,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
             keel::i64 k = 0;
             if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 0 &&
                 k <= maxDeg) {
-                buckets[static_cast<keel::usize>(k)].push_back(c.one());
+                buckets[keel::as<keel::usize>(k)].push_back(c.one());
                 return true;
             }
             return false;
@@ -269,7 +269,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
             }
             if (deg < 0 || deg > maxDeg)
                 return false;
-            buckets[static_cast<keel::usize>(deg)].push_back(
+            buckets[keel::as<keel::usize>(deg)].push_back(
                 cofactors.empty() ? c.one() : c.mul(cofactors));
             return true;
         }
@@ -287,9 +287,9 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
 
     coeffs.assign(maxDeg + 1, c.zero());
     for (int d = 0; d <= maxDeg; ++d) {
-        const auto &b = buckets[static_cast<keel::usize>(d)];
+        const auto &b = buckets[keel::as<keel::usize>(d)];
         if (!b.empty())
-            coeffs[static_cast<keel::usize>(d)] = c.simplify(c.add(b));
+            coeffs[keel::as<keel::usize>(d)] = c.simplify(c.add(b));
     }
     while (coeffs.size() > 1 && isZeroAfterSimplify(c, coeffs.back()))
         coeffs.pop_back();
@@ -529,7 +529,7 @@ void solvePolyCoeffs(Ctx &c, keel::ArrayRef<Expr> coeffsIn,
     }
     if (pureBinomial) {
         const Expr rhs = c.simplify(c.div(c.neg(coeffs[0]), coeffs[deg]));
-        const Rational invD(keel::i64{1}, BigInt(static_cast<keel::i64>(deg)));
+        const Rational invD(keel::i64{1}, BigInt(keel::as<keel::i64>(deg)));
         if (deg % 2 == 0) {
             if (c.kind(rhs) == NodeKind::Number &&
                 c.numberValue(rhs).signum() < 0)
@@ -670,7 +670,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
                     const keel::Array<RootInterval> ivs = isolateRealRoots(f);
                     for (keel::usize idx = 0; idx < ivs.size(); ++idx) {
                         addUniqueRoot(c, candidates,
-                                      c.rootOf(f.coeffs().clone(), static_cast<int>(idx)));
+                                      c.rootOf(f.coeffs().clone(), keel::as<int>(idx)));
                     }
                 }
             }
@@ -739,8 +739,8 @@ keel::Array<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
         return solutions;
     }
 
-    const int m = static_cast<int>(aCoeffs.size()) - 1;
-    const int n = static_cast<int>(bCoeffs.size()) - 1;
+    const int m = keel::as<int>(aCoeffs.size()) - 1;
+    const int n = keel::as<int>(bCoeffs.size()) - 1;
     if (m < 0 || n < 0 || (m == 0 && n == 0))
         return solutions;
 
@@ -755,20 +755,20 @@ keel::Array<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
         // Build the (m + n) x (m + n) Sylvester matrix Sylv_y(F, G):
         //   - First `n` rows: shifted coefficients of F (from degree m down to 0)
         //   - Next `m` rows:  shifted coefficients of G (from degree n down to 0)
-        const keel::usize dim = static_cast<keel::usize>(m + n);
+        const keel::usize dim = keel::as<keel::usize>(m + n);
         SymMatrix Sylv = SymMatrix::zeros(c, dim, dim);
         for (int row = 0; row < n; ++row) {
             for (int k = 0; k <= m; ++k) {
-                Sylv.at(static_cast<keel::usize>(row),
-                        static_cast<keel::usize>(row + k)) =
-                    aCoeffs[static_cast<keel::usize>(m - k)];
+                Sylv.at(keel::as<keel::usize>(row),
+                        keel::as<keel::usize>(row + k)) =
+                    aCoeffs[keel::as<keel::usize>(m - k)];
             }
         }
         for (int row = 0; row < m; ++row) {
             for (int k = 0; k <= n; ++k) {
-                Sylv.at(static_cast<keel::usize>(n + row),
-                        static_cast<keel::usize>(row + k)) =
-                    bCoeffs[static_cast<keel::usize>(n - k)];
+                Sylv.at(keel::as<keel::usize>(n + row),
+                        keel::as<keel::usize>(row + k)) =
+                    bCoeffs[keel::as<keel::usize>(n - k)];
             }
         }
         const Expr resX = det(c, Sylv, budget);
@@ -886,7 +886,7 @@ void backSubstituteLexBasis(Ctx &c, keel::ArrayRef<Expr> basis,
         return;
     }
 
-    const keel::usize uIdx = static_cast<keel::usize>(idx);
+    const keel::usize uIdx = keel::as<keel::usize>(idx);
     const Expr curVar = vars[uIdx];
 
     // Specialize all basis polynomials at already-bound variables vars[idx + 1 .. k - 1],
@@ -901,7 +901,7 @@ void backSubstituteLexBasis(Ctx &c, keel::ArrayRef<Expr> basis,
             continue;
         bool hasEarlier = false;
         for (int j = 0; j < idx; ++j) {
-            if (mentionsVar(c, spec, vars[static_cast<keel::usize>(j)])) {
+            if (mentionsVar(c, spec, vars[keel::as<keel::usize>(j)])) {
                 hasEarlier = true;
                 break;
             }
@@ -989,7 +989,7 @@ keel::Array<keel::Array<Expr>> solveSystem(Ctx &c,
             return solutions; // inconsistent system (<1> unit ideal)
         keel::Array<Expr> partial(vars.size());
         backSubstituteLexBasis(c, gb.basis, eqs, vars,
-                               static_cast<int>(vars.size()) - 1, partial,
+                               keel::as<int>(vars.size()) - 1, partial,
                                budget, solutions);
         if (!solutions.empty())
             return solutions;

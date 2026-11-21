@@ -75,7 +75,7 @@ RIval qRoot(const Rational &r, keel::i64 q)
     assert(r >= Rational(keel::i64{0}));
     const Rational one(1);
     Rational lo(0), hi = r < one ? one : r;
-    const keel::u64 qe = static_cast<keel::u64>(q);
+    const keel::u64 qe = keel::as<keel::u64>(q);
     // 24 bisection steps: width <= max(1, r)/2^24 - far finer than
     // any genuine value difference the check needs to separate
     // (real form bugs differ by >= 2x, not in the 7th decimal).
@@ -104,7 +104,7 @@ RIval qRoot(const Rational &r, keel::i64 q)
 // the sample point (the honest-decline flow), not assert/UB.
 bool iPowRatPos(const RIval &a, keel::i64 p, keel::i64 q, RIval &out)
 {
-    const keel::u64 pe = static_cast<keel::u64>(p < 0 ? -p : p);
+    const keel::u64 pe = keel::as<keel::u64>(p < 0 ? -p : p);
     const bool zeroLo = a.lo == Rational(keel::i64{0});
     const RIval rl = zeroLo ? RIval{Rational(0), Rational(0)} : qRoot(a.lo, q);
     const RIval rh = qRoot(a.hi, q);
@@ -141,7 +141,7 @@ bool evalRootOf(const Ctx &c, Expr e, RootOfCache &cache, RIval &out)
     UPoly p = UPoly(poly.clone()).squarefreePart();
     p.makeMonic();
     const keel::Array<RootInterval> ivs = isolateRealRoots(p);
-    if (index < 0 || index >= static_cast<int>(ivs.size()))
+    if (index < 0 || index >= keel::as<int>(ivs.size()))
         return false; // complex root or out of range: Unknown
         // (deliberately NOT cached: the enclosing evalIval fails the
         // whole sample, and a cached failure marker would later read
@@ -151,7 +151,7 @@ bool evalRootOf(const Ctx &c, Expr e, RootOfCache &cache, RIval &out)
     // coefficient errors); polynomial-cascade overestimation stays
     // orders of magnitude below any true difference.
     const RootInterval iv =
-        refineRoot(p, ivs[static_cast<keel::usize>(index)],
+        refineRoot(p, ivs[keel::as<keel::usize>(index)],
                    Rational(keel::i64{1}, BigInt(1) << 24));
     out = {iv.lo, iv.hi};
     cache.try_insert(c.id(e), out);

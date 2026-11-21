@@ -75,7 +75,7 @@ keel::u64 modP(const BigInt &c, keel::u64 p)
     BigInt::divMod(c, BigInt(p), q, r);
     if (r.isNegative())
         r = r + BigInt(p);
-    return r.isZero() ? 0 : static_cast<keel::u64>(r.lowLimb());
+    return r.isZero() ? 0 : keel::as<keel::u64>(r.lowLimb());
 }
 
 FpPoly toFp(keel::ArrayRef<BigInt> a, keel::u64 p)
@@ -110,9 +110,9 @@ bool bpDivExact(keel::ArrayRef<BigInt> a, keel::ArrayRef<BigInt> b,
         return false;
     keel::Array<BigInt> r = keel::Array<BigInt>::from(a);
     q.assign(a.size() - b.size() + 1, B0());
-    const int db = static_cast<int>(b.size()) - 1;
+    const int db = keel::as<int>(b.size()) - 1;
     while (!r.empty()) {
-        const int dr = static_cast<int>(r.size()) - 1;
+        const int dr = keel::as<int>(r.size()) - 1;
         const int shift = dr - db;
         if (shift < 0)
             return false;
@@ -120,10 +120,10 @@ bool bpDivExact(keel::ArrayRef<BigInt> a, keel::ArrayRef<BigInt> b,
         BigInt::divMod(r[dr], b[db], quo, rem);
         if (!rem.isZero())
             return false;
-        q[static_cast<keel::usize>(shift)] = quo;
+        q[keel::as<keel::usize>(shift)] = quo;
         for (keel::usize j = 0; j < b.size(); ++j)
-            r[j + static_cast<keel::usize>(shift)] =
-                r[j + static_cast<keel::usize>(shift)] - quo * b[j];
+            r[j + keel::as<keel::usize>(shift)] =
+                r[j + keel::as<keel::usize>(shift)] - quo * b[j];
         bpTrim(r);
     }
     return true;
@@ -320,7 +320,7 @@ factorPrimitiveInteger(keel::ArrayRef<BigInt> fIn, Budget *budget)
     const keel::u64 kPrimes[] = {3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43};
     keel::u64 p = 0;
     FpPoly fFp;
-    const int degF = static_cast<int>(f.size()) - 1;
+    const int degF = keel::as<int>(f.size()) - 1;
     for (keel::u64 cand : kPrimes) {
         FpPoly fp = toFp(f, cand);
         if (fp.isZero() || fp.deg() != degF) // p must not divide the lc
@@ -359,7 +359,7 @@ factorPrimitiveInteger(keel::ArrayRef<BigInt> fIn, Budget *budget)
         if (c.abs() > infNorm)
             infNorm = c.abs();
     const BigInt bound =
-        (BigInt(1) << static_cast<keel::usize>(fFp.deg())) * infNorm * BigInt(2);
+        (BigInt(1) << keel::as<keel::usize>(fFp.deg())) * infNorm * BigInt(2);
     BigInt pk = BigInt(p);
     while (pk <= bound * BigInt(32))
         pk = pk * BigInt(p);
@@ -413,7 +413,7 @@ factorPrimitiveInteger(keel::ArrayRef<BigInt> fIn, Budget *budget)
     keel::Array<BigInt> cur = keel::move(f);
 
     while (!cur.empty() && cur.size() >= 2) {
-        const keel::u32 n = static_cast<keel::u32>(active.size());
+        const keel::u32 n = keel::as<keel::u32>(active.size());
         bool found = false;
         if (n >= 2) {
             // Every positive divisor of the current leading coefficient

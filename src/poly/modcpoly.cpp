@@ -232,15 +232,15 @@ void ModCPoly::divMod(const ModCPoly &a, const ModCPoly &b,
     q.ring_ = &ring;
     if (a.isZero() || a.deg() < b.deg())
         return;
-    q.c_.assign(static_cast<keel::usize>(a.deg() - b.deg()) + 1, ring.zero());
+    q.c_.assign(keel::as<keel::usize>(a.deg() - b.deg()) + 1, ring.zero());
     const UPoly blcInv = ring.inv(b.lc());
     while (!r.isZero() && r.deg() >= b.deg()) {
         const int shift = r.deg() - b.deg();
         const UPoly f = ring.mul(r.lc(), blcInv);
-        q.c_[static_cast<keel::usize>(shift)] = ring.add(q.c_[static_cast<keel::usize>(shift)], f);
+        q.c_[keel::as<keel::usize>(shift)] = ring.add(q.c_[keel::as<keel::usize>(shift)], f);
         for (keel::usize j = 0; j < b.c_.size(); ++j)
-            r.c_[j + static_cast<keel::usize>(shift)] =
-                ring.sub(r.c_[j + static_cast<keel::usize>(shift)],
+            r.c_[j + keel::as<keel::usize>(shift)] =
+                ring.sub(r.c_[j + keel::as<keel::usize>(shift)],
                          ring.mul(f, b.c_[j]));
         r.trim();
     }

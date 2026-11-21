@@ -54,17 +54,17 @@ Expr sqrtExpr(Ctx &c, const Rational &d)
 // c (ascending coeffs), for k = 0..deg-1, by Newton's identities.
 keel::Array<Rational> newtonPowerSums(const keel::Array<Rational> &c)
 {
-    const int d = static_cast<int>(c.size()) - 1;
+    const int d = keel::as<int>(c.size()) - 1;
     keel::Array<Rational> s;
-    s.push_back(Rational(static_cast<keel::i64>(d))); // s_0 = d
+    s.push_back(Rational(keel::as<keel::i64>(d))); // s_0 = d
     for (int k = 1; k < d; ++k) {
         // Newton: s_k = -(c_{d-1} s_{k-1} + ... + c_{d-k+1} s_1)
         //               - k * c_{d-k}   (k <= d)
-        Rational acc = Rational(static_cast<keel::i64>(k)) *
-                       c[static_cast<keel::usize>(d - k)];
+        Rational acc = Rational(keel::as<keel::i64>(k)) *
+                       c[keel::as<keel::usize>(d - k)];
         for (int i = 1; i < k; ++i)
-            acc = acc + c[static_cast<keel::usize>(d - i)] *
-                            s[static_cast<keel::usize>(k - i)];
+            acc = acc + c[keel::as<keel::usize>(d - i)] *
+                            s[keel::as<keel::usize>(k - i)];
         s.push_back(acc * Rational(keel::i64{-1}));
     }
     return s;
@@ -155,7 +155,7 @@ UPoly polyIntegral(const UPoly &p)
 {
     keel::Array<Rational> cs{R0()};
     for (keel::usize i = 0; i < p.coeffs().size(); ++i)
-        cs.push_back(p.coeff(i) / Rational(static_cast<keel::i64>(i + 1)));
+        cs.push_back(p.coeff(i) / Rational(keel::as<keel::i64>(i + 1)));
     return UPoly(std::move(cs));
 }
 
@@ -495,7 +495,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                                   lift(leftD, false));
                 keel::Array<Rational> aCs, bCs;
                 if (v.deg() >= 1) {
-                    for (keel::usize i = 0; i <= static_cast<keel::usize>(v.deg()); ++i) {
+                    for (keel::usize i = 0; i <= keel::as<keel::usize>(v.deg()); ++i) {
                         aCs.push_back(v.coeff(i).coeff(0));
                         bCs.push_back(v.coeff(i).coeff(1));
                     }
@@ -602,8 +602,8 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             const int pDeg = 2 * d * v.deg() - 1;
             const int need = (qDeg > pDeg ? qDeg : pDeg) + 1;
             keel::Array<Rational> xs, qs, ps;
-            for (int x0 = 1; static_cast<int>(xs.size()) < need && x0 < 6 * need + 10; ++x0) {
-                const Rational x0r(static_cast<keel::i64>(x0));
+            for (int x0 = 1; keel::as<int>(xs.size()) < need && x0 < 6 * need + 10; ++x0) {
+                const Rational x0r(keel::as<keel::i64>(x0));
                 // v(x0, t) as a plain Q[t] polynomial (degree < d in t)
                 // for the norm resultant, and simultaneously as a ring
                 // element u: v's coefficients are already in normal
@@ -612,7 +612,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 UPoly uPlain = ring.zero();
                 UPoly u = ring.zero();
                 Rational pw(1);
-                for (keel::usize k = 0; k <= static_cast<keel::usize>(v.deg()); ++k) {
+                for (keel::usize k = 0; k <= keel::as<keel::usize>(v.deg()); ++k) {
                     const UPoly rk = v.coeff(k);
                     if (!rk.isZero()) {
                         uPlain = uPlain + rk * UPoly(pw);
@@ -627,11 +627,11 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 // T(x0) = Tr(t * v'(x0,t) / v(x0,t))
                 UPoly du = ring.zero();
                 pw = Rational(1);
-                for (keel::usize k = 0; k <= static_cast<keel::usize>(v.deg()); ++k) {
+                for (keel::usize k = 0; k <= keel::as<keel::usize>(v.deg()); ++k) {
                     const UPoly rk = v.coeff(k);
                     if (!rk.isZero() && k >= 1)
                         du = ring.add(du, ring.mul(rk, UPoly(Rational(
-                            static_cast<keel::i64>(k) * pw / x0r))));
+                            keel::as<keel::i64>(k) * pw / x0r))));
                     pw = pw * x0r;
                 }
                 const UPoly q3 = ring.mul(tEl, ring.mul(du, ring.inv(u)));
@@ -640,7 +640,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 qs.push_back(qv);
                 ps.push_back(tTrace * qv);
             }
-            if (static_cast<int>(xs.size()) < need) {
+            if (keel::as<int>(xs.size()) < need) {
                 reason.assign("degree >= 3 factor: not enough interpolation points");
                 return false;
             }
@@ -686,7 +686,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                             ? c.number(e.coeff(j))
                             : c.mul({c.number(e.coeff(j)),
                                      c.pow(atom, c.number(
-                                         static_cast<keel::i64>(j)))}));
+                                         keel::as<keel::i64>(j)))}));
                 if (terms.empty())
                     return c.zero();
                 return c.add(terms);
@@ -702,7 +702,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                         terms.push_back(ck);
                     else
                         terms.push_back(c.mul({ck, c.pow(var, c.number(
-                            static_cast<keel::i64>(k)))}));
+                            keel::as<keel::i64>(k)))}));
                 }
                 if (terms.empty())
                     return c.zero();
@@ -739,7 +739,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 // Im(w_k)/b = a2*s1 + a1
                 keel::Array<UPoly> Rk(v.deg() + 1), Ik(v.deg() + 1);
                 for (int k = 0; k <= v.deg(); ++k) {
-                    const UPoly wk = v.coeff(static_cast<keel::usize>(k));
+                    const UPoly wk = v.coeff(keel::as<keel::usize>(k));
                     const UPoly wa2(wk.coeff(2)), wa1(wk.coeff(1));
                     const UPoly term1 = ring.mul(
                         wa2, ring.mul(half, ring.sub(ring.mul(s1, s1),
@@ -753,7 +753,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 // real-root term rho * log(v(x, rho))
                 keel::Array<Expr> argTerms;
                 for (int k = 0; k <= v.deg(); ++k) {
-                    const UPoly rk = v.coeff(static_cast<keel::usize>(k));
+                    const UPoly rk = v.coeff(keel::as<keel::usize>(k));
                     if (rk.isZero())
                         continue;
                     const Expr ck = ringToExpr(rk, rho);
@@ -761,7 +761,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                         argTerms.push_back(ck);
                     else
                         argTerms.push_back(c.mul({ck, c.pow(var,
-                            c.number(static_cast<keel::i64>(k)))}));
+                            c.number(keel::as<keel::i64>(k)))}));
                 }
                 if (!argTerms.empty()) {
                     const Expr arg = c.add(argTerms);
@@ -803,7 +803,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                     const Expr rootExpr = c.rootOf(fact.coeffs().clone(), i);
                     keel::Array<Expr> argTerms;
                     for (keel::usize k = 0;
-                         k <= static_cast<keel::usize>(v.deg()); ++k) {
+                         k <= keel::as<keel::usize>(v.deg()); ++k) {
                         const UPoly rk = v.coeff(k);
                         if (rk.isZero())
                             continue;
@@ -813,7 +813,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                         else
                             argTerms.push_back(c.mul({ck,
                                 c.pow(var, c.number(
-                                    static_cast<keel::i64>(k)))}));
+                                    keel::as<keel::i64>(k)))}));
                     }
                     if (argTerms.empty())
                         continue;
@@ -844,12 +844,12 @@ UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M)
 
     keel::Array<Rational> ys;
     for (int i = 0; i <= n; ++i) {
-        const Rational t(static_cast<keel::i64>(i));
+        const Rational t(keel::as<keel::i64>(i));
         ys.push_back(UPoly::resultant(P - t * Q, M));
     }
 
     // Lagrange interpolation over t = 0..n.
-    keel::Array<Rational> coeffs(static_cast<keel::usize>(n) + 1, R0());
+    keel::Array<Rational> coeffs(keel::as<keel::usize>(n) + 1, R0());
     for (int i = 0; i <= n; ++i) {
         UPoly num(R1());
         Rational den(R1());
@@ -857,10 +857,10 @@ UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M)
             if (j == i)
                 continue;
             num = num * UPoly(keel::Array<Rational>{
-                            Rational(-static_cast<keel::i64>(j)), R1()});
-            den = den * Rational(static_cast<keel::i64>(i - j));
+                            Rational(-keel::as<keel::i64>(j)), R1()});
+            den = den * Rational(keel::as<keel::i64>(i - j));
         }
-        const Rational scale = ys[static_cast<keel::usize>(i)] / den;
+        const Rational scale = ys[keel::as<keel::usize>(i)] / den;
         for (keel::usize k = 0; k < num.coeffs().size(); ++k)
             coeffs[k] += num.coeff(k) * scale;
     }
@@ -879,7 +879,7 @@ Expr toExpr(Ctx &c, const UPoly &p, Expr var)
             terms.push_back(c.number(p.coeff(k)));
         else
             terms.push_back(c.mul({c.number(p.coeff(k)),
-                                   c.pow(var, c.number(static_cast<keel::i64>(k)))}));
+                                   c.pow(var, c.number(keel::as<keel::i64>(k)))}));
     }
     return c.add(terms);
 }
@@ -933,7 +933,7 @@ bool toRational(Ctx &c, Expr e, Expr var, UPoly &num, UPoly &den)
         UPoly bn, bd;
         if (!toRational(c, b, var, bn, bd))
             return false;
-        const auto e64 = static_cast<keel::u64>(ki < 0 ? -ki : ki);
+        const auto e64 = keel::as<keel::u64>(ki < 0 ? -ki : ki);
         if (ki >= 0) {
             num = bn.powUInt(e64);
             den = bd.powUInt(e64);
@@ -987,38 +987,38 @@ HermiteResult hermiteReduce(const UPoly &N0, const UPoly &D0)
     out.gn = UPoly();
     for (keel::usize idx = 0; idx < fs.size(); ++idx) {
         const UPoly &F = fs[idx];
-        const int mult = static_cast<int>(idx) + 1;
+        const int mult = keel::as<int>(idx) + 1;
         const UPoly dF = F.derivative();
 
         // Peel B into level numerators A_j (j = mult..1).
-        keel::Array<UPoly> A(static_cast<keel::usize>(mult) + 1);
+        keel::Array<UPoly> A(keel::as<keel::usize>(mult) + 1);
         UPoly B = Bs[idx];
         for (int j = mult; j >= 1; --j) {
             UPoly q, r;
             UPoly::divMod(B, F, q, r);
-            A[static_cast<keel::usize>(j)] = r;
+            A[keel::as<keel::usize>(j)] = r;
             B = q;
         }
 
         for (int j = mult; j >= 2; --j) {
             // A[j]/F^j = (C/F^(j-1))' + A2/F^(j-1) with
             // C = -A[j] * inv((j-1) * F' mod F) mod F.
-            const UPoly coef = dF * Rational(static_cast<keel::i64>(j - 1));
-            const UPoly C = pmod(A[static_cast<keel::usize>(j)] * Rational(keel::i64{-1}) *
+            const UPoly coef = dF * Rational(keel::as<keel::i64>(j - 1));
+            const UPoly C = pmod(A[keel::as<keel::usize>(j)] * Rational(keel::i64{-1}) *
                                      UPoly::invMod(coef % F, F),
                                  F);
 
-            const UPoly Fjm1 = F.powUInt(static_cast<keel::u64>(j - 1));
+            const UPoly Fjm1 = F.powUInt(keel::as<keel::u64>(j - 1));
             out.rn = out.rn * Fjm1 + out.rd * C;
             out.rd = out.rd * Fjm1;
 
-            const UPoly rhs = A[static_cast<keel::usize>(j)] -
+            const UPoly rhs = A[keel::as<keel::usize>(j)] -
                               (C.derivative() * F -
-                               Rational(static_cast<keel::i64>(j - 1)) * C * dF);
+                               Rational(keel::as<keel::i64>(j - 1)) * C * dF);
             UPoly q, r;
             UPoly::divMod(rhs, F, q, r);
             assert(r.isZero());
-            A[static_cast<keel::usize>(j - 1)] = A[static_cast<keel::usize>(j - 1)] + q;
+            A[keel::as<keel::usize>(j - 1)] = A[keel::as<keel::usize>(j - 1)] + q;
         }
 
         // g += A[1] * (S / F).
@@ -1371,7 +1371,7 @@ int radicalIndex(const Ctx &c, Expr e, Expr var)
             if (!c.numberValue(c.child(e, 1)).den().fitsInt64(q64) ||
                 q64 <= 0 || q64 > 60)
                 return -1;
-            return static_cast<int>(q64);
+            return keel::as<int>(q64);
         }
         // Other bases may themselves carry radicals (the base is
         // recursed and contributes its lcm); the EXPONENT must not
@@ -1388,11 +1388,11 @@ int radicalIndex(const Ctx &c, Expr e, Expr var)
             const int q = radicalIndex(c, c.child(e, i), var);
             if (q < 0)
                 return -1;
-            const keel::i64 lcm64 = std::lcm(static_cast<keel::i64>(l),
-                                           static_cast<keel::i64>(q));
+            const keel::i64 lcm64 = std::lcm(keel::as<keel::i64>(l),
+                                           keel::as<keel::i64>(q));
             if (lcm64 > 60)
                 return -1;
-            l = static_cast<int>(lcm64);
+            l = keel::as<int>(lcm64);
         }
         return l;
     }
@@ -1405,7 +1405,7 @@ int radicalIndex(const Ctx &c, Expr e, Expr var)
 Expr radicalRebuild(Ctx &c, Expr e, Expr var, Expr t, int L)
 {
     if (e == var)
-        return c.pow(t, c.number(static_cast<keel::i64>(L)));
+        return c.pow(t, c.number(keel::as<keel::i64>(L)));
     switch (c.kind(e)) {
     case NodeKind::Number:
     case NodeKind::Symbol:
@@ -1418,7 +1418,7 @@ Expr radicalRebuild(Ctx &c, Expr e, Expr var, Expr t, int L)
             keel::i64 q64 = 0;
             r.den().fitsInt64(q64);
             const Rational total =
-                r * Rational(BigInt(static_cast<keel::i64>(L)), BigInt(1));
+                r * Rational(BigInt(keel::as<keel::i64>(L)), BigInt(1));
             return c.pow(t, c.number(total)); // total has denominator 1
         }
         return c.pow(radicalRebuild(c, c.child(e, 0), var, t, L),
@@ -1460,8 +1460,8 @@ static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var,
     // Jacobian dx = L * t^(L-1) dt.
     const RationalIntegral r = integrateRational(
         c, c.mul({c.number(Rational(
-                            BigInt(static_cast<keel::i64>(L)), BigInt(1))),
-                  c.pow(t, c.number(static_cast<keel::i64>(L - 1))), g}),
+                            BigInt(keel::as<keel::i64>(L)), BigInt(1))),
+                  c.pow(t, c.number(keel::as<keel::i64>(L - 1))), g}),
         t, budget);
     if (!r.proved()) {
         out.reason = (budget && !budget->ok())
@@ -1471,7 +1471,7 @@ static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var,
     }
     const Expr root = c.pow(var, c.number(
                                   Rational(BigInt(1),
-                                           BigInt(static_cast<keel::i64>(L)))));
+                                           BigInt(keel::as<keel::i64>(L)))));
     const Expr F = substituteBack(c, r.F, t, root);
     // Gate: structural round-trip. The x-derivative necessarily
     // carries the fractional Jacobian x^(1/L - 1), so no polynomial
@@ -1691,7 +1691,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
             keel::i64 d = 0;
             if (re.den() == BigInt(1) && re.num().fitsInt64(d) && d >= 1 &&
                 d <= maxDeg) {
-                degOut = static_cast<int>(d);
+                degOut = keel::as<int>(d);
                 cfOut = c.one();
                 return true;
             }
@@ -1711,7 +1711,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
                     keel::i64 d = 0;
                     if (re.den() == BigInt(1) && re.num().fitsInt64(d) &&
                         d >= 1 && d <= maxDeg) {
-                        deg += static_cast<int>(d);
+                        deg += keel::as<int>(d);
                     } else {
                         return false;
                     }
@@ -1730,28 +1730,28 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
         return false;
     };
 
-    keel::Array<keel::Array<Expr>> buckets(static_cast<keel::usize>(maxDeg + 1));
+    keel::Array<keel::Array<Expr>> buckets(keel::as<keel::usize>(maxDeg + 1));
     if (c.kind(ex) == NodeKind::Add) {
         for (keel::usize i = 0; i < c.childCount(ex); ++i) {
             int d = 0;
             Expr cf;
             if (!matchMonomial(c.child(ex, i), d, cf))
                 return false;
-            buckets[static_cast<keel::usize>(d)].push_back(cf);
+            buckets[keel::as<keel::usize>(d)].push_back(cf);
         }
     } else {
         int d = 0;
         Expr cf;
         if (!matchMonomial(ex, d, cf))
             return false;
-        buckets[static_cast<keel::usize>(d)].push_back(cf);
+        buckets[keel::as<keel::usize>(d)].push_back(cf);
     }
 
     coeffsOut.assign(maxDeg + 1, c.zero());
     for (int d = 0; d <= maxDeg; ++d) {
-        const auto &b = buckets[static_cast<keel::usize>(d)];
+        const auto &b = buckets[keel::as<keel::usize>(d)];
         if (!b.empty())
-            coeffsOut[static_cast<keel::usize>(d)] =
+            coeffsOut[keel::as<keel::usize>(d)] =
                 b.size() == 1 ? b[0] : c.simplify(c.add(b));
     }
     while (!coeffsOut.empty() && c.isZero(coeffsOut.back()))
@@ -1771,7 +1771,7 @@ Expr evalSymbolicPoly(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr var)
             terms.push_back(c.mul({coeffs[d], var}));
         } else {
             terms.push_back(c.mul(
-                {coeffs[d], c.pow(var, c.number(static_cast<keel::i64>(d)))}));
+                {coeffs[d], c.pow(var, c.number(keel::as<keel::i64>(d)))}));
         }
     }
     return terms.empty() ? c.zero() : c.add(terms);
@@ -1914,7 +1914,7 @@ bool integrateLinearLogOverLinearPole(Ctx &c, Expr logArg, Expr a, Expr b,
     for (keel::usize j = 0; j < lPoly.size(); ++j) {
         if (c.isZero(lPoly[j]))
             continue;
-        const keel::i64 m = poleK - static_cast<keel::i64>(j);
+        const keel::i64 m = poleK - keel::as<keel::i64>(j);
         if (m == 1) {
             pieces.push_back(c.mul({lPoly[j], baseI1}));
         } else if (m >= 2) {
@@ -1996,21 +1996,21 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 const Expr twoA = c.mul({c.number(keel::i64{2}), a});
                 keel::Array<Expr> qPoly(
                     pCoeffs.size() >= 2 ? pCoeffs.size() - 1 : 0, c.zero());
-                for (int m = static_cast<int>(pCoeffs.size()) - 1; m >= 1; --m) {
-                    const Expr pm = pCoeffs[static_cast<keel::usize>(m)];
+                for (int m = keel::as<int>(pCoeffs.size()) - 1; m >= 1; --m) {
+                    const Expr pm = pCoeffs[keel::as<keel::usize>(m)];
                     if (c.isZero(pm))
                         continue;
                     const Expr cm1 = c.simplify(c.div(pm, twoA));
-                    qPoly[static_cast<keel::usize>(m - 1)] = cm1;
-                    pCoeffs[static_cast<keel::usize>(m - 1)] = c.simplify(c.add(
-                        {pCoeffs[static_cast<keel::usize>(m - 1)],
+                    qPoly[keel::as<keel::usize>(m - 1)] = cm1;
+                    pCoeffs[keel::as<keel::usize>(m - 1)] = c.simplify(c.add(
+                        {pCoeffs[keel::as<keel::usize>(m - 1)],
                          c.neg(c.mul({b, cm1}))}));
                     if (m >= 2) {
-                        pCoeffs[static_cast<keel::usize>(m - 2)] =
+                        pCoeffs[keel::as<keel::usize>(m - 2)] =
                             c.simplify(c.add(
-                                {pCoeffs[static_cast<keel::usize>(m - 2)],
+                                {pCoeffs[keel::as<keel::usize>(m - 2)],
                                  c.neg(c.mul(
-                                     {c.number(static_cast<keel::i64>(m - 1)),
+                                     {c.number(keel::as<keel::i64>(m - 1)),
                                       cm1}))}));
                     }
                 }
@@ -2096,19 +2096,19 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                                 denom));
                             const Expr rec =
                                 c.mul({c.div(a, denom),
-                                       iPow[static_cast<keel::usize>(m - 1)]});
-                            iPow[static_cast<keel::usize>(m)] =
+                                       iPow[keel::as<keel::usize>(m - 1)]});
+                            iPow[keel::as<keel::usize>(m)] =
                                 c.add({boundary, rec});
                         }
                         for (keel::usize j = 0; j < lPoly.size(); ++j) {
                             if (c.isZero(lPoly[j]))
                                 continue;
                             const keel::i64 m =
-                                poleK - static_cast<keel::i64>(j);
+                                poleK - keel::as<keel::i64>(j);
                             if (m >= 1) {
                                 fPieces.push_back(c.mul(
                                     {lPoly[j],
-                                     iPow[static_cast<keel::usize>(m)]}));
+                                     iPow[keel::as<keel::usize>(m)]}));
                             } else {
                                 const Expr elemIntegrand = c.mul(
                                     {lPoly[j], c.pow(linBase, c.number(-m)),
@@ -2235,7 +2235,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                                    c.func("li", logArg)}));
                     } else {
                         const Expr mPlus1 =
-                            c.number(static_cast<keel::i64>(m + 1));
+                            c.number(keel::as<keel::i64>(m + 1));
                         pieces.push_back(c.mul(
                             {mPoly[m], c.pow(a, c.number(keel::i64{-1})),
                              c.func("Ei",
@@ -2337,19 +2337,19 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                             const Expr denom = c.mul({c1, c.number(m - 1)});
                             const Expr lPow =
                                 c.pow(linBase, c.number(-(m - 1)));
-                            sinInt[static_cast<keel::usize>(m)] = c.add(
+                            sinInt[keel::as<keel::usize>(m)] = c.add(
                                 {c.neg(c.div(
                                      c.mul({c.func("sin", trigArg), lPow}),
                                      denom)),
                                  c.mul({c.div(a, denom),
-                                        cosInt[static_cast<keel::usize>(m - 1)]})});
-                            cosInt[static_cast<keel::usize>(m)] = c.add(
+                                        cosInt[keel::as<keel::usize>(m - 1)]})});
+                            cosInt[keel::as<keel::usize>(m)] = c.add(
                                 {c.neg(c.div(
                                      c.mul({c.func("cos", trigArg), lPow}),
                                      denom)),
                                  c.neg(c.mul(
                                      {c.div(a, denom),
-                                      sinInt[static_cast<keel::usize>(m - 1)]}))});
+                                      sinInt[keel::as<keel::usize>(m - 1)]}))});
                         }
                         keel::Array<Expr> fPieces;
                         bool okPieces = true;
@@ -2357,12 +2357,12 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                             if (c.isZero(lPoly[j]))
                                 continue;
                             const keel::i64 m =
-                                poleK - static_cast<keel::i64>(j);
+                                poleK - keel::as<keel::i64>(j);
                             if (m >= 1) {
                                 const Expr baseInt =
                                     (trigFn == "sin")
-                                        ? sinInt[static_cast<keel::usize>(m)]
-                                        : cosInt[static_cast<keel::usize>(m)];
+                                        ? sinInt[keel::as<keel::usize>(m)]
+                                        : cosInt[keel::as<keel::usize>(m)];
                                 fPieces.push_back(c.mul({lPoly[j], baseInt}));
                             } else {
                                 const Expr elemIntegrand =
@@ -2410,38 +2410,38 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
 
                 keel::Array<Expr> elemSin(degP >= 2 ? degP - 1 : 0, c.zero());
                 keel::Array<Expr> elemCos(degP >= 2 ? degP - 1 : 0, c.zero());
-                for (int m = static_cast<int>(degP) - 1; m >= 1; --m) {
-                    const Expr sm = sPoly[static_cast<keel::usize>(m)];
+                for (int m = keel::as<int>(degP) - 1; m >= 1; --m) {
+                    const Expr sm = sPoly[keel::as<keel::usize>(m)];
                     if (!c.isZero(sm)) {
                         const Expr k = c.simplify(c.div(sm, twoA));
-                        elemCos[static_cast<keel::usize>(m - 1)] = c.simplify(
-                            c.add({elemCos[static_cast<keel::usize>(m - 1)],
+                        elemCos[keel::as<keel::usize>(m - 1)] = c.simplify(
+                            c.add({elemCos[keel::as<keel::usize>(m - 1)],
                                    c.neg(k)}));
-                        sPoly[static_cast<keel::usize>(m - 1)] = c.simplify(
-                            c.add({sPoly[static_cast<keel::usize>(m - 1)],
+                        sPoly[keel::as<keel::usize>(m - 1)] = c.simplify(
+                            c.add({sPoly[keel::as<keel::usize>(m - 1)],
                                    c.neg(c.mul({b, k}))}));
                         if (m >= 2) {
-                            cPoly[static_cast<keel::usize>(m - 2)] = c.simplify(
-                                c.add({cPoly[static_cast<keel::usize>(m - 2)],
+                            cPoly[keel::as<keel::usize>(m - 2)] = c.simplify(
+                                c.add({cPoly[keel::as<keel::usize>(m - 2)],
                                        c.mul({c.number(
-                                                  static_cast<keel::i64>(m - 1)),
+                                                  keel::as<keel::i64>(m - 1)),
                                               k})}));
                         }
                     }
-                    const Expr cm = cPoly[static_cast<keel::usize>(m)];
+                    const Expr cm = cPoly[keel::as<keel::usize>(m)];
                     if (!c.isZero(cm)) {
                         const Expr k = c.simplify(c.div(cm, twoA));
-                        elemSin[static_cast<keel::usize>(m - 1)] = c.simplify(
-                            c.add({elemSin[static_cast<keel::usize>(m - 1)], k}));
-                        cPoly[static_cast<keel::usize>(m - 1)] = c.simplify(
-                            c.add({cPoly[static_cast<keel::usize>(m - 1)],
+                        elemSin[keel::as<keel::usize>(m - 1)] = c.simplify(
+                            c.add({elemSin[keel::as<keel::usize>(m - 1)], k}));
+                        cPoly[keel::as<keel::usize>(m - 1)] = c.simplify(
+                            c.add({cPoly[keel::as<keel::usize>(m - 1)],
                                    c.neg(c.mul({b, k}))}));
                         if (m >= 2) {
-                            sPoly[static_cast<keel::usize>(m - 2)] = c.simplify(
-                                c.add({sPoly[static_cast<keel::usize>(m - 2)],
+                            sPoly[keel::as<keel::usize>(m - 2)] = c.simplify(
+                                c.add({sPoly[keel::as<keel::usize>(m - 2)],
                                        c.neg(c.mul(
                                            {c.number(
-                                                static_cast<keel::i64>(m - 1)),
+                                                keel::as<keel::i64>(m - 1)),
                                             k}))}));
                         }
                     }
@@ -3222,7 +3222,7 @@ bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out)
             const Expr f = fs[i];
             out.push_back(j - i == 1
                               ? f
-                              : c.pow(f, c.number(static_cast<keel::i64>(j - i))));
+                              : c.pow(f, c.number(keel::as<keel::i64>(j - i))));
             i = j;
         }
         return out;
@@ -3471,20 +3471,20 @@ Expr evalQuadraticFourierResidue(Ctx &c, Expr A, Expr B, Expr alpha,
     J[1] = c.mul({piSym, invBeta, expDecay});
     K[1] = c.mul({piSym, expDecay});
     for (int m = 2; m <= k; ++m) {
-        const Expr twoM1 = c.number(static_cast<keel::i64>(2 * (m - 1)));
-        K[static_cast<keel::usize>(m)] = c.simplify(
-            c.div(c.mul({absOmega, J[static_cast<keel::usize>(m - 1)]}), twoM1));
+        const Expr twoM1 = c.number(keel::as<keel::i64>(2 * (m - 1)));
+        K[keel::as<keel::usize>(m)] = c.simplify(
+            c.div(c.mul({absOmega, J[keel::as<keel::usize>(m - 1)]}), twoM1));
         const Expr numJ = c.add(
-            {c.mul({c.number(static_cast<keel::i64>(2 * m - 3)),
-                    J[static_cast<keel::usize>(m - 1)]}),
-             c.mul({absOmega, K[static_cast<keel::usize>(m - 1)]})});
-        J[static_cast<keel::usize>(m)] =
+            {c.mul({c.number(keel::as<keel::i64>(2 * m - 3)),
+                    J[keel::as<keel::usize>(m - 1)]}),
+             c.mul({absOmega, K[keel::as<keel::usize>(m - 1)]})});
+        J[keel::as<keel::usize>(m)] =
             c.simplify(c.div(numJ, c.mul({twoM1, betaSq})));
     }
     const Expr bTilde = c.simplify(c.add({B, c.mul({A, alpha})}));
-    const Expr jk = J[static_cast<keel::usize>(k)];
-    const Expr kk = K[static_cast<keel::usize>(k)];
-    const Expr sgnExpr = c.number(static_cast<keel::i64>(sgnOmega));
+    const Expr jk = J[keel::as<keel::usize>(k)];
+    const Expr kk = K[keel::as<keel::usize>(k)];
+    const Expr sgnExpr = c.number(keel::as<keel::i64>(sgnOmega));
     if (c.isZero(alpha)) {
         if (!isSin)
             return c.simplify(c.mul({bTilde, jk}));
@@ -3621,7 +3621,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
             const Rational c0 = N.coeff(0) / dTilde.coeff(0);
             // int_{-inf}^{inf} c0 * sin(omega*x)/x dx = c0 * sgn(omega) * pi
             totalTerms.push_back(c.mul(
-                {c.number(c0 * Rational(static_cast<keel::i64>(sgnOmega))),
+                {c.number(c0 * Rational(keel::as<keel::i64>(sgnOmega))),
                  c.symbol("pi")}));
             const UPoly remNum = N - (dTilde * UPoly({c0}));
             UPoly nNext, rNext;
@@ -3730,7 +3730,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
                 extractPolyInVar(c, c.child(rf, 0), var, 2, qCoeffs) &&
                 qCoeffs.size() == 3 && !c.isZero(qCoeffs[2])) {
                 quadBase = c.child(rf, 0);
-                quadK = static_cast<int>(-kVal);
+                quadK = keel::as<int>(-kVal);
                 continue;
             }
         }
@@ -3759,7 +3759,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
                 if (!isSin && quadK == 1 && !c.isZero(aCoeff))
                     return false;
                 const Expr scale =
-                    c.pow(a2, c.number(static_cast<keel::i64>(-quadK)));
+                    c.pow(a2, c.number(keel::as<keel::i64>(-quadK)));
                 const Expr res = evalQuadraticFourierResidue(
                     c, aCoeff, bCoeff, alpha, betaSq, quadK, absOmega, sgnOmega,
                     isSin);
@@ -4559,7 +4559,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         int unitIdx = -1;
         for (keel::usize i = 0; i < bins.size(); ++i) {
             if (bins[i].param == c.one() && bins[i].exp == negHalf) {
-                unitIdx = static_cast<int>(i);
+                unitIdx = keel::as<int>(i);
                 break;
             }
         }
@@ -4567,7 +4567,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
             return false;
         keel::Array<QuadBinom> rem;
         for (keel::usize i = 0; i < bins.size(); ++i) {
-            if (static_cast<int>(i) != unitIdx && !bins[i].exp.isZero())
+            if (keel::as<int>(i) != unitIdx && !bins[i].exp.isZero())
                 rem.push_back(bins[i]);
         }
         if (rem.size() == 1) {
@@ -4583,14 +4583,14 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
         } else if (rem.size() == 2) {
             int nIdx = -1, mIdx = -1;
             for (int i = 0; i < 2; ++i) {
-                if (rem[static_cast<keel::usize>(i)].exp == negOne)
+                if (rem[keel::as<keel::usize>(i)].exp == negOne)
                     nIdx = i;
-                else if (rem[static_cast<keel::usize>(i)].exp == negHalf)
+                else if (rem[keel::as<keel::usize>(i)].exp == negHalf)
                     mIdx = i;
             }
             if (nIdx >= 0 && mIdx >= 0) {
-                const Expr n = rem[static_cast<keel::usize>(nIdx)].param;
-                const Expr m = rem[static_cast<keel::usize>(mIdx)].param;
+                const Expr n = rem[keel::as<keel::usize>(nIdx)].param;
+                const Expr m = rem[keel::as<keel::usize>(mIdx)].param;
                 if (validParamBelowOne(n, false) && validParamBelowOne(m, false)) {
                     valOut = c.simplify(
                         c.mul({constCoef, c.func("ellipticPi", n, m)}));
@@ -4625,14 +4625,14 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     } else if (nz.size() == 2) {
         int nIdx = -1, mIdx = -1;
         for (int i = 0; i < 2; ++i) {
-            if (nz[static_cast<keel::usize>(i)].exp == negOne)
+            if (nz[keel::as<keel::usize>(i)].exp == negOne)
                 nIdx = i;
-            else if (nz[static_cast<keel::usize>(i)].exp == negHalf)
+            else if (nz[keel::as<keel::usize>(i)].exp == negHalf)
                 mIdx = i;
         }
         if (nIdx >= 0 && mIdx >= 0) {
-            const Expr n = nz[static_cast<keel::usize>(nIdx)].param;
-            const Expr m = nz[static_cast<keel::usize>(mIdx)].param;
+            const Expr n = nz[keel::as<keel::usize>(nIdx)].param;
+            const Expr m = nz[keel::as<keel::usize>(mIdx)].param;
             if (validParamBelowOne(n, false) && validParamBelowOne(m, false)) {
                 valOut = c.simplify(
                     c.mul({constCoef, c.func("ellipticPi", n, m)}));
@@ -4895,8 +4895,8 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
                 if (contourFourierTerm(c, c.expand(f), var, budget, val)) {
                     const Rational scale =
                         fullLine
-                            ? Rational(static_cast<keel::i64>(orientSign))
-                            : Rational(static_cast<keel::i64>(orientSign),
+                            ? Rational(keel::as<keel::i64>(orientSign))
+                            : Rational(keel::as<keel::i64>(orientSign),
                                        BigInt(2));
                     out.value = c.simplify(c.mul({c.number(scale), val}));
                     out.status = DefiniteIntegral::Status::ProvedSymbolic;

@@ -42,7 +42,7 @@ public:
 
     keel::u64 p() const { return p_; }
     bool hasP() const { return p_ != 0; }
-    int deg() const { return static_cast<int>(c_.size()) - 1; }
+    int deg() const { return keel::as<int>(c_.size()) - 1; }
     bool isZero() const { return c_.empty(); }
     bool isOne() const { return c_.size() == 1 && c_[0] == 1; }
     keel::u64 coeff(keel::usize i) const { return i < c_.size() ? c_[i] : 0; }

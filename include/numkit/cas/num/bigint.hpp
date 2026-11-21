@@ -20,12 +20,12 @@ public:
     template <typename T>
         requires(keel::IsIntegral<T> && !keel::IsSame<keel::RemoveCv<T>, bool> &&
                  keel::IsSigned<T> && !keel::IsSame<keel::RemoveCv<T>, keel::i64>)
-    BigInt(T v) noexcept : v_(static_cast<keel::i64>(v)) {}
+    BigInt(T v) noexcept : v_(keel::as<keel::i64>(v)) {}
 
     template <typename T>
         requires(keel::IsIntegral<T> && !keel::IsSame<keel::RemoveCv<T>, bool> &&
                  keel::IsUnsigned<T> && !keel::IsSame<keel::RemoveCv<T>, keel::u64>)
-    BigInt(T v) noexcept : v_(static_cast<keel::u64>(v)) {}
+    BigInt(T v) noexcept : v_(keel::as<keel::u64>(v)) {}
 
     const keel::bignum::BigInt &raw() const noexcept { return v_; }
     keel::bignum::BigInt &raw() noexcept { return v_; }
@@ -37,7 +37,7 @@ public:
 
     bool isZero() const noexcept { return v_.is_zero(); }
     bool isInline() const noexcept { return v_.is_inline(); }
-    int signum() const noexcept { return static_cast<int>(v_.signum()); }
+    int signum() const noexcept { return keel::as<int>(v_.signum()); }
     bool isNegative() const noexcept { return v_.is_negative(); }
     keel::usize bitLength() const noexcept { return v_.bit_length(); }
     keel::u64 lowLimb() const noexcept { return v_.low_limb(); }
@@ -97,7 +97,7 @@ public:
         keel::Array<std::pair<BigInt, int>> out;
         out.reserve(raw.size());
         for (keel::usize i = 0; i < raw.size(); ++i) {
-            out.emplace_back(BigInt(keel::move(raw[i].prime)), static_cast<int>(raw[i].exponent));
+            out.emplace_back(BigInt(keel::move(raw[i].prime)), keel::as<int>(raw[i].exponent));
         }
         return out;
     }

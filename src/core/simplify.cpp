@@ -1620,18 +1620,18 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                     eul[0] = BigInt(1);
                     for (keel::i64 i = 2; i <= m; ++i) {
                         for (keel::i64 k = i - 1; k >= 1; --k) {
-                            eul[static_cast<keel::usize>(k)] =
+                            eul[keel::as<keel::usize>(k)] =
                                 BigInt(k + 1) *
-                                    eul[static_cast<keel::usize>(k)] +
+                                    eul[keel::as<keel::usize>(k)] +
                                 BigInt(i - k) *
-                                    eul[static_cast<keel::usize>(k - 1)];
+                                    eul[keel::as<keel::usize>(k - 1)];
                         }
                     }
                     keel::Array<Expr> numTerms;
                     for (keel::i64 k = 0; k < m; ++k) {
                         numTerms.push_back(c.mul({
                             c.number(Rational(
-                                eul[static_cast<keel::usize>(k)], BigInt(1))),
+                                eul[keel::as<keel::usize>(k)], BigInt(1))),
                             c.pow(xArg, c.number(m - k))}));
                     }
                     return c.mul({c.add(numTerms), denPow});
@@ -1838,7 +1838,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 for (keel::i64 j = 2; j <= sInt; ++j)
                     fact2k = fact2k * BigInt(j);
                 const BigInt twoPow = BigInt::powUInt(
-                    BigInt(2), static_cast<keel::usize>(sInt - 1));
+                    BigInt(2), keel::as<keel::usize>(sInt - 1));
                 const Rational sign(k % 2 == 1 ? 1 : -1);
                 const Rational coef =
                     sign * Rational(twoPow, fact2k) * b2k;
@@ -1857,7 +1857,7 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
         if (ra.den() == BigInt(1) && ra.num().fitsInt64(sInt) && sInt >= 2 &&
             sInt <= 30) {
             const BigInt twoPow =
-                BigInt::powUInt(BigInt(2), static_cast<keel::usize>(sInt - 1));
+                BigInt::powUInt(BigInt(2), keel::as<keel::usize>(sInt - 1));
             const Rational etaFactor(twoPow - BigInt(1), twoPow);
             return c.mul({
                 c.number(etaFactor),
@@ -1943,14 +1943,14 @@ Expr simplifyFuncNode(Ctx &c, Expr e)
                 for (keel::i64 k = 1; k <= n; ++k)
                     df = df * BigInt(2 * k - 1);
                 const Rational coef(df,
-                                    BigInt(1) << static_cast<keel::u64>(n));
+                                    BigInt(1) << keel::as<keel::u64>(n));
                 return c.mul({c.number(coef), sqrtPi});
             }
             const keel::i64 n = (1 - p) / 2;
             BigInt df(1);
             for (keel::i64 k = 1; k <= n; ++k)
                 df = df * BigInt(2 * k - 1);
-            BigInt num = BigInt(1) << static_cast<keel::u64>(n);
+            BigInt num = BigInt(1) << keel::as<keel::u64>(n);
             if (n % 2 != 0)
                 num = -num;
             return c.mul({c.number(Rational(num, df)), sqrtPi});
@@ -2414,7 +2414,7 @@ Expr rewriteBottomUp(Ctx &c, Expr e)
                         if (pe.second >= 2) {
                             sPart = sPart * BigInt::powUInt(
                                                 pe.first,
-                                                static_cast<keel::u64>(
+                                                keel::as<keel::u64>(
                                                     pe.second / 2));
                         }
                         if (pe.second % 2 == 1)
@@ -2856,8 +2856,8 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
             const Expr mu = simplifyRationalExpr(
                 c, c.add({minOrd, c.number(r)}));
             const Expr muExpr = mu.isNull() ? c.add({minOrd, c.number(r)}) : mu;
-            const Expr fPrev = seq[static_cast<keel::usize>(r - 1)];
-            const Expr fCur = seq[static_cast<keel::usize>(r)];
+            const Expr fPrev = seq[keel::as<keel::usize>(r - 1)];
+            const Expr fCur = seq[keel::as<keel::usize>(r)];
             Expr fNext;
             if (fn == "besselj" || fn == "bessely") {
                 fNext = c.add({
@@ -2932,7 +2932,7 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
                 ok = false;
                 break;
             }
-            seq[static_cast<keel::usize>(r + 1)] = fNext;
+            seq[keel::as<keel::usize>(r + 1)] = fNext;
         }
         if (!ok)
             continue;
@@ -2941,7 +2941,7 @@ Expr reduceThreeTermRecurrences(Ctx &c, Expr e)
             const keel::i64 k = sn.off - minOff;
             if (k >= 2) {
                 curExpr = c.subs(curExpr, sn.node,
-                                 seq[static_cast<keel::usize>(k)]);
+                                 seq[keel::as<keel::usize>(k)]);
                 anyReduced = true;
             }
         }
@@ -3236,7 +3236,7 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
 
     res.dense.assign(maxDeg + 1, c.zero());
     for (const auto &pr : buckets) {
-        const keel::usize idx = static_cast<keel::usize>(pr.first);
+        const keel::usize idx = keel::as<keel::usize>(pr.first);
         res.dense[idx] = c.add({res.dense[idx], pr.second});
     }
 
@@ -3249,7 +3249,7 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
                     ? c.one()
                     : (k == 1
                            ? var
-                           : c.pow(var, c.number(static_cast<keel::i64>(k))));
+                           : c.pow(var, c.number(keel::as<keel::i64>(k))));
             res.terms.push_back(monom);
         }
     }
@@ -3365,7 +3365,7 @@ Expr partfrac(Ctx &c, Expr e, Expr var, Budget *budget)
             const auto *it = &padicNumerators[pi];
             const Expr numExpr = toExpr(c, it->second, var);
             const Expr denPow = c.pow(
-                baseExpr, c.number(-static_cast<keel::i64>(it->first)));
+                baseExpr, c.number(-keel::as<keel::i64>(it->first)));
             pfTerms.push_back(c.mul({numExpr, denPow}));
         }
     }

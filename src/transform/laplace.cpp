@@ -51,7 +51,7 @@ Rational halfIntGammaCoeff(keel::i64 k)
 {
     const BigInt num = factorialBigInt(2 * k);
     const BigInt den =
-        BigInt::powUInt(BigInt(4), static_cast<keel::u64>(k)) *
+        BigInt::powUInt(BigInt(4), keel::as<keel::u64>(k)) *
         factorialBigInt(k);
     return Rational(num, den);
 }
@@ -66,12 +66,12 @@ Expr factorPosRationalPower(Ctx &c, const Rational &v, const Rational &exp)
     for (const auto &pk : BigInt::factorize(v.num())) {
         parts.push_back(c.pow(
             c.number(Rational(pk.first, BigInt(1))),
-            c.number(exp * Rational(static_cast<keel::i64>(pk.second)))));
+            c.number(exp * Rational(keel::as<keel::i64>(pk.second)))));
     }
     for (const auto &pk : BigInt::factorize(v.den())) {
         parts.push_back(c.pow(
             c.number(Rational(pk.first, BigInt(1))),
-            c.number(-exp * Rational(static_cast<keel::i64>(pk.second)))));
+            c.number(-exp * Rational(keel::as<keel::i64>(pk.second)))));
     }
     return parts.empty() ? c.one() : c.mul(parts);
 }
@@ -301,18 +301,18 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
                 const keel::String &fn = c.funcName(kids[i]);
                 if (fn == "sin" || fn == "cos") {
                     if (idx1 < 0) {
-                        idx1 = static_cast<int>(i);
+                        idx1 = keel::as<int>(i);
                         hypPair = false;
                     } else if (!hypPair) {
-                        idx2 = static_cast<int>(i);
+                        idx2 = keel::as<int>(i);
                         break;
                     }
                 } else if (fn == "sinh" || fn == "cosh") {
                     if (idx1 < 0) {
-                        idx1 = static_cast<int>(i);
+                        idx1 = keel::as<int>(i);
                         hypPair = true;
                     } else if (hypPair) {
-                        idx2 = static_cast<int>(i);
+                        idx2 = keel::as<int>(i);
                         break;
                     }
                 }
@@ -320,8 +320,8 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
         }
         if (idx1 >= 0 && idx2 >= 0) {
             changed = true;
-            const Expr f1 = kids[static_cast<keel::usize>(idx1)];
-            const Expr f2 = kids[static_cast<keel::usize>(idx2)];
+            const Expr f1 = kids[keel::as<keel::usize>(idx1)];
+            const Expr f2 = kids[keel::as<keel::usize>(idx2)];
             const keel::String &fn1 = c.funcName(f1);
             const keel::String &fn2 = c.funcName(f2);
             const Expr u = c.child(f1, 0);
@@ -365,7 +365,7 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
             keel::Array<Expr> rest;
             rest.push_back(pairSum);
             for (keel::usize i = 0; i < kids.size(); ++i) {
-                if (static_cast<int>(i) != idx1 && static_cast<int>(i) != idx2)
+                if (keel::as<int>(i) != idx1 && keel::as<int>(i) != idx2)
                     rest.push_back(kids[i]);
             }
             return c.expand(c.mul(rest));
@@ -666,7 +666,7 @@ bool invertPartialFractionTerm(Ctx &c, const UPoly &R, const UPoly &P, int j,
         keel::Array<Expr> factors;
         factors.push_back(c.number(coef));
         if (j > 1)
-            factors.push_back(c.pow(t, c.number(static_cast<keel::i64>(j - 1))));
+            factors.push_back(c.pow(t, c.number(keel::as<keel::i64>(j - 1))));
         if (!r.isZero())
             factors.push_back(c.func("exp", c.mul({c.number(r), t})));
         outTerm = c.mul(factors);
@@ -814,7 +814,7 @@ bool tryRationalIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     keel::Array<Expr> timeTerms;
     for (keel::usize i = 0; i < grouped.size(); ++i) {
         const UPoly &P = grouped[i].first;
-        const int m = static_cast<int>(grouped[i].second);
+        const int m = keel::as<int>(grouped[i].second);
         UPoly cur = numerators[i];
         for (int j = m; j >= 1; --j) {
             UPoly q, rem;

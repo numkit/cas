@@ -752,7 +752,7 @@ bool tryRiccatiOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
         const Expr kSym = c.symbol("_riccati_k");
         for (int m : {0, 1, -1, 2}) {
             const Expr xm =
-                (m == 0) ? c.one() : c.pow(x, c.number(static_cast<keel::i64>(m)));
+                (m == 0) ? c.one() : c.pow(x, c.number(keel::as<keel::i64>(m)));
             const Expr ypAns = c.mul({kSym, xm});
             const Expr dyp = c.diff(ypAns, x);
             const Expr res = c.simplify(
@@ -1495,7 +1495,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
     for (keel::usize k = 0; k <= n; ++k) {
         const Expr xk =
             (k == 0) ? c.one()
-                     : c.pow(x, c.number(static_cast<keel::i64>(k)));
+                     : c.pow(x, c.number(keel::as<keel::i64>(k)));
         Expr cur = c.mul({xk, f});
         for (keel::usize drv = 0; drv < n + 2; ++drv) {
             if (drv > 0)
@@ -1643,7 +1643,7 @@ bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
                 supportedFactors = false;
                 break;
             }
-            totalDeg += static_cast<keel::usize>(d) * gm.second;
+            totalDeg += keel::as<keel::usize>(d) * gm.second;
         }
 
         if (supportedFactors && totalDeg == n) {
@@ -1660,7 +1660,7 @@ bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
                         const Expr xj =
                             (j == 0)
                                 ? c.one()
-                                : c.pow(x, c.number(static_cast<keel::i64>(j)));
+                                : c.pow(x, c.number(keel::as<keel::i64>(j)));
                         basisOut.push_back(c.simplify(c.mul({xj, expRx})));
                     }
                 } else if (fac.deg() == 2) {
@@ -1697,7 +1697,7 @@ bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
                                 (j == 0)
                                     ? c.one()
                                     : c.pow(x, c.number(
-                                                   static_cast<keel::i64>(j)));
+                                                   keel::as<keel::i64>(j)));
                             basisOut.push_back(
                                 c.simplify(c.mul({xj, env, cosWx})));
                             basisOut.push_back(
@@ -1722,7 +1722,7 @@ bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
                                 (j == 0)
                                     ? c.one()
                                     : c.pow(x, c.number(
-                                                   static_cast<keel::i64>(j)));
+                                                   keel::as<keel::i64>(j)));
                             basisOut.push_back(c.simplify(c.mul({xj, e1})));
                             basisOut.push_back(c.simplify(c.mul({xj, e2})));
                         }
@@ -1741,7 +1741,7 @@ bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
     for (keel::usize k = 0; k <= n; ++k) {
         const Expr rk =
             (k == 0) ? c.one()
-                     : c.pow(rSym, c.number(static_cast<keel::i64>(k)));
+                     : c.pow(rSym, c.number(keel::as<keel::i64>(k)));
         charTerms.push_back(c.mul({coeffs[k], rk}));
     }
     const Expr charEq = c.add(charTerms);
@@ -1767,7 +1767,7 @@ bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
         for (keel::usize j = 0; j < mult && basisOut.size() < n; ++j) {
             const Expr xj =
                 (j == 0) ? c.one()
-                         : c.pow(x, c.number(static_cast<keel::i64>(j)));
+                         : c.pow(x, c.number(keel::as<keel::i64>(j)));
             basisOut.push_back(c.simplify(c.mul({xj, expRx})));
         }
     }
@@ -2953,7 +2953,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         for (int deg = 0; deg <= 4; ++deg) {
             const Expr phi =
                 (deg == 0) ? c.one()
-                           : c.pow(x, c.number(static_cast<keel::i64>(deg)));
+                           : c.pow(x, c.number(keel::as<keel::i64>(deg)));
             const Expr d1 = c.diff(phi, x);
             const Expr d2 = c.diff(d1, x);
             const Expr img = c.simplify(
@@ -3123,7 +3123,7 @@ bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
             if (k < 0)
                 return false;
             if (k <= maxDeg) {
-                const auto idx = static_cast<keel::usize>(k);
+                const auto idx = keel::as<keel::usize>(k);
                 coeffsOut[idx] = c.simplify(c.add({coeffsOut[idx], c.one()}));
             }
             return true;
@@ -3151,7 +3151,7 @@ bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
                 }
             }
             if (degT <= maxDeg) {
-                const auto idx = static_cast<keel::usize>(degT);
+                const auto idx = keel::as<keel::usize>(degT);
                 const Expr coef =
                     coefParts.empty() ? c.one() : c.mul(coefParts);
                 coeffsOut[idx] = c.simplify(c.add({coeffsOut[idx], coef}));
@@ -3220,12 +3220,12 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         }
         keel::Array<Expr> sumTerms;
         for (int k = 0; k <= n; ++k) {
-            const auto nkIdx = static_cast<keel::usize>(n - k);
-            const auto kIdx = static_cast<keel::usize>(k);
-            const auto kp1Idx = static_cast<keel::usize>(k + 1);
+            const auto nkIdx = keel::as<keel::usize>(n - k);
+            const auto kIdx = keel::as<keel::usize>(k);
+            const auto kp1Idx = keel::as<keel::usize>(k + 1);
             if (!c.isZero(pCoeffs[nkIdx]) && !c.isZero(cCoeffs[kp1Idx])) {
                 sumTerms.push_back(c.mul(
-                    {pCoeffs[nkIdx], c.number(static_cast<keel::i64>(k + 1)),
+                    {pCoeffs[nkIdx], c.number(keel::as<keel::i64>(k + 1)),
                      cCoeffs[kp1Idx]}));
             }
             if (!c.isZero(qCoeffs[nkIdx]) && !c.isZero(cCoeffs[kIdx])) {
@@ -3235,23 +3235,23 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         const Expr sumVal =
             sumTerms.empty() ? c.zero() : c.simplify(c.add(sumTerms));
         const Expr numer =
-            c.simplify(c.add({rCoeffs[static_cast<keel::usize>(n)],
+            c.simplify(c.add({rCoeffs[keel::as<keel::usize>(n)],
                               c.neg(sumVal)}));
         const Expr denom =
-            c.number(static_cast<keel::i64>((n + 2) * (n + 1)));
-        cCoeffs[static_cast<keel::usize>(n + 2)] =
+            c.number(keel::as<keel::i64>((n + 2) * (n + 1)));
+        cCoeffs[keel::as<keel::usize>(n + 2)] =
             c.simplify(c.div(numer, denom));
     }
 
     const Expr dx = c.add({x, c.neg(x0)});
     keel::Array<Expr> yTerms;
     for (int k = 0; k <= order; ++k) {
-        const Expr ck = cCoeffs[static_cast<keel::usize>(k)];
+        const Expr ck = cCoeffs[keel::as<keel::usize>(k)];
         if (c.isZero(ck))
             continue;
         const Expr dxPow =
             (k == 0) ? c.one()
-                     : c.pow(dx, c.number(static_cast<keel::i64>(k)));
+                     : c.pow(dx, c.number(keel::as<keel::i64>(k)));
         yTerms.push_back(c.mul({ck, dxPow}));
     }
     const Expr yPoly = yTerms.empty() ? c.zero() : c.add(yTerms);
@@ -3353,7 +3353,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
         bool validBranch = true;
         for (int n = 1; n <= order; ++n) {
             const Expr rn =
-                c.add({rRoot, c.number(static_cast<keel::i64>(n))});
+                c.add({rRoot, c.number(keel::as<keel::i64>(n))});
             const Expr indVal = evalIndicial(rn);
             if (indVal.isNull() || isZeroSimp(c, indVal)) {
                 validBranch = false;
@@ -3361,12 +3361,12 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
             }
             keel::Array<Expr> sumTerms;
             for (int k = 0; k < n; ++k) {
-                const auto nkIdx = static_cast<keel::usize>(n - k);
-                const auto kIdx = static_cast<keel::usize>(k);
+                const auto nkIdx = keel::as<keel::usize>(n - k);
+                const auto kIdx = keel::as<keel::usize>(k);
                 if (c.isZero(cCoeffs[kIdx]))
                     continue;
                 const Expr rk =
-                    c.add({rRoot, c.number(static_cast<keel::i64>(k))});
+                    c.add({rRoot, c.number(keel::as<keel::i64>(k))});
                 const Expr factor = c.simplify(
                     c.add({c.mul({rk, pCoeffs[nkIdx]}), qCoeffs[nkIdx]}));
                 if (!c.isZero(factor))
@@ -3374,7 +3374,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
             }
             const Expr sumVal =
                 sumTerms.empty() ? c.zero() : c.simplify(c.add(sumTerms));
-            cCoeffs[static_cast<keel::usize>(n)] =
+            cCoeffs[keel::as<keel::usize>(n)] =
                 c.simplify(c.neg(c.div(sumVal, indVal)));
         }
         if (!validBranch)
@@ -3382,12 +3382,12 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
 
         keel::Array<Expr> sTerms;
         for (int k = 0; k <= order; ++k) {
-            const Expr ck = cCoeffs[static_cast<keel::usize>(k)];
+            const Expr ck = cCoeffs[keel::as<keel::usize>(k)];
             if (c.isZero(ck))
                 continue;
             const Expr dxPow =
                 (k == 0) ? c.one()
-                         : c.pow(dx, c.number(static_cast<keel::i64>(k)));
+                         : c.pow(dx, c.number(keel::as<keel::i64>(k)));
             sTerms.push_back(c.mul({ck, dxPow}));
         }
         const Expr sPoly = sTerms.empty() ? c.zero() : c.add(sTerms);
@@ -4015,7 +4015,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
             out.reason.assign("budget exhausted");
             return out;
         }
-        const Expr nExpr = c.number(static_cast<keel::i64>(n));
+        const Expr nExpr = c.number(keel::as<keel::i64>(n));
         const Expr kN = c.div(c.mul({nExpr, piSym}), L);
         const Expr argX = c.mul({kN, x});
         const Expr basisN = (bc == PdeBoundaryKind::Dirichlet)
@@ -4109,7 +4109,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
             out.reason.assign("budget exhausted");
             return out;
         }
-        const Expr nExpr = c.number(static_cast<keel::i64>(n));
+        const Expr nExpr = c.number(keel::as<keel::i64>(n));
         const Expr kN = c.div(c.mul({nExpr, piSym}), L);
         const Expr omegaN = c.mul({cWave, kN});
         const Expr argX = c.mul({kN, x});
@@ -4201,7 +4201,7 @@ PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
             out.reason.assign("budget exhausted");
             return out;
         }
-        const Expr nExpr = c.number(static_cast<keel::i64>(n));
+        const Expr nExpr = c.number(keel::as<keel::i64>(n));
         const Expr kN = c.div(c.mul({nExpr, piSym}), a);
         const Expr basisX = c.func("sin", c.mul({kN, x}));
         const Expr intN =

@@ -38,6 +38,25 @@ if(NOT TARGET numkit_sys)
     endif()
 endif()
 
+if(NOT TARGET keel::bignum)
+    find_package(keel_bignum QUIET CONFIG)
+    if(TARGET keel::keel_bignum AND NOT TARGET keel::bignum)
+        add_library(keel::bignum ALIAS keel::keel_bignum)
+    endif()
+endif()
+if(NOT TARGET keel::bignum)
+    set(KEEL_BIGNUM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../keelcpp/bignum/CMakeLists.txt" AND NOT DEFINED FETCHCONTENT_SOURCE_DIR_KEEL_BIGNUM)
+        set(FETCHCONTENT_SOURCE_DIR_KEEL_BIGNUM "${CMAKE_CURRENT_SOURCE_DIR}/../../../keelcpp/bignum" CACHE PATH "Local keel_bignum checkout")
+    endif()
+    FetchContent_Declare(
+        keel_bignum
+        GIT_REPOSITORY https://github.com/keelcpp/bignum.git
+        GIT_TAG        71a36b19fcdddc3b205db91343899c68c57b8ebe
+    )
+    FetchContent_MakeAvailable(keel_bignum)
+endif()
+
 add_subdirectory(src)
 add_subdirectory(apps)
 add_subdirectory(examples)

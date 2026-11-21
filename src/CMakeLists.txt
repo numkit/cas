@@ -1,6 +1,4 @@
 set(NKCAS_KERNEL_SOURCES
-    num/bigint.cpp
-    num/rational.cpp
     core/expr.cpp
     core/diff.cpp
     core/parser.cpp
@@ -37,7 +35,7 @@ if(TARGET numkit_value AND TARGET numkit_sys)
     target_include_directories(numkit_cas_core
         PUBLIC ${PROJECT_SOURCE_DIR}/include
     )
-    target_link_libraries(numkit_cas_core PUBLIC numkit_value numkit_sys)
+    target_link_libraries(numkit_cas_core PUBLIC numkit_value numkit_sys keel::bignum)
     target_compile_features(numkit_cas_core PUBLIC cxx_std_20)
 
     if(MSVC)
@@ -58,6 +56,7 @@ if(TARGET numkit_value AND TARGET numkit_sys)
         PRIVATE ${PROJECT_SOURCE_DIR}/src
     )
     target_link_libraries(numkit_cas PUBLIC numkit_cas_core numkit_value numkit_sys numkit_value_c)
+    target_link_libraries(numkit_cas PUBLIC keel::bignum)
     target_compile_features(numkit_cas PUBLIC cxx_std_20)
 
     if(APPLE)
@@ -83,5 +82,6 @@ else()
     target_include_directories(numkit_cas
         PUBLIC ${PROJECT_SOURCE_DIR}/include
     )
+    target_link_libraries(numkit_cas PUBLIC keel::bignum)
     target_compile_features(numkit_cas PUBLIC cxx_std_20)
 endif()

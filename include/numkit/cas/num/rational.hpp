@@ -1,90 +1,76 @@
 // num/rational.hpp — canonical exact rational numbers over BigInt.
+// Thin adapter delegating to keel::Rational (<keel/rational.h>).
 #pragma once
 
 #include <keel/core.h>
+#include <keel/rational.h>
 #include <keel/string.h>
 #include <numkit/cas/num/bigint.hpp>
 
-#include <cstdint>
-
 namespace numkit::cas {
 
-// ============================================================
-// Rational — exact rational number in canonical form.
-//
-// Representation: num_ / den_ with BigInt parts. Invariants:
-//   den_ > 0, gcd(|num_|, den_) == 1, zero is 0/1.
-// All arithmetic funnels through the (p, q) constructor, which
-// enforces the invariants, so every Rational is canonical.
-// ============================================================
-class Rational
-{
+class Rational {
 public:
-    Rational() = default;
-    Rational(keel::i64 v);
-    Rational(keel::u64 v);
-    Rational(int v) : Rational(static_cast<keel::i64>(v)) {}
+    Rational() noexcept = default;
+    explicit Rational(keel::Rational raw) noexcept : v_(keel::move(raw)) {}
+    Rational(keel::i64 v) noexcept : v_(v) {}
+    Rational(keel::u64 v) noexcept : v_(v) {}
+    Rational(int v) noexcept : v_(static_cast<keel::i64>(v)) {}
 
-    // q must be non-zero (assert in debug). The constructor moves the sign
-    // into the numerator and reduces by the gcd.
-    Rational(BigInt p, BigInt q);
+    Rational(BigInt p, BigInt q) : v_(keel::move(p.raw()), keel::move(q.raw())) {}
 
-    // Strict parse: "<bigint>" or "<signed bigint>/<unsigned bigint>".
-    // Denominator zero or malformed input returns false.
-    static bool tryParse(Rational &out, keel::StringRef s);
+    const keel::Rational &raw() const noexcept { return v_; }
+    keel::Rational &raw() noexcept { return v_; }
 
-    // Exact rational value of a FINITE IEEE double: every double is
-    // m * 2^e with an integer 53-bit mantissa, so the conversion is
-    // lossless by construction. User-facing decimals that are not
-    // dyadic (0.1) route through the string constructor instead -
-    // the sym() layer contract in notes/integration-model.md.
-    static Rational fromDoubleBits(keel::f64 v);
+    static bool tryParse(Rational &out, keel::StringRef s)
+    {
+        return keel::Rational::try_parse(out.v_, s);
+    }
 
-    // Correctly rounded IEEE-754 double (scale-invariant for arbitrary
-    // numerator/denominator bit-lengths).
-    keel::f64 toDouble() const;
+    static Rational fromDoubleBits(keel::f64 v)
+    {
+        return Rational(keel::Rational::from_f64_bits(v));
+    }
 
-    bool isZero() const { return num_.isZero(); }
-    int signum() const { return num_.signum(); }
-    const BigInt &num() const { return num_; }
-    const BigInt &den() const { return den_; }
+    keel::f64 toDouble() const { return v_.to_f64(); }
 
-    bool fitsInt64(keel::i64 &out) const; // denominator 1, numerator fits
+    bool isZero() const noexcept { return v_.is_zero(); }
+    int signum() const noexcept { return static_cast<int>(v_.signum()); }
+    BigInt num() const { return BigInt(v_.num()); }
+    BigInt den() const { return BigInt(v_.den()); }
 
-    // Content hash mixing both parts (for hash-consing; collisions are fine).
-    keel::u64 hashBits() const;
+    bool fitsInt64(keel::i64 &out) const noexcept { return v_.fits_i64(out); }
+    keel::u64 hashBits() const noexcept { return v_.hash_bits(); }
 
-    static Rational powUInt(const Rational &base, keel::u64 exp);
+    static Rational powUInt(const Rational &base, keel::u64 exp)
+    {
+        return Rational(keel::Rational::pow_u64(base.v_, exp));
+    }
 
-    keel::String toString() const; // "p" if den == 1, else "p/q"
+    keel::String toString() const { return v_.to_string(); }
 
-    Rational operator-() const;
-    Rational abs() const;
+    Rational operator-() const { return Rational(-v_); }
+    Rational abs() const { return Rational(v_.abs()); }
 
-    friend Rational operator+(const Rational &a, const Rational &b);
-    friend Rational operator-(const Rational &a, const Rational &b);
-    friend Rational operator*(const Rational &a, const Rational &b);
-    friend Rational operator/(const Rational &a, const Rational &b); // b != 0
+    friend Rational operator+(const Rational &a, const Rational &b) { return Rational(a.v_ + b.v_); }
+    friend Rational operator-(const Rational &a, const Rational &b) { return Rational(a.v_ - b.v_); }
+    friend Rational operator*(const Rational &a, const Rational &b) { return Rational(a.v_ * b.v_); }
+    friend Rational operator/(const Rational &a, const Rational &b) { return Rational(a.v_ / b.v_); }
 
-    Rational &operator+=(const Rational &o) { return *this = *this + o; }
-    Rational &operator-=(const Rational &o) { return *this = *this - o; }
-    Rational &operator*=(const Rational &o) { return *this = *this * o; }
-    Rational &operator/=(const Rational &o) { return *this = *this / o; }
+    Rational &operator+=(const Rational &o) { v_ += o.v_; return *this; }
+    Rational &operator-=(const Rational &o) { v_ -= o.v_; return *this; }
+    Rational &operator*=(const Rational &o) { v_ *= o.v_; return *this; }
+    Rational &operator/=(const Rational &o) { v_ /= o.v_; return *this; }
 
-    friend bool operator==(const Rational &a, const Rational &b);
-    friend bool operator!=(const Rational &a, const Rational &b);
-    friend bool operator<(const Rational &a, const Rational &b);
-    friend bool operator<=(const Rational &a, const Rational &b);
-    friend bool operator>(const Rational &a, const Rational &b);
-    friend bool operator>=(const Rational &a, const Rational &b);
+    friend bool operator==(const Rational &a, const Rational &b) noexcept { return a.v_ == b.v_; }
+    friend bool operator!=(const Rational &a, const Rational &b) noexcept { return a.v_ != b.v_; }
+    friend bool operator<(const Rational &a, const Rational &b) { return a.v_ < b.v_; }
+    friend bool operator<=(const Rational &a, const Rational &b) { return a.v_ <= b.v_; }
+    friend bool operator>(const Rational &a, const Rational &b) { return a.v_ > b.v_; }
+    friend bool operator>=(const Rational &a, const Rational &b) { return a.v_ >= b.v_; }
 
 private:
-    // Precondition: den_ != 0. Moves the sign out of the denominator and
-    // reduces both parts by gcd(|num_|, den_).
-    void canonicalize();
-
-    BigInt num_;
-    BigInt den_ = 1;
+    keel::Rational v_;
 };
 
 } // namespace numkit::cas

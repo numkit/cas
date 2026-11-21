@@ -228,14 +228,14 @@ void Algebraic::refineTo(const Rational &width)
     iv_ = next;
 }
 
-double Algebraic::approx() const
+keel::f64 Algebraic::approx() const
 {
     if (iv_.exact())
         return iv_.lo.toDouble();
     const_cast<Algebraic *>(this)->refineTo(
         Rational(keel::i64{1}, BigInt(1000000)));
-    const double lo = iv_.lo.toDouble();
-    const double hi = iv_.hi.toDouble();
+    const keel::f64 lo = iv_.lo.toDouble();
+    const keel::f64 hi = iv_.hi.toDouble();
     return 0.5 * (lo + hi);
 }
 

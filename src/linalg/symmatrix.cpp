@@ -1582,7 +1582,7 @@ keel::Array<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
     std::sort(distinctLams.begin(), distinctLams.end(),
               [&](const std::pair<Expr, keel::usize> &a,
                   const std::pair<Expr, keel::usize> &b) {
-                  double va = 0.0, vb = 0.0;
+                  keel::f64 va = 0.0, vb = 0.0;
                   const bool okA = c.evalDouble(a.first, {}, va);
                   const bool okB = c.evalDouble(b.first, {}, vb);
                   if (okA && okB && va != vb)
@@ -2357,7 +2357,7 @@ bool evalExprSign(Ctx &c, Expr e, int &signOut)
         signOut = r.signum();
         return true;
     }
-    double d = 0.0;
+    keel::f64 d = 0.0;
     if (c.evalDouble(s, {}, d)) {
         if (d > 1e-10)
             signOut = +1;
@@ -3042,8 +3042,8 @@ Expr positiveSqrtLinalg(Ctx &c, Expr sqExpr, keel::ArrayRef<Expr> vars)
                 expInt % 2 == 0) {
                 Expr base = c.child(f, 0);
                 // Ensure canonical positive orientation for polynomial sum bases
-                double dProbe = 0.0;
-                keel::Array<std::pair<keel::StringRef, double>> env;
+                keel::f64 dProbe = 0.0;
+                keel::Array<std::pair<keel::StringRef, keel::f64>> env;
                 for (const Expr &v : vars) {
                     if (!v.isNull() && c.kind(v) == NodeKind::Symbol)
                         env.emplace_back(c.symbolName(v).as_ref(), 0.7);

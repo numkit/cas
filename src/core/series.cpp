@@ -58,7 +58,7 @@ Expr foldConst(Ctx &c, Expr e)
             const Expr arg = foldConst(c, c.child(e, i));
             if (arg.isNull())
                 return Expr();
-            double dVal = 0.0;
+            keel::f64 dVal = 0.0;
             if (!c.evalDouble(arg, {}, dVal))
                 allConst = false;
             args.push_back(arg);
@@ -496,7 +496,7 @@ int exprSign(Ctx &c, Expr e)
         return +1;
     if (c.isAssumedNegative(e))
         return -1;
-    double dVal = 0.0;
+    keel::f64 dVal = 0.0;
     if (c.evalDouble(e, {}, dVal)) {
         if (dVal > 1e-12)
             return +1;
@@ -2980,7 +2980,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
             return out;
         }
         if (!geomRatio.isNull()) {
-            double qVal = 0.0;
+            keel::f64 qVal = 0.0;
             if (c.evalDouble(geomRatio, {}, qVal)) {
                 if (keel::abs(qVal) < 1.0 - 1e-12) {
                     out.antidiff = G;
@@ -3545,7 +3545,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                         fullLi = c.neg(c.func("dirichletEta", sOrder));
                     }
                 } else if (!c.isZero(zBase)) {
-                    double zVal = 0.0;
+                    keel::f64 zVal = 0.0;
                     const bool hasNumZ = c.evalDouble(zBase, {}, zVal);
                     if (!hasNumZ || keel::abs(zVal) < 1.0 - 1e-12) {
                         fullLi = c.func("polylog", sOrder, zBase);

@@ -1226,23 +1226,23 @@ bool Ctx::evalExact(
 
 namespace {
 
-constexpr double kPiDouble = 3.141592653589793238462643383279502884;
-constexpr double kEulerGamma = 0.577215664901532860606512090082402431;
+constexpr keel::f64 kPiDouble = 3.141592653589793238462643383279502884;
+constexpr keel::f64 kEulerGamma = 0.577215664901532860606512090082402431;
 
-double evalErfiDouble(double x)
+keel::f64 evalErfiDouble(keel::f64 x)
 {
     if (x == 0.0)
         return 0.0;
-    const double sgn = x < 0.0 ? -1.0 : 1.0;
-    const double ax = keel::abs(x);
+    const keel::f64 sgn = x < 0.0 ? -1.0 : 1.0;
+    const keel::f64 ax = keel::abs(x);
     if (ax > 26.5)
         return sgn * HUGE_VAL;
-    const double x2 = ax * ax;
-    double term = ax;
-    double sum = term;
+    const keel::f64 x2 = ax * ax;
+    keel::f64 term = ax;
+    keel::f64 sum = term;
     for (int n = 1; n <= 200; ++n) {
-        term *= x2 / keel::as<double>(n);
-        const double contrib = term / keel::as<double>(2 * n + 1);
+        term *= x2 / keel::as<keel::f64>(n);
+        const keel::f64 contrib = term / keel::as<keel::f64>(2 * n + 1);
         sum += contrib;
         if (contrib <= sum * 1e-16)
             break;
@@ -1250,18 +1250,18 @@ double evalErfiDouble(double x)
     return sgn * (2.0 / std::sqrt(kPiDouble)) * sum;
 }
 
-bool evalEiDouble(double x, double &out)
+bool evalEiDouble(keel::f64 x, keel::f64 &out)
 {
     if (x == 0.0)
         return false;
     if (x > 0.0) {
         if (x > 700.0)
             return false;
-        double sum = 0.0;
-        double term = 1.0;
+        keel::f64 sum = 0.0;
+        keel::f64 term = 1.0;
         for (int n = 1; n <= 300; ++n) {
-            term *= x / keel::as<double>(n);
-            const double contrib = term / keel::as<double>(n);
+            term *= x / keel::as<keel::f64>(n);
+            const keel::f64 contrib = term / keel::as<keel::f64>(n);
             sum += contrib;
             if (contrib <= sum * 1e-16 && n > x)
                 break;
@@ -1269,13 +1269,13 @@ bool evalEiDouble(double x, double &out)
         out = kEulerGamma + std::log(x) + sum;
         return std::isfinite(out);
     }
-    const double z = -x;
+    const keel::f64 z = -x;
     if (z <= 4.0) {
-        double sum = 0.0;
-        double term = 1.0;
+        keel::f64 sum = 0.0;
+        keel::f64 term = 1.0;
         for (int n = 1; n <= 120; ++n) {
-            term *= x / keel::as<double>(n);
-            const double contrib = term / keel::as<double>(n);
+            term *= x / keel::as<keel::f64>(n);
+            const keel::f64 contrib = term / keel::as<keel::f64>(n);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16)
                 break;
@@ -1285,12 +1285,12 @@ bool evalEiDouble(double x, double &out)
     }
     // Continued fraction for E_1(z) (z > 4):
     // E_1(z) = exp(-z) / (z + 1/(1 + 1/(z + 2/(1 + 2/(z + ...)))))
-    double b = z + 1.0;
-    double c = 1.0 / 1e-30;
-    double d = 1.0 / b;
-    double h = d;
+    keel::f64 b = z + 1.0;
+    keel::f64 c = 1.0 / 1e-30;
+    keel::f64 d = 1.0 / b;
+    keel::f64 h = d;
     for (int i = 1; i <= 100; ++i) {
-        const double a = -keel::as<double>(i * i);
+        const keel::f64 a = -keel::as<keel::f64>(i * i);
         b += 2.0;
         d = a * d + b;
         if (keel::abs(d) < 1e-30)
@@ -1299,7 +1299,7 @@ bool evalEiDouble(double x, double &out)
         if (keel::abs(c) < 1e-30)
             c = 1e-30;
         d = 1.0 / d;
-        const double del = d * c;
+        const keel::f64 del = d * c;
         h *= del;
         if (keel::abs(del - 1.0) <= 1e-16)
             break;
@@ -1310,23 +1310,23 @@ bool evalEiDouble(double x, double &out)
 
 // 8-point Gauss-Legendre quadrature on [a, b].
 template <typename Fn>
-double gauss8Integrate(Fn &&fn, double a, double b, int panels)
+keel::f64 gauss8Integrate(Fn &&fn, keel::f64 a, keel::f64 b, int panels)
 {
-    static constexpr double kNodes[4] = {
+    static constexpr keel::f64 kNodes[4] = {
         0.183434642495649805, 0.525532409916328986,
         0.796666477413626740, 0.960289856497536232};
-    static constexpr double kWeights[4] = {
+    static constexpr keel::f64 kWeights[4] = {
         0.362683783378361983, 0.313706645877887287,
         0.222381034453374471, 0.101228536290376259};
-    const double h = (b - a) / keel::as<double>(panels);
-    double total = 0.0;
+    const keel::f64 h = (b - a) / keel::as<keel::f64>(panels);
+    keel::f64 total = 0.0;
     for (int p = 0; p < panels; ++p) {
-        const double x0 = a + p * h;
-        const double mid = x0 + 0.5 * h;
-        const double half = 0.5 * h;
-        double sub = 0.0;
+        const keel::f64 x0 = a + p * h;
+        const keel::f64 mid = x0 + 0.5 * h;
+        const keel::f64 half = 0.5 * h;
+        keel::f64 sub = 0.0;
         for (int i = 0; i < 4; ++i) {
-            const double dx = half * kNodes[i];
+            const keel::f64 dx = half * kNodes[i];
             sub += kWeights[i] * (fn(mid - dx) + fn(mid + dx));
         }
         total += half * sub;
@@ -1334,19 +1334,19 @@ double gauss8Integrate(Fn &&fn, double a, double b, int panels)
     return total;
 }
 
-double evalSiDouble(double x)
+keel::f64 evalSiDouble(keel::f64 x)
 {
     if (x == 0.0)
         return 0.0;
-    const double sgn = x < 0.0 ? -1.0 : 1.0;
-    const double ax = keel::abs(x);
+    const keel::f64 sgn = x < 0.0 ? -1.0 : 1.0;
+    const keel::f64 ax = keel::abs(x);
     if (ax <= 4.0) {
-        const double x2 = ax * ax;
-        double term = ax;
-        double sum = term;
+        const keel::f64 x2 = ax * ax;
+        keel::f64 term = ax;
+        keel::f64 sum = term;
         for (int n = 1; n <= 50; ++n) {
-            term *= -x2 / keel::as<double>((2 * n) * (2 * n + 1));
-            const double contrib = term / keel::as<double>(2 * n + 1);
+            term *= -x2 / keel::as<keel::f64>((2 * n) * (2 * n + 1));
+            const keel::f64 contrib = term / keel::as<keel::f64>(2 * n + 1);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16)
                 break;
@@ -1354,40 +1354,40 @@ double evalSiDouble(double x)
         return sgn * sum;
     }
     if (ax <= 32.0) {
-        const double si4 = evalSiDouble(4.0);
+        const keel::f64 si4 = evalSiDouble(4.0);
         const int panels = std::max(8, keel::as<int>(std::ceil((ax - 4.0) * 2.0)));
-        const double tail = gauss8Integrate(
-            [](double t) { return std::sin(t) / t; }, 4.0, ax, panels);
+        const keel::f64 tail = gauss8Integrate(
+            [](keel::f64 t) { return std::sin(t) / t; }, 4.0, ax, panels);
         return sgn * (si4 + tail);
     }
     // Asymptotic expansion via f(z), g(z) for z > 32.
-    const double invZ2 = 1.0 / (ax * ax);
-    double fSum = 1.0, gSum = 1.0;
-    double fTerm = 1.0, gTerm = 1.0;
+    const keel::f64 invZ2 = 1.0 / (ax * ax);
+    keel::f64 fSum = 1.0, gSum = 1.0;
+    keel::f64 fTerm = 1.0, gTerm = 1.0;
     for (int k = 1; k <= 12; ++k) {
-        fTerm *= -keel::as<double>((2 * k - 1) * (2 * k)) * invZ2;
+        fTerm *= -keel::as<keel::f64>((2 * k - 1) * (2 * k)) * invZ2;
         if (keel::abs(fTerm) > 1e-3 && k > 4)
             break;
         fSum += fTerm;
-        gTerm *= -keel::as<double>((2 * k) * (2 * k + 1)) * invZ2;
+        gTerm *= -keel::as<keel::f64>((2 * k) * (2 * k + 1)) * invZ2;
         gSum += gTerm;
     }
-    const double fVal = fSum / ax;
-    const double gVal = gSum * invZ2;
+    const keel::f64 fVal = fSum / ax;
+    const keel::f64 gVal = gSum * invZ2;
     return sgn * (0.5 * kPiDouble - fVal * std::cos(ax) - gVal * std::sin(ax));
 }
 
-bool evalCiDouble(double x, double &out)
+bool evalCiDouble(keel::f64 x, keel::f64 &out)
 {
     if (x <= 0.0)
         return false;
     if (x <= 4.0) {
-        const double x2 = x * x;
-        double term = 1.0;
-        double sum = 0.0;
+        const keel::f64 x2 = x * x;
+        keel::f64 term = 1.0;
+        keel::f64 sum = 0.0;
         for (int n = 1; n <= 50; ++n) {
-            term *= -x2 / keel::as<double>((2 * n - 1) * (2 * n));
-            const double contrib = term / keel::as<double>(2 * n);
+            term *= -x2 / keel::as<keel::f64>((2 * n - 1) * (2 * n));
+            const keel::f64 contrib = term / keel::as<keel::f64>(2 * n);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16)
                 break;
@@ -1396,60 +1396,60 @@ bool evalCiDouble(double x, double &out)
         return std::isfinite(out);
     }
     if (x <= 32.0) {
-        double ci4 = 0.0;
+        keel::f64 ci4 = 0.0;
         evalCiDouble(4.0, ci4);
         const int panels = std::max(8, keel::as<int>(std::ceil((x - 4.0) * 2.0)));
-        const double tail = gauss8Integrate(
-            [](double t) { return std::cos(t) / t; }, 4.0, x, panels);
+        const keel::f64 tail = gauss8Integrate(
+            [](keel::f64 t) { return std::cos(t) / t; }, 4.0, x, panels);
         out = ci4 + tail;
         return std::isfinite(out);
     }
-    const double invZ2 = 1.0 / (x * x);
-    double fSum = 1.0, gSum = 1.0;
-    double fTerm = 1.0, gTerm = 1.0;
+    const keel::f64 invZ2 = 1.0 / (x * x);
+    keel::f64 fSum = 1.0, gSum = 1.0;
+    keel::f64 fTerm = 1.0, gTerm = 1.0;
     for (int k = 1; k <= 12; ++k) {
-        fTerm *= -keel::as<double>((2 * k - 1) * (2 * k)) * invZ2;
+        fTerm *= -keel::as<keel::f64>((2 * k - 1) * (2 * k)) * invZ2;
         if (keel::abs(fTerm) > 1e-3 && k > 4)
             break;
         fSum += fTerm;
-        gTerm *= -keel::as<double>((2 * k) * (2 * k + 1)) * invZ2;
+        gTerm *= -keel::as<keel::f64>((2 * k) * (2 * k + 1)) * invZ2;
         gSum += gTerm;
     }
-    const double fVal = fSum / x;
-    const double gVal = gSum * invZ2;
+    const keel::f64 fVal = fSum / x;
+    const keel::f64 gVal = gSum * invZ2;
     out = fVal * std::sin(x) - gVal * std::cos(x);
     return std::isfinite(out);
 }
 
-double evalFresnelDouble(double x, bool isSine)
+keel::f64 evalFresnelDouble(keel::f64 x, bool isSine)
 {
     if (x == 0.0)
         return 0.0;
-    const double sgn = x < 0.0 ? -1.0 : 1.0;
-    const double ax = keel::abs(x);
+    const keel::f64 sgn = x < 0.0 ? -1.0 : 1.0;
+    const keel::f64 ax = keel::abs(x);
     if (ax <= 2.5) {
-        const double halfPi = 0.5 * kPiDouble;
-        const double x2 = ax * ax;
-        const double x4 = x2 * x2;
+        const keel::f64 halfPi = 0.5 * kPiDouble;
+        const keel::f64 x2 = ax * ax;
+        const keel::f64 x4 = x2 * x2;
         if (isSine) {
-            double term = halfPi * ax * x2;
-            double sum = term / 3.0;
+            keel::f64 term = halfPi * ax * x2;
+            keel::f64 sum = term / 3.0;
             for (int n = 1; n <= 45; ++n) {
                 term *= -(halfPi * halfPi * x4) /
-                        keel::as<double>((2 * n) * (2 * n + 1));
-                const double contrib = term / keel::as<double>(4 * n + 3);
+                        keel::as<keel::f64>((2 * n) * (2 * n + 1));
+                const keel::f64 contrib = term / keel::as<keel::f64>(4 * n + 3);
                 sum += contrib;
                 if (keel::abs(contrib) <= 1e-16)
                     break;
             }
             return sgn * sum;
         }
-        double term = ax;
-        double sum = term;
+        keel::f64 term = ax;
+        keel::f64 sum = term;
         for (int n = 1; n <= 45; ++n) {
             term *= -(halfPi * halfPi * x4) /
-                    keel::as<double>((2 * n - 1) * (2 * n));
-            const double contrib = term / keel::as<double>(4 * n + 1);
+                    keel::as<keel::f64>((2 * n - 1) * (2 * n));
+            const keel::f64 contrib = term / keel::as<keel::f64>(4 * n + 1);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16)
                 break;
@@ -1457,28 +1457,28 @@ double evalFresnelDouble(double x, bool isSine)
         return sgn * sum;
     }
     if (ax <= 12.0) {
-        const double base = evalFresnelDouble(2.5, isSine);
+        const keel::f64 base = evalFresnelDouble(2.5, isSine);
         const int panels = std::max(16, keel::as<int>(std::ceil((ax * ax - 6.25) * 4.0)));
-        const double tail = gauss8Integrate(
-            [isSine](double t) {
-                const double arg = 0.5 * kPiDouble * t * t;
+        const keel::f64 tail = gauss8Integrate(
+            [isSine](keel::f64 t) {
+                const keel::f64 arg = 0.5 * kPiDouble * t * t;
                 return isSine ? std::sin(arg) : std::cos(arg);
             },
             2.5, ax, panels);
         return sgn * (base + tail);
     }
     // Asymptotic expansion for ax > 12.
-    const double z = 0.5 * kPiDouble * ax * ax;
-    const double invPiAx = 1.0 / (kPiDouble * ax);
-    const double inv2Z = 1.0 / (2.0 * z);
-    const double fVal = invPiAx * (1.0 - 3.0 * inv2Z * inv2Z);
-    const double gVal = invPiAx * inv2Z * (1.0 - 15.0 * inv2Z * inv2Z);
+    const keel::f64 z = 0.5 * kPiDouble * ax * ax;
+    const keel::f64 invPiAx = 1.0 / (kPiDouble * ax);
+    const keel::f64 inv2Z = 1.0 / (2.0 * z);
+    const keel::f64 fVal = invPiAx * (1.0 - 3.0 * inv2Z * inv2Z);
+    const keel::f64 gVal = invPiAx * inv2Z * (1.0 - 15.0 * inv2Z * inv2Z);
     if (isSine)
         return sgn * (0.5 - fVal * std::cos(z) - gVal * std::sin(z));
     return sgn * (0.5 + fVal * std::sin(z) - gVal * std::cos(z));
 }
 
-bool evalDilogDouble(double x, double &out)
+bool evalDilogDouble(keel::f64 x, keel::f64 &out)
 {
     if (!std::isfinite(x) || x > 1.0)
         return false;
@@ -1486,7 +1486,7 @@ bool evalDilogDouble(double x, double &out)
         out = 0.0;
         return true;
     }
-    const double pi2Over6 = (kPiDouble * kPiDouble) / 6.0;
+    const keel::f64 pi2Over6 = (kPiDouble * kPiDouble) / 6.0;
     if (x == 1.0) {
         out = pi2Over6;
         return true;
@@ -1496,33 +1496,33 @@ bool evalDilogDouble(double x, double &out)
         return true;
     }
     if (x < -1.0) {
-        double sub = 0.0;
+        keel::f64 sub = 0.0;
         if (!evalDilogDouble(1.0 / x, sub))
             return false;
-        const double lnx = std::log(-x);
+        const keel::f64 lnx = std::log(-x);
         out = -sub - pi2Over6 - 0.5 * lnx * lnx;
         return std::isfinite(out);
     }
     if (x < -0.5) {
-        double sub = 0.0;
+        keel::f64 sub = 0.0;
         if (!evalDilogDouble(x / (x - 1.0), sub))
             return false;
-        const double ln1mx = std::log(1.0 - x);
+        const keel::f64 ln1mx = std::log(1.0 - x);
         out = -sub - 0.5 * ln1mx * ln1mx;
         return std::isfinite(out);
     }
     if (x > 0.5) {
-        double sub = 0.0;
+        keel::f64 sub = 0.0;
         if (!evalDilogDouble(1.0 - x, sub))
             return false;
         out = pi2Over6 - std::log(x) * std::log(1.0 - x) - sub;
         return std::isfinite(out);
     }
-    double sum = 0.0;
-    double xPow = x;
+    keel::f64 sum = 0.0;
+    keel::f64 xPow = x;
     for (int k = 1; k <= 60; ++k) {
-        const double kd = keel::as<double>(k);
-        const double contrib = xPow / (kd * kd);
+        const keel::f64 kd = keel::as<keel::f64>(k);
+        const keel::f64 contrib = xPow / (kd * kd);
         sum += contrib;
         if (keel::abs(contrib) <= 1e-16 * keel::abs(sum))
             break;
@@ -1532,32 +1532,32 @@ bool evalDilogDouble(double x, double &out)
     return std::isfinite(out);
 }
 
-bool evalDigammaDouble(double x, double &out)
+bool evalDigammaDouble(keel::f64 x, keel::f64 &out)
 {
     if (!std::isfinite(x))
         return false;
     if (x <= 0.0) {
         if (std::floor(x) == x)
             return false;
-        double sub = 0.0;
+        keel::f64 sub = 0.0;
         if (!evalDigammaDouble(1.0 - x, sub))
             return false;
-        const double r = x - std::floor(x);
-        const double s = std::sin(kPiDouble * r);
+        const keel::f64 r = x - std::floor(x);
+        const keel::f64 s = std::sin(kPiDouble * r);
         if (s == 0.0)
             return false;
         out = sub - kPiDouble * (std::cos(kPiDouble * r) / s);
         return std::isfinite(out);
     }
-    double shift = 0.0;
+    keel::f64 shift = 0.0;
     while (x < 10.0) {
         shift -= 1.0 / x;
         x += 1.0;
     }
-    const double invX = 1.0 / x;
-    const double invX2 = invX * invX;
+    const keel::f64 invX = 1.0 / x;
+    const keel::f64 invX2 = invX * invX;
     // psi(x) ~ ln(x) - 1/(2x) - sum_{k=1}^7 B_{2k}/(2k * x^{2k})
-    const double poly =
+    const keel::f64 poly =
         (1.0 / 12.0) +
         invX2 *
             ((-1.0 / 120.0) +
@@ -1573,32 +1573,32 @@ bool evalDigammaDouble(double x, double &out)
     return std::isfinite(out);
 }
 
-bool evalTrigammaDouble(double x, double &out)
+bool evalTrigammaDouble(keel::f64 x, keel::f64 &out)
 {
     if (!std::isfinite(x))
         return false;
     if (x <= 0.0) {
         if (std::floor(x) == x)
             return false;
-        double sub = 0.0;
+        keel::f64 sub = 0.0;
         if (!evalTrigammaDouble(1.0 - x, sub))
             return false;
-        const double r = x - std::floor(x);
-        const double s = std::sin(kPiDouble * r);
+        const keel::f64 r = x - std::floor(x);
+        const keel::f64 s = std::sin(kPiDouble * r);
         if (s == 0.0)
             return false;
         out = (kPiDouble * kPiDouble) / (s * s) - sub;
         return std::isfinite(out);
     }
-    double shift = 0.0;
+    keel::f64 shift = 0.0;
     while (x < 10.0) {
         shift += 1.0 / (x * x);
         x += 1.0;
     }
-    const double invX = 1.0 / x;
-    const double invX2 = invX * invX;
+    const keel::f64 invX = 1.0 / x;
+    const keel::f64 invX2 = invX * invX;
     // psi_1(x) ~ 1/x + 1/(2x^2) + sum_{k=1}^6 B_{2k}/x^{2k+1}
-    const double poly =
+    const keel::f64 poly =
         (1.0 / 6.0) +
         invX2 *
             ((-1.0 / 30.0) +
@@ -1611,7 +1611,7 @@ bool evalTrigammaDouble(double x, double &out)
     return std::isfinite(out);
 }
 
-bool evalBesselJDouble(double nu, double x, double &out)
+bool evalBesselJDouble(keel::f64 nu, keel::f64 x, keel::f64 &out)
 {
     if (!std::isfinite(nu) || !std::isfinite(x))
         return false;
@@ -1621,7 +1621,7 @@ bool evalBesselJDouble(double nu, double x, double &out)
         if (nu > 0.0) { out = 0.0; return true; }
         return false;
     }
-    double signFactor = 1.0;
+    keel::f64 signFactor = 1.0;
     if (isIntNu && nu < 0.0) {
         const long long nInt = keel::as<long long>(-nu);
         if (nInt % 2 != 0)
@@ -1637,26 +1637,26 @@ bool evalBesselJDouble(double nu, double x, double &out)
         x = -x;
     }
     if (x <= 12.0 + 0.5 * keel::abs(nu)) {
-        const double halfX = 0.5 * x;
-        const double halfX2 = halfX * halfX;
-        double sum = 0.0;
+        const keel::f64 halfX = 0.5 * x;
+        const keel::f64 halfX2 = halfX * halfX;
+        keel::f64 sum = 0.0;
         if (nu >= 0.0) {
-            double term = std::exp(nu * std::log(halfX) - std::lgamma(nu + 1.0));
+            keel::f64 term = std::exp(nu * std::log(halfX) - std::lgamma(nu + 1.0));
             sum = term;
             for (int k = 1; k <= 160; ++k) {
-                term *= -halfX2 / (keel::as<double>(k) * (nu + keel::as<double>(k)));
+                term *= -halfX2 / (keel::as<keel::f64>(k) * (nu + keel::as<keel::f64>(k)));
                 sum += term;
                 if (keel::abs(term) <= keel::abs(sum) * 1e-16 && k > halfX)
                     break;
             }
         } else {
             for (int k = 0; k <= 160; ++k) {
-                const double gArg = nu + keel::as<double>(k) + 1.0;
-                const double gam = std::tgamma(gArg);
+                const keel::f64 gArg = nu + keel::as<keel::f64>(k) + 1.0;
+                const keel::f64 gam = std::tgamma(gArg);
                 if (!std::isfinite(gam) || gam == 0.0)
                     continue;
-                double kFact = std::tgamma(keel::as<double>(k) + 1.0);
-                double term = ((k % 2 == 0) ? 1.0 : -1.0) *
+                keel::f64 kFact = std::tgamma(keel::as<keel::f64>(k) + 1.0);
+                keel::f64 term = ((k % 2 == 0) ? 1.0 : -1.0) *
                               std::pow(halfX, 2.0 * k + nu) / (kFact * gam);
                 sum += term;
                 if (k > 10 && keel::abs(term) <= keel::abs(sum) * 1e-16 && k > halfX)
@@ -1667,21 +1667,21 @@ bool evalBesselJDouble(double nu, double x, double &out)
         return std::isfinite(out);
     }
     // Hankel asymptotic expansion for x > 12 + 0.5*|nu|
-    const double mu = 4.0 * nu * nu;
-    const double chi = x - (0.5 * nu + 0.25) * kPiDouble;
-    double P = 1.0, Q = 0.0;
-    double aTerm = 1.0;
+    const keel::f64 mu = 4.0 * nu * nu;
+    const keel::f64 chi = x - (0.5 * nu + 0.25) * kPiDouble;
+    keel::f64 P = 1.0, Q = 0.0;
+    keel::f64 aTerm = 1.0;
     for (int m = 1; m <= 24; ++m) {
-        const double num = mu - keel::as<double>((2 * m - 1) * (2 * m - 1));
-        const double nextA = aTerm * num / (keel::as<double>(m) * 8.0 * x);
+        const keel::f64 num = mu - keel::as<keel::f64>((2 * m - 1) * (2 * m - 1));
+        const keel::f64 nextA = aTerm * num / (keel::as<keel::f64>(m) * 8.0 * x);
         if (m > 4 && keel::abs(nextA) > keel::abs(aTerm))
             break;
         aTerm = nextA;
         if (m % 2 == 1) {
-            const double sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
+            const keel::f64 sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
             Q += sgn * aTerm;
         } else {
-            const double sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
+            const keel::f64 sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
             P += sgn * aTerm;
         }
         if (keel::abs(aTerm) < 1e-16)
@@ -1692,26 +1692,26 @@ bool evalBesselJDouble(double nu, double x, double &out)
     return std::isfinite(out);
 }
 
-bool evalBesselYDouble(double nu, double x, double &out)
+bool evalBesselYDouble(keel::f64 nu, keel::f64 x, keel::f64 &out)
 {
     if (!std::isfinite(nu) || !std::isfinite(x) || x <= 0.0)
         return false;
     if (x > 12.0 + 0.5 * keel::abs(nu)) {
-        const double mu = 4.0 * nu * nu;
-        const double chi = x - (0.5 * nu + 0.25) * kPiDouble;
-        double P = 1.0, Q = 0.0;
-        double aTerm = 1.0;
+        const keel::f64 mu = 4.0 * nu * nu;
+        const keel::f64 chi = x - (0.5 * nu + 0.25) * kPiDouble;
+        keel::f64 P = 1.0, Q = 0.0;
+        keel::f64 aTerm = 1.0;
         for (int m = 1; m <= 24; ++m) {
-            const double num = mu - keel::as<double>((2 * m - 1) * (2 * m - 1));
-            const double nextA = aTerm * num / (keel::as<double>(m) * 8.0 * x);
+            const keel::f64 num = mu - keel::as<keel::f64>((2 * m - 1) * (2 * m - 1));
+            const keel::f64 nextA = aTerm * num / (keel::as<keel::f64>(m) * 8.0 * x);
             if (m > 4 && keel::abs(nextA) > keel::abs(aTerm))
                 break;
             aTerm = nextA;
             if (m % 2 == 1) {
-                const double sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
+                const keel::f64 sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
                 Q += sgn * aTerm;
             } else {
-                const double sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
+                const keel::f64 sgn = ((m / 2) % 2 == 0) ? 1.0 : -1.0;
                 P += sgn * aTerm;
             }
             if (keel::abs(aTerm) < 1e-16)
@@ -1722,13 +1722,13 @@ bool evalBesselYDouble(double nu, double x, double &out)
         return std::isfinite(out);
     }
     if (std::floor(nu) != nu) {
-        double jPos = 0.0, jNeg = 0.0;
+        keel::f64 jPos = 0.0, jNeg = 0.0;
         if (!evalBesselJDouble(nu, x, jPos) || !evalBesselJDouble(-nu, x, jNeg))
             return false;
         out = (jPos * std::cos(nu * kPiDouble) - jNeg) / std::sin(nu * kPiDouble);
         return std::isfinite(out);
     }
-    double signFactor = 1.0;
+    keel::f64 signFactor = 1.0;
     int n = keel::as<int>(nu);
     if (n < 0) {
         n = -n;
@@ -1737,28 +1737,28 @@ bool evalBesselYDouble(double nu, double x, double &out)
     }
     if (n > 30)
         return false;
-    double jn = 0.0;
-    if (!evalBesselJDouble(keel::as<double>(n), x, jn))
+    keel::f64 jn = 0.0;
+    if (!evalBesselJDouble(keel::as<keel::f64>(n), x, jn))
         return false;
-    const double halfX = 0.5 * x;
-    const double halfX2 = halfX * halfX;
-    double poleSum = 0.0;
+    const keel::f64 halfX = 0.5 * x;
+    const keel::f64 halfX2 = halfX * halfX;
+    keel::f64 poleSum = 0.0;
     for (int k = 0; k < n; ++k) {
-        const double numFact = std::tgamma(keel::as<double>(n - k));
-        const double denFact = std::tgamma(keel::as<double>(k + 1));
+        const keel::f64 numFact = std::tgamma(keel::as<keel::f64>(n - k));
+        const keel::f64 denFact = std::tgamma(keel::as<keel::f64>(k + 1));
         poleSum += (numFact / denFact) * std::pow(halfX, 2 * k - n);
     }
-    double hN = 0.0;
+    keel::f64 hN = 0.0;
     for (int j = 1; j <= n; ++j)
-        hN += 1.0 / keel::as<double>(j);
-    double hK = 0.0;
-    double powTerm = std::pow(halfX, n) / std::tgamma(keel::as<double>(n + 1));
-    double regSum = (hK + hN) * powTerm;
+        hN += 1.0 / keel::as<keel::f64>(j);
+    keel::f64 hK = 0.0;
+    keel::f64 powTerm = std::pow(halfX, n) / std::tgamma(keel::as<keel::f64>(n + 1));
+    keel::f64 regSum = (hK + hN) * powTerm;
     for (int k = 1; k <= 120; ++k) {
-        hK += 1.0 / keel::as<double>(k);
-        hN += 1.0 / keel::as<double>(n + k);
-        powTerm *= -halfX2 / (keel::as<double>(k) * keel::as<double>(n + k));
-        const double contrib = (hK + hN) * powTerm;
+        hK += 1.0 / keel::as<keel::f64>(k);
+        hN += 1.0 / keel::as<keel::f64>(n + k);
+        powTerm *= -halfX2 / (keel::as<keel::f64>(k) * keel::as<keel::f64>(n + k));
+        const keel::f64 contrib = (hK + hN) * powTerm;
         regSum += contrib;
         if (keel::abs(contrib) <= keel::abs(regSum) * 1e-16 && k > halfX)
             break;
@@ -1769,7 +1769,7 @@ bool evalBesselYDouble(double nu, double x, double &out)
     return std::isfinite(out);
 }
 
-bool evalBesselIDouble(double nu, double x, double &out)
+bool evalBesselIDouble(keel::f64 nu, keel::f64 x, keel::f64 &out)
 {
     if (!std::isfinite(nu) || !std::isfinite(x))
         return false;
@@ -1781,7 +1781,7 @@ bool evalBesselIDouble(double nu, double x, double &out)
     }
     if (isIntNu && nu < 0.0)
         nu = -nu;
-    double signFactor = 1.0;
+    keel::f64 signFactor = 1.0;
     if (x < 0.0) {
         if (!isIntNu)
             return false;
@@ -1791,26 +1791,26 @@ bool evalBesselIDouble(double nu, double x, double &out)
         x = -x;
     }
     if (x <= 14.0 + 0.5 * keel::abs(nu)) {
-        const double halfX = 0.5 * x;
-        const double halfX2 = halfX * halfX;
-        double sum = 0.0;
+        const keel::f64 halfX = 0.5 * x;
+        const keel::f64 halfX2 = halfX * halfX;
+        keel::f64 sum = 0.0;
         if (nu >= 0.0) {
-            double term = std::exp(nu * std::log(halfX) - std::lgamma(nu + 1.0));
+            keel::f64 term = std::exp(nu * std::log(halfX) - std::lgamma(nu + 1.0));
             sum = term;
             for (int k = 1; k <= 160; ++k) {
-                term *= halfX2 / (keel::as<double>(k) * (nu + keel::as<double>(k)));
+                term *= halfX2 / (keel::as<keel::f64>(k) * (nu + keel::as<keel::f64>(k)));
                 sum += term;
                 if (keel::abs(term) <= keel::abs(sum) * 1e-16 && k > halfX)
                     break;
             }
         } else {
             for (int k = 0; k <= 160; ++k) {
-                const double gArg = nu + keel::as<double>(k) + 1.0;
-                const double gam = std::tgamma(gArg);
+                const keel::f64 gArg = nu + keel::as<keel::f64>(k) + 1.0;
+                const keel::f64 gam = std::tgamma(gArg);
                 if (!std::isfinite(gam) || gam == 0.0)
                     continue;
-                const double kFact = std::tgamma(keel::as<double>(k) + 1.0);
-                const double term = std::pow(halfX, 2.0 * k + nu) / (kFact * gam);
+                const keel::f64 kFact = std::tgamma(keel::as<keel::f64>(k) + 1.0);
+                const keel::f64 term = std::pow(halfX, 2.0 * k + nu) / (kFact * gam);
                 sum += term;
                 if (k > 10 && keel::abs(term) <= keel::abs(sum) * 1e-16 && k > halfX)
                     break;
@@ -1819,11 +1819,11 @@ bool evalBesselIDouble(double nu, double x, double &out)
         out = signFactor * sum;
         return std::isfinite(out);
     }
-    const double mu = 4.0 * nu * nu;
-    double sum = 1.0, term = 1.0;
+    const keel::f64 mu = 4.0 * nu * nu;
+    keel::f64 sum = 1.0, term = 1.0;
     for (int k = 1; k <= 24; ++k) {
-        const double num = mu - keel::as<double>((2 * k - 1) * (2 * k - 1));
-        const double next = -term * num / (keel::as<double>(k) * 8.0 * x);
+        const keel::f64 num = mu - keel::as<keel::f64>((2 * k - 1) * (2 * k - 1));
+        const keel::f64 next = -term * num / (keel::as<keel::f64>(k) * 8.0 * x);
         if (k > 4 && keel::abs(next) > keel::abs(term))
             break;
         term = next;
@@ -1835,17 +1835,17 @@ bool evalBesselIDouble(double nu, double x, double &out)
     return std::isfinite(out);
 }
 
-bool evalBesselKDouble(double nu, double x, double &out)
+bool evalBesselKDouble(keel::f64 nu, keel::f64 x, keel::f64 &out)
 {
     if (!std::isfinite(nu) || !std::isfinite(x) || x <= 0.0)
         return false;
     nu = keel::abs(nu);
     if (x > 9.0 + 0.5 * nu) {
-        const double mu = 4.0 * nu * nu;
-        double sum = 1.0, term = 1.0;
+        const keel::f64 mu = 4.0 * nu * nu;
+        keel::f64 sum = 1.0, term = 1.0;
         for (int k = 1; k <= 24; ++k) {
-            const double num = mu - keel::as<double>((2 * k - 1) * (2 * k - 1));
-            const double next = term * num / (keel::as<double>(k) * 8.0 * x);
+            const keel::f64 num = mu - keel::as<keel::f64>((2 * k - 1) * (2 * k - 1));
+            const keel::f64 next = term * num / (keel::as<keel::f64>(k) * 8.0 * x);
             if (k > 4 && keel::abs(next) > keel::abs(term))
                 break;
             term = next;
@@ -1857,7 +1857,7 @@ bool evalBesselKDouble(double nu, double x, double &out)
         return std::isfinite(out);
     }
     if (std::floor(nu) != nu) {
-        double iPos = 0.0, iNeg = 0.0;
+        keel::f64 iPos = 0.0, iNeg = 0.0;
         if (!evalBesselIDouble(nu, x, iPos) || !evalBesselIDouble(-nu, x, iNeg))
             return false;
         out = (0.5 * kPiDouble) * (iNeg - iPos) / std::sin(nu * kPiDouble);
@@ -1866,58 +1866,58 @@ bool evalBesselKDouble(double nu, double x, double &out)
     const int n = keel::as<int>(nu);
     if (n > 30)
         return false;
-    double inVal = 0.0;
-    if (!evalBesselIDouble(keel::as<double>(n), x, inVal))
+    keel::f64 inVal = 0.0;
+    if (!evalBesselIDouble(keel::as<keel::f64>(n), x, inVal))
         return false;
-    const double halfX = 0.5 * x;
-    const double halfX2 = halfX * halfX;
-    double poleSum = 0.0;
+    const keel::f64 halfX = 0.5 * x;
+    const keel::f64 halfX2 = halfX * halfX;
+    keel::f64 poleSum = 0.0;
     for (int k = 0; k < n; ++k) {
-        const double sgn = (k % 2 == 0) ? 1.0 : -1.0;
-        const double numFact = std::tgamma(keel::as<double>(n - k));
-        const double denFact = std::tgamma(keel::as<double>(k + 1));
+        const keel::f64 sgn = (k % 2 == 0) ? 1.0 : -1.0;
+        const keel::f64 numFact = std::tgamma(keel::as<keel::f64>(n - k));
+        const keel::f64 denFact = std::tgamma(keel::as<keel::f64>(k + 1));
         poleSum += sgn * (numFact / denFact) * std::pow(halfX, 2 * k - n);
     }
-    double hN = 0.0;
+    keel::f64 hN = 0.0;
     for (int j = 1; j <= n; ++j)
-        hN += 1.0 / keel::as<double>(j);
-    double hK = 0.0;
-    double powTerm = std::pow(halfX, n) / std::tgamma(keel::as<double>(n + 1));
-    double regSum = (hK + hN) * powTerm;
+        hN += 1.0 / keel::as<keel::f64>(j);
+    keel::f64 hK = 0.0;
+    keel::f64 powTerm = std::pow(halfX, n) / std::tgamma(keel::as<keel::f64>(n + 1));
+    keel::f64 regSum = (hK + hN) * powTerm;
     for (int k = 1; k <= 120; ++k) {
-        hK += 1.0 / keel::as<double>(k);
-        hN += 1.0 / keel::as<double>(n + k);
-        powTerm *= halfX2 / (keel::as<double>(k) * keel::as<double>(n + k));
-        const double contrib = (hK + hN) * powTerm;
+        hK += 1.0 / keel::as<keel::f64>(k);
+        hN += 1.0 / keel::as<keel::f64>(n + k);
+        powTerm *= halfX2 / (keel::as<keel::f64>(k) * keel::as<keel::f64>(n + k));
+        const keel::f64 contrib = (hK + hN) * powTerm;
         regSum += contrib;
         if (keel::abs(contrib) <= keel::abs(regSum) * 1e-16 && k > halfX)
             break;
     }
-    const double sgnN = (n % 2 == 0) ? 1.0 : -1.0;
+    const keel::f64 sgnN = (n % 2 == 0) ? 1.0 : -1.0;
     out = -sgnN * (std::log(halfX) + kEulerGamma) * inVal + 0.5 * poleSum +
           0.5 * sgnN * regSum;
     return std::isfinite(out);
 }
 
-bool evalAiryDouble(keel::StringRef fn, double x, double &out)
+bool evalAiryDouble(keel::StringRef fn, keel::f64 x, keel::f64 &out)
 {
     if (!std::isfinite(x))
         return false;
-    static constexpr double kAi0 = 0.35502805388781723926;
-    static constexpr double kAiP0 = 0.25881940379280679840;
-    const double sqrt3 = std::sqrt(3.0);
+    static constexpr keel::f64 kAi0 = 0.35502805388781723926;
+    static constexpr keel::f64 kAiP0 = 0.25881940379280679840;
+    const keel::f64 sqrt3 = std::sqrt(3.0);
     if (keel::abs(x) <= 5.5) {
-        const double x2 = x * x;
-        const double x3 = x2 * x;
-        double f = 1.0, fp = 0.0, cTerm = 1.0;
-        double g = x, gp = 1.0, dTerm = 1.0;
+        const keel::f64 x2 = x * x;
+        const keel::f64 x3 = x2 * x;
+        keel::f64 f = 1.0, fp = 0.0, cTerm = 1.0;
+        keel::f64 g = x, gp = 1.0, dTerm = 1.0;
         for (int k = 1; k <= 60; ++k) {
-            cTerm *= x3 / keel::as<double>((3 * k - 1) * (3 * k));
+            cTerm *= x3 / keel::as<keel::f64>((3 * k - 1) * (3 * k));
             f += cTerm;
-            fp += keel::as<double>(3 * k) * (cTerm / x);
-            dTerm *= x3 / keel::as<double>((3 * k) * (3 * k + 1));
+            fp += keel::as<keel::f64>(3 * k) * (cTerm / x);
+            dTerm *= x3 / keel::as<keel::f64>((3 * k) * (3 * k + 1));
             g += dTerm * x;
-            gp += keel::as<double>(3 * k + 1) * dTerm;
+            gp += keel::as<keel::f64>(3 * k + 1) * dTerm;
             if (keel::abs(cTerm) <= 1e-16 && keel::abs(dTerm) <= 1e-16)
                 break;
         }
@@ -1937,25 +1937,25 @@ bool evalAiryDouble(keel::StringRef fn, double x, double &out)
             return false;
         return std::isfinite(out);
     }
-    const double ax = keel::abs(x);
-    const double zeta = (2.0 / 3.0) * ax * std::sqrt(ax);
+    const keel::f64 ax = keel::abs(x);
+    const keel::f64 zeta = (2.0 / 3.0) * ax * std::sqrt(ax);
     if (x > 0.0) {
         if (fn == "airyAi") {
-            double kVal = 0.0;
+            keel::f64 kVal = 0.0;
             if (!evalBesselKDouble(1.0 / 3.0, zeta, kVal))
                 return false;
             out = (1.0 / kPiDouble) * std::sqrt(x / 3.0) * kVal;
             return std::isfinite(out);
         }
         if (fn == "airyAiPrime") {
-            double kVal = 0.0;
+            keel::f64 kVal = 0.0;
             if (!evalBesselKDouble(2.0 / 3.0, zeta, kVal))
                 return false;
             out = -(x / (kPiDouble * sqrt3)) * kVal;
             return std::isfinite(out);
         }
         if (fn == "airyBi") {
-            double iPos = 0.0, iNeg = 0.0;
+            keel::f64 iPos = 0.0, iNeg = 0.0;
             if (!evalBesselIDouble(1.0 / 3.0, zeta, iPos) ||
                 !evalBesselIDouble(-1.0 / 3.0, zeta, iNeg))
                 return false;
@@ -1963,7 +1963,7 @@ bool evalAiryDouble(keel::StringRef fn, double x, double &out)
             return std::isfinite(out);
         }
         if (fn == "airyBiPrime") {
-            double iPos = 0.0, iNeg = 0.0;
+            keel::f64 iPos = 0.0, iNeg = 0.0;
             if (!evalBesselIDouble(2.0 / 3.0, zeta, iPos) ||
                 !evalBesselIDouble(-2.0 / 3.0, zeta, iNeg))
                 return false;
@@ -1973,7 +1973,7 @@ bool evalAiryDouble(keel::StringRef fn, double x, double &out)
         return false;
     }
     // x < -5.5
-    double j13 = 0.0, jm13 = 0.0, j23 = 0.0, jm23 = 0.0;
+    keel::f64 j13 = 0.0, jm13 = 0.0, j23 = 0.0, jm23 = 0.0;
     if (fn == "airyAi" || fn == "airyBi") {
         if (!evalBesselJDouble(1.0 / 3.0, zeta, j13) ||
             !evalBesselJDouble(-1.0 / 3.0, zeta, jm13))
@@ -1993,8 +1993,8 @@ bool evalAiryDouble(keel::StringRef fn, double x, double &out)
     return false;
 }
 
-bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
-                              double &out)
+bool evalOrthogonalPolyDouble(keel::StringRef fn, keel::f64 nVal, keel::f64 x,
+                              keel::f64 &out)
 {
     if (!std::isfinite(nVal) || !std::isfinite(x) || std::floor(nVal) != nVal)
         return false;
@@ -2004,9 +2004,9 @@ bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
         if (n > 200) return false;
         if (n == 0) { out = 1.0; return true; }
         if (n == 1) { out = x; return true; }
-        double pPrev = 1.0, pCur = x;
+        keel::f64 pPrev = 1.0, pCur = x;
         for (int k = 1; k < n; ++k) {
-            const double pNext =
+            const keel::f64 pNext =
                 ((2.0 * k + 1.0) * x * pCur - k * pPrev) / (k + 1.0);
             pPrev = pCur;
             pCur = pNext;
@@ -2019,9 +2019,9 @@ bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
         if (n > 200) return false;
         if (n == 0) { out = 1.0; return true; }
         if (n == 1) { out = x; return true; }
-        double tPrev = 1.0, tCur = x;
+        keel::f64 tPrev = 1.0, tCur = x;
         for (int k = 1; k < n; ++k) {
-            const double tNext = 2.0 * x * tCur - tPrev;
+            const keel::f64 tNext = 2.0 * x * tCur - tPrev;
             tPrev = tCur;
             tCur = tNext;
         }
@@ -2029,15 +2029,15 @@ bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
         return std::isfinite(out);
     }
     if (fn == "chebyshevU") {
-        double sgn = 1.0;
+        keel::f64 sgn = 1.0;
         if (n == -1) { out = 0.0; return true; }
         if (n < -1) { n = -n - 2; sgn = -1.0; }
         if (n > 200) return false;
         if (n == 0) { out = sgn; return true; }
         if (n == 1) { out = sgn * 2.0 * x; return true; }
-        double uPrev = 1.0, uCur = 2.0 * x;
+        keel::f64 uPrev = 1.0, uCur = 2.0 * x;
         for (int k = 1; k < n; ++k) {
-            const double uNext = 2.0 * x * uCur - uPrev;
+            const keel::f64 uNext = 2.0 * x * uCur - uPrev;
             uPrev = uCur;
             uCur = uNext;
         }
@@ -2048,9 +2048,9 @@ bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
         if (n < 0 || n > 200) return false;
         if (n == 0) { out = 1.0; return true; }
         if (n == 1) { out = 2.0 * x; return true; }
-        double hPrev = 1.0, hCur = 2.0 * x;
+        keel::f64 hPrev = 1.0, hCur = 2.0 * x;
         for (int k = 1; k < n; ++k) {
-            const double hNext = 2.0 * x * hCur - 2.0 * k * hPrev;
+            const keel::f64 hNext = 2.0 * x * hCur - 2.0 * k * hPrev;
             hPrev = hCur;
             hCur = hNext;
         }
@@ -2061,9 +2061,9 @@ bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
         if (n < 0 || n > 200) return false;
         if (n == 0) { out = 1.0; return true; }
         if (n == 1) { out = 1.0 - x; return true; }
-        double lPrev = 1.0, lCur = 1.0 - x;
+        keel::f64 lPrev = 1.0, lCur = 1.0 - x;
         for (int k = 1; k < n; ++k) {
-            const double lNext =
+            const keel::f64 lNext =
                 ((2.0 * k + 1.0 - x) * lCur - k * lPrev) / (k + 1.0);
             lPrev = lCur;
             lCur = lNext;
@@ -2074,7 +2074,7 @@ bool evalOrthogonalPolyDouble(keel::StringRef fn, double nVal, double x,
     return false;
 }
 
-bool carlsonRF(double x, double y, double z, double &out)
+bool carlsonRF(keel::f64 x, keel::f64 y, keel::f64 z, keel::f64 &out)
 {
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
         x < 0.0 || y < 0.0 || z < 0.0)
@@ -2084,70 +2084,70 @@ bool carlsonRF(double x, double y, double z, double &out)
         return false;
 
     for (int iter = 0; iter < 36; ++iter) {
-        const double A = (x + y + z) / 3.0;
-        const double dx = keel::abs(A - x);
-        const double dy = keel::abs(A - y);
-        const double dz = keel::abs(A - z);
+        const keel::f64 A = (x + y + z) / 3.0;
+        const keel::f64 dx = keel::abs(A - x);
+        const keel::f64 dy = keel::abs(A - y);
+        const keel::f64 dz = keel::abs(A - z);
         if (std::max({dx, dy, dz}) <= 1e-6 * A)
             break;
-        const double sx = std::sqrt(x);
-        const double sy = std::sqrt(y);
-        const double sz = std::sqrt(z);
-        const double lam = sx * sy + sy * sz + sz * sx;
+        const keel::f64 sx = std::sqrt(x);
+        const keel::f64 sy = std::sqrt(y);
+        const keel::f64 sz = std::sqrt(z);
+        const keel::f64 lam = sx * sy + sy * sz + sz * sx;
         x = 0.25 * (x + lam);
         y = 0.25 * (y + lam);
         z = 0.25 * (z + lam);
     }
-    const double A = (x + y + z) / 3.0;
+    const keel::f64 A = (x + y + z) / 3.0;
     if (A <= 0.0)
         return false;
-    const double X = (A - x) / A;
-    const double Y = (A - y) / A;
-    const double Z = -X - Y;
-    const double E2 = X * Y - Z * Z;
-    const double E3 = X * Y * Z;
+    const keel::f64 X = (A - x) / A;
+    const keel::f64 Y = (A - y) / A;
+    const keel::f64 Z = -X - Y;
+    const keel::f64 E2 = X * Y - Z * Z;
+    const keel::f64 E3 = X * Y * Z;
     out = (1.0 - (1.0 / 10.0) * E2 + (1.0 / 14.0) * E3 +
            (1.0 / 24.0) * E2 * E2 - (3.0 / 44.0) * E2 * E3) /
           std::sqrt(A);
     return std::isfinite(out);
 }
 
-bool carlsonRD(double x, double y, double z, double &out)
+bool carlsonRD(keel::f64 x, keel::f64 y, keel::f64 z, keel::f64 &out)
 {
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
         x < 0.0 || y < 0.0 || z <= 0.0 || (x + y <= 0.0))
         return false;
 
-    double sum = 0.0;
-    double fac = 1.0;
+    keel::f64 sum = 0.0;
+    keel::f64 fac = 1.0;
     for (int iter = 0; iter < 36; ++iter) {
-        const double A = (x + y + 3.0 * z) / 5.0;
-        const double dx = keel::abs(A - x);
-        const double dy = keel::abs(A - y);
-        const double dz = keel::abs(A - z);
+        const keel::f64 A = (x + y + 3.0 * z) / 5.0;
+        const keel::f64 dx = keel::abs(A - x);
+        const keel::f64 dy = keel::abs(A - y);
+        const keel::f64 dz = keel::abs(A - z);
         if (std::max({dx, dy, dz}) <= 1e-6 * A)
             break;
-        const double sx = std::sqrt(x);
-        const double sy = std::sqrt(y);
-        const double sz = std::sqrt(z);
-        const double lam = sx * sy + sy * sz + sz * sx;
+        const keel::f64 sx = std::sqrt(x);
+        const keel::f64 sy = std::sqrt(y);
+        const keel::f64 sz = std::sqrt(z);
+        const keel::f64 lam = sx * sy + sy * sz + sz * sx;
         sum += fac / (sz * (z + lam));
         fac *= 0.25;
         x = 0.25 * (x + lam);
         y = 0.25 * (y + lam);
         z = 0.25 * (z + lam);
     }
-    const double A = (x + y + 3.0 * z) / 5.0;
+    const keel::f64 A = (x + y + 3.0 * z) / 5.0;
     if (A <= 0.0)
         return false;
-    const double X = (A - x) / A;
-    const double Y = (A - y) / A;
-    const double Z = -(X + Y) / 3.0;
-    const double E2 = X * Y - 6.0 * Z * Z;
-    const double E3 = (3.0 * X * Y - 8.0 * Z * Z) * Z;
-    const double E4 = 3.0 * (X * Y - Z * Z) * Z * Z;
-    const double E5 = X * Y * Z * Z * Z;
-    const double poly =
+    const keel::f64 X = (A - x) / A;
+    const keel::f64 Y = (A - y) / A;
+    const keel::f64 Z = -(X + Y) / 3.0;
+    const keel::f64 E2 = X * Y - 6.0 * Z * Z;
+    const keel::f64 E3 = (3.0 * X * Y - 8.0 * Z * Z) * Z;
+    const keel::f64 E4 = 3.0 * (X * Y - Z * Z) * Z * Z;
+    const keel::f64 E5 = X * Y * Z * Z * Z;
+    const keel::f64 poly =
         1.0 - (3.0 / 14.0) * E2 + (1.0 / 6.0) * E3 +
         (9.0 / 88.0) * E2 * E2 - (3.0 / 22.0) * E4 -
         (9.0 / 52.0) * E2 * E3 + (3.0 / 26.0) * E5;
@@ -2155,7 +2155,7 @@ bool carlsonRD(double x, double y, double z, double &out)
     return std::isfinite(out);
 }
 
-bool carlsonRJ(double x, double y, double z, double p, double &out)
+bool carlsonRJ(keel::f64 x, keel::f64 y, keel::f64 z, keel::f64 p, keel::f64 &out)
 {
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
         !std::isfinite(p) || x < 0.0 || y < 0.0 || z < 0.0 || p <= 0.0)
@@ -2164,36 +2164,36 @@ bool carlsonRJ(double x, double y, double z, double p, double &out)
     if (zeroCount > 1)
         return false;
 
-    double sum = 0.0;
-    double fac = 1.0;
+    keel::f64 sum = 0.0;
+    keel::f64 fac = 1.0;
     for (int iter = 0; iter < 36; ++iter) {
-        const double A = (x + y + z + 2.0 * p) / 5.0;
-        const double dx = keel::abs(A - x);
-        const double dy = keel::abs(A - y);
-        const double dz = keel::abs(A - z);
-        const double dp = keel::abs(A - p);
+        const keel::f64 A = (x + y + z + 2.0 * p) / 5.0;
+        const keel::f64 dx = keel::abs(A - x);
+        const keel::f64 dy = keel::abs(A - y);
+        const keel::f64 dz = keel::abs(A - z);
+        const keel::f64 dp = keel::abs(A - p);
         if (std::max({dx, dy, dz, dp}) <= 1e-6 * A)
             break;
-        const double sx = std::sqrt(x);
-        const double sy = std::sqrt(y);
-        const double sz = std::sqrt(z);
-        const double sp = std::sqrt(p);
-        const double lam = sx * sy + sy * sz + sz * sx;
-        const double d = (sp + sx) * (sp + sy) * (sp + sz);
+        const keel::f64 sx = std::sqrt(x);
+        const keel::f64 sy = std::sqrt(y);
+        const keel::f64 sz = std::sqrt(z);
+        const keel::f64 sp = std::sqrt(p);
+        const keel::f64 lam = sx * sy + sy * sz + sz * sx;
+        const keel::f64 d = (sp + sx) * (sp + sy) * (sp + sz);
         if (d == 0.0)
             return false;
-        const double e = ((p - x) * (p - y) * (p - z)) / (d * d);
+        const keel::f64 e = ((p - x) * (p - y) * (p - z)) / (d * d);
         if (e <= -1.0)
             return false;
-        double rc = 1.0;
+        keel::f64 rc = 1.0;
         if (keel::abs(e) <= 1e-8) {
             rc = 1.0 - (1.0 / 3.0) * e + (1.0 / 5.0) * e * e -
                  (1.0 / 7.0) * e * e * e;
         } else if (e > 0.0) {
-            const double se = std::sqrt(e);
+            const keel::f64 se = std::sqrt(e);
             rc = std::atan(se) / se;
         } else {
-            const double sme = std::sqrt(-e);
+            const keel::f64 sme = std::sqrt(-e);
             rc = std::atanh(sme) / sme;
         }
         sum += fac * rc / d;
@@ -2203,18 +2203,18 @@ bool carlsonRJ(double x, double y, double z, double p, double &out)
         z = 0.25 * (z + lam);
         p = 0.25 * (p + lam);
     }
-    const double A = (x + y + z + 2.0 * p) / 5.0;
+    const keel::f64 A = (x + y + z + 2.0 * p) / 5.0;
     if (A <= 0.0)
         return false;
-    const double X = (A - x) / A;
-    const double Y = (A - y) / A;
-    const double Z = (A - z) / A;
-    const double P = -(X + Y + Z) / 2.0;
-    const double E2 = X * Y + X * Z + Y * Z - 3.0 * P * P;
-    const double E3 = X * Y * Z + 2.0 * E2 * P + 4.0 * P * P * P;
-    const double E4 = (2.0 * X * Y * Z + E2 * P + 3.0 * P * P * P) * P;
-    const double E5 = X * Y * Z * P * P;
-    const double poly =
+    const keel::f64 X = (A - x) / A;
+    const keel::f64 Y = (A - y) / A;
+    const keel::f64 Z = (A - z) / A;
+    const keel::f64 P = -(X + Y + Z) / 2.0;
+    const keel::f64 E2 = X * Y + X * Z + Y * Z - 3.0 * P * P;
+    const keel::f64 E3 = X * Y * Z + 2.0 * E2 * P + 4.0 * P * P * P;
+    const keel::f64 E4 = (2.0 * X * Y * Z + E2 * P + 3.0 * P * P * P) * P;
+    const keel::f64 E5 = X * Y * Z * P * P;
+    const keel::f64 poly =
         1.0 - (3.0 / 14.0) * E2 + (1.0 / 6.0) * E3 +
         (9.0 / 88.0) * E2 * E2 - (3.0 / 22.0) * E4 -
         (9.0 / 52.0) * E2 * E3 + (3.0 / 26.0) * E5;
@@ -2222,7 +2222,7 @@ bool carlsonRJ(double x, double y, double z, double p, double &out)
     return std::isfinite(out);
 }
 
-bool evalElliptic1ArgDouble(keel::StringRef fn, double m, double &out)
+bool evalElliptic1ArgDouble(keel::StringRef fn, keel::f64 m, keel::f64 &out)
 {
     if (!std::isfinite(m) || m > 1.0)
         return false;
@@ -2236,7 +2236,7 @@ bool evalElliptic1ArgDouble(keel::StringRef fn, double m, double &out)
             out = 1.0;
             return true;
         }
-        double rf = 0.0, rd = 0.0;
+        keel::f64 rf = 0.0, rd = 0.0;
         if (!carlsonRF(0.0, 1.0 - m, 1.0, rf) ||
             !carlsonRD(0.0, 1.0 - m, 1.0, rd))
             return false;
@@ -2246,61 +2246,61 @@ bool evalElliptic1ArgDouble(keel::StringRef fn, double m, double &out)
     return false;
 }
 
-bool evalElliptic2ArgDouble(keel::StringRef fn, double a0, double a1,
-                            double &out)
+bool evalElliptic2ArgDouble(keel::StringRef fn, keel::f64 a0, keel::f64 a1,
+                            keel::f64 &out)
 {
     if (!std::isfinite(a0) || !std::isfinite(a1))
         return false;
     if (fn == "ellipticPi") {
-        const double n = a0;
-        const double m = a1;
+        const keel::f64 n = a0;
+        const keel::f64 m = a1;
         if (m >= 1.0 || n >= 1.0)
             return false;
-        double rf = 0.0;
+        keel::f64 rf = 0.0;
         if (!carlsonRF(0.0, 1.0 - m, 1.0, rf))
             return false;
         if (n == 0.0) {
             out = rf;
             return true;
         }
-        double rj = 0.0;
+        keel::f64 rj = 0.0;
         if (!carlsonRJ(0.0, 1.0 - m, 1.0, 1.0 - n, rj))
             return false;
         out = rf + (n / 3.0) * rj;
         return std::isfinite(out);
     }
     if (fn == "ellipticF" || fn == "ellipticEInc" || fn == "ellipticE") {
-        const double phi = a0;
-        const double m = a1;
+        const keel::f64 phi = a0;
+        const keel::f64 m = a1;
         if (phi == 0.0) {
             out = 0.0;
             return true;
         }
-        const double k = std::floor(phi / kPiDouble + 0.5);
-        const double phi0 = phi - k * kPiDouble;
-        const double s = std::sin(phi0);
-        const double c = std::cos(phi0);
-        const double s2 = s * s;
-        const double c2 = c * c;
+        const keel::f64 k = std::floor(phi / kPiDouble + 0.5);
+        const keel::f64 phi0 = phi - k * kPiDouble;
+        const keel::f64 s = std::sin(phi0);
+        const keel::f64 c = std::cos(phi0);
+        const keel::f64 s2 = s * s;
+        const keel::f64 c2 = c * c;
         if (1.0 - m * s2 < 0.0)
             return false;
-        double baseVal = 0.0;
+        keel::f64 baseVal = 0.0;
         if (s == 0.0) {
             baseVal = 0.0;
         } else if (fn == "ellipticF") {
             if (1.0 - m * s2 == 0.0 && c2 == 0.0)
                 return false;
-            double rf = 0.0;
+            keel::f64 rf = 0.0;
             if (!carlsonRF(c2, 1.0 - m * s2, 1.0, rf))
                 return false;
             baseVal = s * rf;
         } else {
-            double rf = 0.0;
+            keel::f64 rf = 0.0;
             if (!carlsonRF(c2, 1.0 - m * s2, 1.0, rf))
                 return false;
-            double rdTerm = 0.0;
+            keel::f64 rdTerm = 0.0;
             if (m != 0.0) {
-                double rd = 0.0;
+                keel::f64 rd = 0.0;
                 if (!carlsonRD(c2, 1.0 - m * s2, 1.0, rd))
                     return false;
                 rdTerm = (m / 3.0) * s * s2 * rd;
@@ -2308,7 +2308,7 @@ bool evalElliptic2ArgDouble(keel::StringRef fn, double a0, double a1,
             baseVal = s * rf - rdTerm;
         }
         if (k != 0.0) {
-            double compVal = 0.0;
+            keel::f64 compVal = 0.0;
             const keel::StringRef compFn =
                 (fn == "ellipticF") ? "ellipticK" : "ellipticE";
             if (!evalElliptic1ArgDouble(compFn, m, compVal))
@@ -2322,7 +2322,7 @@ bool evalElliptic2ArgDouble(keel::StringRef fn, double a0, double a1,
     return false;
 }
 
-bool evalZetaDouble(double s, double &out)
+bool evalZetaDouble(keel::f64 s, keel::f64 &out)
 {
     if (!std::isfinite(s) || s == 1.0)
         return false;
@@ -2338,7 +2338,7 @@ bool evalZetaDouble(double s, double &out)
         }
     }
     if (s < 0.5) {
-        double zComp = 0.0;
+        keel::f64 zComp = 0.0;
         if (!evalZetaDouble(1.0 - s, zComp))
             return false;
         out = std::pow(2.0, s) * std::pow(kPiDouble, s - 1.0) *
@@ -2346,7 +2346,7 @@ bool evalZetaDouble(double s, double &out)
         return std::isfinite(out);
     }
     // Euler-Maclaurin summation with N = 16 and 8 Bernoulli correction terms.
-    static constexpr double kB2kOverFact[8] = {
+    static constexpr keel::f64 kB2kOverFact[8] = {
         (1.0 / 6.0) / 2.0,
         (-1.0 / 30.0) / 24.0,
         (1.0 / 42.0) / 720.0,
@@ -2356,23 +2356,23 @@ bool evalZetaDouble(double s, double &out)
         (7.0 / 6.0) / 87178291200.0,
         (-3617.0 / 510.0) / 20922789888000.0};
     constexpr int N = 16;
-    double sum = 0.0;
+    keel::f64 sum = 0.0;
     for (int n = 1; n < N; ++n)
-        sum += std::pow(keel::as<double>(n), -s);
-    const double nD = keel::as<double>(N);
-    const double nPowNegS = std::pow(nD, -s);
+        sum += std::pow(keel::as<keel::f64>(n), -s);
+    const keel::f64 nD = keel::as<keel::f64>(N);
+    const keel::f64 nPowNegS = std::pow(nD, -s);
     sum += (nD * nPowNegS) / (s - 1.0) + 0.5 * nPowNegS;
 
-    const double invN2 = 1.0 / (nD * nD);
-    double poch = s;
-    double nFactor = nPowNegS / nD;
+    const keel::f64 invN2 = 1.0 / (nD * nD);
+    keel::f64 poch = s;
+    keel::f64 nFactor = nPowNegS / nD;
     for (int k = 1; k <= 8; ++k) {
         if (k > 1) {
-            poch *= (s + keel::as<double>(2 * k - 3)) *
-                    (s + keel::as<double>(2 * k - 2));
+            poch *= (s + keel::as<keel::f64>(2 * k - 3)) *
+                    (s + keel::as<keel::f64>(2 * k - 2));
             nFactor *= invN2;
         }
-        const double contrib = kB2kOverFact[k - 1] * poch * nFactor;
+        const keel::f64 contrib = kB2kOverFact[k - 1] * poch * nFactor;
         sum += contrib;
         if (keel::abs(contrib) <= 1e-16 * keel::abs(sum))
             break;
@@ -2381,7 +2381,7 @@ bool evalZetaDouble(double s, double &out)
     return std::isfinite(out);
 }
 
-bool evalDirichletEtaDouble(double s, double &out)
+bool evalDirichletEtaDouble(keel::f64 s, keel::f64 &out)
 {
     if (!std::isfinite(s))
         return false;
@@ -2389,14 +2389,14 @@ bool evalDirichletEtaDouble(double s, double &out)
         out = std::log(2.0);
         return true;
     }
-    double z = 0.0;
+    keel::f64 z = 0.0;
     if (!evalZetaDouble(s, z))
         return false;
     out = (1.0 - std::pow(2.0, 1.0 - s)) * z;
     return std::isfinite(out);
 }
 
-bool evalPolylogDouble(double s, double z, double &out)
+bool evalPolylogDouble(keel::f64 s, keel::f64 z, keel::f64 &out)
 {
     if (!std::isfinite(s) || !std::isfinite(z) || z > 1.0)
         return false;
@@ -2418,7 +2418,7 @@ bool evalPolylogDouble(double s, double z, double &out)
         return evalZetaDouble(s, out);
     }
     if (z == -1.0) {
-        double eta = 0.0;
+        keel::f64 eta = 0.0;
         if (!evalDirichletEtaDouble(s, eta))
             return false;
         out = -eta;
@@ -2431,31 +2431,31 @@ bool evalPolylogDouble(double s, double z, double &out)
             return std::isfinite(out);
         }
         if (m <= 20) {
-            keel::Array<double> eul(m, 0.0);
+            keel::Array<keel::f64> eul(m, 0.0);
             eul[0] = 1.0;
             for (keel::i64 i = 2; i <= m; ++i) {
                 for (keel::i64 k = i - 1; k >= 1; --k) {
                     eul[keel::as<keel::usize>(k)] =
-                        keel::as<double>(k + 1) *
+                        keel::as<keel::f64>(k + 1) *
                             eul[keel::as<keel::usize>(k)] +
-                        keel::as<double>(i - k) *
+                        keel::as<keel::f64>(i - k) *
                             eul[keel::as<keel::usize>(k - 1)];
                 }
             }
-            double num = 0.0;
+            keel::f64 num = 0.0;
             for (keel::i64 k = 0; k < m; ++k) {
                 num += eul[keel::as<keel::usize>(k)] *
-                       std::pow(z, keel::as<double>(m - k));
+                       std::pow(z, keel::as<keel::f64>(m - k));
             }
-            out = num / std::pow(1.0 - z, keel::as<double>(m + 1));
+            out = num / std::pow(1.0 - z, keel::as<keel::f64>(m + 1));
             return std::isfinite(out);
         }
     }
     if (keel::abs(z) <= 0.75) {
-        double sum = 0.0;
-        double zPow = z;
+        keel::f64 sum = 0.0;
+        keel::f64 zPow = z;
         for (int k = 1; k <= 160; ++k) {
-            const double contrib = zPow * std::pow(keel::as<double>(k), -s);
+            const keel::f64 contrib = zPow * std::pow(keel::as<keel::f64>(k), -s);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16 * keel::abs(sum))
                 break;
@@ -2465,10 +2465,10 @@ bool evalPolylogDouble(double s, double z, double &out)
         return std::isfinite(out);
     }
     if (z < 1.0 && z > -1.0) {
-        double sum = 0.0;
-        double zPow = z;
+        keel::f64 sum = 0.0;
+        keel::f64 zPow = z;
         for (int k = 1; k <= 800; ++k) {
-            const double contrib = zPow * std::pow(keel::as<double>(k), -s);
+            const keel::f64 contrib = zPow * std::pow(keel::as<keel::f64>(k), -s);
             sum += contrib;
             if (keel::abs(contrib) <= 1e-16 * keel::abs(sum))
                 break;
@@ -2480,8 +2480,8 @@ bool evalPolylogDouble(double s, double z, double &out)
     return false;
 }
 
-bool evalBernoulliEuler2ArgDouble(keel::StringRef fn, double nVal, double x,
-                                  double &out)
+bool evalBernoulliEuler2ArgDouble(keel::StringRef fn, keel::f64 nVal, keel::f64 x,
+                                  keel::f64 &out)
 {
     if (!std::isfinite(nVal) || !std::isfinite(x) || std::floor(nVal) != nVal)
         return false;
@@ -2489,38 +2489,38 @@ bool evalBernoulliEuler2ArgDouble(keel::StringRef fn, double nVal, double x,
     if (n < 0 || n > 40)
         return false;
     if (fn == "bernoulliB") {
-        double sum = 0.0;
-        double binom = 1.0;
+        keel::f64 sum = 0.0;
+        keel::f64 binom = 1.0;
         for (keel::i64 k = 0; k <= n; ++k) {
             if (k > 0)
-                binom = (binom * keel::as<double>(n - k + 1)) /
-                        keel::as<double>(k);
+                binom = (binom * keel::as<keel::f64>(n - k + 1)) /
+                        keel::as<keel::f64>(k);
             Rational bk;
             if (!bernoulliExact(k, bk))
                 return false;
             if (!bk.isZero()) {
                 sum += binom * bk.toDouble() *
-                       std::pow(x, keel::as<double>(n - k));
+                       std::pow(x, keel::as<keel::f64>(n - k));
             }
         }
         out = sum;
         return std::isfinite(out);
     }
     if (fn == "eulerE") {
-        const double xShift = x - 0.5;
-        double sum = 0.0;
-        double binom = 1.0;
+        const keel::f64 xShift = x - 0.5;
+        keel::f64 sum = 0.0;
+        keel::f64 binom = 1.0;
         for (keel::i64 k = 0; k <= n; ++k) {
             if (k > 0)
-                binom = (binom * keel::as<double>(n - k + 1)) /
-                        keel::as<double>(k);
+                binom = (binom * keel::as<keel::f64>(n - k + 1)) /
+                        keel::as<keel::f64>(k);
             Rational ek;
             if (!eulerExact(k, ek))
                 return false;
             if (!ek.isZero()) {
                 sum += binom * ek.toDouble() *
-                       std::pow(2.0, -keel::as<double>(k)) *
-                       std::pow(xShift, keel::as<double>(n - k));
+                       std::pow(2.0, -keel::as<keel::f64>(k)) *
+                       std::pow(xShift, keel::as<keel::f64>(n - k));
             }
         }
         out = sum;
@@ -2529,11 +2529,11 @@ bool evalBernoulliEuler2ArgDouble(keel::StringRef fn, double nVal, double x,
     return false;
 }
 
-bool evalBetaDouble(double x, double y, double &out)
+bool evalBetaDouble(keel::f64 x, keel::f64 y, keel::f64 &out)
 {
     if (!std::isfinite(x) || !std::isfinite(y))
         return false;
-    const double xy = x + y;
+    const keel::f64 xy = x + y;
     if ((x <= 0.0 && std::floor(x) == x) || (y <= 0.0 && std::floor(y) == y))
         return false;
     if (xy <= 0.0 && std::floor(xy) == xy) {
@@ -2544,9 +2544,9 @@ bool evalBetaDouble(double x, double y, double &out)
         out = std::exp(std::lgamma(x) + std::lgamma(y) - std::lgamma(xy));
         return std::isfinite(out);
     }
-    const double gx = std::tgamma(x);
-    const double gy = std::tgamma(y);
-    const double gxy = std::tgamma(xy);
+    const keel::f64 gx = std::tgamma(x);
+    const keel::f64 gy = std::tgamma(y);
+    const keel::f64 gxy = std::tgamma(xy);
     if (!std::isfinite(gx) || !std::isfinite(gy) || !std::isfinite(gxy) ||
         gxy == 0.0)
         return false;
@@ -2554,19 +2554,19 @@ bool evalBetaDouble(double x, double y, double &out)
     return std::isfinite(out);
 }
 
-bool evalPochhammerDouble(double a, double n, double &out)
+bool evalPochhammerDouble(keel::f64 a, keel::f64 n, keel::f64 &out)
 {
     if (!std::isfinite(a) || !std::isfinite(n))
         return false;
     if (std::floor(n) == n && n >= 0.0 && n <= 60.0) {
         const int k = keel::as<int>(n);
-        double prod = 1.0;
+        keel::f64 prod = 1.0;
         for (int j = 0; j < k; ++j)
-            prod *= (a + keel::as<double>(j));
+            prod *= (a + keel::as<keel::f64>(j));
         out = prod;
         return std::isfinite(out);
     }
-    const double an = a + n;
+    const keel::f64 an = a + n;
     if ((a <= 0.0 && std::floor(a) == a) || (an <= 0.0 && std::floor(an) == an))
         return false;
     if (a > 0.0 && an > 0.0) {
@@ -2577,8 +2577,8 @@ bool evalPochhammerDouble(double a, double n, double &out)
     return std::isfinite(out);
 }
 
-bool evalIncompleteGammaDouble(keel::StringRef fn, double s, double x,
-                               double &out)
+bool evalIncompleteGammaDouble(keel::StringRef fn, keel::f64 s, keel::f64 x,
+                               keel::f64 &out)
 {
     if (!std::isfinite(s) || !std::isfinite(x) || x < 0.0 || s <= 0.0)
         return false;
@@ -2586,15 +2586,15 @@ bool evalIncompleteGammaDouble(keel::StringRef fn, double s, double x,
         out = (fn == "gammainc") ? 0.0 : std::tgamma(s);
         return std::isfinite(out);
     }
-    const double gs = std::tgamma(s);
+    const keel::f64 gs = std::tgamma(s);
     if (!std::isfinite(gs))
         return false;
-    double lower = 0.0, upper = 0.0;
+    keel::f64 lower = 0.0, upper = 0.0;
     if (x < s + 1.0) {
-        double sum = 1.0 / s;
-        double term = sum;
+        keel::f64 sum = 1.0 / s;
+        keel::f64 term = sum;
         for (int k = 1; k <= 300; ++k) {
-            term *= x / (s + keel::as<double>(k));
+            term *= x / (s + keel::as<keel::f64>(k));
             sum += term;
             if (keel::abs(term) <= 1e-16 * keel::abs(sum))
                 break;
@@ -2603,13 +2603,13 @@ bool evalIncompleteGammaDouble(keel::StringRef fn, double s, double x,
         upper = gs - lower;
     } else {
         // Legendre continued fraction for upper incomplete gamma via Lentz's method.
-        constexpr double tiny = 1e-30;
-        double b = x + 1.0 - s;
-        double c = 1.0 / tiny;
-        double d = 1.0 / b;
-        double h = d;
+        constexpr keel::f64 tiny = 1e-30;
+        keel::f64 b = x + 1.0 - s;
+        keel::f64 c = 1.0 / tiny;
+        keel::f64 d = 1.0 / b;
+        keel::f64 h = d;
         for (int i = 1; i <= 300; ++i) {
-            const double an = -keel::as<double>(i) * (keel::as<double>(i) - s);
+            const keel::f64 an = -keel::as<keel::f64>(i) * (keel::as<keel::f64>(i) - s);
             b += 2.0;
             d = an * d + b;
             if (keel::abs(d) < tiny)
@@ -2618,7 +2618,7 @@ bool evalIncompleteGammaDouble(keel::StringRef fn, double s, double x,
             if (keel::abs(c) < tiny)
                 c = tiny;
             d = 1.0 / d;
-            const double del = d * c;
+            const keel::f64 del = d * c;
             h *= del;
             if (keel::abs(del - 1.0) <= 1e-16)
                 break;
@@ -2630,15 +2630,15 @@ bool evalIncompleteGammaDouble(keel::StringRef fn, double s, double x,
     return std::isfinite(out);
 }
 
-bool evalHypergeom0F1Double(double b, double z, double &out)
+bool evalHypergeom0F1Double(keel::f64 b, keel::f64 z, keel::f64 &out)
 {
     if (!std::isfinite(b) || !std::isfinite(z))
         return false;
     if (b <= 0.0 && std::floor(b) == b)
         return false;
-    double sum = 1.0, term = 1.0;
+    keel::f64 sum = 1.0, term = 1.0;
     for (int k = 1; k <= 300; ++k) {
-        const double den = (b + keel::as<double>(k - 1)) * keel::as<double>(k);
+        const keel::f64 den = (b + keel::as<keel::f64>(k - 1)) * keel::as<keel::f64>(k);
         if (den == 0.0)
             return false;
         term *= z / den;
@@ -2650,7 +2650,7 @@ bool evalHypergeom0F1Double(double b, double z, double &out)
     return std::isfinite(out);
 }
 
-bool evalHypergeom1F1Double(double a, double b, double z, double &out)
+bool evalHypergeom1F1Double(keel::f64 a, keel::f64 b, keel::f64 z, keel::f64 &out)
 {
     if (!std::isfinite(a) || !std::isfinite(b) || !std::isfinite(z))
         return false;
@@ -2665,17 +2665,17 @@ bool evalHypergeom1F1Double(double a, double b, double z, double &out)
     }
     if (!aNegInt && z < -15.0) {
         // Kummer's 1st transformation: 1F1(a, b, z) = exp(z) * 1F1(b - a, b, -z)
-        double kVal = 0.0;
+        keel::f64 kVal = 0.0;
         if (!evalHypergeom1F1Double(b - a, b, -z, kVal))
             return false;
         out = std::exp(z) * kVal;
         return std::isfinite(out);
     }
     const int maxSteps = aNegInt ? keel::as<int>(-a) : 400;
-    double sum = 1.0, term = 1.0;
+    keel::f64 sum = 1.0, term = 1.0;
     for (int k = 1; k <= maxSteps; ++k) {
-        const double num = a + keel::as<double>(k - 1);
-        const double den = (b + keel::as<double>(k - 1)) * keel::as<double>(k);
+        const keel::f64 num = a + keel::as<keel::f64>(k - 1);
+        const keel::f64 den = (b + keel::as<keel::f64>(k - 1)) * keel::as<keel::f64>(k);
         if (den == 0.0)
             return false;
         term *= (num * z) / den;
@@ -2688,7 +2688,7 @@ bool evalHypergeom1F1Double(double a, double b, double z, double &out)
     return std::isfinite(out);
 }
 
-bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
+bool evalHypergeom2F1Double(keel::f64 a, keel::f64 b, keel::f64 c, keel::f64 z, keel::f64 &out)
 {
     if (!std::isfinite(a) || !std::isfinite(b) || !std::isfinite(c) ||
         !std::isfinite(z))
@@ -2714,7 +2714,7 @@ bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
         if (z > 1.0)
             return false;
         if (z == 1.0) {
-            const double cab = c - a - b;
+            const keel::f64 cab = c - a - b;
             if (cab <= 0.0)
                 return false;
             out = (std::tgamma(c) * std::tgamma(cab)) /
@@ -2723,8 +2723,8 @@ bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
         }
         if (z < -0.5) {
             // Pfaff transformation: 2F1(a, b; c; z) = (1 - z)^(-a) * 2F1(a, c - b; c; z / (z - 1))
-            const double w = z / (z - 1.0);
-            double pfVal = 0.0;
+            const keel::f64 w = z / (z - 1.0);
+            keel::f64 pfVal = 0.0;
             if (!evalHypergeom2F1Double(a, c - b, c, w, pfVal))
                 return false;
             out = std::pow(1.0 - z, -a) * pfVal;
@@ -2732,12 +2732,12 @@ bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
         }
     }
 
-    double sum = 1.0, term = 1.0;
+    keel::f64 sum = 1.0, term = 1.0;
     for (int k = 1; k <= termCount; ++k) {
-        const double num =
-            (a + keel::as<double>(k - 1)) * (b + keel::as<double>(k - 1));
-        const double den =
-            (c + keel::as<double>(k - 1)) * keel::as<double>(k);
+        const keel::f64 num =
+            (a + keel::as<keel::f64>(k - 1)) * (b + keel::as<keel::f64>(k - 1));
+        const keel::f64 den =
+            (c + keel::as<keel::f64>(k - 1)) * keel::as<keel::f64>(k);
         if (den == 0.0)
             return false;
         term *= (num * z) / den;
@@ -2751,18 +2751,18 @@ bool evalHypergeom2F1Double(double a, double b, double c, double z, double &out)
 
 bool evalDoubleRec(
     const Ctx &c, Expr e,
-    keel::ArrayRef<std::pair<keel::StringRef, double>> vals,
-    keel::HashMap<keel::u32, double> &memo, double &out)
+    keel::ArrayRef<std::pair<keel::StringRef, keel::f64>> vals,
+    keel::HashMap<keel::u32, keel::f64> &memo, keel::f64 &out)
 {
     if (e.isNull())
         return false;
     const keel::u32 nid = c.id(e);
-    if (const double *hit = memo.get(nid)) {
+    if (const keel::f64 *hit = memo.get(nid)) {
         out = *hit;
         return true;
     }
 
-    double res = 0.0;
+    keel::f64 res = 0.0;
     switch (c.kind(e)) {
     case NodeKind::Number:
         res = c.numberValue(e).toDouble();
@@ -2814,7 +2814,7 @@ bool evalDoubleRec(
         break;
     }
     case NodeKind::Pow: {
-        double b = 0.0;
+        keel::f64 b = 0.0;
         if (!evalDoubleRec(c, c.child(e, 0), vals, memo, b))
             return false;
         const Expr expNode = c.child(e, 1);
@@ -2824,7 +2824,7 @@ bool evalDoubleRec(
             if (er.den() == BigInt(1) && er.num().fitsInt64(p)) {
                 if (b == 0.0 && p <= 0)
                     return false;
-                res = std::pow(b, keel::as<double>(p));
+                res = std::pow(b, keel::as<keel::f64>(p));
                 if (!std::isfinite(res))
                     return false;
                 break;
@@ -2833,7 +2833,7 @@ bool evalDoubleRec(
                 if (b < 0.0) {
                     if (q % 2 == 0)
                         return false; // even root of negative is non-real
-                    const double mag = std::pow(-b, er.toDouble());
+                    const keel::f64 mag = std::pow(-b, er.toDouble());
                     res = (p % 2 != 0) ? -mag : mag;
                     if (!std::isfinite(res))
                         return false;
@@ -2843,7 +2843,7 @@ bool evalDoubleRec(
                     return false;
             }
         }
-        double ex = 0.0;
+        keel::f64 ex = 0.0;
         if (!evalDoubleRec(c, expNode, vals, memo, ex))
             return false;
         if (b < 0.0 && std::floor(ex) != ex)
@@ -2858,7 +2858,7 @@ bool evalDoubleRec(
     case NodeKind::Func: {
         const keel::String &fn = c.funcName(e);
         if (c.childCount(e) == 4 && fn == "hypergeom2F1") {
-            double a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
+            keel::f64 a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
             if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a0) ||
                 !evalDoubleRec(c, c.child(e, 1), vals, memo, a1) ||
                 !evalDoubleRec(c, c.child(e, 2), vals, memo, a2) ||
@@ -2869,7 +2869,7 @@ bool evalDoubleRec(
             break;
         }
         if (c.childCount(e) == 3 && fn == "hypergeom1F1") {
-            double a0 = 0.0, a1 = 0.0, a2 = 0.0;
+            keel::f64 a0 = 0.0, a1 = 0.0, a2 = 0.0;
             if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a0) ||
                 !evalDoubleRec(c, c.child(e, 1), vals, memo, a1) ||
                 !evalDoubleRec(c, c.child(e, 2), vals, memo, a2) ||
@@ -2879,7 +2879,7 @@ bool evalDoubleRec(
             break;
         }
         if (c.childCount(e) == 2) {
-            double a0 = 0.0, a1 = 0.0;
+            keel::f64 a0 = 0.0, a1 = 0.0;
             if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a0) ||
                 !evalDoubleRec(c, c.child(e, 1), vals, memo, a1))
                 return false;
@@ -2950,7 +2950,7 @@ bool evalDoubleRec(
                 return false;
             break;
         }
-        double a = 0.0;
+        keel::f64 a = 0.0;
         if (!evalDoubleRec(c, c.child(e, 0), vals, memo, a))
             return false;
         if (fn == "exp") {
@@ -2970,15 +2970,15 @@ bool evalDoubleRec(
         } else if (fn == "tan") {
             res = std::tan(a);
         } else if (fn == "cot") {
-            const double t = std::tan(a);
+            const keel::f64 t = std::tan(a);
             if (t == 0.0) return false;
             res = 1.0 / t;
         } else if (fn == "sec") {
-            const double cs = std::cos(a);
+            const keel::f64 cs = std::cos(a);
             if (cs == 0.0) return false;
             res = 1.0 / cs;
         } else if (fn == "csc") {
-            const double sn = std::sin(a);
+            const keel::f64 sn = std::sin(a);
             if (sn == 0.0) return false;
             res = 1.0 / sn;
         } else if (fn == "asin") {
@@ -3006,13 +3006,13 @@ bool evalDoubleRec(
         } else if (fn == "tanh") {
             res = std::tanh(a);
         } else if (fn == "coth") {
-            const double th = std::tanh(a);
+            const keel::f64 th = std::tanh(a);
             if (th == 0.0) return false;
             res = 1.0 / th;
         } else if (fn == "sech") {
             res = 1.0 / std::cosh(a);
         } else if (fn == "csch") {
-            const double sh = std::sinh(a);
+            const keel::f64 sh = std::sinh(a);
             if (sh == 0.0) return false;
             res = 1.0 / sh;
         } else if (fn == "asinh") {
@@ -3099,7 +3099,7 @@ bool evalDoubleRec(
         const bool isAdd = (c.kind(e) == NodeKind::Add);
         res = isAdd ? 0.0 : 1.0;
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
-            double t = 0.0;
+            keel::f64 t = 0.0;
             if (!evalDoubleRec(c, c.child(e, i), vals, memo, t))
                 return false;
             res = isAdd ? (res + t) : (res * t);
@@ -3118,10 +3118,10 @@ bool evalDoubleRec(
 } // namespace
 
 bool Ctx::evalDouble(
-    Expr e, keel::ArrayRef<std::pair<keel::StringRef, double>> vals,
-    double &out) const
+    Expr e, keel::ArrayRef<std::pair<keel::StringRef, keel::f64>> vals,
+    keel::f64 &out) const
 {
-    keel::HashMap<keel::u32, double> memo;
+    keel::HashMap<keel::u32, keel::f64> memo;
     return evalDoubleRec(*this, e, vals, memo, out);
 }
 

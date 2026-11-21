@@ -117,32 +117,32 @@ struct SymbolNameSet
     }
 };
 
-Rational doubleToRational(double v);
+Rational doubleToRational(keel::f64 v);
 
-Expr doubleToSymExpr(Ctx &c, double v)
+Expr doubleToSymExpr(Ctx &c, keel::f64 v)
 {
     if (std::isinf(v))
         return (v > 0.0) ? c.symbol("oo") : c.neg(c.symbol("oo"));
     return c.number(doubleToRational(v));
 }
 
-Rational doubleToRational(double v)
+Rational doubleToRational(keel::f64 v)
 {
     if (!std::isfinite(v))
         casFail("nk:sym:nonfinite", "sym: cannot convert non-finite double to exact rational");
     if (v == 0.0)
         return Rational(keel::i64{0});
-    const double fl = std::floor(v);
+    const keel::f64 fl = std::floor(v);
     if (fl == v && std::fabs(v) <= 9.0e15)
         return Rational(keel::as<keel::i64>(v));
 
     const int sign = (v < 0.0) ? -1 : 1;
-    const double av = std::fabs(v);
+    const keel::f64 av = std::fabs(v);
     keel::i64 p0 = 0, q0 = 1;
     keel::i64 p1 = 1, q1 = 0;
-    double x = av;
+    keel::f64 x = av;
     for (int iter = 0; iter < 32; ++iter) {
-        const double aDbl = std::floor(x);
+        const keel::f64 aDbl = std::floor(x);
         if (aDbl > 1.0e12)
             break;
         const keel::i64 a = keel::as<keel::i64>(aDbl);
@@ -154,10 +154,10 @@ Rational doubleToRational(double v)
         q0 = q1;
         p1 = p2;
         q1 = q2;
-        const double approx = keel::as<double>(p1) / keel::as<double>(q1);
+        const keel::f64 approx = keel::as<keel::f64>(p1) / keel::as<keel::f64>(q1);
         if (std::fabs(approx - av) <= 1e-13 * std::max(1.0, av))
             break;
-        const double rem = x - aDbl;
+        const keel::f64 rem = x - aDbl;
         if (rem <= 1e-15)
             break;
         x = 1.0 / rem;
@@ -421,11 +421,11 @@ keel::Arc<numkit::NativePayload> SymPayload::clone(keel::Allocator *alloc) const
     return keel::make_arc_in<SymPayload>(resolveMr(alloc), ctx, expr);
 }
 
-double SymPayload::asDouble() const
+keel::f64 SymPayload::asDouble() const
 {
     if (!ctx || expr.isNull())
         return 0.0;
-    double out = 0.0;
+    keel::f64 out = 0.0;
     if (!ctx->evalDouble(expr, {}, out)) {
         casFail("nk:sym:unresolvedSymbol",
                 keel::format("double: symbolic expression '{}' contains unresolved symbols or cannot be evaluated to double",
@@ -434,7 +434,7 @@ double SymPayload::asDouble() const
     return out;
 }
 
-keel::Arc<numkit::NativePayload> SymPayload::fromScalarDouble(double v, keel::Allocator *alloc) const
+keel::Arc<numkit::NativePayload> SymPayload::fromScalarDouble(keel::f64 v, keel::Allocator *alloc) const
 {
     auto c = ctx ? ctx : defaultCtx();
     return keel::make_arc_in<SymPayload>(resolveMr(alloc), c, doubleToSymExpr(*c, v));
@@ -996,7 +996,7 @@ numkit::Value symDouble(const numkit::Value &v,
         if (v.isScalar())
             return Value::scalar(v.toScalar(), mr);
         Value out = Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::DOUBLE, mr);
-        double *dst = out.doubleDataMut();
+        keel::f64 *dst = out.doubleDataMut();
         for (keel::usize i = 0; i < v.numel(); ++i)
             dst[i] = v.elemAt(i).toScalar();
         return out;
@@ -1009,7 +1009,7 @@ numkit::Value symDouble(const numkit::Value &v,
             return Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::DOUBLE, mr);
         if (n == 1 && v.dims().rows() == 1 && v.dims().cols() == 1) {
             Expr e = toSymExpr(v, c, "double");
-            double val = 0.0;
+            keel::f64 val = 0.0;
             if (!c.evalDouble(e, {}, val)) {
                 casFail("nk:double:unresolvedSymbol",
                         keel::format("double: cannot convert symbolic expression '{}' to double", c.toString(e)));
@@ -1017,13 +1017,13 @@ numkit::Value symDouble(const numkit::Value &v,
             return Value::scalar(val, mr);
         }
         Value out = Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::DOUBLE, mr);
-        double *dst = out.doubleDataMut();
+        keel::f64 *dst = out.doubleDataMut();
         for (keel::usize i = 0; i < n; ++i) {
             const ObjectState *st = v.objectStateAt(i);
             Expr e = (st && st->native)
                          ? static_cast<const SymPayload *>(st->native.get())->expr
                          : c.zero();
-            double val = 0.0;
+            keel::f64 val = 0.0;
             if (!c.evalDouble(e, {}, val)) {
                 casFail("nk:double:unresolvedSymbol",
                         keel::format("double: cannot convert symbolic element '{}' to double", c.toString(e)));
@@ -1033,7 +1033,7 @@ numkit::Value symDouble(const numkit::Value &v,
         return out;
     }
     Expr e = parseExprFlexible(c, v.toString(), "double");
-    double val = 0.0;
+    keel::f64 val = 0.0;
     if (!c.evalDouble(e, {}, val)) {
         casFail("nk:double:unresolvedSymbol",
                 keel::format("double: cannot convert symbolic expression '{}' to double", c.toString(e)));
@@ -1134,18 +1134,18 @@ void symFactor(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
         outs[0] = fromSymVector(ctxPtr, facList, /*column=*/false, mr);
     } else {
         keel::Array<Expr> facList;
-        keel::Array<double> mults;
+        keel::Array<keel::f64> mults;
         if (res.content != Rational(keel::i64{1}) || res.factors.empty()) {
             facList.push_back(c.number(res.content));
             mults.push_back(1.0);
         }
         for (const auto &it : res.factors) {
             facList.push_back(it.factor);
-            mults.push_back(keel::as<double>(it.multiplicity));
+            mults.push_back(keel::as<keel::f64>(it.multiplicity));
         }
         outs[0] = fromSymVector(ctxPtr, facList, /*column=*/false, mr);
         Value mVal = Value::matrix(1, mults.size(), ValueType::DOUBLE, mr);
-        double *mp = mVal.doubleDataMut();
+        keel::f64 *mp = mVal.doubleDataMut();
         for (keel::usize i = 0; i < mults.size(); ++i)
             mp[i] = mults[i];
         outs[1] = std::move(mVal);
@@ -1311,10 +1311,10 @@ numkit::Value symSym2poly(keel::ArrayRef<numkit::Value> args,
     }
     const keel::usize n = res.dense.size();
     Value out = Value::matrix(1, n, ValueType::DOUBLE, mr);
-    double *dst = out.doubleDataMut();
+    keel::f64 *dst = out.doubleDataMut();
     for (keel::usize i = 0; i < n; ++i) {
         const Expr &ce = res.dense[n - 1 - i];
-        double val = 0.0;
+        keel::f64 val = 0.0;
         if (!c.evalDouble(ce, {}, val)) {
             casFail("nk:sym2poly:nonNumericCoeff",
                     keel::format("sym2poly: polynomial coefficient '{}' is not numeric", c.toString(ce)));
@@ -1607,7 +1607,7 @@ void symPade(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
     if (args.size() == 4) {
         keel::Array<Expr> ord = toSymVector(args[3], c, "pade");
         if (ord.size() == 2) {
-            double md = 3.0, nd = 3.0;
+            keel::f64 md = 3.0, nd = 3.0;
             c.evalDouble(ord[0], {}, md);
             c.evalDouble(ord[1], {}, nd);
             m = keel::as<int>(md);
@@ -2409,7 +2409,7 @@ numkit::Value symRank(const numkit::Value &A,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     SymMatrix M = toSymMatrix(A, c, "rank");
-    return Value::scalar(keel::as<double>(rank(c, M)), mr);
+    return Value::scalar(keel::as<keel::f64>(rank(c, M)), mr);
 }
 
 void symRref(const numkit::Value &A, keel::usize nargout,
@@ -2426,9 +2426,9 @@ void symRref(const numkit::Value &A, keel::usize nargout,
     outs[0] = fromSymMatrix(ctxPtr, R, mr);
     if (nargout >= 2 && outs.size() >= 2) {
         Value jb = Value::matrix(1, pivots.size(), ValueType::DOUBLE, mr);
-        double *jp = jb.doubleDataMut();
+        keel::f64 *jp = jb.doubleDataMut();
         for (keel::usize i = 0; i < pivots.size(); ++i)
-            jp[i] = keel::as<double>(pivots[i] + 1);
+            jp[i] = keel::as<keel::f64>(pivots[i] + 1);
         outs[1] = std::move(jb);
     }
 }

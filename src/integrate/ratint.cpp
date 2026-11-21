@@ -3338,7 +3338,7 @@ Expr realizeLogAbsAtEndpoint(Ctx &c, Expr e, Expr var, Expr pt)
                 if (r.signum() < 0)
                     return c.func("log", c.neg(u));
             } else {
-                double dVal = 0.0;
+                keel::f64 dVal = 0.0;
                 if (c.evalDouble(uAtPt, {}, dVal) && dVal < -1e-12)
                     return c.func("log", c.neg(u));
             }
@@ -3576,7 +3576,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
     } else if (c.isAssumedPositive(omega)) {
         sgnOmega = +1;
     } else {
-        double wVal = 0.0;
+        keel::f64 wVal = 0.0;
         if (c.evalDouble(omega, {}, wVal)) {
             if (wVal > 1e-12)
                 sgnOmega = +1;
@@ -4083,7 +4083,7 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
                 if (c.isAssumedNonNegative(oneMinusZ)) {
                     validZ = true;
                 } else {
-                    double zVal = 0.0;
+                    keel::f64 zVal = 0.0;
                     if (!c.evalDouble(zArg, {}, zVal) || zVal <= 1.0)
                         validZ = true;
                 }
@@ -4542,7 +4542,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     }
 
     auto validParamBelowOne = [&](Expr p, bool allowOne) -> bool {
-        double dVal = 0.0;
+        keel::f64 dVal = 0.0;
         if (c.evalDouble(p, {}, dVal)) {
             if (allowOne ? (dVal > 1.0 + 1e-12) : (dVal >= 1.0 - 1e-12))
                 return false;
@@ -4756,7 +4756,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
         return out;
     }
 
-    double aVal = 0.0, bVal = 0.0;
+    keel::f64 aVal = 0.0, bVal = 0.0;
     bool hasNumA = false, hasNumB = false;
     if (aIsInf) {
         aVal = aInfDir > 0 ? HUGE_VAL : -HUGE_VAL;
@@ -4773,14 +4773,14 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 
     // 1. Interior pole guard on (min(a,b), max(a,b)).
     if (hasNumA && hasNumB) {
-        const double xMin = std::min(aVal, bVal);
-        const double xMax = std::max(aVal, bVal);
+        const keel::f64 xMin = std::min(aVal, bVal);
+        const keel::f64 xMax = std::max(aVal, bVal);
         keel::Array<UPoly> denPolys;
         collectPoleDenominators(c, f, var, denPolys);
         for (const UPoly &D : denPolys) {
             const keel::Array<RealRootSolution> roots = solveRealRoots(D);
             for (const RealRootSolution &rt : roots) {
-                double rLo = 0.0, rHi = 0.0;
+                keel::f64 rLo = 0.0, rHi = 0.0;
                 if (rt.isRational) {
                     rLo = rHi = rt.value.toDouble();
                 } else {
@@ -4964,8 +4964,8 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 
     keel::Array<Expr> jumpTerms{limB.value, c.neg(limA.value)};
     if (hasNumA && hasNumB) {
-        const double xMin = std::min(aVal, bVal);
-        const double xMax = std::max(aVal, bVal);
+        const keel::f64 xMin = std::min(aVal, bVal);
+        const keel::f64 xMax = std::max(aVal, bVal);
         keel::Array<UPoly> fDenPolys;
         collectPoleDenominators(c, indef.F, var, fDenPolys);
         keel::Array<Rational> jumpPts;
@@ -4974,7 +4974,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
             for (const RealRootSolution &rt : roots) {
                 if (!rt.isRational)
                     continue;
-                const double rVal = rt.value.toDouble();
+                const keel::f64 rVal = rt.value.toDouble();
                 if (rVal > xMin + 1e-11 && rVal < xMax - 1e-11) {
                     bool seen = false;
                     for (const Rational &prev : jumpPts) {
@@ -5132,8 +5132,8 @@ Expr simplifySqrtOnInterval(Ctx &c, Expr speedSq, Expr t, Expr a, Expr b)
     if (factorExpr(c, simpSq, t, factored) && !factored.isNull())
         baseExpr = factored;
 
-    double aVal = 0.0;
-    double bVal = 0.0;
+    keel::f64 aVal = 0.0;
+    keel::f64 bVal = 0.0;
     const bool hasMid =
         c.evalDouble(a, {}, aVal) && c.evalDouble(b, {}, bVal);
     const Expr midExpr =
@@ -5175,7 +5175,7 @@ Expr simplifySqrtOnInterval(Ctx &c, Expr speedSq, Expr t, Expr a, Expr b)
                 }
                 if (hasMid) {
                     const Expr uMid = c.subs(u, t, midExpr);
-                    double uVal = 0.0;
+                    keel::f64 uVal = 0.0;
                     if (c.evalDouble(uMid, {}, uVal)) {
                         if (uVal > 1e-12) {
                             outFactors.push_back(c.pow(u, c.number(halfExp)));
@@ -5246,8 +5246,8 @@ DefiniteIntegral lineIntegralScalar(Ctx &c, Expr f,
 
     const Expr fOnCurve = subsVectorSimultaneous(c, f, vars, curve);
     const Expr integrand = c.simplify(c.mul({fOnCurve, ds}));
-    double aVal = 0.0;
-    double bVal = 0.0;
+    keel::f64 aVal = 0.0;
+    keel::f64 bVal = 0.0;
     const bool reversedOrient =
         c.evalDouble(a, {}, aVal) && c.evalDouble(b, {}, bVal) && bVal < aVal;
     const Expr lo = reversedOrient ? b : a;
@@ -5426,7 +5426,7 @@ Expr simplifySqrtMultiOnBounds(Ctx &c, Expr sqExpr,
                     outFactors.push_back(c.pow(c.neg(u), c.number(halfExp)));
                     continue;
                 }
-                double uVal = 0.0;
+                keel::f64 uVal = 0.0;
                 if (c.evalDouble(uMid, {}, uVal)) {
                     if (uVal > 1e-12) {
                         outFactors.push_back(c.pow(u, c.number(halfExp)));
@@ -5457,7 +5457,7 @@ Expr simplifySqrtMultiOnBounds(Ctx &c, Expr sqExpr,
 
 DefiniteBound orientPositiveBound(Ctx &c, const DefiniteBound &bnd)
 {
-    double aVal = 0.0, bVal = 0.0;
+    keel::f64 aVal = 0.0, bVal = 0.0;
     if (c.evalDouble(bnd.a, {}, aVal) && c.evalDouble(bnd.b, {}, bVal) &&
         bVal < aVal) {
         return DefiniteBound{bnd.var, bnd.b, bnd.a};

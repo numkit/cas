@@ -15,13 +15,13 @@ namespace numkit::cas {
 // back to exact iterated differentiation f^(k)(x0)/k! when needed.
 // Returns a null Expr if `order < 0`, if `f` has a pole at `x0`, or if
 // a non-analytic branch point or budget exhaustion is encountered.
-Expr taylor(Ctx &c, Expr f, Expr var, Expr x0, int order,
+Expr taylor(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 order,
             Budget *budget = nullptr);
 
 // Truncated Laurent series of `f` in `var` around `x0` up to degree
 // `order` (inclusive, including principal-part terms (var - x0)^k for
 // k < 0 when `f` has a pole of finite order at `x0`).
-Expr laurent(Ctx &c, Expr f, Expr var, Expr x0, int order,
+Expr laurent(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 order,
              Budget *budget = nullptr);
 
 // Symbolic residue Res(f, var = z0) = [(var - z0)^(-1)] f(var) at a
@@ -41,7 +41,7 @@ struct LimitResult
 
     Status status = Status::Unevaluated;
     Expr value; // limit value when status == Proved; null otherwise
-    int poleOrder = 0; // positive pole order when status == Divergent
+    keel::i32 poleOrder = 0; // positive pole order when status == Divergent
     keel::String reason;
 
     LimitResult() noexcept = default;
@@ -78,12 +78,12 @@ LimitResult limit(Ctx &c, Expr f, Expr var, Expr x0,
 // One-sided symbolic limit lim_{var -> x0^+} f(var) (dir > 0) or
 // lim_{var -> x0^-} f(var) (dir < 0), supporting square-root Puiseux
 // branch points at x0 via t = sqrt(dir * (var - x0)).
-LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
+LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 dir,
                           Budget *budget = nullptr);
 
 // Symbolic limit at infinity: lim_{var -> +inf} f(var) (dir >= 0) or
 // lim_{var -> -inf} f(var) (dir < 0).
-LimitResult limitAtInfinity(Ctx &c, Expr f, Expr var, int dir = +1,
+LimitResult limitAtInfinity(Ctx &c, Expr f, Expr var, keel::i32 dir = +1,
                             Budget *budget = nullptr);
 
 struct SymSumResult
@@ -175,7 +175,7 @@ struct PadeResult
 // with deg(P_m) <= m, deg(Q_n) <= n, Q_n(x0) == 1, certified by exact Taylor
 // matching:
 //   taylor(c, R_{m,n} - f, var, x0, m + n, budget) == 0.
-PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n,
+PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 m, keel::i32 n,
                 Budget *budget = nullptr);
 
 // Multivariate Taylor polynomial of `f` in `vars` around `x0s` up to total
@@ -187,13 +187,13 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n,
 // Returns a null Expr if `order < 0`, `vars.size() != x0s.size()`, or if `f`
 // is singular at `x0s`.
 Expr mtaylor(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
-             keel::ArrayRef<Expr> x0s, int order,
+             keel::ArrayRef<Expr> x0s, keel::i32 order,
              Budget *budget = nullptr);
 
 // Forward finite difference operator of order `order` (>= 0) with step `step`
 // (defaulting to 1):
 //   Delta_h^m f(var) = sum_{j=0}^m (-1)^(m - j) * binom(m, j) * f(var + j * h).
-Expr finiteDiff(Ctx &c, Expr f, Expr var, int order = 1,
+Expr finiteDiff(Ctx &c, Expr f, Expr var, keel::i32 order = 1,
                 Expr step = Expr{});
 
 struct EulerMaclaurinResult
@@ -210,7 +210,7 @@ struct EulerMaclaurinResult
 //   int_a^b f(x) dx + 1/2*(f(a) + f(b))
 //     + sum_{k=1}^{order/2} (B_{2k} / (2k)!) * (f^{(2k-1)}(b) - f^{(2k-1)}(a)).
 EulerMaclaurinResult eulerMaclaurin(Ctx &c, Expr f, Expr var, Expr a, Expr b,
-                                    int order = 4,
+                                    keel::i32 order = 4,
                                     Budget *budget = nullptr);
 
 } // namespace numkit::cas

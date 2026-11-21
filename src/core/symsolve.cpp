@@ -130,8 +130,8 @@ Expr nthRootSymbolic(Ctx &c, Expr rhs, keel::i64 n)
         if (nq.bitLength() <= 64 && nq > BigInt(1)) {
             BigInt sqOut(1), rem(1);
             for (const auto &pe : BigInt::factorize(nq)) {
-                const int half = pe.second / 2;
-                const int odd = pe.second % 2;
+                const keel::i32 half = pe.second / 2;
+                const keel::i32 odd = pe.second % 2;
                 if (half > 0)
                     sqOut *= BigInt::powUInt(pe.first, keel::as<keel::u64>(half));
                 if (odd > 0)
@@ -209,7 +209,7 @@ bool hasPoleAt(Ctx &c, Expr e, Expr var, Expr root)
 // expanded expression `poly` in `var` (where coefficients may contain other
 // symbols/parameters). Returns false if `poly` is not a polynomial in `var`
 // of degree <= maxDeg.
-bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
+bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, keel::i32 maxDeg,
                             keel::Array<Expr> &coeffs)
 {
     const Expr expd = c.expand(poly);
@@ -286,7 +286,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr poly, Expr var, int maxDeg,
     }
 
     coeffs.assign(maxDeg + 1, c.zero());
-    for (int d = 0; d <= maxDeg; ++d) {
+    for (keel::i32 d = 0; d <= maxDeg; ++d) {
         const auto &b = buckets[keel::as<keel::usize>(d)];
         if (!b.empty())
             coeffs[keel::as<keel::usize>(d)] = c.simplify(c.add(b));
@@ -670,7 +670,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
                     const keel::Array<RootInterval> ivs = isolateRealRoots(f);
                     for (keel::usize idx = 0; idx < ivs.size(); ++idx) {
                         addUniqueRoot(c, candidates,
-                                      c.rootOf(f.coeffs().clone(), keel::as<int>(idx)));
+                                      c.rootOf(f.coeffs().clone(), keel::as<keel::i32>(idx)));
                     }
                 }
             }
@@ -739,8 +739,8 @@ keel::Array<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
         return solutions;
     }
 
-    const int m = keel::as<int>(aCoeffs.size()) - 1;
-    const int n = keel::as<int>(bCoeffs.size()) - 1;
+    const keel::i32 m = keel::as<keel::i32>(aCoeffs.size()) - 1;
+    const keel::i32 n = keel::as<keel::i32>(bCoeffs.size()) - 1;
     if (m < 0 || n < 0 || (m == 0 && n == 0))
         return solutions;
 
@@ -757,15 +757,15 @@ keel::Array<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
         //   - Next `m` rows:  shifted coefficients of G (from degree n down to 0)
         const keel::usize dim = keel::as<keel::usize>(m + n);
         SymMatrix Sylv = SymMatrix::zeros(c, dim, dim);
-        for (int row = 0; row < n; ++row) {
-            for (int k = 0; k <= m; ++k) {
+        for (keel::i32 row = 0; row < n; ++row) {
+            for (keel::i32 k = 0; k <= m; ++k) {
                 Sylv.at(keel::as<keel::usize>(row),
                         keel::as<keel::usize>(row + k)) =
                     aCoeffs[keel::as<keel::usize>(m - k)];
             }
         }
-        for (int row = 0; row < m; ++row) {
-            for (int k = 0; k <= n; ++k) {
+        for (keel::i32 row = 0; row < m; ++row) {
+            for (keel::i32 k = 0; k <= n; ++k) {
                 Sylv.at(keel::as<keel::usize>(n + row),
                         keel::as<keel::usize>(row + k)) =
                     bCoeffs[keel::as<keel::usize>(n - k)];
@@ -874,7 +874,7 @@ void addUniqueSystemTuple(Ctx &c, keel::Array<keel::Array<Expr>> &out,
 // from `idx = k - 1` down to `0`.
 void backSubstituteLexBasis(Ctx &c, keel::ArrayRef<Expr> basis,
                             keel::ArrayRef<Expr> origEqs,
-                            keel::ArrayRef<Expr> vars, int idx,
+                            keel::ArrayRef<Expr> vars, keel::i32 idx,
                             keel::Array<Expr> &partial, Budget *budget,
                             keel::Array<keel::Array<Expr>> &out)
 {
@@ -900,7 +900,7 @@ void backSubstituteLexBasis(Ctx &c, keel::ArrayRef<Expr> basis,
         if (c.isZero(spec))
             continue;
         bool hasEarlier = false;
-        for (int j = 0; j < idx; ++j) {
+        for (keel::i32 j = 0; j < idx; ++j) {
             if (mentionsVar(c, spec, vars[keel::as<keel::usize>(j)])) {
                 hasEarlier = true;
                 break;
@@ -989,7 +989,7 @@ keel::Array<keel::Array<Expr>> solveSystem(Ctx &c,
             return solutions; // inconsistent system (<1> unit ideal)
         keel::Array<Expr> partial(vars.size());
         backSubstituteLexBasis(c, gb.basis, eqs, vars,
-                               keel::as<int>(vars.size()) - 1, partial,
+                               keel::as<keel::i32>(vars.size()) - 1, partial,
                                budget, solutions);
         if (!solutions.empty())
             return solutions;

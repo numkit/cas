@@ -35,11 +35,11 @@ public:
     const UPoly &poly() const { return poly_; }
     const RootInterval &interval() const { return iv_; }
 
-    int sign() const;
+    keel::i32 sign() const;
     bool isZero() const { return sign() == 0; }
 
     // Total order on real algebraic numbers.
-    static int compare(const Algebraic &a, const Algebraic &b);
+    static keel::i32 compare(const Algebraic &a, const Algebraic &b);
 
     void refineTo(const Rational &width);
 
@@ -49,7 +49,7 @@ public:
 private:
     static bool containsRoot(const UPoly &g, keel::ArrayRef<UPoly> sturmG,
                              const Algebraic &a);
-    int positionCompare(const Algebraic &other) const;
+    keel::i32 positionCompare(const Algebraic &other) const;
     void refineStep();
 
     UPoly poly_;      // squarefree, monic, degree >= 1

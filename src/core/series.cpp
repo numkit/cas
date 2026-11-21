@@ -189,12 +189,12 @@ Expr safeSubsAndFold(Ctx &c, Expr e, Expr from, Expr to)
 // Truncated Laurent series S(t) = sum_{k=0}^{coeffs.size()-1} coeffs[k] t^{val+k} + O(t^{maxDeg+1}).
 struct Laurent
 {
-    int val = 0;
-    int maxDeg = 0;
+    keel::i32 val = 0;
+    keel::i32 maxDeg = 0;
     keel::Array<Expr> coeffs;
 
     Laurent() noexcept = default;
-    Laurent(int v, int m, keel::Array<Expr> cs = {}) noexcept
+    Laurent(keel::i32 v, keel::i32 m, keel::Array<Expr> cs = {}) noexcept
         : val(v), maxDeg(m), coeffs(keel::move(cs))
     {
     }
@@ -235,17 +235,17 @@ void normalizeSeries(Ctx &c, Laurent &s)
         s.coeffs.resize(maxCount);
 }
 
-Expr coeffAt(Ctx &c, const Laurent &s, int deg)
+Expr coeffAt(Ctx &c, const Laurent &s, keel::i32 deg)
 {
     if (deg < s.val)
         return c.zero();
-    const int idx = deg - s.val;
+    const keel::i32 idx = deg - s.val;
     if (idx < 0 || keel::as<keel::usize>(idx) >= s.coeffs.size())
         return c.zero();
     return s.coeffs[keel::as<keel::usize>(idx)];
 }
 
-Laurent makeConstSeries(Ctx &c, Expr val, int maxDeg)
+Laurent makeConstSeries(Ctx &c, Expr val, keel::i32 maxDeg)
 {
     Laurent s;
     s.val = 0;
@@ -265,7 +265,7 @@ Laurent addSeries(Ctx &c, const Laurent &a, const Laurent &b)
         return out;
     }
     out.coeffs.reserve(out.maxDeg - out.val + 1);
-    for (int d = out.val; d <= out.maxDeg; ++d) {
+    for (keel::i32 d = out.val; d <= out.maxDeg; ++d) {
         out.coeffs.push_back(
             foldConst(c, c.add({coeffAt(c, a, d), coeffAt(c, b, d)})));
     }
@@ -295,13 +295,13 @@ Laurent mulSeries(Ctx &c, const Laurent &a, const Laurent &b)
         out.val = out.maxDeg + 1;
         return out;
     }
-    const int len = out.maxDeg - out.val + 1;
+    const keel::i32 len = out.maxDeg - out.val + 1;
     out.coeffs.assign(len, c.zero());
-    for (int i = 0; i < keel::as<int>(a.coeffs.size()) && i < len; ++i) {
+    for (keel::i32 i = 0; i < keel::as<keel::i32>(a.coeffs.size()) && i < len; ++i) {
         if (isZeroCoeff(c, a.coeffs[keel::as<keel::usize>(i)]))
             continue;
-        for (int j = 0;
-             j < keel::as<int>(b.coeffs.size()) && i + j < len; ++j) {
+        for (keel::i32 j = 0;
+             j < keel::as<keel::i32>(b.coeffs.size()) && i + j < len; ++j) {
             if (isZeroCoeff(c, b.coeffs[keel::as<keel::usize>(j)]))
                 continue;
             const Expr prod =
@@ -319,7 +319,7 @@ bool invSeries(Ctx &c, const Laurent &b, Laurent &out)
 {
     if (b.coeffs.empty() || isZeroCoeff(c, b.coeffs.front()))
         return false; // division by series that is identically 0 up to its precision
-    const int relPrec = b.maxDeg - b.val;
+    const keel::i32 relPrec = b.maxDeg - b.val;
     if (relPrec < 0)
         return false;
     const Expr b0 = b.coeffs.front();
@@ -331,9 +331,9 @@ bool invSeries(Ctx &c, const Laurent &b, Laurent &out)
     out.maxDeg = -b.val + relPrec;
     out.coeffs.assign(relPrec + 1, c.zero());
     out.coeffs[0] = invB0;
-    for (int k = 1; k <= relPrec; ++k) {
+    for (keel::i32 k = 1; k <= relPrec; ++k) {
         keel::Array<Expr> terms;
-        for (int j = 1; j <= k; ++j) {
+        for (keel::i32 j = 1; j <= k; ++j) {
             const Expr bj = coeffAt(c, b, b.val + j);
             if (!isZeroCoeff(c, bj) &&
                 !isZeroCoeff(c, out.coeffs[keel::as<keel::usize>(k - j)])) {
@@ -350,7 +350,7 @@ bool invSeries(Ctx &c, const Laurent &b, Laurent &out)
     return true;
 }
 
-bool powIntSeries(Ctx &c, const Laurent &base, keel::i64 k, int relPrec,
+bool powIntSeries(Ctx &c, const Laurent &base, keel::i64 k, keel::i32 relPrec,
                   Laurent &out)
 {
     if (k == 0) {
@@ -379,7 +379,7 @@ bool powIntSeries(Ctx &c, const Laurent &base, keel::i64 k, int relPrec,
     return true;
 }
 
-bool powRatSeries(Ctx &c, const Laurent &base, const Rational &r, int relPrec,
+bool powRatSeries(Ctx &c, const Laurent &base, const Rational &r, keel::i32 relPrec,
                   Laurent &out)
 {
     keel::i64 p = 0, q = 0;
@@ -390,16 +390,16 @@ bool powRatSeries(Ctx &c, const Laurent &base, const Rational &r, int relPrec,
     if (base.coeffs.empty()) {
         if (p <= 0)
             return false;
-        out.val = (base.maxDeg * keel::as<int>(p)) / keel::as<int>(q) + 1;
+        out.val = (base.maxDeg * keel::as<keel::i32>(p)) / keel::as<keel::i32>(q) + 1;
         out.maxDeg = out.val - 1;
         out.coeffs.clear();
         return true;
     }
     if ((keel::as<keel::i64>(base.val) * p) % q != 0)
         return false; // fractional branch point in t
-    const int outVal =
-        keel::as<int>((keel::as<keel::i64>(base.val) * p) / q);
-    const int L = base.maxDeg - base.val;
+    const keel::i32 outVal =
+        keel::as<keel::i32>((keel::as<keel::i64>(base.val) * p) / q);
+    const keel::i32 L = base.maxDeg - base.val;
     if (L < 0)
         return false;
 
@@ -415,7 +415,7 @@ bool powRatSeries(Ctx &c, const Laurent &base, const Rational &r, int relPrec,
     Laurent u;
     u.val = 1;
     u.maxDeg = L;
-    for (int j = 1; j <= L; ++j)
+    for (keel::i32 j = 1; j <= L; ++j)
         u.coeffs.push_back(foldConst(c, c.mul({invB0, coeffAt(c, base, base.val + j)})));
     normalizeSeries(c, u);
 
@@ -423,7 +423,7 @@ bool powRatSeries(Ctx &c, const Laurent &base, const Rational &r, int relPrec,
     Laurent sum = makeConstSeries(c, c.one(), L);
     Laurent uk = u;
     Rational binom(1);
-    for (int k = 1; k <= L && !uk.coeffs.empty(); ++k) {
+    for (keel::i32 k = 1; k <= L && !uk.coeffs.empty(); ++k) {
         binom = binom * (r - Rational(keel::as<keel::i64>(k - 1))) /
                 Rational(keel::as<keel::i64>(k));
         sum = addSeries(c, sum, scaleSeries(c, uk, c.number(binom)));
@@ -450,7 +450,7 @@ Laurent diffSeries(Ctx &c, const Laurent &a)
     }
     out.val = a.val - 1;
     for (keel::usize i = 0; i < a.coeffs.size(); ++i) {
-        const int deg = a.val + keel::as<int>(i);
+        const keel::i32 deg = a.val + keel::as<keel::i32>(i);
         if (deg == 0) {
             out.coeffs.push_back(c.zero());
         } else {
@@ -476,7 +476,7 @@ bool integrateSeriesZeroConst(Ctx &c, const Laurent &g, Laurent &out)
     out.val = g.val + 1;
     out.coeffs.reserve(g.coeffs.size());
     for (keel::usize i = 0; i < g.coeffs.size(); ++i) {
-        const int d = g.val + keel::as<int>(i);
+        const keel::i32 d = g.val + keel::as<keel::i32>(i);
         out.coeffs.push_back(foldConst(
             c, c.mul({c.number(Rational(keel::i64{1}, BigInt(d + 1))),
                       g.coeffs[i]})));
@@ -485,7 +485,7 @@ bool integrateSeriesZeroConst(Ctx &c, const Laurent &g, Laurent &out)
     return true;
 }
 
-int exprSign(Ctx &c, Expr e)
+keel::i32 exprSign(Ctx &c, Expr e)
 {
     if (e.isNull())
         return 0;
@@ -516,10 +516,10 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
     if (!arg.coeffs.empty() && arg.val < 0) {
         if (!positiveT && (-arg.val) % 2 != 0)
             return false; // odd pole changes sign across two-sided t -> 0
-        const int sgn = exprSign(c, arg.coeffs.front());
+        const keel::i32 sgn = exprSign(c, arg.coeffs.front());
         if (sgn == 0)
             return false;
-        const int highDeg = std::max(32, -arg.val * 8);
+        const keel::i32 highDeg = std::max(32, -arg.val * 8);
         if (fn == "atan") {
             Laurent invArg, atanInv;
             if (!invSeries(c, arg, invArg) ||
@@ -589,7 +589,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
         }
         return false; // essential singularity / pole inside transcendental
     }
-    const int L = arg.maxDeg;
+    const keel::i32 L = arg.maxDeg;
     if (L < 0)
         return false;
     const Expr c0 = foldConst(c, coeffAt(c, arg, 0));
@@ -603,7 +603,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
         Laurent sum = makeConstSeries(c, c.one(), L);
         Laurent uk = u;
         BigInt fact(1);
-        for (int k = 1; k <= L && !uk.coeffs.empty(); ++k) {
+        for (keel::i32 k = 1; k <= L && !uk.coeffs.empty(); ++k) {
             fact = fact * BigInt(k);
             sum = addSeries(
                 c, sum, scaleSeries(c, uk, c.number(Rational(BigInt(1), fact))));
@@ -623,7 +623,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
         const Laurent w = scaleSeries(c, u, invC0);
         Laurent sum = makeConstSeries(c, logC0, L);
         Laurent wk = w;
-        for (int k = 1; k <= L && !wk.coeffs.empty(); ++k) {
+        for (keel::i32 k = 1; k <= L && !wk.coeffs.empty(); ++k) {
             const Rational coef((k % 2 == 1) ? keel::i64{1} : keel::i64{-1},
                                 BigInt(k));
             sum = addSeries(c, sum, scaleSeries(c, wk, c.number(coef)));
@@ -639,7 +639,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
         Laurent cU = makeConstSeries(c, c.one(), L);
         Laurent uk = u;
         BigInt fact(1);
-        for (int k = 1; k <= L && !uk.coeffs.empty(); ++k) {
+        for (keel::i32 k = 1; k <= L && !uk.coeffs.empty(); ++k) {
             fact = fact * BigInt(k);
             const keel::i64 sign =
                 (!hyp && ((k / 2) % 2 == 1)) ? keel::i64{-1} : keel::i64{1};
@@ -772,7 +772,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
             const Laurent u2 = mulSeries(c, u, u);
             Laurent upow = u;
             BigInt fact(1);
-            for (int m = 0; 2 * m + 1 <= L && !upow.coeffs.empty(); ++m) {
+            for (keel::i32 m = 0; 2 * m + 1 <= L && !upow.coeffs.empty(); ++m) {
                 if (m > 0) {
                     fact = fact * BigInt(2 * m) * BigInt(2 * m + 1);
                 }
@@ -849,7 +849,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
         if (isZeroCoeff(c, c0)) {
             Laurent sum = makeConstSeries(c, c.zero(), L);
             Laurent upow = u;
-            for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+            for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
                 const Expr coef = c.number(
                     Rational(BigInt(1), BigInt(k) * BigInt(k)));
                 sum = addSeries(c, sum, scaleSeries(c, upow, coef));
@@ -897,7 +897,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
                 {c.number(Rational(keel::i64{1}, BigInt(12))), pi2});
 
             auto buildLgamma1PlusU = [&](Laurent &lgOut) {
-                const int degCap = std::min(L, 2);
+                const keel::i32 degCap = std::min(L, 2);
                 Laurent uCap = u;
                 uCap.maxDeg = std::min(uCap.maxDeg, degCap);
                 normalizeSeries(c, uCap);
@@ -907,7 +907,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
                     scaleSeries(c, u2Cap, pi2Over12));
             };
             auto buildDigamma1PlusU = [&](Laurent &psiOut) {
-                const int degCap = std::min(L, 1);
+                const keel::i32 degCap = std::min(L, 1);
                 Laurent uCap = u;
                 uCap.maxDeg = std::min(uCap.maxDeg, degCap);
                 normalizeSeries(c, uCap);
@@ -1049,7 +1049,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
             // dirichletEta(1 + u) = (1 - 2^(-u)) * zeta(1 + u)
             // = log(2) + (euler_gamma * log(2) - 1/2 * log(2)^2) * u + O(u^2)
             const Expr log2 = c.func("log", c.number(keel::i64{2}));
-            const int degCap = std::min(L, 1);
+            const keel::i32 degCap = std::min(L, 1);
             Laurent uCap = u;
             uCap.maxDeg = std::min(uCap.maxDeg, degCap);
             normalizeSeries(c, uCap);
@@ -1071,7 +1071,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
             Laurent sum = makeConstSeries(c, halfPi, L);
             Laurent upow = u;
             Rational dblFactRatio(1);
-            for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+            for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
                 dblFactRatio = dblFactRatio *
                                Rational(BigInt(2 * k - 1), BigInt(2 * k));
                 Rational rCoef = dblFactRatio * dblFactRatio;
@@ -1094,7 +1094,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
         const Expr tSym = c.symbol("$t_series");
         Expr cur = c.func(fn, tSym);
         BigInt fact(1);
-        for (int k = 0; k <= L; ++k) {
+        for (keel::i32 k = 0; k <= L; ++k) {
             if (k > 0) {
                 cur = c.diff(cur, tSym);
                 if (cur.isNull())
@@ -1109,7 +1109,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
         }
         Laurent sum = makeConstSeries(c, mac[0], L);
         Laurent upow = u;
-        for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+        for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
             if (!c.isZero(mac[keel::as<keel::usize>(k)])) {
                 sum = addSeries(
                     c, sum, scaleSeries(c, upow, mac[keel::as<keel::usize>(k)]));
@@ -1124,7 +1124,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
     return false;
 }
 
-bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
+bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, keel::i32 maxDeg,
                     Budget *budget, Laurent &out, bool positiveT = false)
 {
     if (!checkSeriesBudget(c, budget))
@@ -1226,7 +1226,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     (argSeries.val == 0 && !argSeries.coeffs.empty())
                         ? argSeries.coeffs[0]
                         : c.zero();
-                const int L = keel::as<int>(argSeries.coeffs.size()) - 1;
+                const keel::i32 L = keel::as<keel::i32>(argSeries.coeffs.size()) - 1;
                 Laurent u = argSeries;
                 if (u.val == 0 && !u.coeffs.empty())
                     u.coeffs[0] = c.zero();
@@ -1234,7 +1234,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     Laurent sum = makeConstSeries(c, c.one(), L);
                     Laurent upow = u;
                     Expr ck = c.one();
-                    for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                    for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
                         const Expr km1 = c.number(k - 1);
                         const Expr bStep = foldConst(
                             c, c.add({c.child(e, nArgs - 2), km1}));
@@ -1268,7 +1268,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                 fnArgs.push_back(tSym);
                 Expr cur = c.func(fn, fnArgs);
                 BigInt fact(1);
-                for (int k = 0; k <= L; ++k) {
+                for (keel::i32 k = 0; k <= L; ++k) {
                     if (k > 0) {
                         cur = c.diff(cur, tSym);
                         if (cur.isNull())
@@ -1284,7 +1284,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                 }
                 Laurent sum = makeConstSeries(c, mac[0], L);
                 Laurent upow = u;
-                for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
                     if (!c.isZero(mac[keel::as<keel::usize>(k)])) {
                         sum = addSeries(
                             c, sum,
@@ -1322,7 +1322,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                                     positiveT) ||
                     phiSeries.val < 0)
                     return false;
-                const int L = maxDeg;
+                const keel::i32 L = maxDeg;
                 const Expr phi0 =
                     (phiSeries.val == 0 && !phiSeries.coeffs.empty())
                         ? phiSeries.coeffs[0]
@@ -1366,10 +1366,10 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                             ? mSeries.coeffs[0]
                             : c.zero();
                     if (isZeroCoeff(c, n0) && isZeroCoeff(c, m0)) {
-                        const int L = maxDeg;
+                        const keel::i32 L = maxDeg;
                         keel::Array<Rational> df(L + 1,
                                                  Rational(1));
-                        for (int k = 1; k <= L; ++k) {
+                        for (keel::i32 k = 1; k <= L; ++k) {
                             df[keel::as<keel::usize>(k)] =
                                 df[keel::as<keel::usize>(k - 1)] *
                                 Rational(BigInt(2 * k - 1), BigInt(2 * k));
@@ -1380,7 +1380,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                             L + 1);
                         nPows[0] = makeConstSeries(c, c.one(), L);
                         mPows[0] = makeConstSeries(c, c.one(), L);
-                        for (int k = 1; k <= L; ++k) {
+                        for (keel::i32 k = 1; k <= L; ++k) {
                             nPows[keel::as<keel::usize>(k)] = mulSeries(
                                 c, nPows[keel::as<keel::usize>(k - 1)],
                                 nSeries);
@@ -1392,8 +1392,8 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                             {c.number(Rational(keel::i64{1}, BigInt(2))),
                              c.symbol("pi")});
                         Laurent sum = makeConstSeries(c, c.zero(), L);
-                        for (int r = 0; r <= L; ++r) {
-                            for (int k = 0; k <= r; ++k) {
+                        for (keel::i32 r = 0; r <= L; ++r) {
+                            for (keel::i32 k = 0; k <= r; ++k) {
                                 const Rational rCoef =
                                     df[keel::as<keel::usize>(r)] *
                                     df[keel::as<keel::usize>(k)];
@@ -1434,8 +1434,8 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                         if (fn == "besselj" && (n % 2 != 0))
                             signMul = c.number(keel::i64{-1});
                     }
-                    const int L =
-                        keel::as<int>(argSeries.coeffs.size()) - 1;
+                    const keel::i32 L =
+                        keel::as<keel::i32>(argSeries.coeffs.size()) - 1;
                     Laurent u = argSeries;
                     if (u.val == 0 && !u.coeffs.empty())
                         u.coeffs[0] = c.zero();
@@ -1461,7 +1461,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                     }
                     Laurent sum = makeConstSeries(c, mac[0], L);
                     Laurent upow = u;
-                    for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                    for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
                         if (!c.isZero(mac[keel::as<keel::usize>(k)])) {
                             sum = addSeries(
                                 c, sum,
@@ -1477,13 +1477,13 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
             }
             if (fn == "polylog" && isZeroCoeff(c, c0) &&
                 !mentionsSymbol(c, ord, var)) {
-                const int L = keel::as<int>(argSeries.coeffs.size()) - 1;
+                const keel::i32 L = keel::as<keel::i32>(argSeries.coeffs.size()) - 1;
                 Laurent u = argSeries;
                 if (u.val == 0 && !u.coeffs.empty())
                     u.coeffs[0] = c.zero();
                 Laurent sum = makeConstSeries(c, c.zero(), L);
                 Laurent upow = u;
-                for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
                     const Expr coef =
                         foldConst(c, c.pow(c.number(k), c.neg(ord)));
                     sum = addSeries(c, sum, scaleSeries(c, upow, coef));
@@ -1495,14 +1495,14 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
             }
             if (fn == "hypergeom0F1" && isZeroCoeff(c, c0) &&
                 !mentionsSymbol(c, ord, var)) {
-                const int L = keel::as<int>(argSeries.coeffs.size()) - 1;
+                const keel::i32 L = keel::as<keel::i32>(argSeries.coeffs.size()) - 1;
                 Laurent u = argSeries;
                 if (u.val == 0 && !u.coeffs.empty())
                     u.coeffs[0] = c.zero();
                 Laurent sum = makeConstSeries(c, c.one(), L);
                 Laurent upow = u;
                 Expr ck = c.one();
-                for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
                     const Expr bStep =
                         foldConst(c, c.add({ord, c.number(k - 1)}));
                     if (isZeroCoeff(c, bStep))
@@ -1520,7 +1520,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                 return true;
             }
             if (!isZeroCoeff(c, c0)) {
-                const int L = keel::as<int>(argSeries.coeffs.size()) - 1;
+                const keel::i32 L = keel::as<keel::i32>(argSeries.coeffs.size()) - 1;
                 Laurent u = argSeries;
                 if (u.val == 0 && !u.coeffs.empty())
                     u.coeffs[0] = c.zero();
@@ -1529,7 +1529,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                 const Expr tSym = c.symbol("$t_series");
                 Expr cur = c.func(fn, ord, tSym);
                 BigInt fact(1);
-                for (int k = 0; k <= L; ++k) {
+                for (keel::i32 k = 0; k <= L; ++k) {
                     if (k > 0) {
                         cur = c.diff(cur, tSym);
                         if (cur.isNull())
@@ -1545,7 +1545,7 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
                 }
                 Laurent sum = makeConstSeries(c, mac[0], L);
                 Laurent upow = u;
-                for (int k = 1; k <= L && !upow.coeffs.empty(); ++k) {
+                for (keel::i32 k = 1; k <= L && !upow.coeffs.empty(); ++k) {
                     if (!c.isZero(mac[keel::as<keel::usize>(k)])) {
                         sum = addSeries(
                             c, sum,
@@ -1570,12 +1570,12 @@ bool computeLaurent(Ctx &c, Expr e, Expr var, Expr x0, int maxDeg,
     return false;
 }
 
-Expr renderSeries(Ctx &c, const Laurent &s, Expr var, Expr x0, int order)
+Expr renderSeries(Ctx &c, const Laurent &s, Expr var, Expr x0, keel::i32 order)
 {
     const Expr dx = c.isZero(x0) ? var : c.add({var, c.neg(x0)});
     keel::Array<Expr> terms;
     for (keel::usize i = 0; i < s.coeffs.size(); ++i) {
-        const int deg = s.val + keel::as<int>(i);
+        const keel::i32 deg = s.val + keel::as<keel::i32>(i);
         if (deg > order)
             break;
         const Expr &coef = s.coeffs[i];
@@ -1594,14 +1594,14 @@ Expr renderSeries(Ctx &c, const Laurent &s, Expr var, Expr x0, int order)
 }
 
 // Fallback iterated differentiation Taylor builder: sum_{k=0}^{order} f^(k)(x0)/k! (x - x0)^k.
-Expr taylorByDiffFallback(Ctx &c, Expr f, Expr var, Expr x0, int order,
+Expr taylorByDiffFallback(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 order,
                           Budget *budget)
 {
     const Expr dx = c.isZero(x0) ? var : c.add({var, c.neg(x0)});
     keel::Array<Expr> terms;
     Expr cur = f;
     BigInt fact(1);
-    for (int k = 0; k <= order; ++k) {
+    for (keel::i32 k = 0; k <= order; ++k) {
         if (!checkSeriesBudget(c, budget))
             return Expr();
         if (k > 0) {
@@ -1628,13 +1628,13 @@ Expr taylorByDiffFallback(Ctx &c, Expr f, Expr var, Expr x0, int order,
 
 } // namespace
 
-Expr taylor(Ctx &c, Expr f, Expr var, Expr x0, int order, Budget *budget)
+Expr taylor(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 order, Budget *budget)
 {
     if (f.isNull() || var.isNull() || x0.isNull() || order < 0)
         return Expr();
     // Try Laurent expansion with cushion +8 (and retry +16 if deep cancellation
     // reduced reliable degree below `order`).
-    for (int pad : {8, 16}) {
+    for (keel::i32 pad : {8, 16}) {
         Laurent s;
         if (computeLaurent(c, f, var, x0, order + pad, budget, s)) {
             if (!s.coeffs.empty() && s.val < 0)
@@ -1648,11 +1648,11 @@ Expr taylor(Ctx &c, Expr f, Expr var, Expr x0, int order, Budget *budget)
     return taylorByDiffFallback(c, f, var, x0, order, budget);
 }
 
-Expr laurent(Ctx &c, Expr f, Expr var, Expr x0, int order, Budget *budget)
+Expr laurent(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 order, Budget *budget)
 {
     if (f.isNull() || var.isNull() || x0.isNull())
         return Expr();
-    for (int pad : {8, 16}) {
+    for (keel::i32 pad : {8, 16}) {
         Laurent s;
         if (computeLaurent(c, f, var, x0, order + pad, budget, s) &&
             s.maxDeg >= order) {
@@ -1767,7 +1767,7 @@ bool isBoundedOscillatoryFactor(const Ctx &c, Expr f)
 }
 
 LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
-                       int depth, bool positiveT = false)
+                       keel::i32 depth, bool positiveT = false)
 {
     LimitResult out;
     if (!checkSeriesBudget(c, budget)) {
@@ -1782,7 +1782,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
     }
 
     // 1. Truncated Laurent series around t = var - x0.
-    for (int pad : {8, 16}) {
+    for (keel::i32 pad : {8, 16}) {
         Laurent s;
         if (computeLaurent(c, f, var, x0, pad, budget, s, positiveT)) {
             if (!s.coeffs.empty() && s.val < 0) {
@@ -1880,7 +1880,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
             Laurent argS;
             if (computeLaurent(c, arg, var, x0, 4, budget, argS, positiveT) &&
                 !argS.coeffs.empty() && argS.val < 0) {
-                const int s = exprSign(c, argS.coeffs.front());
+                const keel::i32 s = exprSign(c, argS.coeffs.front());
                 if (s > 0 || (fn == "erfi" && s != 0)) {
                     out.status = LimitResult::Status::Divergent;
                     out.poleOrder = -argS.val;
@@ -2039,7 +2039,7 @@ LimitResult limitDepth(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget,
     return out;
 }
 
-bool isSymbolicInfinity(const Ctx &c, Expr e, int &dirOut)
+bool isSymbolicInfinity(const Ctx &c, Expr e, keel::i32 &dirOut)
 {
     if (e.isNull())
         return false;
@@ -2055,7 +2055,7 @@ bool isSymbolicInfinity(const Ctx &c, Expr e, int &dirOut)
         c.kind(c.child(e, 1)) == NodeKind::Symbol) {
         const keel::String &nm = c.symbolName(c.child(e, 1));
         if (nm == "inf" || nm == "oo" || nm == "infinity") {
-            const int s = c.numberValue(c.child(e, 0)).signum();
+            const keel::i32 s = c.numberValue(c.child(e, 0)).signum();
             if (s != 0) {
                 dirOut = s > 0 ? +1 : -1;
                 return true;
@@ -2136,7 +2136,7 @@ Expr expandAsymptoticLogsAndDilog(Ctx &c, Expr e, Expr tSym, Budget *budget,
             if (computeLaurent(c, arg, tSym, c.zero(), 4, budget, s, true) &&
                 !s.coeffs.empty() && s.val != 0 &&
                 exprSign(c, s.coeffs.front()) > 0) {
-                const int k = s.val;
+                const keel::i32 k = s.val;
                 const Expr c0 = s.coeffs.front();
                 const Expr uTilde = c.simplify(c.mul(
                     {arg, c.pow(c0, c.number(keel::i64{-1})),
@@ -2166,7 +2166,7 @@ Expr expandAsymptoticLogsAndDilog(Ctx &c, Expr e, Expr tSym, Budget *budget,
 
 } // namespace
 
-LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
+LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 dir,
                           Budget *budget)
 {
     if (f.isNull() || var.isNull() || x0.isNull()) {
@@ -2174,7 +2174,7 @@ LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
         out.reason.assign("null input expression");
         return out;
     }
-    int infDir = 0;
+    keel::i32 infDir = 0;
     if (isSymbolicInfinity(c, x0, infDir))
         return limitAtInfinity(c, f, var, infDir, budget);
 
@@ -2199,7 +2199,7 @@ LimitResult limitOneSided(Ctx &c, Expr f, Expr var, Expr x0, int dir,
     return limitDepth(c, fPuiseux, tSym, c.zero(), budget, 0, true);
 }
 
-LimitResult limitAtInfinity(Ctx &c, Expr f, Expr var, int dir, Budget *budget)
+LimitResult limitAtInfinity(Ctx &c, Expr f, Expr var, keel::i32 dir, Budget *budget)
 {
     if (f.isNull() || var.isNull()) {
         LimitResult out;
@@ -2228,7 +2228,7 @@ LimitResult limit(Ctx &c, Expr f, Expr var, Expr x0, Budget *budget)
         out.reason.assign("null input expression");
         return out;
     }
-    int infDir = 0;
+    keel::i32 infDir = 0;
     if (isSymbolicInfinity(c, x0, infDir))
         return limitAtInfinity(c, f, var, infDir, budget);
     const Expr fNorm = combineLogsForLimit(c, f);
@@ -2242,7 +2242,7 @@ Expr residue(Ctx &c, Expr f, Expr var, Expr z0, Budget *budget)
     if (!checkSeriesBudget(c, budget))
         return Expr();
 
-    int infDir = 0;
+    keel::i32 infDir = 0;
     if (isSymbolicInfinity(c, z0, infDir)) {
         const Expr tSym = c.symbol("_t_res_inf");
         const Expr fSub = c.subs(f, var, c.pow(tSym, c.number(keel::i64{-1})));
@@ -2255,7 +2255,7 @@ Expr residue(Ctx &c, Expr f, Expr var, Expr z0, Budget *budget)
         return c.zero();
 
     // 1. Primary path: truncated Laurent expansion around t = var - z0.
-    for (int pad : {8, 16, 24}) {
+    for (keel::i32 pad : {8, 16, 24}) {
         Laurent s;
         if (computeLaurent(c, f, var, z0, pad, budget, s)) {
             if (s.maxDeg >= -1)
@@ -2268,7 +2268,7 @@ Expr residue(Ctx &c, Expr f, Expr var, Expr z0, Budget *budget)
     // 2. Fallback: pole-order multiplier (var - z0)^m * f(var) for m = 1..5.
     const Expr dz = c.isZero(z0) ? var : c.add({var, c.neg(z0)});
     BigInt fact(1);
-    for (int m = 1; m <= 5; ++m) {
+    for (keel::i32 m = 1; m <= 5; ++m) {
         if (!checkSeriesBudget(c, budget))
             return Expr();
         if (m >= 2)
@@ -2276,7 +2276,7 @@ Expr residue(Ctx &c, Expr f, Expr var, Expr z0, Budget *budget)
         const Expr gm = c.simplify(
             c.mul({c.pow(dz, c.number(keel::as<keel::i64>(m))), f}));
         Expr deriv = gm;
-        for (int k = 1; k < m; ++k)
+        for (keel::i32 k = 1; k < m; ++k)
             deriv = c.diff(deriv, var);
         const LimitResult lr = limit(c, deriv, var, z0, budget);
         if (lr.proved()) {
@@ -2290,7 +2290,7 @@ Expr residue(Ctx &c, Expr f, Expr var, Expr z0, Budget *budget)
 
 namespace {
 
-Rational binomRational(int n, int k)
+Rational binomRational(keel::i32 n, keel::i32 k)
 {
     if (k < 0 || k > n)
         return Rational(keel::i64{0});
@@ -2300,7 +2300,7 @@ Rational binomRational(int n, int k)
         k = n - k;
     BigInt num(1);
     BigInt den(1);
-    for (int i = 1; i <= k; ++i) {
+    for (keel::i32 i = 1; i <= k; ++i) {
         num = num * BigInt(n - k + i);
         den = den * BigInt(i);
     }
@@ -2308,18 +2308,18 @@ Rational binomRational(int n, int k)
 }
 
 // Compute classical Bernoulli numbers B_0 = 1, B_1 = -1/2, B_2 = 1/6, B_3 = 0, ...
-keel::Array<Rational> bernoulliNumbers(int maxN)
+keel::Array<Rational> bernoulliNumbers(keel::i32 maxN)
 {
     keel::Array<Rational> B(maxN + 1,
                             Rational(keel::i64{0}));
     B[0] = Rational(keel::i64{1});
-    for (int m = 1; m <= maxN; ++m) {
+    for (keel::i32 m = 1; m <= maxN; ++m) {
         if (m >= 3 && (m % 2 == 1)) {
             B[keel::as<keel::usize>(m)] = Rational(keel::i64{0});
             continue;
         }
         Rational sum(keel::i64{0});
-        for (int j = 0; j < m; ++j) {
+        for (keel::i32 j = 0; j < m; ++j) {
             if (!B[keel::as<keel::usize>(j)].isZero())
                 sum = sum + binomRational(m + 1, j) * B[keel::as<keel::usize>(j)];
         }
@@ -2331,15 +2331,15 @@ keel::Array<Rational> bernoulliNumbers(int maxN)
 
 // Euler's exact formula for zeta(2*m) (m >= 1):
 //   zeta(2*m) = (-1)^(m-1) * 2^(2*m - 1) * B_{2m} / (2*m)! * pi^(2*m).
-Expr eulerZetaEven(Ctx &c, int twoM)
+Expr eulerZetaEven(Ctx &c, keel::i32 twoM)
 {
-    const int m = twoM / 2;
+    const keel::i32 m = twoM / 2;
     const keel::Array<Rational> B = bernoulliNumbers(twoM);
     Rational bVal = B[keel::as<keel::usize>(twoM)];
     if (bVal.signum() < 0)
         bVal = -bVal;
     BigInt fact(1);
-    for (int i = 2; i <= twoM; ++i)
+    for (keel::i32 i = 2; i <= twoM; ++i)
         fact = fact * BigInt(i);
     const BigInt pow2 = BigInt(1) << keel::as<keel::usize>(twoM - 1);
     const Rational coef =
@@ -2349,7 +2349,7 @@ Expr eulerZetaEven(Ctx &c, int twoM)
                         c.number(keel::as<keel::i64>(twoM)))});
 }
 
-bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
+bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, keel::i32 maxDeg,
                             keel::Array<Expr> &coeffs)
 {
     const Expr expanded = c.expand(e);
@@ -2374,7 +2374,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
         } else {
             facs.push_back(t);
         }
-        int deg = 0;
+        keel::i32 deg = 0;
         keel::Array<Expr> cFacs;
         for (const Expr &f : facs) {
             if (!mentionsSymbol(c, f, var)) {
@@ -2389,7 +2389,7 @@ bool extractPolyCoeffsInVar(Ctx &c, Expr e, Expr var, int maxDeg,
                     k < 0 || deg + k > maxDeg) {
                     return false;
                 }
-                deg += keel::as<int>(k);
+                deg += keel::as<keel::i32>(k);
             } else {
                 return false;
             }
@@ -2507,23 +2507,23 @@ bool certifyDiscreteAntidiff(Ctx &c, Expr G, Expr f, Expr var)
 //   Delta(G(var)) == P(var) where P(var) = sum_{m=0}^d p_m * var^m.
 Expr polyDiscreteAntidiff(Ctx &c, const keel::Array<Expr> &pCoeffs, Expr var)
 {
-    const int d = keel::as<int>(pCoeffs.size()) - 1;
+    const keel::i32 d = keel::as<keel::i32>(pCoeffs.size()) - 1;
     if (d < 0)
         return c.zero();
     const keel::Array<Rational> B = bernoulliNumbers(d + 1);
     keel::Array<Expr> terms;
-    for (int m = 0; m <= d; ++m) {
+    for (keel::i32 m = 0; m <= d; ++m) {
         const Expr &pm = pCoeffs[keel::as<keel::usize>(m)];
         if (c.isZero(pm))
             continue;
         keel::Array<Expr> mTerms;
-        for (int j = 0; j <= m; ++j) {
+        for (keel::i32 j = 0; j <= m; ++j) {
             if (B[keel::as<keel::usize>(j)].isZero())
                 continue;
             const Rational coef =
                 (binomRational(m + 1, j) * B[keel::as<keel::usize>(j)]) /
                 Rational(keel::as<keel::i64>(m + 1));
-            const int degK = m + 1 - j;
+            const keel::i32 degK = m + 1 - j;
             const Expr kPow =
                 (degK == 1)
                     ? var
@@ -2608,12 +2608,12 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                     return true;
                 }
             } else {
-                const int d = keel::as<int>(polyP.size()) - 1;
+                const keel::i32 d = keel::as<keel::i32>(polyP.size()) - 1;
                 keel::Array<Expr> qCoeffs(d + 1,
                                           c.zero());
-                for (int m = d; m >= 0; --m) {
+                for (keel::i32 m = d; m >= 0; --m) {
                     keel::Array<Expr> upperTerms;
-                    for (int j = m + 1; j <= d; ++j) {
+                    for (keel::i32 j = m + 1; j <= d; ++j) {
                         const Expr &qj = qCoeffs[keel::as<keel::usize>(j)];
                         if (!c.isZero(qj)) {
                             upperTerms.push_back(
@@ -2663,7 +2663,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
         {
             Rational root;
             UPoly lin;
-            int mult = 0;
+            keel::i32 mult = 0;
             UPoly linPow;
         };
         keel::Array<LinFactor> lfs;
@@ -2690,7 +2690,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
             struct PoleTerm
             {
                 Rational root;
-                int order = 0;
+                keel::i32 order = 0;
                 Rational coeff;
             };
             keel::Array<PoleTerm> poleTerms;
@@ -2703,7 +2703,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                 const UPoly invMj =
                     UPoly::invMod(mj % lfs[j].linPow, lfs[j].linPow);
                 UPoly cur = (rPoly * invMj) % lfs[j].linPow;
-                for (int p = lfs[j].mult; p >= 1 && !cur.isZero(); --p) {
+                for (keel::i32 p = lfs[j].mult; p >= 1 && !cur.isZero(); --p) {
                     UPoly quot, rem;
                     UPoly::divMod(cur, lfs[j].lin, quot, rem);
                     cur = quot;
@@ -2719,7 +2719,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
             keel::Array<Expr> gPieces;
             if (!qPoly.isZero()) {
                 keel::Array<Expr> qCoeffs;
-                for (int i = 0; i <= qPoly.deg(); ++i)
+                for (keel::i32 i = 0; i <= qPoly.deg(); ++i)
                     qCoeffs.push_back(c.number(qPoly.coeff(i)));
                 gPieces.push_back(polyDiscreteAntidiff(c, qCoeffs, var));
             }
@@ -2744,7 +2744,7 @@ bool discreteAntidiff(Ctx &c, Expr f, Expr var, Budget *budget, Expr &gOut,
                             maxRoot = poleTerms[j].root;
                     }
                 }
-                const int p = poleTerms[i].order;
+                const keel::i32 p = poleTerms[i].order;
                 const Expr baseL =
                     maxRoot.isZero()
                         ? var
@@ -2881,7 +2881,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         return out;
     }
 
-    int aInfDir = 0, bInfDir = 0;
+    keel::i32 aInfDir = 0, bInfDir = 0;
     const bool aIsInf = isSymbolicInfinity(c, a, aInfDir);
     const bool bIsInf = isSymbolicInfinity(c, b, bInfDir);
     if (aIsInf) {
@@ -3047,7 +3047,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
         {
             Rational root;
             UPoly lin;
-            int mult = 0;
+            keel::i32 mult = 0;
             UPoly linPow;
         };
         keel::Array<LinFactor> lfs;
@@ -3081,7 +3081,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
             struct PoleTerm
             {
                 Rational root;
-                int order = 0;
+                keel::i32 order = 0;
                 Rational coeff;
             };
             keel::Array<PoleTerm> poleTerms;
@@ -3094,7 +3094,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                 const UPoly invMj =
                     UPoly::invMod(mj % lfs[j].linPow, lfs[j].linPow);
                 UPoly cur = (N * invMj) % lfs[j].linPow;
-                for (int p = lfs[j].mult; p >= 1 && !cur.isZero(); --p) {
+                for (keel::i32 p = lfs[j].mult; p >= 1 && !cur.isZero(); --p) {
                     UPoly quot, rem;
                     UPoly::divMod(cur, lfs[j].lin, quot, rem);
                     cur = quot;
@@ -3127,7 +3127,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                             maxRoot = poleTerms[j].root;
                     }
                 }
-                const int p = poleTerms[i].order;
+                const keel::i32 p = poleTerms[i].order;
                 if (p == 1 && !sumCoeff.isZero()) {
                     out.status = SymSumResult::Status::Divergent;
                     out.reason.assign("non-zero logarithmic residue sum (harmonic divergence)");
@@ -3291,7 +3291,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                                 break;
                             }
                         }
-                        const int p = keel::as<int>(irs.size());
+                        const keel::i32 p = keel::as<keel::i32>(irs.size());
                         const Rational scale =
                             rN.coeff(0) /
                             Rational::powUInt(lcD, keel::as<keel::u64>(p));
@@ -3432,9 +3432,9 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     extractPolyCoeffsInVar(c, pExpr, var, 8, polyP)) {
                     // Convert P(k) into falling-factorial basis sum_{j=0}^d beta_j * k^(j)_falling
                     // using forward finite differences at k = 0: beta_j = Delta^j P(0) / j!.
-                    const int d = keel::as<int>(polyP.size()) - 1;
+                    const keel::i32 d = keel::as<keel::i32>(polyP.size()) - 1;
                     keel::Array<Expr> vals(d + 1);
-                    for (int k = 0; k <= d; ++k) {
+                    for (keel::i32 k = 0; k <= d; ++k) {
                         vals[keel::as<keel::usize>(k)] =
                             evalSymbolicPolyInVar(
                                 c, polyP,
@@ -3442,7 +3442,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                     }
                     keel::Array<Expr> bellTerms;
                     BigInt factJ(1);
-                    for (int j = 0; j <= d; ++j) {
+                    for (keel::i32 j = 0; j <= d; ++j) {
                         if (j >= 2)
                             factJ = factJ * BigInt(j);
                         const Expr betaJ = c.simplify(c.mul(
@@ -3455,7 +3455,7 @@ SymSumResult symsum(Ctx &c, Expr f, Expr var, Expr a, Expr b, Budget *budget)
                                                    keel::as<keel::i64>(j)));
                             bellTerms.push_back(c.mul({betaJ, qPow}));
                         }
-                        for (int m = 0; m < d - j; ++m) {
+                        for (keel::i32 m = 0; m < d - j; ++m) {
                             vals[keel::as<keel::usize>(m)] = c.simplify(c.add(
                                 {vals[keel::as<keel::usize>(m + 1)],
                                  c.neg(vals[keel::as<keel::usize>(m)])}));
@@ -3771,7 +3771,7 @@ Expr safeSubsMultiAndFold(Ctx &c, Expr e, keel::ArrayRef<Expr> vars,
 }
 
 bool mtaylorRecFallback(Ctx &c, Expr curDeriv, keel::usize varIdx,
-                        int remOrder, keel::ArrayRef<Expr> vars,
+                        keel::i32 remOrder, keel::ArrayRef<Expr> vars,
                         keel::ArrayRef<Expr> x0s,
                         keel::ArrayRef<Expr> dxExprs, BigInt factProd,
                         Expr monomProd, Budget *budget,
@@ -3795,7 +3795,7 @@ bool mtaylorRecFallback(Ctx &c, Expr curDeriv, keel::usize varIdx,
 
     Expr dCur = curDeriv;
     BigInt factK(1);
-    for (int k = 0; k <= remOrder; ++k) {
+    for (keel::i32 k = 0; k <= remOrder; ++k) {
         if (!checkSeriesBudget(c, budget))
             return false;
         if (k > 0) {
@@ -3818,7 +3818,7 @@ bool mtaylorRecFallback(Ctx &c, Expr curDeriv, keel::usize varIdx,
 
 } // namespace
 
-PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
+PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 m, keel::i32 n, Budget *budget)
 {
     PadeResult out;
     if (f.isNull() || var.isNull() || x0.isNull() || m < 0 || n < 0) {
@@ -3832,10 +3832,10 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
         return out;
     }
 
-    const int N = m + n;
+    const keel::i32 N = m + n;
     keel::Array<Expr> coeffs(N + 1, c.zero());
     bool haveCoeffs = false;
-    for (int pad : {8, 16}) {
+    for (keel::i32 pad : {8, 16}) {
         Laurent s;
         if (computeLaurent(c, f, var, x0, N + pad, budget, s)) {
             if (!s.coeffs.empty() && s.val < 0) {
@@ -3843,7 +3843,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
                 return out;
             }
             if (s.maxDeg >= N) {
-                for (int k = 0; k <= N; ++k) {
+                for (keel::i32 k = 0; k <= N; ++k) {
                     coeffs[keel::as<keel::usize>(k)] =
                         normalizeSeriesCoeff(c, coeffAt(c, s, k), budget);
                 }
@@ -3862,7 +3862,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
     if (!haveCoeffs) {
         Expr cur = f;
         BigInt fact(1);
-        for (int k = 0; k <= N; ++k) {
+        for (keel::i32 k = 0; k <= N; ++k) {
             if (!checkSeriesBudget(c, budget)) {
                 out.reason.assign(budget->status() == BudgetStatus::StepExhausted
                                       ? "step budget exhausted"
@@ -3891,9 +3891,9 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
         const keel::usize nSz = keel::as<keel::usize>(n);
         SymMatrix A(nSz, nSz, c.zero());
         SymMatrix B(nSz, 1, c.zero());
-        for (int i = 0; i < n; ++i) {
-            for (int j = 0; j < n; ++j) {
-                const int idx = m + i - j;
+        for (keel::i32 i = 0; i < n; ++i) {
+            for (keel::i32 j = 0; j < n; ++j) {
+                const keel::i32 idx = m + i - j;
                 if (idx >= 0) {
                     A.at(keel::as<keel::usize>(i),
                          keel::as<keel::usize>(j)) =
@@ -3946,10 +3946,10 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
     // Compute numerator coefficients p_0, ..., p_m:
     //   p_k = sum_{j=0}^{min(k, n)} c_{k - j} * q_j.
     keel::Array<Expr> p(m + 1, c.zero());
-    for (int k = 0; k <= m; ++k) {
+    for (keel::i32 k = 0; k <= m; ++k) {
         keel::Array<Expr> terms;
-        const int jMax = std::min(k, n);
-        for (int j = 0; j <= jMax; ++j) {
+        const keel::i32 jMax = std::min(k, n);
+        for (keel::i32 j = 0; j <= jMax; ++j) {
             const Expr &ckj = coeffs[keel::as<keel::usize>(k - j)];
             const Expr &qj = q[keel::as<keel::usize>(j)];
             if (!c.isZero(ckj) && !c.isZero(qj))
@@ -3980,7 +3980,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
         if (computeLaurent(c, rem, var, x0, N, budget, remS) &&
             (remS.coeffs.empty() || remS.val >= 0)) {
             certOk = true;
-            for (int k = 0; k <= N; ++k) {
+            for (keel::i32 k = 0; k <= N; ++k) {
                 if (!isZeroSeriesCoeff(c, coeffAt(c, remS, k), budget)) {
                     certOk = false;
                     break;
@@ -3998,7 +3998,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, int m, int n, Budget *budget)
 }
 
 Expr mtaylor(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
-             keel::ArrayRef<Expr> x0s, int order, Budget *budget)
+             keel::ArrayRef<Expr> x0s, keel::i32 order, Budget *budget)
 {
     if (f.isNull() || order < 0 || vars.size() != x0s.size())
         return Expr();
@@ -4037,7 +4037,7 @@ Expr mtaylor(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
                          c.add({x0s[i], c.mul({sSym, dSyms[i]})}));
     }
 
-    for (int pad : {8, 16}) {
+    for (keel::i32 pad : {8, 16}) {
         Laurent sSeries;
         if (computeLaurent(c, fScaled, sSym, c.zero(), order + pad, budget,
                            sSeries)) {
@@ -4045,13 +4045,13 @@ Expr mtaylor(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
                 return Expr(); // pole at x0s
             if (sSeries.maxDeg >= order) {
                 bool polyOk = true;
-                const int checkDeg = std::max(
+                const keel::i32 checkDeg = std::max(
                     order,
                     sSeries.coeffs.empty()
                         ? order
                         : std::min(sSeries.maxDeg, sSeries.val + 1));
                 keel::Array<Expr> terms;
-                for (int m = 0; m <= checkDeg; ++m) {
+                for (keel::i32 m = 0; m <= checkDeg; ++m) {
                     Expr cm = coeffAt(c, sSeries, m);
                     if (isZeroCoeff(c, cm))
                         continue;
@@ -4085,7 +4085,7 @@ Expr mtaylor(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
     return fallbackTerms.empty() ? c.zero() : c.add(fallbackTerms);
 }
 
-Expr finiteDiff(Ctx &c, Expr f, Expr var, int order, Expr step)
+Expr finiteDiff(Ctx &c, Expr f, Expr var, keel::i32 order, Expr step)
 {
     if (f.isNull() || var.isNull() || c.kind(var) != NodeKind::Symbol ||
         order < 0) {
@@ -4097,7 +4097,7 @@ Expr finiteDiff(Ctx &c, Expr f, Expr var, int order, Expr step)
     const Expr h = step.isNull() ? c.one() : step;
     keel::Array<Expr> terms;
     terms.reserve(order + 1);
-    for (int j = 0; j <= order; ++j) {
+    for (keel::i32 j = 0; j <= order; ++j) {
         Rational bin = binomRational(order, j);
         if ((order - j) % 2 != 0)
             bin = -bin;
@@ -4111,7 +4111,7 @@ Expr finiteDiff(Ctx &c, Expr f, Expr var, int order, Expr step)
 }
 
 EulerMaclaurinResult eulerMaclaurin(Ctx &c, Expr f, Expr var, Expr a, Expr b,
-                                    int order, Budget *budget)
+                                    keel::i32 order, Budget *budget)
 {
     EulerMaclaurinResult out;
     if (f.isNull() || var.isNull() || a.isNull() || b.isNull() ||
@@ -4143,12 +4143,12 @@ EulerMaclaurinResult eulerMaclaurin(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 
     // 3. Bernoulli derivative correction terms:
     //    sum_{k=1}^{order/2} (B_{2k} / (2k)!) * (f^{(2k-1)}(b) - f^{(2k-1)}(a))
-    const int maxK = order / 2;
+    const keel::i32 maxK = order / 2;
     const keel::Array<Rational> B = bernoulliNumbers(2 * maxK);
     keel::Array<Expr> bTerms;
     Expr curDeriv = f;
     BigInt fact(1);
-    for (int k = 1; k <= maxK; ++k) {
+    for (keel::i32 k = 1; k <= maxK; ++k) {
         // Advance curDeriv from f^{(2k-2)} to f^{(2k-1)}
         if (k == 1) {
             curDeriv = c.simplify(c.diff(curDeriv, var));
@@ -4171,7 +4171,7 @@ EulerMaclaurinResult eulerMaclaurin(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 
     // Check if the next derivative vanishes identically (polynomial exactness)
     Expr nextDeriv = curDeriv;
-    for (int step = (maxK == 0 ? 0 : 2 * maxK - 1); step <= order; ++step) {
+    for (keel::i32 step = (maxK == 0 ? 0 : 2 * maxK - 1); step <= order; ++step) {
         nextDeriv = c.simplify(c.diff(nextDeriv, var));
         if (nextDeriv.isNull() || c.isZero(nextDeriv)) {
             out.exactForPoly = true;

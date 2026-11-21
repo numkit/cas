@@ -75,7 +75,7 @@ public:
 
     bool hasRing() const { return ring_ != nullptr; }
     const ModCRing &ring() const;
-    int deg() const { return keel::as<int>(c_.size()) - 1; }
+    keel::i32 deg() const { return keel::as<keel::i32>(c_.size()) - 1; }
     bool isZero() const { return c_.empty(); }
     UPoly coeff(keel::usize i) const
     {

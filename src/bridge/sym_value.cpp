@@ -103,7 +103,7 @@ struct SymbolNameSet
     {
         keel::usize pos = 0;
         while (pos < items.size()) {
-            const int cmp = items[pos].as_ref().compare(s);
+            const keel::i32 cmp = items[pos].as_ref().compare(s);
             if (cmp == 0)
                 return;
             if (cmp > 0)
@@ -136,12 +136,12 @@ Rational doubleToRational(keel::f64 v)
     if (fl == v && std::fabs(v) <= 9.0e15)
         return Rational(keel::as<keel::i64>(v));
 
-    const int sign = (v < 0.0) ? -1 : 1;
+    const keel::i32 sign = (v < 0.0) ? -1 : 1;
     const keel::f64 av = std::fabs(v);
     keel::i64 p0 = 0, q0 = 1;
     keel::i64 p1 = 1, q1 = 0;
     keel::f64 x = av;
-    for (int iter = 0; iter < 32; ++iter) {
+    for (keel::i32 iter = 0; iter < 32; ++iter) {
         const keel::f64 aDbl = std::floor(x);
         if (aDbl > 1.0e12)
             break;
@@ -176,7 +176,7 @@ Expr parseExprFlexible(Ctx &c, keel::StringRef rawRef, const char *fnName)
     // Support equation strings "lhs == rhs" or "lhs = rhs" -> lhs - (rhs).
     keel::usize eqPos = keel::kInvalidIndex;
     keel::usize eqLen = 0;
-    int depth = 0;
+    keel::i32 depth = 0;
     for (keel::usize i = 0; i < s.size(); ++i) {
         if (s[i] == '(' || s[i] == '[')
             ++depth;
@@ -257,11 +257,11 @@ void collectSymbolsFromValue(const Value &v, Ctx &c, SymbolNameSet &out)
 
 // Rank symbol names by proximity to 'x' (the reference engine's symvar order:
 // x, y, z, w, v, u, t, s, ...).
-int symvarDistance(keel::StringRef a)
+keel::i32 symvarDistance(keel::StringRef a)
 {
     if (a.empty())
         return 1000;
-    const int d = keel::as<int>(keel::as<unsigned char>(a[0])) - keel::as<int>('x');
+    const keel::i32 d = keel::as<keel::i32>(keel::as<keel::u8>(a[0])) - keel::as<keel::i32>('x');
     if (d == 0)
         return 0;
     return (d > 0) ? (2 * d - 1) : (-2 * d);
@@ -275,8 +275,8 @@ Expr defaultSymVar(Ctx &c, const Value &v, const char *fallback = "x")
         return c.symbol(fallback);
     keel::StringRef best = syms.front().as_ref();
     for (const auto &s : syms) {
-        const int ds = symvarDistance(s);
-        const int db = symvarDistance(best);
+        const keel::i32 ds = symvarDistance(s);
+        const keel::i32 db = symvarDistance(best);
         if (ds < db || (ds == db && s.as_ref().compare(best) < 0))
             best = s.as_ref();
     }
@@ -830,14 +830,14 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
             }
             keel::usize rows = 1, cols = 1;
             if (a1.numel() == 1) {
-                int n = keel::as<int>(a1.toScalar());
+                keel::i32 n = keel::as<keel::i32>(a1.toScalar());
                 if (n < 0)
                     casFail("nk:sym:negativeSize", "sym: dimensions must be non-negative");
                 rows = keel::as<keel::usize>(n);
                 cols = keel::as<keel::usize>(n);
             } else if (a1.numel() == 2) {
-                int r = keel::as<int>(a1.elemAt(0).toScalar());
-                int col = keel::as<int>(a1.elemAt(1).toScalar());
+                keel::i32 r = keel::as<keel::i32>(a1.elemAt(0).toScalar());
+                keel::i32 col = keel::as<keel::i32>(a1.elemAt(1).toScalar());
                 if (r < 0 || col < 0)
                     casFail("nk:sym:negativeSize", "sym: dimensions must be non-negative");
                 rows = keel::as<keel::usize>(r);
@@ -1128,7 +1128,7 @@ void symFactor(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
             facList.push_back(c.number(res.content));
         }
         for (const auto &it : res.factors) {
-            for (int m = 0; m < it.multiplicity; ++m)
+            for (keel::i32 m = 0; m < it.multiplicity; ++m)
                 facList.push_back(it.factor);
         }
         outs[0] = fromSymVector(ctxPtr, facList, /*column=*/false, mr);
@@ -1259,8 +1259,8 @@ numkit::Value symSymvar(keel::ArrayRef<numkit::Value> args,
     if (args.size() == 2) {
         const keel::usize n = keel::as<keel::usize>(args[1].toScalar());
         std::sort(sorted.begin(), sorted.end(), [](const keel::String &a, const keel::String &b) {
-            const int da = symvarDistance(a);
-            const int db = symvarDistance(b);
+            const keel::i32 da = symvarDistance(a);
+            const keel::i32 db = symvarDistance(b);
             return (da != db) ? (da < db) : (a.as_ref().compare(b.as_ref()) < 0);
         });
         while (sorted.size() > n)
@@ -1331,23 +1331,23 @@ numkit::Value symDiff(keel::ArrayRef<numkit::Value> args,
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
     Expr var = defaultSymVar(c, args[0]);
-    int order = 1;
+    keel::i32 order = 1;
     if (args.size() == 2) {
         if (args[1].isNumeric() && args[1].isScalar()) {
-            order = keel::as<int>(args[1].toScalar());
+            order = keel::as<keel::i32>(args[1].toScalar());
         } else {
             var = toSymExpr(args[1], c, "diff");
         }
     } else if (args.size() == 3) {
         if (args[1].isNumeric() && args[1].isScalar()) {
-            order = keel::as<int>(args[1].toScalar());
+            order = keel::as<keel::i32>(args[1].toScalar());
             var = toSymExpr(args[2], c, "diff");
         } else {
             var = toSymExpr(args[1], c, "diff");
             if (!args[2].isNumeric() || !args[2].isScalar()) {
                 casFail("nk:diff:invalidOrder", "diff: differentiation order must be a non-negative integer");
             }
-            order = keel::as<int>(args[2].toScalar());
+            order = keel::as<keel::i32>(args[2].toScalar());
         }
     }
     if (order < 0) {
@@ -1358,7 +1358,7 @@ numkit::Value symDiff(keel::ArrayRef<numkit::Value> args,
     }
     return mapSymUnary(args[0], c, [&](Expr e) {
         Expr cur = e;
-        for (int k = 0; k < order; ++k) {
+        for (keel::i32 k = 0; k < order; ++k) {
             cur = c.diff(cur, var);
             if (cur.isNull()) {
                 casFail("nk:diff:unsupported", "diff: cannot differentiate expression");
@@ -1447,7 +1447,7 @@ numkit::Value symLimit(keel::ArrayRef<numkit::Value> args,
     Expr f = toSymExpr(args[0], c, "limit");
     Expr var = defaultSymVar(c, args[0]);
     Expr x0 = c.zero();
-    int dir = 0;
+    keel::i32 dir = 0;
 
     if (args.size() == 2) {
         x0 = toSymExpr(args[1], c, "limit");
@@ -1492,7 +1492,7 @@ numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
     Expr f = toSymExpr(args[0], c, "taylor");
     Expr var = defaultSymVar(c, args[0]);
     Expr x0 = c.zero();
-    int order = 5;
+    keel::i32 order = 5;
 
     // Support both positional (f, [var], [x0], [order]) and Name-Value ('ExpansionPoint', x0, 'Order', n).
     keel::usize posEnd = args.size();
@@ -1507,21 +1507,21 @@ numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
     }
     if (posEnd == 2) {
         if (args[1].isNumeric() && args[1].isScalar()) {
-            order = keel::as<int>(args[1].toScalar());
+            order = keel::as<keel::i32>(args[1].toScalar());
         } else {
             var = toSymExpr(args[1], c, "taylor");
         }
     } else if (posEnd == 3) {
         var = toSymExpr(args[1], c, "taylor");
         if (args[2].isNumeric() && args[2].isScalar()) {
-            order = keel::as<int>(args[2].toScalar());
+            order = keel::as<keel::i32>(args[2].toScalar());
         } else {
             x0 = toSymExpr(args[2], c, "taylor");
         }
     } else if (posEnd >= 4) {
         var = toSymExpr(args[1], c, "taylor");
         x0 = toSymExpr(args[2], c, "taylor");
-        order = keel::as<int>(args[3].toScalar());
+        order = keel::as<keel::i32>(args[3].toScalar());
     }
 
     for (keel::usize i = posEnd; i + 1 < args.size(); i += 2) {
@@ -1529,7 +1529,7 @@ numkit::Value symTaylor(keel::ArrayRef<numkit::Value> args,
         if (key.as_ref() == "expansionpoint") {
             x0 = toSymExpr(args[i + 1], c, "taylor");
         } else if (key.as_ref() == "order") {
-            int ordArg = keel::as<int>(args[i + 1].toScalar());
+            keel::i32 ordArg = keel::as<keel::i32>(args[i + 1].toScalar());
             if (ordArg <= 0)
                 casFail("nk:taylor:invalidOrder", "taylor: 'Order' must be a positive integer");
             order = ordArg - 1;
@@ -1556,7 +1556,7 @@ numkit::Value symLaurent(keel::ArrayRef<numkit::Value> args,
     Expr f = toSymExpr(args[0], c, "laurent");
     Expr var = (args.size() >= 2) ? toSymExpr(args[1], c, "laurent") : defaultSymVar(c, args[0]);
     Expr x0 = (args.size() >= 3) ? toSymExpr(args[2], c, "laurent") : c.zero();
-    int order = (args.size() >= 4) ? keel::as<int>(args[3].toScalar()) : 5;
+    keel::i32 order = (args.size() >= 4) ? keel::as<keel::i32>(args[3].toScalar()) : 5;
     Expr out = laurent(c, f, var, x0, order);
     if (out.isNull()) {
         casFail("nk:laurent:failed", "laurent: series expansion failed");
@@ -1574,16 +1574,16 @@ numkit::Value symMtaylor(keel::ArrayRef<numkit::Value> args,
     Expr f = toSymExpr(args[0], c, "mtaylor");
     keel::Array<Expr> vars = toSymVector(args[1], c, "mtaylor");
     keel::Array<Expr> x0s(vars.size(), c.zero());
-    int order = 4;
+    keel::i32 order = 4;
     if (args.size() == 3) {
         if (args[2].isNumeric() && args[2].isScalar() && vars.size() > 1) {
-            order = keel::as<int>(args[2].toScalar());
+            order = keel::as<keel::i32>(args[2].toScalar());
         } else {
             x0s = toSymVector(args[2], c, "mtaylor");
         }
     } else if (args.size() >= 4) {
         x0s = toSymVector(args[2], c, "mtaylor");
-        order = keel::as<int>(args[3].toScalar());
+        order = keel::as<keel::i32>(args[3].toScalar());
     }
     Expr out = mtaylor(c, f, vars, x0s, order);
     if (out.isNull()) {
@@ -1603,22 +1603,22 @@ void symPade(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
     Expr f = toSymExpr(args[0], c, "pade");
     Expr var = (args.size() >= 2) ? toSymExpr(args[1], c, "pade") : defaultSymVar(c, args[0]);
     Expr x0 = (args.size() >= 3) ? toSymExpr(args[2], c, "pade") : c.zero();
-    int m = 3, n = 3;
+    keel::i32 m = 3, n = 3;
     if (args.size() == 4) {
         keel::Array<Expr> ord = toSymVector(args[3], c, "pade");
         if (ord.size() == 2) {
             keel::f64 md = 3.0, nd = 3.0;
             c.evalDouble(ord[0], {}, md);
             c.evalDouble(ord[1], {}, nd);
-            m = keel::as<int>(md);
-            n = keel::as<int>(nd);
+            m = keel::as<keel::i32>(md);
+            n = keel::as<keel::i32>(nd);
         } else {
-            m = keel::as<int>(args[3].toScalar());
+            m = keel::as<keel::i32>(args[3].toScalar());
             n = m;
         }
     } else if (args.size() >= 5) {
-        m = keel::as<int>(args[3].toScalar());
-        n = keel::as<int>(args[4].toScalar());
+        m = keel::as<keel::i32>(args[3].toScalar());
+        n = keel::as<keel::i32>(args[4].toScalar());
     }
     PadeResult res = pade(c, f, var, x0, m, n);
     if (!res.proved()) {
@@ -1690,7 +1690,7 @@ numkit::Value symFiniteDiff(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
     Expr f = toSymExpr(args[0], c, "finitediff");
     Expr var = (args.size() >= 2) ? toSymExpr(args[1], c, "finitediff") : defaultSymVar(c, args[0]);
-    int order = (args.size() >= 3) ? keel::as<int>(args[2].toScalar()) : 1;
+    keel::i32 order = (args.size() >= 3) ? keel::as<keel::i32>(args[2].toScalar()) : 1;
     Expr step = (args.size() >= 4) ? toSymExpr(args[3], c, "finitediff") : c.one();
     Expr out = finiteDiff(c, f, var, order, step);
     if (out.isNull()) {
@@ -1710,7 +1710,7 @@ numkit::Value symEulerMaclaurin(keel::ArrayRef<numkit::Value> args,
     Expr var = toSymExpr(args[1], c, "eulermaclaurin");
     Expr a = toSymExpr(args[2], c, "eulermaclaurin");
     Expr b = toSymExpr(args[3], c, "eulermaclaurin");
-    int order = (args.size() >= 5) ? keel::as<int>(args[4].toScalar()) : 4;
+    keel::i32 order = (args.size() >= 5) ? keel::as<keel::i32>(args[4].toScalar()) : 4;
     EulerMaclaurinResult res = eulerMaclaurin(c, f, var, a, b, order);
     if (res.approximation.isNull()) {
         casFail("nk:eulermaclaurin:failed", "eulermaclaurin: could not construct Euler-Maclaurin expansion");
@@ -2190,7 +2190,7 @@ numkit::Value symPdsolve(keel::ArrayRef<numkit::Value> args,
                 if (bStr.as_ref() == "neumann")
                     bc = PdeBoundaryKind::Neumann;
             }
-            int maxModes = (args.size() >= 8) ? keel::as<int>(args[7].toScalar()) : 5;
+            keel::i32 maxModes = (args.size() >= 8) ? keel::as<keel::i32>(args[7].toScalar()) : 5;
             PdeResult res = pdsolveHeat1D(c, alpha, L, initU, x, t, bc, maxModes);
             if (!res.proved())
                 casFail("nk:pdsolve:failed", keel::format("pdsolve: heat PDE solve failed ({})", res.reason));
@@ -3244,7 +3244,7 @@ numkit::BuiltinClass makeSymBuiltinClass()
             casFail("nk:mpower:nonIntegerMatrixPower",
                         "mpower: matrix exponent must be an integer");
         }
-        int n = keel::as<int>(expI64);
+        keel::i32 n = keel::as<keel::i32>(expI64);
         SymMatrix base = A;
         if (n < 0) {
             base = inv(c, A);

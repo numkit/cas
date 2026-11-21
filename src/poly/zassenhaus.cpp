@@ -110,10 +110,10 @@ bool bpDivExact(keel::ArrayRef<BigInt> a, keel::ArrayRef<BigInt> b,
         return false;
     keel::Array<BigInt> r = keel::Array<BigInt>::from(a);
     q.assign(a.size() - b.size() + 1, B0());
-    const int db = keel::as<int>(b.size()) - 1;
+    const keel::i32 db = keel::as<keel::i32>(b.size()) - 1;
     while (!r.empty()) {
-        const int dr = keel::as<int>(r.size()) - 1;
-        const int shift = dr - db;
+        const keel::i32 dr = keel::as<keel::i32>(r.size()) - 1;
+        const keel::i32 shift = dr - db;
         if (shift < 0)
             return false;
         BigInt quo, rem;
@@ -164,7 +164,7 @@ keel::Array<BigInt> divisorsOf(const BigInt &n)
     for (const auto &pe : BigInt::factorize(n)) {
         const keel::usize base = divs.size();
         BigInt pw(1);
-        for (int e = 1; e <= pe.second; ++e) {
+        for (keel::i32 e = 1; e <= pe.second; ++e) {
             pw = pw * pe.first;
             for (keel::usize w = 0; w < base; ++w)
                 divs.push_back(divs[w] * pw);
@@ -268,9 +268,9 @@ void henselGroup(keel::ArrayRef<BigInt> target,
 
 // Masks over the active factor list in (popcount, value) order,
 // skipping the empty and full masks.
-int popcount32(keel::u32 v)
+keel::i32 popcount32(keel::u32 v)
 {
-    int c = 0;
+    keel::i32 c = 0;
     while (v) {
         v &= v - 1;
         ++c;
@@ -286,7 +286,7 @@ keel::Array<keel::u32> subsetMasks(keel::usize n)
     for (keel::u32 m = 1; m <= full - 1 && m != 0; ++m)
         masks.push_back(m);
     keel::sort(masks, [](keel::u32 a, keel::u32 b) {
-        const int pa = popcount32(a), pb = popcount32(b);
+        const keel::i32 pa = popcount32(a), pb = popcount32(b);
         return pa != pb ? pa < pb : a < b;
     });
     return masks;
@@ -320,7 +320,7 @@ factorPrimitiveInteger(keel::ArrayRef<BigInt> fIn, Budget *budget)
     const keel::u64 kPrimes[] = {3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43};
     keel::u64 p = 0;
     FpPoly fFp;
-    const int degF = keel::as<int>(f.size()) - 1;
+    const keel::i32 degF = keel::as<keel::i32>(f.size()) - 1;
     for (keel::u64 cand : kPrimes) {
         FpPoly fp = toFp(f, cand);
         if (fp.isZero() || fp.deg() != degF) // p must not divide the lc

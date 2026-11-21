@@ -79,7 +79,7 @@ RIval qRoot(const Rational &r, keel::i64 q)
     // 24 bisection steps: width <= max(1, r)/2^24 - far finer than
     // any genuine value difference the check needs to separate
     // (real form bugs differ by >= 2x, not in the 7th decimal).
-    for (int i = 0; i < 24; ++i) {
+    for (keel::i32 i = 0; i < 24; ++i) {
         const Rational mid = (lo + hi) * Rational(keel::i64{1}, BigInt(2));
         // mid^q <= r  <=>  mid.num^q * r.den <= r.num * mid.den^q
         // (r.den to the FIRST power - r.den^q here would bisect
@@ -137,11 +137,11 @@ bool evalRootOf(const Ctx &c, Expr e, RootOfCache &cache, RIval &out)
         return true;
     }
     const keel::Array<Rational> &poly = c.rootOfPoly(e);
-    const int index = c.rootOfIndex(e);
+    const keel::i32 index = c.rootOfIndex(e);
     UPoly p = UPoly(poly.clone()).squarefreePart();
     p.makeMonic();
     const keel::Array<RootInterval> ivs = isolateRealRoots(p);
-    if (index < 0 || index >= keel::as<int>(ivs.size()))
+    if (index < 0 || index >= keel::as<keel::i32>(ivs.size()))
         return false; // complex root or out of range: Unknown
         // (deliberately NOT cached: the enclosing evalIval fails the
         // whole sample, and a cached failure marker would later read
@@ -246,7 +246,7 @@ Tier2aStatus tier2aFormCheck(Ctx &c, Expr F, Expr f, Expr var)
     }};
 
     RootOfCache cache;
-    int compatible = 0;
+    keel::i32 compatible = 0;
     for (const Rational &x0 : kSamples) {
         RIval a, b;
         if (!evalIval(c, dF, var, x0, cache, a) ||

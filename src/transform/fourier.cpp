@@ -241,11 +241,11 @@ bool matchNegAbsInVar(Ctx &c, Expr e, Expr u, Expr &aOut)
     return false;
 }
 
-bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
+bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, keel::i32 expSign,
                      Budget *budget, Expr &reOut, Expr &imOut,
                      keel::String &reason);
 
-bool fourierRealSum(Ctx &c, Expr f, Expr u, Expr v, int expSign, Budget *budget,
+bool fourierRealSum(Ctx &c, Expr f, Expr u, Expr v, keel::i32 expSign, Budget *budget,
                     Expr &reOut, Expr &imOut, keel::String &reason)
 {
     if (!checkFourierBudget(c, budget, reason))
@@ -274,7 +274,7 @@ bool fourierRealSum(Ctx &c, Expr f, Expr u, Expr v, int expSign, Budget *budget,
     return fourierRealTerm(c, expd, u, v, expSign, budget, reOut, imOut, reason);
 }
 
-bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
+bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, keel::i32 expSign,
                      Budget *budget, Expr &reOut, Expr &imOut,
                      keel::String &reason)
 {
@@ -355,8 +355,8 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
     //    Fejer kernel: (1 - cos(a*u)) / u^2 -> (pi/2)*(a - abs(v))*heaviside(a - abs(v)),
     //    and rectangular pulse heaviside(a - abs(u)) -> 2 * sin(a*v) / v.
     if (varFacs.size() == 2) {
-        int uInvIdx = -1, uInv2Idx = -1, sinIdx = -1, oneMinusCosIdx = -1;
-        for (int i = 0; i < 2; ++i) {
+        keel::i32 uInvIdx = -1, uInv2Idx = -1, sinIdx = -1, oneMinusCosIdx = -1;
+        for (keel::i32 i = 0; i < 2; ++i) {
             const Expr &f = varFacs[keel::as<keel::usize>(i)];
             if (c.kind(f) == NodeKind::Pow && c.child(f, 0) == u &&
                 c.child(f, 1) == c.number(-1)) {
@@ -501,7 +501,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
     //    u * csch(a*u) -> (pi^2 / (2*a^2)) * sech(pi*v / (2*a))^2
     {
         auto matchHypKernel = [&](Expr f, keel::StringRef &hFn, Expr &aVal,
-                                  int &hPow) -> bool {
+                                  keel::i32 &hPow) -> bool {
             Expr inner = f;
             hPow = 1;
             if (c.kind(f) == NodeKind::Pow &&
@@ -510,7 +510,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
                 if (c.numberValue(c.child(f, 1)).den() == BigInt(1) &&
                     c.numberValue(c.child(f, 1)).num().fitsInt64(p)) {
                     inner = c.child(f, 0);
-                    hPow = keel::as<int>(p);
+                    hPow = keel::as<keel::i32>(p);
                 } else {
                     return false;
                 }
@@ -548,7 +548,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
         };
         keel::StringRef hFn;
         Expr aVal;
-        int hPow = 0;
+        keel::i32 hPow = 0;
         if (varFacs.size() == 1 && matchHypKernel(core, hFn, aVal, hPow) &&
             hFn == "sech" && (hPow == 1 || hPow == 2)) {
             const Expr dualArg =
@@ -566,7 +566,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
             return true;
         }
         if (varFacs.size() == 2) {
-            int uIdx = (varFacs[0] == u) ? 0 : ((varFacs[1] == u) ? 1 : -1);
+            keel::i32 uIdx = (varFacs[0] == u) ? 0 : ((varFacs[1] == u) ? 1 : -1);
             if (uIdx >= 0 &&
                 matchHypKernel(varFacs[keel::as<keel::usize>(1 - uIdx)],
                                hFn, aVal, hPow) &&
@@ -631,7 +631,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
         keel::Array<Expr> expArgs;
         keel::i64 absPow = 0;
         bool hasSignU = false;
-        int heavisideDir = 0; // +1 for heaviside(u), -1 for heaviside(-u)
+        keel::i32 heavisideDir = 0; // +1 for heaviside(u), -1 for heaviside(-u)
         bool okExpShape = true;
         for (const Expr &fac : varFacs) {
             if (c.kind(fac) == NodeKind::Func && c.funcName(fac) == "exp") {
@@ -821,7 +821,7 @@ bool fourierRealTerm(Ctx &c, Expr term, Expr u, Expr v, int expSign,
 
 // Compute int_{-inf}^{inf} f(u) * exp(expSign * I * v * u) du = reOut + I * imOut,
 // where `f` may contain the imaginary unit `I`.
-bool fourierComplexExpr(Ctx &c, Expr f, Expr u, Expr v, int expSign,
+bool fourierComplexExpr(Ctx &c, Expr f, Expr u, Expr v, keel::i32 expSign,
                         Budget *budget, Expr &reOut, Expr &imOut,
                         keel::String &reason)
 {

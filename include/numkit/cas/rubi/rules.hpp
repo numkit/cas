@@ -58,20 +58,20 @@ struct RuleTables
     {
         return strings[id];
     }
-    keel::i32 nodeRow(keel::i32 n, int col) const
+    keel::i32 nodeRow(keel::i32 n, keel::i32 col) const
     {
         return nodes[n * 5 + col];
     }
-    keel::i32 edgeRow(keel::i32 e, int col) const
+    keel::i32 edgeRow(keel::i32 e, keel::i32 col) const
     {
         return edges[e * 5 + col];
     }
     keel::i32 termRow(const keel::i32 *table, keel::i32 t,
-                         int col) const
+                         keel::i32 col) const
     {
         return table[t * 4 + col];
     }
-    keel::i32 ruleRow(keel::i32 r, int col) const
+    keel::i32 ruleRow(keel::i32 r, keel::i32 col) const
     {
         return rules[r * 4 + col];
     }
@@ -121,7 +121,7 @@ struct Binding
 // trie. Returns the rule id or -1; `bindings` receives the wildcard
 // assignments of the FIRST matching rule (table order = rule order
 // in the source file, which is Rubi's precedence by construction).
-int matchFirst(const RuleTables &t, Ctx &c, Expr e,
+keel::i32 matchFirst(const RuleTables &t, Ctx &c, Expr e,
                keel::Array<Binding> &bindings);
 
 } // namespace numkit::cas::rubi

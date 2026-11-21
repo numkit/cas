@@ -94,7 +94,7 @@ Token lex(keel::StringRef src, keel::usize &pos)
 // Binary operator binding powers; the printing ladder in expr.cpp
 // (Add 40, Mul 50, Pow 60) is the same contract, so printed
 // expressions re-parse to the identical node.
-int bp(Tok k)
+keel::i32 bp(Tok k)
 {
     switch (k) {
     case Tok::Plus:
@@ -126,7 +126,7 @@ private:
     //   -x^2 == -(x^2),  -x + y == (-x) + y,
     //   y^-1*exp(-y) == (y^-1)*exp(-y)   (NOT y^(-(1*exp(-y))))
     // Any value in (50, 60) implements that; 55 is the midpoint.
-    static constexpr int kUnaryBp = 55;
+    static constexpr keel::i32 kUnaryBp = 55;
 
     [[noreturn]] static void fail(keel::usize pos, keel::StringRef msg)
     {
@@ -142,11 +142,11 @@ private:
         advance();
     }
 
-    Expr parseExpr(int minBp)
+    Expr parseExpr(keel::i32 minBp)
     {
         Expr left = nud();
         for (;;) {
-            const int b = bp(cur_.kind);
+            const keel::i32 b = bp(cur_.kind);
             if (b <= minBp)
                 break;
             const Tok op = cur_.kind;

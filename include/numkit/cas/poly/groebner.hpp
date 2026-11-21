@@ -81,7 +81,7 @@ Expr gcdMulti(Ctx &c, Expr f, Expr g, keel::ArrayRef<Expr> vars = {},
 struct FactorMultiItem
 {
     Expr factor;          // monic irreducible polynomial factor in Q[x_1, ..., x_k]
-    int multiplicity = 1; // positive integer multiplicity
+    keel::i32 multiplicity = 1; // positive integer multiplicity
 };
 
 struct FactorMultiResult

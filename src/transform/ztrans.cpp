@@ -263,7 +263,7 @@ Expr reduceTrigProductsOnceZ(Ctx &c, Expr e, Expr var, bool &changed)
 Expr normalizeForZTrans(Ctx &c, Expr e, Expr n)
 {
     Expr cur = c.expand(e);
-    for (int pass = 0; pass < 6; ++pass) {
+    for (keel::i32 pass = 0; pass < 6; ++pass) {
         bool changed = false;
         cur = reduceTrigProductsOnceZ(c, cur, n, changed);
         cur = c.expand(cur);
@@ -555,13 +555,13 @@ bool exprEquivalentZ(Ctx &c, Expr a, Expr b)
 }
 
 // Compute binomial(n, k) = n*(n-1)*...*(n-k+1) / k! for k >= 0.
-Expr binomialExpr(Ctx &c, Expr n, int k)
+Expr binomialExpr(Ctx &c, Expr n, keel::i32 k)
 {
     if (k <= 0)
         return c.one();
     keel::Array<Expr> numFactors;
     BigInt fact(1);
-    for (int j = 0; j < k; ++j) {
+    for (keel::i32 j = 0; j < k; ++j) {
         fact = fact * BigInt(j + 1);
         numFactors.push_back(
             j == 0 ? n : c.add({n, c.number(keel::as<keel::i64>(-j))}));
@@ -572,7 +572,7 @@ Expr binomialExpr(Ctx &c, Expr n, int k)
 
 // Inverse Z-transform of z / (z - r)^k for k >= 1:
 //   Z^{-1}{z / (z - r)^k}(n) = binomial(n, k - 1) * r^(n - (k - 1)).
-Expr invertLinearZPole(Ctx &c, Expr r, int k, Expr n)
+Expr invertLinearZPole(Ctx &c, Expr r, keel::i32 k, Expr n)
 {
     const Expr rPowN = (r == c.one()) ? c.one() : c.pow(r, n);
     if (k == 1)
@@ -587,7 +587,7 @@ Expr invertLinearZPole(Ctx &c, Expr r, int k, Expr n)
 
 // Inverse Z-transform of z * (A*z + B) / (z^2 + b*z + d)^k (k = 1 or 2).
 bool invertQuadraticZFactor(Ctx &c, const Rational &bRat, const Rational &dRat,
-                            int k, const Rational &aRat, const Rational &bNumRat,
+                            keel::i32 k, const Rational &aRat, const Rational &bNumRat,
                             Expr n, Expr &out)
 {
     if (k < 1 || k > 2 || dRat.isZero())
@@ -696,11 +696,11 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     }
 
     // Factor out z^p from D(z): D(z) = z^p * dTilde(z) with dTilde(0) != 0.
-    int pZero = 0;
+    keel::i32 pZero = 0;
     while (pZero <= D.deg() && D.coeff(keel::as<keel::usize>(pZero)).isZero())
         ++pZero;
     keel::Array<Rational> dTildeCoeffs;
-    for (int i = pZero; i <= D.deg(); ++i)
+    for (keel::i32 i = pZero; i <= D.deg(); ++i)
         dTildeCoeffs.push_back(D.coeff(keel::as<keel::usize>(i)));
     UPoly dTilde(keel::move(dTildeCoeffs));
 
@@ -717,11 +717,11 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     UPoly mPoly;
     if (dTilde.deg() == 0) {
         const Rational invC = Rational(keel::i64{1}) / dTilde.coeff(0);
-        for (int i = 0; i <= N.deg(); ++i) {
+        for (keel::i32 i = 0; i <= N.deg(); ++i) {
             const Rational ci = N.coeff(keel::as<keel::usize>(i)) * invC;
             if (ci.isZero())
                 continue;
-            const int kShift = pZero - i;
+            const keel::i32 kShift = pZero - i;
             if (kShift < 0)
                 return false;
             const Expr deltaArg =
@@ -744,11 +744,11 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
     // where p0(z) = (N * invMod(dTilde, z^(pZero+1))) mod z^(pZero+1).
     const UPoly invDTilde = UPoly::invMod(dTilde % zPow, zPow);
     const UPoly p0 = (N * invDTilde) % zPow;
-    for (int i = 0; i <= p0.deg(); ++i) {
+    for (keel::i32 i = 0; i <= p0.deg(); ++i) {
         const Rational ci = p0.coeff(keel::as<keel::usize>(i));
         if (ci.isZero())
             continue;
-        const int kShift = pZero - i;
+        const keel::i32 kShift = pZero - i;
         if (kShift < 0)
             return false;
         const Expr deltaArg =
@@ -772,7 +772,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
         struct IrredFactor
         {
             UPoly q;
-            int mult = 0;
+            keel::i32 mult = 0;
             UPoly qPow;
         };
         keel::Array<IrredFactor> fs;
@@ -801,7 +801,7 @@ bool iztransFromRationalQ(Ctx &c, Expr F, Expr z, Expr n, Budget *budget,
             const UPoly invMj = UPoly::invMod(mj % fs[j].qPow, fs[j].qPow);
             UPoly cur = (mPoly * invMj) % fs[j].qPow;
 
-            for (int k = fs[j].mult; k >= 1 && !cur.isZero(); --k) {
+            for (keel::i32 k = fs[j].mult; k >= 1 && !cur.isZero(); --k) {
                 UPoly quot, rem;
                 UPoly::divMod(cur, fs[j].q, quot, rem);
                 cur = quot;
@@ -844,7 +844,7 @@ bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
     }
 
     Expr linBase;
-    int poleK = 0;
+    keel::i32 poleK = 0;
     keel::Array<Expr> numFacs;
     for (const Expr &fac : factors) {
         if (poleK == 0 && c.kind(fac) == NodeKind::Pow &&
@@ -857,7 +857,7 @@ bool iztransParametric(Ctx &c, Expr F, Expr z, Expr n, Expr &out)
                 matchLinearInVar(c, c.child(fac, 0), z, c0, c1) &&
                 !c.isZero(c1)) {
                 linBase = c.child(fac, 0);
-                poleK = keel::as<int>(-kVal);
+                poleK = keel::as<keel::i32>(-kVal);
                 continue;
             }
         }
@@ -1148,7 +1148,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
     keel::Array<Expr> basis;
     UPoly pNum, pDen;
     if (toRational(c, pZ, z, pNum, pDen) && pDen.isConst() && !pNum.isZero()) {
-        int zeroMult = 0;
+        keel::i32 zeroMult = 0;
         while (zeroMult <= pNum.deg() &&
                pNum.coeff(keel::as<keel::usize>(zeroMult)).isZero()) {
             const Expr deltaArg =
@@ -1159,7 +1159,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
             ++zeroMult;
         }
         keel::Array<Rational> nzCoeffs;
-        for (int i = zeroMult; i <= pNum.deg(); ++i)
+        for (keel::i32 i = zeroMult; i <= pNum.deg(); ++i)
             nzCoeffs.push_back(pNum.coeff(keel::as<keel::usize>(i)));
         UPoly nzPoly(keel::move(nzCoeffs));
         nzPoly.makeMonic();
@@ -1172,7 +1172,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
             struct FactorMult
             {
                 UPoly q;
-                int mult = 0;
+                keel::i32 mult = 0;
             };
             keel::Array<FactorMult> fms;
             for (const UPoly &ir : irreds) {
@@ -1192,7 +1192,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                 if (fm.q.deg() == 1) {
                     const Expr r = c.number(-fm.q.coeff(0));
                     const Expr rPowN = (r == c.one()) ? c.one() : c.pow(r, n);
-                    for (int m = 0; m < fm.mult; ++m) {
+                    for (keel::i32 m = 0; m < fm.mult; ++m) {
                         const Expr nPowM =
                             (m == 0) ? c.one()
                                      : c.pow(n, c.number(keel::as<keel::i64>(m)));
@@ -1212,7 +1212,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                             c.add({negHalfB, c.mul({half, sqrtDisc})});
                         const Expr r2 =
                             c.add({negHalfB, c.neg(c.mul({half, sqrtDisc}))});
-                        for (int m = 0; m < fm.mult; ++m) {
+                        for (keel::i32 m = 0; m < fm.mult; ++m) {
                             const Expr nPowM =
                                 (m == 0)
                                     ? c.one()
@@ -1233,7 +1233,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
                             (r == c.one()) ? c.one() : c.pow(r, n);
                         const Expr cosWn = c.func("cos", c.mul({omega, n}));
                         const Expr sinWn = c.func("sin", c.mul({omega, n}));
-                        for (int m = 0; m < fm.mult; ++m) {
+                        for (keel::i32 m = 0; m < fm.mult; ++m) {
                             const Expr nPowM =
                                 (m == 0)
                                     ? c.one()
@@ -1255,9 +1255,9 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
             if (c.isZero(r))
                 continue;
             // Determine multiplicity of root r in P(z).
-            int mult = 0;
+            keel::i32 mult = 0;
             Expr curP = pZ;
-            while (mult < keel::as<int>(orderK)) {
+            while (mult < keel::as<keel::i32>(orderK)) {
                 const Expr val = c.simplify(c.subs(curP, z, r));
                 if (val.isNull() || !c.isZero(val))
                     break;
@@ -1267,7 +1267,7 @@ RsolveResult rsolve(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr rhs, Expr n,
             if (mult == 0)
                 mult = 1;
             const Expr rPowN = (r == c.one()) ? c.one() : c.pow(r, n);
-            for (int m = 0; m < mult; ++m) {
+            for (keel::i32 m = 0; m < mult; ++m) {
                 const Expr nPowM =
                     (m == 0) ? c.one()
                              : c.pow(n, c.number(keel::as<keel::i64>(m)));

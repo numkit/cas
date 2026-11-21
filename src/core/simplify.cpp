@@ -288,7 +288,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
         //    log(u) - log(v) -> log(simplifyRationalExpr(u/v)) when cost decreases.
         for (keel::usize i = 0; i < terms.size() && !changed; ++i) {
             Expr uLog;
-            int signI = 0;
+            keel::i32 signI = 0;
             if (c.kind(terms[i]) == NodeKind::Func &&
                 c.funcName(terms[i]) == "log") {
                 uLog = c.child(terms[i], 0);
@@ -308,7 +308,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
 
             for (keel::usize j = i + 1; j < terms.size() && !changed; ++j) {
                 Expr vLog;
-                int signJ = 0;
+                keel::i32 signJ = 0;
                 if (c.kind(terms[j]) == NodeKind::Func &&
                     c.funcName(terms[j]) == "log") {
                     vLog = c.child(terms[j], 0);
@@ -327,7 +327,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                     continue;
 
                 Expr combinedArg;
-                int outSign = 1;
+                keel::i32 outSign = 1;
                 if (signI == 1 && signJ == 1) {
                     combinedArg = simplifyRationalExpr(c, c.mul({uLog, vLog}));
                 } else if (signI == 1 && signJ == -1) {
@@ -3036,7 +3036,7 @@ Expr simplify(Ctx &c, Expr e, Budget *budget)
     if (e.isNull())
         return Expr();
     Expr cur = e;
-    for (int pass = 0; pass < 3; ++pass) {
+    for (keel::i32 pass = 0; pass < 3; ++pass) {
         if (!checkSimplifyBudget(c, budget))
             break;
         const Expr next = singleSimplifyPass(c, cur, budget);
@@ -3460,7 +3460,7 @@ keel::String toLatex(const Ctx &c, Expr e)
         return out;
     }
     case NodeKind::Mul: {
-        int sign = 1;
+        keel::i32 sign = 1;
         keel::Array<std::pair<keel::String, bool>> numFacs;
         keel::Array<std::pair<keel::String, bool>> denFacs;
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
@@ -3597,7 +3597,7 @@ keel::String toLatex(const Ctx &c, Expr e)
 
 namespace {
 
-keel::String toCCodeRec(const Ctx &c, Expr e, int parentPrec)
+keel::String toCCodeRec(const Ctx &c, Expr e, keel::i32 parentPrec)
 {
     if (e.isNull())
         return keel::String::from("0.0");

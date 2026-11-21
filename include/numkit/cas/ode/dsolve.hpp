@@ -143,7 +143,7 @@ OdeResult dsolve2SpecialIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 //   equation `r*(r - 1) + p0*r + q0 = 0` and constructs certified Frobenius series
 //   branches `(x - x0)^r * sum_{k=0}^{order} c_k * (x - x0)^k`.
 OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
-                       Expr x0, int order = 6, Budget *budget = nullptr);
+                       Expr x0, keel::i32 order = 6, Budget *budget = nullptr);
 
 // Solve a 2nd-order variable-coefficient linear Initial Value Problem via
 // certified Taylor power series around an ordinary point `x0` up to degree `order`:
@@ -151,7 +151,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 // Certified by verifying `taylor(a*y'' + b*y' + d*y - f, x, x0, order - 2) == 0`,
 // `y(x0) == y0`, and `y'(x0) == dy0`.
 OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
-                          Expr x0, Expr y0, Expr dy0, int order = 6,
+                          Expr x0, Expr y0, Expr dy0, keel::i32 order = 6,
                           Budget *budget = nullptr);
 
 // Solve an N-th order constant-coefficient linear ODE (N >= 1):
@@ -295,7 +295,7 @@ PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
 PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
                         Expr x, Expr t,
                         PdeBoundaryKind bc = PdeBoundaryKind::Dirichlet,
-                        int maxModes = 5,
+                        keel::i32 maxModes = 5,
                         Budget *budget = nullptr);
 
 // Solve the 1D wave equation on a finite interval [0, L]:
@@ -306,7 +306,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
 PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
                         Expr x, Expr t,
                         PdeBoundaryKind bc = PdeBoundaryKind::Dirichlet,
-                        int maxModes = 5,
+                        keel::i32 maxModes = 5,
                         Budget *budget = nullptr);
 
 // Solve the 2D Laplace equation on a rectangle [0, a] x [0, b]:
@@ -316,7 +316,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
 // Certified against `u_xx + u_yy == 0` and the homogeneous boundary conditions.
 PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
                                Expr x, Expr y,
-                               int maxModes = 5,
+                               keel::i32 maxModes = 5,
                                Budget *budget = nullptr);
 
 } // namespace numkit::cas

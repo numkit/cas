@@ -191,7 +191,7 @@ void FpPoly::divMod(const FpPoly &a, const FpPoly &b, FpPoly &q, FpPoly &r)
     q.c_.assign(keel::as<keel::usize>(a.deg() - b.deg()) + 1, 0);
     const keel::u64 blcInv = invModP(b.lc(), p);
     while (!r.isZero() && r.deg() >= b.deg()) {
-        const int shift = r.deg() - b.deg();
+        const keel::i32 shift = r.deg() - b.deg();
         const keel::u64 f = mulMod(r.lc(), blcInv, p);
         q.c_[keel::as<keel::usize>(shift)] = addMod(q.c_[keel::as<keel::usize>(shift)], f, p);
         for (keel::usize j = 0; j < b.c_.size(); ++j)
@@ -300,7 +300,7 @@ namespace {
 
 // Cantor-Zassenhaus equal-degree splitting: all irreducible factors of
 // g have degree d. Deterministic via the fixed-seed PRNG.
-void edf(const FpPoly &g, int d, keel::Array<FpPoly> &out, keel::u64 &rng)
+void edf(const FpPoly &g, keel::i32 d, keel::Array<FpPoly> &out, keel::u64 &rng)
 {
     assert(!g.isZero());
     if (g.deg() < d) {
@@ -314,9 +314,9 @@ void edf(const FpPoly &g, int d, keel::Array<FpPoly> &out, keel::u64 &rng)
     const keel::u64 p = g.p();
     while (true) {
         // random poly of degree < deg(g), not constant
-        const int degA = 1 + keel::as<int>(fpNext(rng) % keel::as<keel::u64>(g.deg()));
+        const keel::i32 degA = 1 + keel::as<keel::i32>(fpNext(rng) % keel::as<keel::u64>(g.deg()));
         keel::Array<keel::u64> cs;
-        for (int i = 0; i <= degA; ++i)
+        for (keel::i32 i = 0; i <= degA; ++i)
             cs.push_back(fpNext(rng) % p);
         const FpPoly a(p, keel::move(cs));
         if (a.isZero() || a.deg() == 0)
@@ -367,7 +367,7 @@ keel::Array<FpPoly> FpPoly::factor(const FpPoly &f)
     keel::u64 rng = 0x9E3779B97F4A7C15ULL;
     FpPoly h = FpPoly::x(p) % sf;
     FpPoly rest = sf;
-    int degd = 0;
+    keel::i32 degd = 0;
     while (rest.deg() >= 1) {
         ++degd;
         h = h.powMod(BigInt(p), rest);
@@ -410,8 +410,8 @@ bool FpPoly::isIrreducible() const
     if ((h - FpPoly::x(p_)) % m != FpPoly())
         return false;
     // gcd(x^(p^(d/q)) - x, g) == 1 for each prime q | d.
-    int dd = deg();
-    for (int q = 2; q * q <= dd; ++q) {
+    keel::i32 dd = deg();
+    for (keel::i32 q = 2; q * q <= dd; ++q) {
         if (dd % q != 0)
             continue;
         while (dd % q == 0)

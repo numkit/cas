@@ -15,7 +15,7 @@ public:
     explicit Rational(keel::bignum::Rational raw) noexcept : v_(keel::move(raw)) {}
     Rational(keel::i64 v) noexcept : v_(v) {}
     Rational(keel::u64 v) noexcept : v_(v) {}
-    Rational(int v) noexcept : v_(keel::as<keel::i64>(v)) {}
+    Rational(keel::i32 v) noexcept : v_(keel::as<keel::i64>(v)) {}
 
     Rational(BigInt p, BigInt q) : v_(keel::move(p.raw()), keel::move(q.raw())) {}
 
@@ -35,7 +35,7 @@ public:
     keel::f64 toDouble() const { return v_.to_f64(); }
 
     bool isZero() const noexcept { return v_.is_zero(); }
-    int signum() const noexcept { return keel::as<int>(v_.signum()); }
+    keel::i32 signum() const noexcept { return keel::as<keel::i32>(v_.signum()); }
     BigInt num() const { return BigInt(v_.num()); }
     BigInt den() const { return BigInt(v_.den()); }
 

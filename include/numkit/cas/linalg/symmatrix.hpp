@@ -204,7 +204,7 @@ struct LUDecomposition
     SymMatrix U;                    // m x n upper-triangular (row-echelon) matrix
     SymMatrix P;                    // m x m row-permutation matrix: P * A == L * U
     keel::Array<keel::usize> perm;  // row permutation indices (P(i, perm[i]) == 1)
-    int sign = 1;                   // determinant sign of P (+1 or -1)
+    keel::i32 sign = 1;                   // determinant sign of P (+1 or -1)
     keel::String reason;
 
     bool proved() const { return status == Status::ProvedSymbolic; }

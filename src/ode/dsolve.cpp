@@ -210,7 +210,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
     for (const Expr &seed : seeds) {
         Expr cur = seed;
-        for (int drv = 0; drv < 4; ++drv) {
+        for (keel::i32 drv = 0; drv < 4; ++drv) {
             if (drv > 0)
                 cur = c.diff(cur, x);
             keel::Array<std::pair<Expr, Expr>> terms;
@@ -750,7 +750,7 @@ bool tryRiccatiOde1(Ctx &c, Expr rhs, Expr x, Expr y, Expr C1, Budget *budget,
         }
 
         const Expr kSym = c.symbol("_riccati_k");
-        for (int m : {0, 1, -1, 2}) {
+        for (keel::i32 m : {0, 1, -1, 2}) {
             const Expr xm =
                 (m == 0) ? c.one() : c.pow(x, c.number(keel::as<keel::i64>(m)));
             const Expr ypAns = c.mul({kSym, xm});
@@ -1638,7 +1638,7 @@ bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
         keel::usize totalDeg = 0;
         bool supportedFactors = true;
         for (const auto &gm : grouped) {
-            const int d = gm.first.deg();
+            const keel::i32 d = gm.first.deg();
             if (d != 1 && d != 2) {
                 supportedFactors = false;
                 break;
@@ -2458,7 +2458,7 @@ Expr realCubeRootExpr(Ctx &c, Expr val)
     const Expr oneThird = c.number(Rational(keel::i64{1}, BigInt(3)));
     if (c.kind(sVal) == NodeKind::Number) {
         const Rational r = c.numberValue(sVal);
-        const int sgn = r.signum() < 0 ? -1 : 1;
+        const keel::i32 sgn = r.signum() < 0 ? -1 : 1;
         const Rational absR = r.abs();
         keel::i64 numInt = 0;
         keel::i64 denInt = 0;
@@ -2950,7 +2950,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         keel::Array<Expr> polyBasis;
         keel::Array<Expr> polyImages;
         keel::Array<Expr> rowAtoms;
-        for (int deg = 0; deg <= 4; ++deg) {
+        for (keel::i32 deg = 0; deg <= 4; ++deg) {
             const Expr phi =
                 (deg == 0) ? c.one()
                            : c.pow(x, c.number(keel::as<keel::i64>(deg)));
@@ -3092,7 +3092,7 @@ OdeResult dsolve2SpecialIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
 namespace {
 
-bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
+bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, keel::i32 maxDeg,
                             Budget *budget, keel::Array<Expr> &coeffsOut)
 {
     coeffsOut.assign(maxDeg + 1, c.zero());
@@ -3175,7 +3175,7 @@ bool extractTaylorJetCoeffs(Ctx &c, Expr exprInX, Expr x, Expr x0, int maxDeg,
 } // namespace
 
 OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
-                          Expr x0, Expr y0, Expr dy0, int order,
+                          Expr x0, Expr y0, Expr dy0, keel::i32 order,
                           Budget *budget)
 {
     OdeResult out;
@@ -3195,7 +3195,7 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         return out;
     }
 
-    const int jetOrder = order - 2;
+    const keel::i32 jetOrder = order - 2;
     keel::Array<Expr> pCoeffs;
     keel::Array<Expr> qCoeffs;
     keel::Array<Expr> rCoeffs;
@@ -3213,13 +3213,13 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     cCoeffs[0] = y0;
     cCoeffs[1] = dy0;
 
-    for (int n = 0; n <= jetOrder; ++n) {
+    for (keel::i32 n = 0; n <= jetOrder; ++n) {
         if (!checkOdeBudget(c, budget)) {
             out.reason.assign("budget exhausted");
             return out;
         }
         keel::Array<Expr> sumTerms;
-        for (int k = 0; k <= n; ++k) {
+        for (keel::i32 k = 0; k <= n; ++k) {
             const auto nkIdx = keel::as<keel::usize>(n - k);
             const auto kIdx = keel::as<keel::usize>(k);
             const auto kp1Idx = keel::as<keel::usize>(k + 1);
@@ -3245,7 +3245,7 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
     const Expr dx = c.add({x, c.neg(x0)});
     keel::Array<Expr> yTerms;
-    for (int k = 0; k <= order; ++k) {
+    for (keel::i32 k = 0; k <= order; ++k) {
         const Expr ck = cCoeffs[keel::as<keel::usize>(k)];
         if (c.isZero(ck))
             continue;
@@ -3276,7 +3276,7 @@ OdeResult dsolveSeriesIVP(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 }
 
 OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
-                       int order, Budget *budget)
+                       keel::i32 order, Budget *budget)
 {
     OdeResult out;
     if (a.isNull() || b.isNull() || d.isNull() || f.isNull() || x.isNull() ||
@@ -3351,7 +3351,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
         keel::Array<Expr> cCoeffs(order + 1, c.zero());
         cCoeffs[0] = c.one();
         bool validBranch = true;
-        for (int n = 1; n <= order; ++n) {
+        for (keel::i32 n = 1; n <= order; ++n) {
             const Expr rn =
                 c.add({rRoot, c.number(keel::as<keel::i64>(n))});
             const Expr indVal = evalIndicial(rn);
@@ -3360,7 +3360,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
                 break;
             }
             keel::Array<Expr> sumTerms;
-            for (int k = 0; k < n; ++k) {
+            for (keel::i32 k = 0; k < n; ++k) {
                 const auto nkIdx = keel::as<keel::usize>(n - k);
                 const auto kIdx = keel::as<keel::usize>(k);
                 if (c.isZero(cCoeffs[kIdx]))
@@ -3381,7 +3381,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
             continue;
 
         keel::Array<Expr> sTerms;
-        for (int k = 0; k <= order; ++k) {
+        for (keel::i32 k = 0; k <= order; ++k) {
             const Expr ck = cCoeffs[keel::as<keel::usize>(k)];
             if (c.isZero(ck))
                 continue;
@@ -3790,7 +3790,7 @@ PdeResult pdsolve1Cauchy(Ctx &c, Expr a, Expr b, Expr rhs,
     Expr curB = b;
     Expr curRhs = rhs;
 
-    for (int pass = 0; pass < 3; ++pass) {
+    for (keel::i32 pass = 0; pass < 3; ++pass) {
         if (xTau.isNull() && !mentionsSym(c, curA, y) && !mentionsSym(c, curA, uVar)) {
             const OdeResult rX =
                 dsolve1IVP(c, curA, tau, x, c.zero(), x0S, budget);
@@ -3980,7 +3980,7 @@ PdeResult pdsolveWaveDalembert(Ctx &c, Expr cWave, Expr x, Expr t,
 }
 
 PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
-                        Expr x, Expr t, PdeBoundaryKind bc, int maxModes,
+                        Expr x, Expr t, PdeBoundaryKind bc, keel::i32 maxModes,
                         Budget *budget)
 {
     PdeResult out;
@@ -4010,7 +4010,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
             modeTerms.push_back(a0Half);
     }
 
-    for (int n = 1; n <= maxModes; ++n) {
+    for (keel::i32 n = 1; n <= maxModes; ++n) {
         if (!checkOdeBudget(c, budget)) {
             out.reason.assign("budget exhausted");
             return out;
@@ -4060,7 +4060,7 @@ PdeResult pdsolveHeat1D(Ctx &c, Expr alpha, Expr L, Expr initU,
 }
 
 PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
-                        Expr x, Expr t, PdeBoundaryKind bc, int maxModes,
+                        Expr x, Expr t, PdeBoundaryKind bc, keel::i32 maxModes,
                         Budget *budget)
 {
     PdeResult out;
@@ -4104,7 +4104,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
         }
     }
 
-    for (int n = 1; n <= maxModes; ++n) {
+    for (keel::i32 n = 1; n <= maxModes; ++n) {
         if (!checkOdeBudget(c, budget)) {
             out.reason.assign("budget exhausted");
             return out;
@@ -4178,7 +4178,7 @@ PdeResult pdsolveWave1D(Ctx &c, Expr cWave, Expr L, Expr initU, Expr initUt,
 }
 
 PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
-                               Expr x, Expr y, int maxModes, Budget *budget)
+                               Expr x, Expr y, keel::i32 maxModes, Budget *budget)
 {
     PdeResult out;
     if (a.isNull() || isZeroSimp(c, a) || b.isNull() || isZeroSimp(c, b) ||
@@ -4196,7 +4196,7 @@ PdeResult pdsolveLaplace2DRect(Ctx &c, Expr a, Expr b, Expr topProfile,
     const Expr twoOverA = c.div(two, a);
     keel::Array<Expr> modeTerms;
 
-    for (int n = 1; n <= maxModes; ++n) {
+    for (keel::i32 n = 1; n <= maxModes; ++n) {
         if (!checkOdeBudget(c, budget)) {
             out.reason.assign("budget exhausted");
             return out;

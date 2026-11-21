@@ -26,7 +26,7 @@ struct RealRootSolution
     bool isRational = false;
     Rational value;        // exact, when isRational
     UPoly carrier;         // monic squarefree carrier polynomial
-    int realIndex = 0;     // 0-based among the carrier's real roots
+    keel::i32 realIndex = 0;     // 0-based among the carrier's real roots
     RootInterval interval; // isolating bracket; exact() == isRational
 };
 

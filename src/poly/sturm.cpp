@@ -40,7 +40,7 @@ Rational cauchyRootBound(const UPoly &p)
 
 namespace {
 
-int signOfR(const Rational &r)
+keel::i32 signOfR(const Rational &r)
 {
     return r.signum();
 }
@@ -49,9 +49,9 @@ int signOfR(const Rational &r)
 keel::usize variations(keel::ArrayRef<UPoly> sturm, const Rational &x)
 {
     keel::usize v = 0;
-    int prev = 0;
+    keel::i32 prev = 0;
     for (const UPoly &s : sturm) {
-        const int sg = signOfR(s.eval(x));
+        const keel::i32 sg = signOfR(s.eval(x));
         if (sg == 0)
             continue;
         if (prev != 0 && sg != prev)

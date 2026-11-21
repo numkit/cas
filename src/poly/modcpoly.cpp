@@ -235,7 +235,7 @@ void ModCPoly::divMod(const ModCPoly &a, const ModCPoly &b,
     q.c_.assign(keel::as<keel::usize>(a.deg() - b.deg()) + 1, ring.zero());
     const UPoly blcInv = ring.inv(b.lc());
     while (!r.isZero() && r.deg() >= b.deg()) {
-        const int shift = r.deg() - b.deg();
+        const keel::i32 shift = r.deg() - b.deg();
         const UPoly f = ring.mul(r.lc(), blcInv);
         q.c_[keel::as<keel::usize>(shift)] = ring.add(q.c_[keel::as<keel::usize>(shift)], f);
         for (keel::usize j = 0; j < b.c_.size(); ++j)

@@ -129,7 +129,7 @@ void UPoly::divMod(const UPoly &a, const UPoly &b, UPoly &q, UPoly &r)
                 Rational(keel::i64{0}));
     const Rational blcInv = Rational(keel::i64{1}) / bCopy.lc();
     while (!r.isZero() && r.deg() >= bCopy.deg()) {
-        const int shift = r.deg() - bCopy.deg();
+        const keel::i32 shift = r.deg() - bCopy.deg();
         const Rational f = r.lc() * blcInv;
         q.c_[keel::as<keel::usize>(shift)] += f;
         for (keel::usize j = 0; j < bCopy.c_.size(); ++j)
@@ -286,8 +286,8 @@ Rational UPoly::resultant(const UPoly &a, const UPoly &b)
     const UPoly *hi = &a, *lo = &b;
     if (hi->deg() < lo->deg()) {
         std::swap(hi, lo);
-        const long long mn = keel::as<long long>(a.deg()) *
-                             keel::as<long long>(b.deg());
+        const keel::i64 mn = keel::as<keel::i64>(a.deg()) *
+                             keel::as<keel::i64>(b.deg());
         if (mn & 1)
             return -resultant(*hi, *lo);
         return resultant(*hi, *lo);

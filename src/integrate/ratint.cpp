@@ -54,15 +54,15 @@ Expr sqrtExpr(Ctx &c, const Rational &d)
 // c (ascending coeffs), for k = 0..deg-1, by Newton's identities.
 keel::Array<Rational> newtonPowerSums(const keel::Array<Rational> &c)
 {
-    const int d = keel::as<int>(c.size()) - 1;
+    const keel::i32 d = keel::as<keel::i32>(c.size()) - 1;
     keel::Array<Rational> s;
     s.push_back(Rational(keel::as<keel::i64>(d))); // s_0 = d
-    for (int k = 1; k < d; ++k) {
+    for (keel::i32 k = 1; k < d; ++k) {
         // Newton: s_k = -(c_{d-1} s_{k-1} + ... + c_{d-k+1} s_1)
         //               - k * c_{d-k}   (k <= d)
         Rational acc = Rational(keel::as<keel::i64>(k)) *
                        c[keel::as<keel::usize>(d - k)];
-        for (int i = 1; i < k; ++i)
+        for (keel::i32 i = 1; i < k; ++i)
             acc = acc + c[keel::as<keel::usize>(d - i)] *
                             s[keel::as<keel::usize>(k - i)];
         s.push_back(acc * Rational(keel::i64{-1}));
@@ -168,7 +168,7 @@ bool smallDivisors(const BigInt &n, keel::Array<BigInt> &out)
     if (m.bitLength() > kRootSearchBits)
         return false;
     for (BigInt p(2); p * p <= m; p = p + BigInt(1)) {
-        int e = 0;
+        keel::i32 e = 0;
         while (true) {
             BigInt q, r;
             BigInt::divMod(m, p, q, r);
@@ -183,7 +183,7 @@ bool smallDivisors(const BigInt &n, keel::Array<BigInt> &out)
             continue;
         const keel::usize base = out.size();
         BigInt pk(1);
-        for (int i = 0; i < e; ++i) {
+        for (keel::i32 i = 0; i < e; ++i) {
             pk = pk * p;
             for (keel::usize j = 0; j < base; ++j)
                 out.push_back(out[j] * pk);
@@ -222,7 +222,7 @@ bool findOneRationalRoot(const UPoly &F, Rational &root, bool &ok)
         return ok = false, false;
     for (const BigInt &p : ps) {
         for (const BigInt &q : qs) {
-            for (int sign = 0; sign < 2; ++sign) {
+            for (keel::i32 sign = 0; sign < 2; ++sign) {
                 const Rational cand(sign == 0 ? p : -p, q);
                 if (F.eval(cand).isZero()) {
                     root = cand;
@@ -572,7 +572,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 continue;
             if (!checkBudget(c, budget, reason))
                 return false;
-            const int d = fact.deg();
+            const keel::i32 d = fact.deg();
             const keel::Array<Rational> s = newtonPowerSums(fact.coeffs());
             const ModCRing ring(fact);
             const UPoly tEl = ring.reduce(UPoly(keel::Array<Rational>{R0(), R1()}));
@@ -598,11 +598,11 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
             // paid for the WHOLE denominator even when v captures a
             // single pole — 24 interpolation points where 7 suffice,
             // each point costing a Q-resultant plus a ring inversion.
-            const int qDeg = d * v.deg();
-            const int pDeg = 2 * d * v.deg() - 1;
-            const int need = (qDeg > pDeg ? qDeg : pDeg) + 1;
+            const keel::i32 qDeg = d * v.deg();
+            const keel::i32 pDeg = 2 * d * v.deg() - 1;
+            const keel::i32 need = (qDeg > pDeg ? qDeg : pDeg) + 1;
             keel::Array<Rational> xs, qs, ps;
-            for (int x0 = 1; keel::as<int>(xs.size()) < need && x0 < 6 * need + 10; ++x0) {
+            for (keel::i32 x0 = 1; keel::as<keel::i32>(xs.size()) < need && x0 < 6 * need + 10; ++x0) {
                 const Rational x0r(keel::as<keel::i64>(x0));
                 // v(x0, t) as a plain Q[t] polynomial (degree < d in t)
                 // for the norm resultant, and simultaneously as a ring
@@ -640,7 +640,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 qs.push_back(qv);
                 ps.push_back(tTrace * qv);
             }
-            if (keel::as<int>(xs.size()) < need) {
+            if (keel::as<keel::i32>(xs.size()) < need) {
                 reason.assign("degree >= 3 factor: not enough interpolation points");
                 return false;
             }
@@ -738,7 +738,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 // Re(w_k) = a2*(s1^2-2s2)/2 + a1*s1/2 + a0
                 // Im(w_k)/b = a2*s1 + a1
                 keel::Array<UPoly> Rk(v.deg() + 1), Ik(v.deg() + 1);
-                for (int k = 0; k <= v.deg(); ++k) {
+                for (keel::i32 k = 0; k <= v.deg(); ++k) {
                     const UPoly wk = v.coeff(keel::as<keel::usize>(k));
                     const UPoly wa2(wk.coeff(2)), wa1(wk.coeff(1));
                     const UPoly term1 = ring.mul(
@@ -752,7 +752,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 }
                 // real-root term rho * log(v(x, rho))
                 keel::Array<Expr> argTerms;
-                for (int k = 0; k <= v.deg(); ++k) {
+                for (keel::i32 k = 0; k <= v.deg(); ++k) {
                     const UPoly rk = v.coeff(keel::as<keel::usize>(k));
                     if (rk.isZero())
                         continue;
@@ -771,8 +771,8 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 }
                 // N2 = R^2 + w2 I^2 (convolution in the ring)
                 keel::Array<UPoly> N2(2 * v.deg() + 1, ring.zero());
-                for (int i = 0; i <= v.deg(); ++i)
-                    for (int j = 0; j <= v.deg(); ++j) {
+                for (keel::i32 i = 0; i <= v.deg(); ++i)
+                    for (keel::i32 j = 0; j <= v.deg(); ++j) {
                         N2[i + j] = ring.add(N2[i + j],
                                              ring.add(ring.mul(Rk[i], Rk[j]),
                                                       ring.mul(w2,
@@ -799,7 +799,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 }
             } else {
                 // general d: emit sum_i RootOf(c, i) * log(v(x, ...))
-                for (int i = 0; i < d; ++i) {
+                for (keel::i32 i = 0; i < d; ++i) {
                     const Expr rootExpr = c.rootOf(fact.coeffs().clone(), i);
                     keel::Array<Expr> argTerms;
                     for (keel::usize k = 0;
@@ -838,22 +838,22 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
 UPoly resultantT(const UPoly &P, const UPoly &Q, const UPoly &M)
 {
     assert(!M.isZero());
-    const int n = M.deg();
+    const keel::i32 n = M.deg();
     if (n < 1)
         return UPoly(R1()); // res of anything with a constant is 1 by convention
 
     keel::Array<Rational> ys;
-    for (int i = 0; i <= n; ++i) {
+    for (keel::i32 i = 0; i <= n; ++i) {
         const Rational t(keel::as<keel::i64>(i));
         ys.push_back(UPoly::resultant(P - t * Q, M));
     }
 
     // Lagrange interpolation over t = 0..n.
     keel::Array<Rational> coeffs(keel::as<keel::usize>(n) + 1, R0());
-    for (int i = 0; i <= n; ++i) {
+    for (keel::i32 i = 0; i <= n; ++i) {
         UPoly num(R1());
         Rational den(R1());
-        for (int j = 0; j <= n; ++j) {
+        for (keel::i32 j = 0; j <= n; ++j) {
             if (j == i)
                 continue;
             num = num * UPoly(keel::Array<Rational>{
@@ -987,20 +987,20 @@ HermiteResult hermiteReduce(const UPoly &N0, const UPoly &D0)
     out.gn = UPoly();
     for (keel::usize idx = 0; idx < fs.size(); ++idx) {
         const UPoly &F = fs[idx];
-        const int mult = keel::as<int>(idx) + 1;
+        const keel::i32 mult = keel::as<keel::i32>(idx) + 1;
         const UPoly dF = F.derivative();
 
         // Peel B into level numerators A_j (j = mult..1).
         keel::Array<UPoly> A(keel::as<keel::usize>(mult) + 1);
         UPoly B = Bs[idx];
-        for (int j = mult; j >= 1; --j) {
+        for (keel::i32 j = mult; j >= 1; --j) {
             UPoly q, r;
             UPoly::divMod(B, F, q, r);
             A[keel::as<keel::usize>(j)] = r;
             B = q;
         }
 
-        for (int j = mult; j >= 2; --j) {
+        for (keel::i32 j = mult; j >= 2; --j) {
             // A[j]/F^j = (C/F^(j-1))' + A2/F^(j-1) with
             // C = -A[j] * inv((j-1) * F' mod F) mod F.
             const UPoly coef = dF * Rational(keel::as<keel::i64>(j - 1));
@@ -1354,7 +1354,7 @@ namespace {
 // Returns -1 when var appears anywhere else (inside functions, as
 // an exponent itself, under a non-Number power like x^x) or when L
 // would exceed 60 (degree blow-up guard): the storey declines.
-int radicalIndex(const Ctx &c, Expr e, Expr var)
+keel::i32 radicalIndex(const Ctx &c, Expr e, Expr var)
 {
     if (e == var)
         return 1; // x = x^(1/1): legal, no fractional contribution
@@ -1371,7 +1371,7 @@ int radicalIndex(const Ctx &c, Expr e, Expr var)
             if (!c.numberValue(c.child(e, 1)).den().fitsInt64(q64) ||
                 q64 <= 0 || q64 > 60)
                 return -1;
-            return keel::as<int>(q64);
+            return keel::as<keel::i32>(q64);
         }
         // Other bases may themselves carry radicals (the base is
         // recursed and contributes its lcm); the EXPONENT must not
@@ -1383,16 +1383,16 @@ int radicalIndex(const Ctx &c, Expr e, Expr var)
     case NodeKind::Func:
     case NodeKind::Add:
     case NodeKind::Mul: {
-        int l = 1;
+        keel::i32 l = 1;
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
-            const int q = radicalIndex(c, c.child(e, i), var);
+            const keel::i32 q = radicalIndex(c, c.child(e, i), var);
             if (q < 0)
                 return -1;
             const keel::i64 lcm64 = std::lcm(keel::as<keel::i64>(l),
                                            keel::as<keel::i64>(q));
             if (lcm64 > 60)
                 return -1;
-            l = keel::as<int>(lcm64);
+            l = keel::as<keel::i32>(lcm64);
         }
         return l;
     }
@@ -1402,7 +1402,7 @@ int radicalIndex(const Ctx &c, Expr e, Expr var)
 
 // Second pass: rebuild with t = var^(1/L): Pow(var, p/q) maps to
 // t^(p*L/q) (integer exponent), bare var to t^L.
-Expr radicalRebuild(Ctx &c, Expr e, Expr var, Expr t, int L)
+Expr radicalRebuild(Ctx &c, Expr e, Expr var, Expr t, keel::i32 L)
 {
     if (e == var)
         return c.pow(t, c.number(keel::as<keel::i64>(L)));
@@ -1446,7 +1446,7 @@ static RationalIntegral integrateRadicalRational(Ctx &c, Expr f, Expr var,
     RationalIntegral out;
     if (!checkBudget(c, budget, out.reason))
         return out;
-    const int L = radicalIndex(c, f, var);
+    const keel::i32 L = radicalIndex(c, f, var);
     if (L < 2) {
         // L == 1: a plain rational (the old path owns it); L < 0:
         // the variable escapes the x^(p/q) shape.
@@ -1661,7 +1661,7 @@ RationalIntegral integrateRational(Ctx &c, Expr f, Expr var, Budget *budget)
 
 namespace {
 
-bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
+bool extractPolyInVar(Ctx &c, Expr e, Expr var, keel::i32 maxDeg,
                       keel::Array<Expr> &coeffsOut)
 {
     if (e.isNull() || maxDeg < 0)
@@ -1674,7 +1674,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
         return true;
     }
 
-    auto matchMonomial = [&](Expr term, int &degOut, Expr &cfOut) -> bool {
+    auto matchMonomial = [&](Expr term, keel::i32 &degOut, Expr &cfOut) -> bool {
         if (!mentionsVar(c, term, var)) {
             degOut = 0;
             cfOut = term;
@@ -1691,7 +1691,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
             keel::i64 d = 0;
             if (re.den() == BigInt(1) && re.num().fitsInt64(d) && d >= 1 &&
                 d <= maxDeg) {
-                degOut = keel::as<int>(d);
+                degOut = keel::as<keel::i32>(d);
                 cfOut = c.one();
                 return true;
             }
@@ -1699,7 +1699,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
         }
         if (c.kind(term) == NodeKind::Mul) {
             keel::Array<Expr> others;
-            int deg = 0;
+            keel::i32 deg = 0;
             for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr ch = c.child(term, i);
                 if (ch == var) {
@@ -1711,7 +1711,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
                     keel::i64 d = 0;
                     if (re.den() == BigInt(1) && re.num().fitsInt64(d) &&
                         d >= 1 && d <= maxDeg) {
-                        deg += keel::as<int>(d);
+                        deg += keel::as<keel::i32>(d);
                     } else {
                         return false;
                     }
@@ -1733,14 +1733,14 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
     keel::Array<keel::Array<Expr>> buckets(keel::as<keel::usize>(maxDeg + 1));
     if (c.kind(ex) == NodeKind::Add) {
         for (keel::usize i = 0; i < c.childCount(ex); ++i) {
-            int d = 0;
+            keel::i32 d = 0;
             Expr cf;
             if (!matchMonomial(c.child(ex, i), d, cf))
                 return false;
             buckets[keel::as<keel::usize>(d)].push_back(cf);
         }
     } else {
-        int d = 0;
+        keel::i32 d = 0;
         Expr cf;
         if (!matchMonomial(ex, d, cf))
             return false;
@@ -1748,7 +1748,7 @@ bool extractPolyInVar(Ctx &c, Expr e, Expr var, int maxDeg,
     }
 
     coeffsOut.assign(maxDeg + 1, c.zero());
-    for (int d = 0; d <= maxDeg; ++d) {
+    for (keel::i32 d = 0; d <= maxDeg; ++d) {
         const auto &b = buckets[keel::as<keel::usize>(d)];
         if (!b.empty())
             coeffsOut[keel::as<keel::usize>(d)] =
@@ -1996,7 +1996,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 const Expr twoA = c.mul({c.number(keel::i64{2}), a});
                 keel::Array<Expr> qPoly(
                     pCoeffs.size() >= 2 ? pCoeffs.size() - 1 : 0, c.zero());
-                for (int m = keel::as<int>(pCoeffs.size()) - 1; m >= 1; --m) {
+                for (keel::i32 m = keel::as<keel::i32>(pCoeffs.size()) - 1; m >= 1; --m) {
                     const Expr pm = pCoeffs[keel::as<keel::usize>(m)];
                     if (c.isZero(pm))
                         continue;
@@ -2410,7 +2410,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
 
                 keel::Array<Expr> elemSin(degP >= 2 ? degP - 1 : 0, c.zero());
                 keel::Array<Expr> elemCos(degP >= 2 ? degP - 1 : 0, c.zero());
-                for (int m = keel::as<int>(degP) - 1; m >= 1; --m) {
+                for (keel::i32 m = keel::as<keel::i32>(degP) - 1; m >= 1; --m) {
                     const Expr sm = sPoly[keel::as<keel::usize>(m)];
                     if (!c.isZero(sm)) {
                         const Expr k = c.simplify(c.div(sm, twoA));
@@ -2598,7 +2598,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                     struct LinFactor
                     {
                         UPoly lin;
-                        int mult = 0;
+                        keel::i32 mult = 0;
                         UPoly linPow;
                     };
                     keel::Array<LinFactor> lfs;
@@ -3246,7 +3246,7 @@ bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out)
 
 namespace {
 
-bool isInfBound(const Ctx &c, Expr e, int &dirOut)
+bool isInfBound(const Ctx &c, Expr e, keel::i32 &dirOut)
 {
     if (e.isNull())
         return false;
@@ -3262,7 +3262,7 @@ bool isInfBound(const Ctx &c, Expr e, int &dirOut)
         c.kind(c.child(e, 1)) == NodeKind::Symbol) {
         const keel::String &nm = c.symbolName(c.child(e, 1));
         if (nm == "inf" || nm == "oo" || nm == "infinity") {
-            const int s = c.numberValue(c.child(e, 0)).signum();
+            const keel::i32 s = c.numberValue(c.child(e, 0)).signum();
             if (s != 0) {
                 dirOut = s > 0 ? +1 : -1;
                 return true;
@@ -3459,7 +3459,7 @@ bool mentionsBranchTrigOrAtan(const Ctx &c, Expr e, Expr var)
 // Evaluate int_{-inf}^{+inf} ((A*x + B) / ((x - alpha)^2 + betaSq)^k) * cos(omega*x) or sin(omega*x) dx
 // via upper-half-plane residue calculus at z = alpha + i*sqrt(betaSq) (Jordan's lemma).
 Expr evalQuadraticFourierResidue(Ctx &c, Expr A, Expr B, Expr alpha,
-                                 Expr betaSq, int k, Expr absOmega, int sgnOmega,
+                                 Expr betaSq, keel::i32 k, Expr absOmega, keel::i32 sgnOmega,
                                  bool isSin)
 {
     Expr beta, invBeta;
@@ -3470,7 +3470,7 @@ Expr evalQuadraticFourierResidue(Ctx &c, Expr A, Expr B, Expr alpha,
     keel::Array<Expr> K(k + 1);
     J[1] = c.mul({piSym, invBeta, expDecay});
     K[1] = c.mul({piSym, expDecay});
-    for (int m = 2; m <= k; ++m) {
+    for (keel::i32 m = 2; m <= k; ++m) {
         const Expr twoM1 = c.number(keel::as<keel::i64>(2 * (m - 1)));
         K[keel::as<keel::usize>(m)] = c.simplify(
             c.div(c.mul({absOmega, J[keel::as<keel::usize>(m - 1)]}), twoM1));
@@ -3570,7 +3570,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
         return true;
     }
 
-    int sgnOmega = 0;
+    keel::i32 sgnOmega = 0;
     if (isNegativeSymbolicFactor(c, omega)) {
         sgnOmega = -1;
     } else if (c.isAssumedPositive(omega)) {
@@ -3657,7 +3657,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
         struct QuadFactor
         {
             UPoly q;
-            int mult = 0;
+            keel::i32 mult = 0;
             UPoly qPow;
         };
         keel::Array<QuadFactor> qfs;
@@ -3698,7 +3698,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
 
             // Expand pj in powers of qfs[j].q: pj / q^m = sum_{k=1}^m (A_k x + B_k) / q^k.
             UPoly cur = pj;
-            for (int k = qfs[j].mult; k >= 1 && !cur.isZero(); --k) {
+            for (keel::i32 k = qfs[j].mult; k >= 1 && !cur.isZero(); --k) {
                 UPoly quot, rem;
                 UPoly::divMod(cur, qfs[j].q, quot, rem);
                 cur = quot;
@@ -3718,7 +3718,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
     // Path B: Symbolic parameter quadratic (A*x + B) / (a2*x^2 + a1*x + a0)^k.
     keel::Array<Expr> numFacs;
     Expr quadBase;
-    int quadK = 0;
+    keel::i32 quadK = 0;
     for (const Expr &rf : ratFacs) {
         if (quadK == 0 && c.kind(rf) == NodeKind::Pow &&
             c.kind(c.child(rf, 1)) == NodeKind::Number) {
@@ -3730,7 +3730,7 @@ bool contourFourierTerm(Ctx &c, Expr f, Expr var, Budget *budget, Expr &valOut)
                 extractPolyInVar(c, c.child(rf, 0), var, 2, qCoeffs) &&
                 qCoeffs.size() == 3 && !c.isZero(qCoeffs[2])) {
                 quadBase = c.child(rf, 0);
-                quadK = keel::as<int>(-kVal);
+                quadK = keel::as<keel::i32>(-kVal);
                 continue;
             }
         }
@@ -3839,7 +3839,7 @@ bool matchBinomialInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out,
 //   intervalKind == 1: [0, 1]
 //   intervalKind == 2: [0, +inf)
 //   intervalKind == 3: [0, pi/2]
-bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
+bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, keel::i32 intervalKind,
                            Expr &valOut, bool &isDivergent)
 {
     isDivergent = false;
@@ -3858,10 +3858,10 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     Expr sinExp = c.zero();
     Expr cosExp = c.zero();
     bool hasTrig = false;
-    int binomCount = 0;
+    keel::i32 binomCount = 0;
     Expr binC0, binC1, binM, binExp = c.zero();
     Expr bin2C0, bin2C1, bin2M, bin2Exp = c.zero();
-    int expDenomCount = 0;
+    keel::i32 expDenomCount = 0;
     Expr expDenC0, expDenC1, expDenA;
 
     for (const Expr &fac : facs) {
@@ -4409,7 +4409,7 @@ bool tryEulerGammaBetaTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     return false;
 }
 
-bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
+bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, keel::i32 intervalKind,
                              Expr &valOut)
 {
     if (intervalKind != 1 && intervalKind != 3)
@@ -4556,10 +4556,10 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
     const Rational negOne(keel::i64{-1}, BigInt(1));
 
     if (intervalKind == 1) {
-        int unitIdx = -1;
+        keel::i32 unitIdx = -1;
         for (keel::usize i = 0; i < bins.size(); ++i) {
             if (bins[i].param == c.one() && bins[i].exp == negHalf) {
-                unitIdx = keel::as<int>(i);
+                unitIdx = keel::as<keel::i32>(i);
                 break;
             }
         }
@@ -4567,7 +4567,7 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
             return false;
         keel::Array<QuadBinom> rem;
         for (keel::usize i = 0; i < bins.size(); ++i) {
-            if (keel::as<int>(i) != unitIdx && !bins[i].exp.isZero())
+            if (keel::as<keel::i32>(i) != unitIdx && !bins[i].exp.isZero())
                 rem.push_back(bins[i]);
         }
         if (rem.size() == 1) {
@@ -4581,8 +4581,8 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
                 return true;
             }
         } else if (rem.size() == 2) {
-            int nIdx = -1, mIdx = -1;
-            for (int i = 0; i < 2; ++i) {
+            keel::i32 nIdx = -1, mIdx = -1;
+            for (keel::i32 i = 0; i < 2; ++i) {
                 if (rem[keel::as<keel::usize>(i)].exp == negOne)
                     nIdx = i;
                 else if (rem[keel::as<keel::usize>(i)].exp == negHalf)
@@ -4623,8 +4623,8 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
             return true;
         }
     } else if (nz.size() == 2) {
-        int nIdx = -1, mIdx = -1;
-        for (int i = 0; i < 2; ++i) {
+        keel::i32 nIdx = -1, mIdx = -1;
+        for (keel::i32 i = 0; i < 2; ++i) {
             if (nz[keel::as<keel::usize>(i)].exp == negOne)
                 nIdx = i;
             else if (nz[keel::as<keel::usize>(i)].exp == negHalf)
@@ -4644,11 +4644,11 @@ bool tryEllipticDefiniteTerm(Ctx &c, Expr term, Expr var, int intervalKind,
 }
 
 bool tryEulerGammaBetaDefiniteIntegral(Ctx &c, Expr f, Expr var, Expr a, Expr b,
-                                       bool aIsInf, int aInfDir, bool bIsInf,
-                                       int bInfDir, DefiniteIntegral &out)
+                                       bool aIsInf, keel::i32 aInfDir, bool bIsInf,
+                                       keel::i32 bInfDir, DefiniteIntegral &out)
 {
-    int intervalKind = 0;
-    int orientSign = 1;
+    keel::i32 intervalKind = 0;
+    keel::i32 orientSign = 1;
     if (!aIsInf && !bIsInf) {
         if (c.isZero(a) && b == c.one()) {
             intervalKind = 1;
@@ -4747,7 +4747,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     if (!checkBudget(c, budget, out.reason))
         return out;
 
-    int aInfDir = 0, bInfDir = 0;
+    keel::i32 aInfDir = 0, bInfDir = 0;
     const bool aIsInf = isInfBound(c, a, aInfDir);
     const bool bIsInf = isInfBound(c, b, bInfDir);
     if (!aIsInf && !bIsInf && a == b) {
@@ -4876,7 +4876,7 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
             (c.isZero(a) && bIsInf) || (aIsInf && c.isZero(b));
         if (fullLine || halfLineZeroInf) {
             bool canContour = fullLine;
-            int orientSign = 1;
+            keel::i32 orientSign = 1;
             if (fullLine) {
                 orientSign = (aInfDir < 0 && bInfDir > 0) ? +1 : -1;
             } else {
@@ -4914,11 +4914,11 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     out.F = indef.F;
 
     // 3. Evaluate endpoint limits lim_{x -> b^-} F(x) - lim_{x -> a^+} F(x).
-    const int dirA = (hasNumA && hasNumB && bVal < aVal) ? -1 : +1;
-    const int dirB = -dirA;
+    const keel::i32 dirA = (hasNumA && hasNumB && bVal < aVal) ? -1 : +1;
+    const keel::i32 dirB = -dirA;
 
-    auto evalEndpoint = [&](Expr bound, bool isInf, int infDir,
-                            int approachDir) -> LimitResult {
+    auto evalEndpoint = [&](Expr bound, bool isInf, keel::i32 infDir,
+                            keel::i32 approachDir) -> LimitResult {
         if (isInf)
             return limitAtInfinity(c, indef.F, var, infDir, budget);
         const Expr fReal = realizeLogAbsAtEndpoint(c, indef.F, var, bound);

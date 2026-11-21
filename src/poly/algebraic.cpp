@@ -22,7 +22,7 @@ UPoly linearOf(const Rational &r)
     return UPoly(keel::Array<Rational>{Rational(-r), R1()});
 }
 
-int cmpRational(const Rational &a, const Rational &b)
+keel::i32 cmpRational(const Rational &a, const Rational &b)
 {
     return a < b ? -1 : (b < a ? 1 : 0);
 }
@@ -96,7 +96,7 @@ bool Algebraic::containsRoot(const UPoly &g, keel::ArrayRef<UPoly> sturmG,
 }
 
 // Interval position: -1/+1 when separated, 0 when undecided.
-int Algebraic::positionCompare(const Algebraic &other) const
+keel::i32 Algebraic::positionCompare(const Algebraic &other) const
 {
     const RootInterval &A = iv_;
     const RootInterval &B = other.iv_;
@@ -134,7 +134,7 @@ void Algebraic::refineStep()
     iv_ = next;
 }
 
-int Algebraic::sign() const
+keel::i32 Algebraic::sign() const
 {
     if (isRational())
         return rationalValue().signum();
@@ -153,7 +153,7 @@ int Algebraic::sign() const
     }
 }
 
-int Algebraic::compare(const Algebraic &a, const Algebraic &b)
+keel::i32 Algebraic::compare(const Algebraic &a, const Algebraic &b)
 {
     if (a.isRational() && b.isRational())
         return cmpRational(a.rationalValue(), b.rationalValue());
@@ -176,7 +176,7 @@ int Algebraic::compare(const Algebraic &a, const Algebraic &b)
         samePoly ? sturmSequence(g) : keel::Array<UPoly>();
 
     while (true) {
-        const int pos = x.positionCompare(y);
+        const keel::i32 pos = x.positionCompare(y);
         if (pos != 0)
             return pos;
 
@@ -187,7 +187,7 @@ int Algebraic::compare(const Algebraic &a, const Algebraic &b)
                 return 0;
             while (true) {
                 y.refineStep();
-                const int p2 = x.positionCompare(y);
+                const keel::i32 p2 = x.positionCompare(y);
                 if (p2 != 0)
                     return p2;
             }

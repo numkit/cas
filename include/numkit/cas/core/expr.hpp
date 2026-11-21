@@ -108,9 +108,9 @@ public:
     // coefficients (ascending). The polynomial is stored canonically
     // (trimmed, monic); identical (poly, index) pairs intern to the
     // same node. Callers extract rational roots themselves.
-    Expr rootOf(keel::Array<Rational> poly, int index);
+    Expr rootOf(keel::Array<Rational> poly, keel::i32 index);
     const keel::Array<Rational> &rootOfPoly(Expr e) const;
-    int rootOfIndex(Expr e) const;
+    keel::i32 rootOfIndex(Expr e) const;
 
     Expr add(keel::ArrayRef<Expr> children) { return makeAdd(children); }
     Expr mul(keel::ArrayRef<Expr> children) { return makeMul(children); }
@@ -133,7 +133,7 @@ public:
     // Total structural order, consistent with == (identical => 0).
     // Kind rank: Number < Symbol < Pow < Func < Add < Mul; then
     // value/name, then children lexicographically.
-    int compare(Expr a, Expr b) const;
+    keel::i32 compare(Expr a, Expr b) const;
 
     // True iff e is the canonical zero Number node.
     bool isZero(Expr e) const
@@ -250,8 +250,8 @@ private:
     Expr diffRec(Expr e, Expr var, keel::HashMap<keel::u32, Expr> &memo);
 
     void print(Expr e, keel::String &out) const;
-    void printPrec(Expr e, keel::String &out, int parentPrec) const;
-    static int kindRank(NodeKind k);
+    void printPrec(Expr e, keel::String &out, keel::i32 parentPrec) const;
+    static keel::i32 kindRank(NodeKind k);
 
     std::deque<Node> nodes_;
     keel::Array<keel::u32> childArena_;
@@ -267,7 +267,7 @@ private:
     struct RootOfDesc
     {
         keel::Array<Rational> poly;
-        int index;
+        keel::i32 index;
         keel::u32 nodeId = 0; // id of the interning node (filled after makeNode)
     };
     std::deque<RootOfDesc> rootofs_;

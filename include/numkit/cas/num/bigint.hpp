@@ -37,7 +37,7 @@ public:
 
     bool isZero() const noexcept { return v_.is_zero(); }
     bool isInline() const noexcept { return v_.is_inline(); }
-    int signum() const noexcept { return keel::as<int>(v_.signum()); }
+    keel::i32 signum() const noexcept { return keel::as<keel::i32>(v_.signum()); }
     bool isNegative() const noexcept { return v_.is_negative(); }
     keel::usize bitLength() const noexcept { return v_.bit_length(); }
     keel::u64 lowLimb() const noexcept { return v_.low_limb(); }
@@ -91,13 +91,13 @@ public:
     {
         return keel::bignum::BigInt::is_prime(n.v_);
     }
-    static keel::Array<std::pair<BigInt, int>> factorize(const BigInt &n)
+    static keel::Array<std::pair<BigInt, keel::i32>> factorize(const BigInt &n)
     {
         keel::Array<keel::bignum::PrimeFactor> raw = keel::bignum::BigInt::factorize(n.v_);
-        keel::Array<std::pair<BigInt, int>> out;
+        keel::Array<std::pair<BigInt, keel::i32>> out;
         out.reserve(raw.size());
         for (keel::usize i = 0; i < raw.size(); ++i) {
-            out.emplace_back(BigInt(keel::move(raw[i].prime)), keel::as<int>(raw[i].exponent));
+            out.emplace_back(BigInt(keel::move(raw[i].prime)), keel::as<keel::i32>(raw[i].exponent));
         }
         return out;
     }

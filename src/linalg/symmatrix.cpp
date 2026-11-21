@@ -328,13 +328,13 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
         terms.push_back(expd);
     }
 
-    int maxDeg = 0;
-    keel::Array<std::pair<int, Expr>> parsed;
+    keel::i32 maxDeg = 0;
+    keel::Array<std::pair<keel::i32, Expr>> parsed;
     parsed.reserve(terms.size());
     for (const Expr &t : terms) {
         if (c.isZero(t))
             continue;
-        int deg = 0;
+        keel::i32 deg = 0;
         keel::Array<Expr> rest;
         auto inspect = [&](Expr f) -> bool {
             if (f == var) {
@@ -347,7 +347,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
                 keel::i64 k = 0;
                 if (rv.den() == BigInt(1) && rv.num().fitsInt64(k) && k >= 0 &&
                     k <= 24) {
-                    deg += keel::as<int>(k);
+                    deg += keel::as<keel::i32>(k);
                     return true;
                 }
                 return false;
@@ -412,14 +412,14 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, keel::ArrayRef<Expr> syms,
         return true;
     }
 
-    const int degP = keel::as<int>(pCoeffs.size()) - 1;
-    const int degQ = keel::as<int>(qCoeffs.size()) - 1;
+    const keel::i32 degP = keel::as<keel::i32>(pCoeffs.size()) - 1;
+    const keel::i32 degQ = keel::as<keel::i32>(qCoeffs.size()) - 1;
     if (degP < degQ)
         return false;
 
     if (degQ == 0) {
         keel::Array<Expr> terms;
-        for (int k = 0; k <= degP; ++k) {
+        for (keel::i32 k = 0; k <= degP; ++k) {
             if (c.isZero(pCoeffs[keel::as<keel::usize>(k)]))
                 continue;
             Expr qk;
@@ -440,7 +440,7 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, keel::ArrayRef<Expr> syms,
 
     Expr R = P;
     keel::Array<Expr> qTerms;
-    for (int step = 0; step <= degP - degQ + 1; ++step) {
+    for (keel::i32 step = 0; step <= degP - degQ + 1; ++step) {
         keel::Array<Expr> rCoeffs;
         if (!extractPolyCoeffsInSym(c, R, var, rCoeffs))
             return false;
@@ -448,7 +448,7 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, keel::ArrayRef<Expr> syms,
             quotOut = qTerms.empty() ? c.zero() : c.expand(c.add(qTerms));
             return true;
         }
-        const int degR = keel::as<int>(rCoeffs.size()) - 1;
+        const keel::i32 degR = keel::as<keel::i32>(rCoeffs.size()) - 1;
         if (degR < degQ)
             return false;
         Expr lcQuot;
@@ -456,7 +456,7 @@ bool polyDivExactMulti(Ctx &c, Expr P, Expr Q, keel::ArrayRef<Expr> syms,
                                qCoeffs[keel::as<keel::usize>(degQ)], syms,
                                symIdx + 1, lcQuot))
             return false;
-        const int dDiff = degR - degQ;
+        const keel::i32 dDiff = degR - degQ;
         const Expr vPow =
             (dDiff == 0)
                 ? c.one()
@@ -1834,7 +1834,7 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
     keel::Array<keel::usize> perm(m);
     for (keel::usize i = 0; i < m; ++i)
         perm[i] = i;
-    int sign = 1;
+    keel::i32 sign = 1;
 
     const keel::usize steps = std::min(m, n);
     for (keel::usize k = 0; k < steps; ++k) {
@@ -2347,7 +2347,7 @@ Expr subsSimultaneousLinalg(Ctx &c, Expr e, keel::ArrayRef<Expr> vars,
     return cur;
 }
 
-bool evalExprSign(Ctx &c, Expr e, int &signOut)
+bool evalExprSign(Ctx &c, Expr e, keel::i32 &signOut)
 {
     if (e.isNull())
         return false;
@@ -2370,7 +2370,7 @@ bool evalExprSign(Ctx &c, Expr e, int &signOut)
     return false;
 }
 
-int leadingMinorSign(Ctx &c, const SymMatrix &M, keel::usize k, Budget *budget,
+keel::i32 leadingMinorSign(Ctx &c, const SymMatrix &M, keel::usize k, Budget *budget,
                      bool &okOut)
 {
     SymMatrix subM(k, k, c.zero());
@@ -2378,7 +2378,7 @@ int leadingMinorSign(Ctx &c, const SymMatrix &M, keel::usize k, Budget *budget,
         for (keel::usize col = 0; col < k; ++col)
             subM.at(r, col) = M.at(r, col);
     const Expr d = det(c, subM, budget);
-    int s = 0;
+    keel::i32 s = 0;
     okOut = evalExprSign(c, d, s);
     return s;
 }
@@ -2564,17 +2564,17 @@ LagrangeExtremaResult lagrangeExtrema(
             bool allMinorsOk = true;
             bool allPos = true;
             bool altNegPos = true;
-            int lastSign = 0;
+            keel::i32 lastSign = 0;
             for (keel::usize k = 1; k <= n; ++k) {
                 bool okM = false;
-                const int s = leadingMinorSign(c, HStar, k, budget, okM);
+                const keel::i32 s = leadingMinorSign(c, HStar, k, budget, okM);
                 if (!okM || s == 0) {
                     allMinorsOk = false;
                     break;
                 }
                 if (s <= 0)
                     allPos = false;
-                const int wantMaxSign = (k % 2 == 1) ? -1 : +1;
+                const keel::i32 wantMaxSign = (k % 2 == 1) ? -1 : +1;
                 if (s != wantMaxSign)
                     altNegPos = false;
                 if (k == n)
@@ -2598,7 +2598,7 @@ LagrangeExtremaResult lagrangeExtrema(
             for (keel::usize i = 0; i < n; ++i)
                 perm[i] = i;
             for (keel::usize i = 0; i < n; ++i) {
-                int sG = 0;
+                keel::i32 sG = 0;
                 if (evalExprSign(c, gGrad[i], sG) && sG != 0) {
                     std::swap(perm[0], perm[i]);
                     break;
@@ -2616,17 +2616,17 @@ LagrangeExtremaResult lagrangeExtrema(
             bool allMinorsOk = true;
             bool allNeg = true;
             bool altSigns = true;
-            int lastSign = 0;
+            keel::i32 lastSign = 0;
             for (keel::usize k = 2; k <= n; ++k) {
                 bool okB = false;
-                const int s = leadingMinorSign(c, B, k + 1, budget, okB);
+                const keel::i32 s = leadingMinorSign(c, B, k + 1, budget, okB);
                 if (!okB || s == 0) {
                     allMinorsOk = false;
                     break;
                 }
                 if (s >= 0)
                     allNeg = false;
-                const int wantMaxSign = (k % 2 == 0) ? +1 : -1;
+                const keel::i32 wantMaxSign = (k % 2 == 0) ? +1 : -1;
                 if (s != wantMaxSign)
                     altSigns = false;
                 if (k == n)
@@ -2662,7 +2662,7 @@ LagrangeExtremaResult lagrangeExtrema(
     std::sort(out.points.begin(), out.points.end(),
               [&c](const ExtremumPoint &a, const ExtremumPoint &b) {
                   for (keel::usize i = 0; i < a.point.size(); ++i) {
-                      const int cmp = c.compare(a.point[i], b.point[i]);
+                      const keel::i32 cmp = c.compare(a.point[i], b.point[i]);
                       if (cmp != 0)
                           return cmp < 0;
                   }
@@ -3093,7 +3093,7 @@ FrenetSerretResult frenetSerret(Ctx &c, keel::ArrayRef<Expr> curve,
     }
 
     keel::Array<Expr> r1(3), r2(3), r3(3);
-    for (int i = 0; i < 3; ++i) {
+    for (keel::i32 i = 0; i < 3; ++i) {
         r1[i] = c.simplify(c.diff(r[i], t));
         r2[i] = c.simplify(c.diff(r1[i], t));
         r3[i] = c.simplify(c.diff(r2[i], t));
@@ -3107,7 +3107,7 @@ FrenetSerretResult frenetSerret(Ctx &c, keel::ArrayRef<Expr> curve,
     out.speed = positiveSqrtLinalg(c, speedSq, {t});
 
     out.T.resize(3);
-    for (int i = 0; i < 3; ++i)
+    for (keel::i32 i = 0; i < 3; ++i)
         out.T[i] = normLinalg(c, c.div(r1[i], out.speed), budget);
 
     const keel::Array<Expr> cross12 = cross3Linalg(c, r1, r2);
@@ -3125,12 +3125,12 @@ FrenetSerretResult frenetSerret(Ctx &c, keel::ArrayRef<Expr> curve,
 
     const Expr crossNorm = positiveSqrtLinalg(c, crossNormSq, {t});
     out.B.resize(3);
-    for (int i = 0; i < 3; ++i)
+    for (keel::i32 i = 0; i < 3; ++i)
         out.B[i] = normLinalg(c, c.div(cross12[i], crossNorm), budget);
 
     const keel::Array<Expr> nVec = cross3Linalg(c, out.B, out.T);
     out.N.resize(3);
-    for (int i = 0; i < 3; ++i)
+    for (keel::i32 i = 0; i < 3; ++i)
         out.N[i] = normLinalg(c, nVec[i], budget);
 
     const Expr speedCubed = c.mul({speedSq, out.speed});
@@ -3171,7 +3171,7 @@ SurfaceCurvatureResult surfaceCurvature(Ctx &c,
     }
 
     keel::Array<Expr> ru(3), rv(3), ruu(3), ruv(3), rvv(3);
-    for (int i = 0; i < 3; ++i) {
+    for (keel::i32 i = 0; i < 3; ++i) {
         if (surface[i].isNull()) {
             out.reason.assign("null surface component");
             return out;
@@ -3198,7 +3198,7 @@ SurfaceCurvatureResult surfaceCurvature(Ctx &c,
     out.areaElement = positiveSqrtLinalg(c, detI, {u, v});
 
     out.normal.resize(3);
-    for (int i = 0; i < 3; ++i)
+    for (keel::i32 i = 0; i < 3; ++i)
         out.normal[i] = normLinalg(c, c.div(crossUV[i], out.areaElement), budget);
 
     out.L = normLinalg(c, dot3Linalg(c, ruu, out.normal), budget);

@@ -102,7 +102,7 @@ bool extractLinearInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out)
     }
     if (c.kind(ex) == NodeKind::Mul) {
         keel::Array<Expr> others;
-        int varCount = 0;
+        keel::i32 varCount = 0;
         for (keel::usize i = 0; i < c.childCount(ex); ++i) {
             const Expr ch = c.child(ex, i);
             if (ch == var) {
@@ -144,7 +144,7 @@ bool extractQuadraticInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out,
                            Expr &c2Out)
 {
     const Expr ex = c.expand(e);
-    auto matchMonomial = [&](Expr term, int &degOut, Expr &coeffOut) -> bool {
+    auto matchMonomial = [&](Expr term, keel::i32 &degOut, Expr &coeffOut) -> bool {
         if (!mentionsSymbol(c, term, var)) {
             degOut = 0;
             coeffOut = term;
@@ -163,7 +163,7 @@ bool extractQuadraticInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out,
         }
         if (c.kind(term) == NodeKind::Mul) {
             keel::Array<Expr> others;
-            int deg = 0;
+            keel::i32 deg = 0;
             for (keel::usize i = 0; i < c.childCount(term); ++i) {
                 const Expr ch = c.child(term, i);
                 if (ch == var) {
@@ -190,14 +190,14 @@ bool extractQuadraticInVar(Ctx &c, Expr e, Expr var, Expr &c0Out, Expr &c1Out,
     keel::Array<Expr> degTerms[3];
     if (c.kind(ex) == NodeKind::Add) {
         for (keel::usize i = 0; i < c.childCount(ex); ++i) {
-            int d = 0;
+            keel::i32 d = 0;
             Expr cf;
             if (!matchMonomial(c.child(ex, i), d, cf))
                 return false;
             degTerms[d].push_back(cf);
         }
     } else {
-        int d = 0;
+        keel::i32 d = 0;
         Expr cf;
         if (!matchMonomial(ex, d, cf))
             return false;
@@ -293,7 +293,7 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
         if (changed)
             return c.expand(c.mul(kids));
 
-        int idx1 = -1, idx2 = -1;
+        keel::i32 idx1 = -1, idx2 = -1;
         bool hypPair = false;
         for (keel::usize i = 0; i < kids.size(); ++i) {
             if (c.kind(kids[i]) == NodeKind::Func &&
@@ -301,18 +301,18 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
                 const keel::String &fn = c.funcName(kids[i]);
                 if (fn == "sin" || fn == "cos") {
                     if (idx1 < 0) {
-                        idx1 = keel::as<int>(i);
+                        idx1 = keel::as<keel::i32>(i);
                         hypPair = false;
                     } else if (!hypPair) {
-                        idx2 = keel::as<int>(i);
+                        idx2 = keel::as<keel::i32>(i);
                         break;
                     }
                 } else if (fn == "sinh" || fn == "cosh") {
                     if (idx1 < 0) {
-                        idx1 = keel::as<int>(i);
+                        idx1 = keel::as<keel::i32>(i);
                         hypPair = true;
                     } else if (hypPair) {
-                        idx2 = keel::as<int>(i);
+                        idx2 = keel::as<keel::i32>(i);
                         break;
                     }
                 }
@@ -365,7 +365,7 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
             keel::Array<Expr> rest;
             rest.push_back(pairSum);
             for (keel::usize i = 0; i < kids.size(); ++i) {
-                if (keel::as<int>(i) != idx1 && keel::as<int>(i) != idx2)
+                if (keel::as<keel::i32>(i) != idx1 && keel::as<keel::i32>(i) != idx2)
                     rest.push_back(kids[i]);
             }
             return c.expand(c.mul(rest));
@@ -384,7 +384,7 @@ Expr reduceTrigProductsOnce(Ctx &c, Expr e, Expr var, bool &changed)
 }
 
 LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
-                         int depth)
+                         keel::i32 depth)
 {
     LaplaceResult out;
     if (!checkLaplaceBudget(c, budget, out.reason))
@@ -622,7 +622,7 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
     //    rewrite remaining hyperbolic products/powers into exponentials.
     bool trigChanged = false;
     Expr trigReduced = expanded;
-    for (int pass = 0; pass < 6; ++pass) {
+    for (keel::i32 pass = 0; pass < 6; ++pass) {
         bool stepChanged = false;
         trigReduced = reduceTrigProductsOnce(c, trigReduced, t, stepChanged);
         if (!stepChanged)
@@ -650,7 +650,7 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
 
 // Invert a single partial fraction term R(s) / P(s)^j over Q[s], where
 // deg(R) < deg(P) and P is monic irreducible of degree 1 or 2.
-bool invertPartialFractionTerm(Ctx &c, const UPoly &R, const UPoly &P, int j,
+bool invertPartialFractionTerm(Ctx &c, const UPoly &R, const UPoly &P, keel::i32 j,
                                Expr t, Expr &outTerm)
 {
     if (R.isZero()) {
@@ -814,9 +814,9 @@ bool tryRationalIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     keel::Array<Expr> timeTerms;
     for (keel::usize i = 0; i < grouped.size(); ++i) {
         const UPoly &P = grouped[i].first;
-        const int m = keel::as<int>(grouped[i].second);
+        const keel::i32 m = keel::as<keel::i32>(grouped[i].second);
         UPoly cur = numerators[i];
-        for (int j = m; j >= 1; --j) {
+        for (keel::i32 j = m; j >= 1; --j) {
             UPoly q, rem;
             UPoly::divMod(cur, P, q, rem);
             if (!rem.isZero()) {

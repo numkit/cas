@@ -6,7 +6,7 @@
 #include <numkit/cas/poly/sturm.hpp>
 #include <numkit/cas/poly/upoly.hpp>
 
-#include <array>
+#include <keel/static_array.h>
 #include <cstdint>
 #include <cassert>
 
@@ -236,7 +236,7 @@ Tier2aStatus tier2aFormCheck(Ctx &c, Expr F, Expr f, Expr var)
     // always pole-free; every unusable point (zero-crossing divisor,
     // fractional power of a negative, complex RootOf) just reduces
     // the compatible count - it can never turn into Mismatch.
-    const std::array<Rational, 6> kSamples = {{
+    const keel::StaticArray<Rational, 6> kSamples = {{
         Rational(keel::i64{1}, BigInt(2)),
         Rational(keel::i64{5}, BigInt(4)),
         Rational(keel::i64{3}, BigInt(2)),

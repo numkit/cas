@@ -17,7 +17,7 @@
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <algorithm>
-#include <array>
+#include <keel/static_array.h>
 #include <keel/function_ref.h>
 #include <numeric>
 #include <keel/array.h>
@@ -170,7 +170,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
         if ((c.kind(e) == NodeKind::Mul && arity >= 2 && arity <= 4) ||
             (c.kind(e) == NodeKind::Add && arity >= 2 && arity <= 3)) {
             const bool nextInMul = (c.kind(e) == NodeKind::Mul) || inMul;
-            std::array<keel::usize, 4> perm = {{0, 1, 2, 3}};
+            keel::StaticArray<keel::usize, 4> perm = {{0, 1, 2, 3}};
             do {
                 work.pop_back();
                 for (keel::i32 ci = arity; ci > 0; --ci)
@@ -1488,7 +1488,7 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
         return true;
     }
     if (pred == "IntQuadraticQ" && nkids == 8) {
-        std::array<Rational, 7> v;
+        keel::StaticArray<Rational, 7> v;
         for (int i = 0; i < 7; ++i) {
             const Expr ai = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
@@ -1540,7 +1540,7 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
     }
     if (pred == "IntBinomialQ" &&
         (nkids == 7 || nkids == 8 || nkids == 10)) {
-        std::array<Rational, 10> v;
+        keel::StaticArray<Rational, 10> v;
         for (int i = 0; i < nkids - 1; ++i) {
             const Expr ai = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, i), depth);
@@ -1640,8 +1640,8 @@ bool evalCondition(const RuleTables &t, const keel::i32 *terms, Ctx &c,
         pred == "IGeQ" || pred == "ILeQ") {
         if (nkids < 2 || nkids > 3)
             return false;
-        std::array<Expr, 3> exprs;
-        std::array<Rational, 3> vals;
+        keel::StaticArray<Expr, 3> exprs;
+        keel::StaticArray<Rational, 3> vals;
         bool allNum = true;
         for (int i = 0; i < nkids; ++i) {
             const Expr ai = buildReplacement(
@@ -1965,7 +1965,7 @@ bool checkNormalizedCertificate(Ctx &c, Expr dF, Expr e, Expr var)
             if (L % 2 != 0)
                 return true;
             const keel::String &varName = c.symbolName(var);
-            const std::array<Rational, 10> kSignSamples = {{
+            const keel::StaticArray<Rational, 10> kSignSamples = {{
                 Rational(keel::i64{0}),
                 Rational(keel::i64{1}, BigInt(8)),
                 Rational(keel::i64{1}, BigInt(2)),

@@ -5199,6 +5199,9 @@ numkit::BuiltinClass makeSymBuiltinClass()
     cls.methods.put(keel::String::from("argnames"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symArgnames(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     });
+    cls.methods.put(keel::String::from("__indexAssign"), [](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symfunCreate(args, ctx.engine ? ctx.engine->allocator() : nullptr);
+    });
     cls.methods.put(keel::String::from("matlabFunction"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         auto all = prependSelf(self, rest);
         keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;

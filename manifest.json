@@ -5,6 +5,7 @@
   "author": "NumKit",
   "license": "0BSD",
   "library": "numkit_cas",
+  "varDeclCommands": ["syms"],
   "exports": [
     "sym", "symfun", "syms", "formula", "argnames", "lhs", "rhs", "isAlways", "matlabFunction",
     "assume", "assumptions", "vpa", "poly2sym", "sym2poly", "symvar",

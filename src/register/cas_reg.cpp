@@ -557,6 +557,72 @@ void CasLibrary::install(PluginContext &engine)
     engine.registerFunction("cas", "sym", &cas::detail::sym_reg);
     engine.registerFunction("cas", "symfun", &cas::detail::symfun_reg);
     engine.registerFunction("cas", "syms", &cas::detail::syms_reg);
+    engine.registerVarDeclCommand(
+        "syms",
+        [](keel::ArrayRef<keel::StringRef> args, keel::Array<keel::String> &out) {
+            auto isFlag = [](keel::StringRef s) noexcept {
+                return s == "real" || s == "positive" || s == "negative"
+                    || s == "nonnegative" || s == "integer" || s == "clear";
+            };
+            auto pushTokNames = [&](keel::StringRef raw) {
+                if (raw.empty() || isFlag(raw))
+                    return;
+                const keel::usize lp = raw.find('(');
+                if (lp == keel::kInvalidIndex) {
+                    out.push_back(keel::String::from(raw));
+                    return;
+                }
+                keel::StringRef fn = raw.substr(0, lp);
+                while (!fn.empty() && fn.back() == ' ') fn.remove_suffix(1);
+                if (!fn.empty())
+                    out.push_back(keel::String::from(fn));
+                keel::usize rp = raw.rfind(')');
+                if (rp == keel::kInvalidIndex || rp <= lp) rp = raw.size();
+                keel::StringRef inside = raw.substr(lp + 1, rp - lp - 1);
+                keel::usize p = 0;
+                while (p < inside.size()) {
+                    keel::usize comma = inside.find(',', p);
+                    if (comma == keel::kInvalidIndex) comma = inside.size();
+                    keel::StringRef arg = inside.substr(p, comma - p);
+                    while (!arg.empty() && (arg.front() == ' ' || arg.front() == '\t')) arg.remove_prefix(1);
+                    while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t' || arg.back() == ')')) arg.remove_suffix(1);
+                    if (!arg.empty() && !isFlag(arg))
+                        out.push_back(keel::String::from(arg));
+                    p = (comma < inside.size()) ? comma + 1 : inside.size();
+                }
+            };
+            keel::String joined;
+            keel::i32 depth = 0;
+            for (keel::usize i = 0; i < args.size(); ++i) {
+                const keel::StringRef tok = args[i];
+                if (depth > 0) {
+                    joined.append(tok);
+                    for (char c : tok) {
+                        if (c == '(') ++depth;
+                        else if (c == ')') --depth;
+                    }
+                    if (depth <= 0) {
+                        pushTokNames(joined.as_ref());
+                        joined.clear();
+                        depth = 0;
+                    }
+                    continue;
+                }
+                keel::i32 d = 0;
+                for (char c : tok) {
+                    if (c == '(') ++d;
+                    else if (c == ')') --d;
+                }
+                if (d > 0) {
+                    joined = keel::String::from(tok);
+                    depth = d;
+                } else {
+                    pushTokNames(tok);
+                }
+            }
+            if (!joined.empty())
+                pushTokNames(joined.as_ref());
+        });
     engine.registerFunction("cas", "formula", &cas::detail::formula_reg);
     engine.registerFunction("cas", "argnames", &cas::detail::argnames_reg);
     engine.registerFunction("cas", "lhs", &cas::detail::lhs_reg);

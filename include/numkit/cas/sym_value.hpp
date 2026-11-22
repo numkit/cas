@@ -21,10 +21,15 @@ struct SymPayload : public numkit::NativePayload
 {
     keel::Arc<Ctx> ctx;
     Expr expr;
+    keel::Array<Expr> funParams;
 
     SymPayload() = default;
     SymPayload(keel::Arc<Ctx> c, Expr e)
         : ctx(keel::move(c)), expr(e)
+    {
+    }
+    SymPayload(keel::Arc<Ctx> c, Expr e, keel::Array<Expr> params)
+        : ctx(keel::move(c)), expr(e), funParams(keel::move(params))
     {
     }
 
@@ -39,29 +44,51 @@ keel::Arc<Ctx> defaultCtx();
 
 // Conversion helpers between numkit::Value and numkit::cas::Expr / SymMatrix.
 bool isSymValue(const numkit::Value &v) noexcept;
+bool isSymfunValue(const numkit::Value &v) noexcept;
 Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName = "sym");
 SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName = "sym");
 keel::Array<Expr> toSymVector(const numkit::Value &v, Ctx &c, const char *fnName = "sym");
 
 numkit::Value fromSymExpr(const keel::Arc<Ctx> &c, Expr e,
                           keel::Allocator *mr = nullptr);
+numkit::Value fromSymfunExpr(const keel::Arc<Ctx> &c, Expr e,
+                             keel::ArrayRef<Expr> params,
+                             keel::Allocator *mr = nullptr);
 numkit::Value fromSymMatrix(const keel::Arc<Ctx> &c, const SymMatrix &M,
                             keel::Allocator *mr = nullptr);
 numkit::Value fromSymVector(const keel::Arc<Ctx> &c, keel::ArrayRef<Expr> vec,
                             bool column = true,
                             keel::Allocator *mr = nullptr);
 
-// Construct the BuiltinClass definition for "sym".
+// Construct the BuiltinClass definitions for "sym" and "symfun".
 numkit::BuiltinClass makeSymBuiltinClass();
+numkit::BuiltinClass makeSymfunBuiltinClass();
 
 // Value-level compute entry points (each begins with <fn>_argcheck).
 numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
                         keel::Allocator *mr = nullptr);
+numkit::Value symfunCreate(keel::ArrayRef<numkit::Value> args,
+                           keel::Allocator *mr = nullptr);
+numkit::Value symFormula(const numkit::Value &v,
+                         keel::Allocator *mr = nullptr);
+numkit::Value symArgnames(const numkit::Value &v,
+                          keel::Allocator *mr = nullptr);
+numkit::Value symLhs(const numkit::Value &v,
+                     keel::Allocator *mr = nullptr);
+numkit::Value symRhs(const numkit::Value &v,
+                     keel::Allocator *mr = nullptr);
+numkit::Value symIsAlways(const numkit::Value &v,
+                          keel::Allocator *mr = nullptr);
+keel::String symMatlabFunctionSource(keel::ArrayRef<numkit::Value> args,
+                                     keel::Allocator *mr = nullptr);
 void symsCommand(keel::ArrayRef<numkit::Value> args,
                  keel::Array<std::pair<keel::String, numkit::Value>> &bindingsOut,
                  keel::Allocator *mr = nullptr);
 numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
                         keel::Allocator *mr = nullptr);
+numkit::Value symAssumeCond(const numkit::Value &condVal,
+                            keel::Allocator *mr = nullptr);
+keel::String symEvalSource(const numkit::Value &v);
 numkit::Value symAssumptions(const numkit::Value &symVal,
                              keel::Allocator *mr = nullptr);
 numkit::Value symDouble(const numkit::Value &v,
@@ -74,6 +101,8 @@ numkit::Value symLatex(const numkit::Value &v,
                        keel::Allocator *mr = nullptr);
 numkit::Value symCCode(const numkit::Value &v,
                        keel::Allocator *mr = nullptr);
+numkit::Value symPretty(const numkit::Value &v,
+                        keel::Allocator *mr = nullptr);
 numkit::Value symSimplify(const numkit::Value &v,
                           keel::Allocator *mr = nullptr);
 numkit::Value symExpand(const numkit::Value &v,

@@ -115,6 +115,33 @@ Expr Ctx::diffRec(Expr e, Expr var, keel::HashMap<keel::u32, Expr> &memo)
         break;
     case NodeKind::Func: {
         const keel::String &name = funcName(e);
+        if (childCount(e) == 2 &&
+            (name == "__eq" || name == "__ne" || name == "__lt" ||
+             name == "__le" || name == "__gt" || name == "__ge")) {
+            const Expr dl = diffRec(child(e, 0), var, memo);
+            const Expr dr = diffRec(child(e, 1), var, memo);
+            if (!dl.isNull() && !dr.isNull())
+                result = func(name, dl, dr);
+            break;
+        }
+        if (name == "diff" && childCount(e) == 2) {
+            if (child(e, 1) == var) {
+                result = func("diff", {child(e, 0), var, number(keel::i64{2})});
+            } else {
+                const Expr df = diffRec(child(e, 0), var, memo);
+                result = isZero(df) ? zero() : func("diff", {e, var});
+            }
+            break;
+        }
+        if (name == "diff" && childCount(e) == 3) {
+            if (child(e, 1) == var) {
+                result = func("diff", {child(e, 0), var, add({child(e, 2), one()})});
+            } else {
+                const Expr df = diffRec(child(e, 0), var, memo);
+                result = isZero(df) ? zero() : func("diff", {e, var});
+            }
+            break;
+        }
         if (childCount(e) == 4 && name == "hypergeom2F1") {
             const Expr a = child(e, 0);
             const Expr b = child(e, 1);

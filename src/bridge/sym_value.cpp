@@ -126,6 +126,94 @@ Expr doubleToSymExpr(Ctx &c, keel::f64 v)
     return c.number(doubleToRational(v));
 }
 
+Expr complexToSymExpr(Ctx &c, keel::c64 z)
+{
+    const Expr re = doubleToSymExpr(c, z.re);
+    if (z.im == 0.0)
+        return re;
+    const Expr im = doubleToSymExpr(c, z.im);
+    const Expr imPart = c.mul({im, c.symbol("I")});
+    if (z.re == 0.0)
+        return imPart;
+    return c.add({re, imPart});
+}
+
+Expr numericElemToSymExpr(Ctx &c, const Value &v, keel::usize idx)
+{
+    if (v.isComplex())
+        return complexToSymExpr(c, v.complexData()[idx]);
+    return doubleToSymExpr(c, v.elemAsDouble(idx));
+}
+
+bool evalComplexExprRec(const Ctx &c, Expr e, keel::c64 &out)
+{
+    if (e.isNull())
+        return false;
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+        out = keel::c64(c.numberValue(e).toDouble(), 0.0);
+        return true;
+    case NodeKind::Symbol: {
+        const keel::StringRef nm = c.symbolName(e).as_ref();
+        if (nm == "I" || nm == "i") { out = keel::c64(0.0, 1.0); return true; }
+        if (nm == "pi" || nm == "Pi") { out = keel::c64(3.14159265358979323846, 0.0); return true; }
+        if (nm == "e" || nm == "E") { out = keel::c64(2.71828182845904523536, 0.0); return true; }
+        return false;
+    }
+    case NodeKind::Add: {
+        keel::c64 acc(0.0, 0.0);
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
+            keel::c64 t;
+            if (!evalComplexExprRec(c, c.child(e, i), t))
+                return false;
+            acc = acc + t;
+        }
+        out = acc;
+        return true;
+    }
+    case NodeKind::Mul: {
+        keel::c64 acc(1.0, 0.0);
+        for (keel::usize i = 0; i < c.childCount(e); ++i) {
+            keel::c64 t;
+            if (!evalComplexExprRec(c, c.child(e, i), t))
+                return false;
+            acc = acc * t;
+        }
+        out = acc;
+        return true;
+    }
+    case NodeKind::Pow: {
+        keel::c64 b, ex;
+        if (!evalComplexExprRec(c, c.child(e, 0), b) ||
+            !evalComplexExprRec(c, c.child(e, 1), ex))
+            return false;
+        out = keel::pow(b, ex);
+        return true;
+    }
+    case NodeKind::Func: {
+        if (c.childCount(e) != 1)
+            return false;
+        keel::c64 a;
+        if (!evalComplexExprRec(c, c.child(e, 0), a))
+            return false;
+        const keel::StringRef fn = c.funcName(e).as_ref();
+        if (fn == "exp") { out = keel::exp(a); return true; }
+        if (fn == "sin") { out = keel::sin(a); return true; }
+        if (fn == "cos") { out = keel::cos(a); return true; }
+        if (fn == "tan") { out = keel::tan(a); return true; }
+        if (fn == "sinh") { out = keel::sinh(a); return true; }
+        if (fn == "cosh") { out = keel::cosh(a); return true; }
+        if (fn == "tanh") { out = keel::tanh(a); return true; }
+        if (fn == "log" || fn == "ln") { out = keel::log(a); return true; }
+        if (fn == "sqrt") { out = keel::sqrt(a); return true; }
+        return false;
+    }
+    case NodeKind::RootOf:
+        return false;
+    }
+    return false;
+}
+
 Rational doubleToRational(keel::f64 v)
 {
     if (!std::isfinite(v))
@@ -219,7 +307,8 @@ Expr parseExprFlexible(Ctx &c, keel::StringRef rawRef, const char *fnName)
 bool isReservedConstantSymbol(keel::StringRef name)
 {
     return name == "pi" || name == "e" || name == "inf" || name == "oo"
-           || name == "infinity" || name == "Inf" || name == "i" || name == "j";
+           || name == "infinity" || name == "Inf" || name == "i" || name == "j"
+           || name == "I";
 }
 
 void collectSymbolsRec(const Ctx &c, Expr e, SymbolNameSet &out)
@@ -344,14 +433,14 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
     }
     if (v.isNumeric() || v.isLogical()) {
         if (v.isScalar()) {
-            Expr in = doubleToSymExpr(c, (v.toScalar()));
+            Expr in = numericElemToSymExpr(c, v, 0);
             return fromSymExpr(ctxPtr, fn(in), mr);
         }
         const keel::usize n = v.numel();
         keel::Array<keel::Arc<ObjectState>> states(mr);
         states.reserve(n);
         for (keel::usize i = 0; i < n; ++i) {
-            Expr in = doubleToSymExpr(c, (v.elemAt(i).toScalar()));
+            Expr in = numericElemToSymExpr(c, v, i);
             auto nst = keel::make_arc_in<ObjectState>(mr, mr);
             nst->native = keel::make_arc_in<SymPayload>(mr, ctxPtr, fn(in));
             states.push_back(std::move(nst));
@@ -418,7 +507,11 @@ keel::Arc<Ctx> defaultCtx()
 
 keel::Arc<numkit::NativePayload> SymPayload::clone(keel::Allocator *alloc) const
 {
-    return keel::make_arc_in<SymPayload>(resolveMr(alloc), ctx, expr);
+    keel::Array<Expr> paramsCopy;
+    paramsCopy.reserve(funParams.size());
+    for (keel::usize i = 0; i < funParams.size(); ++i)
+        paramsCopy.push_back(funParams[i]);
+    return keel::make_arc_in<SymPayload>(resolveMr(alloc), ctx, expr, keel::move(paramsCopy));
 }
 
 keel::f64 SymPayload::asDouble() const
@@ -442,7 +535,13 @@ keel::Arc<numkit::NativePayload> SymPayload::fromScalarDouble(keel::f64 v, keel:
 
 bool isSymValue(const numkit::Value &v) noexcept
 {
-    return v.isObject() && v.objectClassNameRef() == "sym";
+    return v.isObject()
+        && (v.objectClassNameRef() == "sym" || v.objectClassNameRef() == "symfun");
+}
+
+bool isSymfunValue(const numkit::Value &v) noexcept
+{
+    return v.isObject() && v.objectClassNameRef() == "symfun";
 }
 
 Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName)
@@ -462,7 +561,7 @@ Expr toSymExpr(const numkit::Value &v, Ctx &c, const char *fnName)
             casFail(keel::format("nk:{}:expectedScalar", fnName),
                     keel::format("{}: expected scalar argument", fnName));
         }
-        return doubleToSymExpr(c, (v.toScalar()));
+        return numericElemToSymExpr(c, v, 0);
     }
     if (v.isChar() || v.isString()) {
         return parseExprFlexible(c, v.toString(), fnName);
@@ -494,7 +593,7 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
         SymMatrix M(rows, cols, c.zero());
         for (keel::usize col = 0; col < cols; ++col) {
             for (keel::usize r = 0; r < rows; ++r) {
-                M(r, col) = doubleToSymExpr(c, (v.elemAt(col * rows + r).toScalar()));
+                M(r, col) = numericElemToSymExpr(c, v, col * rows + r);
             }
         }
         return M;
@@ -583,6 +682,20 @@ numkit::Value fromSymExpr(const keel::Arc<Ctx> &c, Expr e,
     auto st = keel::make_arc_in<ObjectState>(mr, mr);
     st->native = keel::make_arc_in<SymPayload>(mr, c, e);
     return Value::object("sym", std::move(st), /*isHandle=*/false, mr);
+}
+
+numkit::Value fromSymfunExpr(const keel::Arc<Ctx> &c, Expr e,
+                             keel::ArrayRef<Expr> params,
+                             keel::Allocator *mr)
+{
+    mr = resolveMr(mr);
+    keel::Array<Expr> pvec;
+    pvec.reserve(params.size());
+    for (keel::usize i = 0; i < params.size(); ++i)
+        pvec.push_back(params[i]);
+    auto st = keel::make_arc_in<ObjectState>(mr, mr);
+    st->native = keel::make_arc_in<SymPayload>(mr, c, e, keel::move(pvec));
+    return Value::object("symfun", std::move(st), /*isHandle=*/false, mr);
 }
 
 numkit::Value fromSymMatrix(const keel::Arc<Ctx> &c, const SymMatrix &M,
@@ -777,7 +890,7 @@ void symEulerMaclaurin_argcheck(keel::ArrayRef<Value> args)
 
 void symSolve_argcheck(keel::ArrayRef<Value> args)
 {
-    argcheck::checkNargin(args.size(), 1, 4, "solve");
+    argcheck::checkNargin(args.size(), 1, 64, "solve");
 }
 
 void symGroebner_argcheck(keel::ArrayRef<Value> args)
@@ -874,7 +987,7 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
     }
     if (a0.isNumeric() || a0.isLogical()) {
         if (a0.isScalar()) {
-            return fromSymExpr(ctxPtr, doubleToSymExpr(c, (a0.toScalar())), mr);
+            return fromSymExpr(ctxPtr, numericElemToSymExpr(c, a0, 0), mr);
         }
         return fromSymMatrix(ctxPtr, toSymMatrix(a0, c, "sym"), mr);
     }
@@ -916,22 +1029,364 @@ void symsCommand(keel::ArrayRef<numkit::Value> args,
         }
     }
 
-    for (keel::usize i = 0; i < varEnd; ++i) {
-        if (!args[i].isChar() && !args[i].isString()) {
-            casFail("nk:syms:invalidVarName",
-                    "syms: arguments must be variable names (strings)");
+    // Re-join tokens split across spaces inside parentheses, e.g. `syms f(x, y)`.
+    keel::Array<keel::String> joinedTokens;
+    {
+        keel::String cur;
+        keel::i32 depth = 0;
+        for (keel::usize i = 0; i < varEnd; ++i) {
+            if (!args[i].isChar() && !args[i].isString()) {
+                casFail("nk:syms:invalidVarName",
+                        "syms: arguments must be variable names (strings)");
+            }
+            keel::String tok = trimStr(args[i].toString());
+            if (depth > 0) {
+                cur.append(tok);
+                for (char ch : tok) {
+                    if (ch == '(') ++depth;
+                    else if (ch == ')') --depth;
+                }
+                if (depth <= 0) {
+                    joinedTokens.push_back(std::move(cur));
+                    cur.clear();
+                    depth = 0;
+                }
+                continue;
+            }
+            keel::i32 d = 0;
+            for (char ch : tok) {
+                if (ch == '(') ++d;
+                else if (ch == ')') --d;
+            }
+            if (d > 0) {
+                cur = std::move(tok);
+                depth = d;
+            } else {
+                joinedTokens.push_back(std::move(tok));
+            }
         }
-        keel::String name = trimStr(args[i].toString());
-        if (!isValidIdentifier(name)) {
-            casFail("nk:syms:invalidIdentifier",
-                    keel::format("syms: '{}' is not a valid variable name", name));
-        }
-        Expr s = c.symbol(name);
-        if (hasTrailingDomain) {
-            c.assume(name, trailingDom);
-        }
-        bindingsOut.emplace_back(std::move(name), fromSymExpr(ctxPtr, s, mr));
+        if (!cur.empty())
+            joinedTokens.push_back(std::move(cur));
     }
+
+    auto hasBinding = [&](keel::StringRef nm) -> bool {
+        for (const auto &kv : bindingsOut)
+            if (kv.first.as_ref() == nm)
+                return true;
+        return false;
+    };
+
+    for (keel::usize i = 0; i < joinedTokens.size(); ++i) {
+        const keel::String &rawTok = joinedTokens[i];
+        const keel::usize lp = rawTok.as_ref().find('(');
+        if (lp != keel::kInvalidIndex && !rawTok.empty() && rawTok.back() == ')') {
+            keel::String fnName = trimStr(rawTok.as_ref().substr(0, lp));
+            keel::String argBody = trimStr(rawTok.as_ref().substr(lp + 1, rawTok.size() - lp - 2));
+            if (!isValidIdentifier(fnName) || argBody.empty()) {
+                casFail("nk:syms:invalidIdentifier",
+                        keel::format("syms: '{}' is not a valid variable name", rawTok));
+            }
+            keel::Array<Expr> paramExprs;
+            keel::usize pos = 0;
+            while (pos <= argBody.size()) {
+                const keel::usize comma = argBody.as_ref().find(',', pos);
+                const keel::StringRef seg = (comma == keel::kInvalidIndex)
+                                                ? argBody.as_ref().substr(pos)
+                                                : argBody.as_ref().substr(pos, comma - pos);
+                keel::String pname = trimStr(seg);
+                if (!isValidIdentifier(pname)) {
+                    casFail("nk:syms:invalidIdentifier",
+                            keel::format("syms: '{}' is not a valid variable name", rawTok));
+                }
+                Expr psym = c.symbol(pname);
+                if (hasTrailingDomain)
+                    c.assume(pname, trailingDom);
+                if (!hasBinding(pname.as_ref()))
+                    bindingsOut.emplace_back(pname.clone(), fromSymExpr(ctxPtr, psym, mr));
+                paramExprs.push_back(psym);
+                if (comma == keel::kInvalidIndex)
+                    break;
+                pos = comma + 1;
+            }
+            Expr fnExpr = c.func(fnName, paramExprs);
+            bindingsOut.emplace_back(std::move(fnName),
+                                     fromSymfunExpr(ctxPtr, fnExpr, paramExprs.as_ref(), mr));
+            continue;
+        }
+        if (!isValidIdentifier(rawTok)) {
+            casFail("nk:syms:invalidIdentifier",
+                    keel::format("syms: '{}' is not a valid variable name", rawTok));
+        }
+        Expr s = c.symbol(rawTok);
+        if (hasTrailingDomain) {
+            c.assume(rawTok, trailingDom);
+        }
+        bindingsOut.emplace_back(rawTok.clone(), fromSymExpr(ctxPtr, s, mr));
+    }
+}
+
+numkit::Value symfunCreate(keel::ArrayRef<numkit::Value> args,
+                           keel::Allocator *mr)
+{
+    argcheck::checkNargin(args.size(), 2, 64, "symfun");
+    mr = resolveMr(mr);
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+    Expr body = toSymExpr(args[0], c, "symfun");
+    keel::Array<Expr> params;
+    for (keel::usize i = 1; i < args.size(); ++i) {
+        keel::Array<Expr> part = toSymVector(args[i], c, "symfun");
+        for (const Expr p : part) {
+            if (c.kind(p) != NodeKind::Symbol) {
+                casFail("nk:symfun:invalidInput",
+                        "symfun: input variables must be symbolic variables");
+            }
+            params.push_back(p);
+        }
+    }
+    if (params.empty()) {
+        casFail("nk:symfun:invalidInput", "symfun: at least one input variable is required");
+    }
+    return fromSymfunExpr(ctxPtr, body, params.as_ref(), mr);
+}
+
+numkit::Value symFormula(const numkit::Value &v, keel::Allocator *mr)
+{
+    mr = resolveMr(mr);
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+    return fromSymExpr(ctxPtr, toSymExpr(v, c, "formula"), mr);
+}
+
+numkit::Value symArgnames(const numkit::Value &v, keel::Allocator *mr)
+{
+    mr = resolveMr(mr);
+    auto ctxPtr = defaultCtx();
+    if (isSymfunValue(v)) {
+        const ObjectState *st = v.objectStateConst();
+        if (st && st->native) {
+            auto *sp = static_cast<const SymPayload *>(st->native.get());
+            return fromSymVector(ctxPtr, sp->funParams.as_ref(), /*column=*/false, mr);
+        }
+    }
+    keel::Array<Expr> empty;
+    return fromSymVector(ctxPtr, empty.as_ref(), /*column=*/false, mr);
+}
+
+numkit::Value symLhs(const numkit::Value &v, keel::Allocator *mr)
+{
+    mr = resolveMr(mr);
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+    Expr e = toSymExpr(v, c, "lhs");
+    if (c.kind(e) == NodeKind::Func && c.childCount(e) == 2) {
+        const keel::StringRef fn = c.funcName(e).as_ref();
+        if (fn == "__eq" || fn == "__ne" || fn == "__lt" ||
+            fn == "__le" || fn == "__gt" || fn == "__ge") {
+            return fromSymExpr(ctxPtr, c.child(e, 0), mr);
+        }
+    }
+    casFail("nk:lhs:notEquation", "lhs: argument must be a symbolic equation or inequality");
+}
+
+numkit::Value symRhs(const numkit::Value &v, keel::Allocator *mr)
+{
+    mr = resolveMr(mr);
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+    Expr e = toSymExpr(v, c, "rhs");
+    if (c.kind(e) == NodeKind::Func && c.childCount(e) == 2) {
+        const keel::StringRef fn = c.funcName(e).as_ref();
+        if (fn == "__eq" || fn == "__ne" || fn == "__lt" ||
+            fn == "__le" || fn == "__gt" || fn == "__ge") {
+            return fromSymExpr(ctxPtr, c.child(e, 1), mr);
+        }
+    }
+    casFail("nk:rhs:notEquation", "rhs: argument must be a symbolic equation or inequality");
+}
+
+numkit::Value symIsAlways(const numkit::Value &v, keel::Allocator *mr)
+{
+    mr = resolveMr(mr);
+    if (v.isLogical())
+        return v;
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+    auto evalRel = [&](Expr e) -> bool {
+        if (c.kind(e) == NodeKind::Func && c.childCount(e) == 2) {
+            const keel::StringRef fn = c.funcName(e).as_ref();
+            const Expr diff = simplify(c, c.add({c.child(e, 0), c.neg(c.child(e, 1))}));
+            if (fn == "__eq")
+                return c.isZero(diff);
+            if (fn == "__ne")
+                return !c.isZero(diff);
+            keel::f64 dv = 0.0;
+            if (c.evalDouble(diff, {}, dv)) {
+                if (fn == "__lt") return dv < 0.0;
+                if (fn == "__le") return dv <= 0.0;
+                if (fn == "__gt") return dv > 0.0;
+                if (fn == "__ge") return dv >= 0.0;
+            }
+            if (fn == "__gt") return c.isAssumedPositive(diff);
+            if (fn == "__ge") return c.isZero(diff) || c.isAssumedPositive(diff) || c.isAssumedNonNegative(diff);
+            if (fn == "__lt") return c.isAssumedNegative(diff);
+            if (fn == "__le") return c.isZero(diff) || c.isAssumedNegative(diff);
+        }
+        return !c.isZero(simplify(c, e));
+    };
+    SymMatrix M = toSymMatrix(v, c, "isAlways");
+    if (M.rows() == 1 && M.cols() == 1)
+        return Value::logicalScalar(evalRel(M(0, 0)), mr);
+    Value out = Value::matrix(M.rows(), M.cols(), ValueType::LOGICAL, mr);
+    keel::u8 *dst = out.logicalDataMut();
+    for (keel::usize col = 0; col < M.cols(); ++col)
+        for (keel::usize r = 0; r < M.rows(); ++r)
+            dst[col * M.rows() + r] = evalRel(M(r, col)) ? 1 : 0;
+    return out;
+}
+
+keel::String symMatlabFunctionSource(keel::ArrayRef<numkit::Value> args,
+                                     keel::Allocator *mr)
+{
+    argcheck::checkNargin(args.size(), 1, 16, "matlabFunction");
+    (void)mr;
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+
+    SymMatrix M = toSymMatrix(args[0], c, "matlabFunction");
+
+    // Parse optional 'Vars' name-value pair.
+    bool hasVars = false;
+    Value varsArg;
+    for (keel::usize i = 1; i + 1 < args.size(); i += 2) {
+        if (args[i].isChar() || args[i].isString()) {
+            keel::String key = toLowerStr(trimStr(args[i].toString()));
+            if (key.as_ref() == "vars") {
+                hasVars = true;
+                varsArg = args[i + 1];
+            }
+        }
+    }
+
+    // Build parameter list and any vector-element substitutions (e.g. {t, [y1; y2]} -> @(t, in2)).
+    keel::Array<keel::String> paramNames;
+    keel::Array<std::pair<Expr, keel::String>> vecSubsts;
+    if (hasVars) {
+        if (varsArg.isCell()) {
+            for (keel::usize i = 0; i < varsArg.numel(); ++i) {
+                const Value &el = varsArg.cellAt(i);
+                keel::Array<Expr> ev = toSymVector(el, c, "matlabFunction");
+                if (ev.size() == 1 && c.kind(ev[0]) == NodeKind::Symbol) {
+                    paramNames.push_back(c.symbolName(ev[0]).clone());
+                } else {
+                    keel::String pname = keel::format("in{}", i + 1);
+                    paramNames.push_back(pname.clone());
+                    for (keel::usize k = 0; k < ev.size(); ++k) {
+                        vecSubsts.emplace_back(ev[k], keel::format("{}({})", pname, k + 1));
+                    }
+                }
+            }
+        } else {
+            keel::Array<Expr> ev = toSymVector(varsArg, c, "matlabFunction");
+            for (const Expr v : ev) {
+                if (c.kind(v) == NodeKind::Symbol)
+                    paramNames.push_back(c.symbolName(v).clone());
+            }
+        }
+    } else if (isSymfunValue(args[0])) {
+        const ObjectState *st = args[0].objectStateConst();
+        if (st && st->native) {
+            auto *sp = static_cast<const SymPayload *>(st->native.get());
+            for (keel::usize i = 0; i < sp->funParams.size(); ++i) {
+                if (c.kind(sp->funParams[i]) == NodeKind::Symbol)
+                    paramNames.push_back(c.symbolName(sp->funParams[i]).clone());
+            }
+        }
+    } else {
+        SymbolNameSet syms;
+        for (keel::usize r = 0; r < M.rows(); ++r)
+            for (keel::usize col = 0; col < M.cols(); ++col)
+                collectSymbolsRec(c, M(r, col), syms);
+        for (const auto &nm : syms)
+            paramNames.push_back(nm.clone());
+    }
+
+    // Apply vector-parameter substitutions using unique placeholder symbols, then replace in text.
+    keel::Array<std::pair<keel::String, keel::String>> textRepls;
+    for (keel::usize i = 0; i < vecSubsts.size(); ++i) {
+        keel::String ph = keel::format("__nk_mf_arg_{}__", i);
+        Expr phSym = c.symbol(ph);
+        for (keel::usize r = 0; r < M.rows(); ++r)
+            for (keel::usize col = 0; col < M.cols(); ++col)
+                M(r, col) = c.subs(M(r, col), vecSubsts[i].first, phSym);
+        textRepls.emplace_back(std::move(ph), vecSubsts[i].second.clone());
+    }
+
+    auto vectorizeExprStr = [&](Expr e) -> keel::String {
+        keel::String raw = c.toString(e);
+        // Replace vector placeholder symbols first.
+        for (const auto &rp : textRepls) {
+            keel::String next;
+            keel::usize pos = 0;
+            while (pos < raw.size()) {
+                const keel::usize f = raw.as_ref().find(rp.first.as_ref(), pos);
+                if (f == keel::kInvalidIndex) {
+                    next.append(raw.as_ref().substr(pos));
+                    break;
+                }
+                next.append(raw.as_ref().substr(pos, f - pos));
+                next.append(rp.second);
+                pos = f + rp.first.size();
+            }
+            raw = std::move(next);
+        }
+        // Vectorize *, /, ^ -> .*, ./, .^ and standalone I -> 1i, oo -> inf.
+        keel::String out;
+        out.reserve(raw.size() + 16);
+        for (keel::usize i = 0; i < raw.size(); ++i) {
+            const char ch = raw[i];
+            if ((ch == '*' || ch == '/' || ch == '^') && (i == 0 || raw[i - 1] != '.')) {
+                out.push_back('.');
+                out.push_back(ch);
+            } else if (keel::is_ascii_alpha(ch) || ch == '_') {
+                keel::usize j = i + 1;
+                while (j < raw.size() && (keel::is_ascii_alnum(raw[j]) || raw[j] == '_'))
+                    ++j;
+                const keel::StringRef id = raw.as_ref().substr(i, j - i);
+                if (id == "I")
+                    out.append("1i");
+                else if (id == "oo")
+                    out.append("inf");
+                else
+                    out.append(id);
+                i = j - 1;
+            } else {
+                out.push_back(ch);
+            }
+        }
+        return out;
+    };
+
+    keel::String src = keel::String::from("@(");
+    for (keel::usize i = 0; i < paramNames.size(); ++i) {
+        if (i > 0) src.append(",");
+        src.append(paramNames[i]);
+    }
+    src.append(") ");
+    if (M.rows() == 1 && M.cols() == 1) {
+        src.append(vectorizeExprStr(M(0, 0)));
+    } else {
+        src.push_back('[');
+        for (keel::usize r = 0; r < M.rows(); ++r) {
+            if (r > 0) src.append("; ");
+            for (keel::usize col = 0; col < M.cols(); ++col) {
+                if (col > 0) src.append(", ");
+                src.append(vectorizeExprStr(M(r, col)));
+            }
+        }
+        src.push_back(']');
+    }
+    return src;
 }
 
 numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
@@ -953,6 +1408,99 @@ numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
         c.assume(nm, dom);
     }
     return fromSymExpr(ctxPtr, c.symbol(syms.front()), mr);
+}
+
+numkit::Value symAssumeCond(const numkit::Value &condVal,
+                            keel::Allocator *mr)
+{
+    mr = resolveMr(mr);
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+    SymMatrix M = toSymMatrix(condVal, c, "assume");
+    for (keel::usize r = 0; r < M.rows(); ++r) {
+        for (keel::usize col = 0; col < M.cols(); ++col) {
+            const Expr e = M(r, col);
+            if (c.kind(e) == NodeKind::Func && c.childCount(e) == 2) {
+                const keel::String &fn = c.funcName(e);
+                const Expr lhs = c.child(e, 0);
+                const Expr rhs = c.child(e, 1);
+                if (c.kind(lhs) == NodeKind::Symbol && c.isZero(rhs)) {
+                    if (fn == "__gt")
+                        c.assume(c.symbolName(lhs), AssumeDomain::Positive);
+                    else if (fn == "__ge")
+                        c.assume(c.symbolName(lhs), AssumeDomain::NonNegative);
+                    else if (fn == "__lt")
+                        c.assume(c.symbolName(lhs), AssumeDomain::Negative);
+                    else if (fn == "__le")
+                        c.assume(c.symbolName(lhs), AssumeDomain::Real);
+                } else if (c.kind(rhs) == NodeKind::Symbol && c.isZero(lhs)) {
+                    if (fn == "__lt")
+                        c.assume(c.symbolName(rhs), AssumeDomain::Positive);
+                    else if (fn == "__le")
+                        c.assume(c.symbolName(rhs), AssumeDomain::NonNegative);
+                    else if (fn == "__gt")
+                        c.assume(c.symbolName(rhs), AssumeDomain::Negative);
+                    else if (fn == "__ge")
+                        c.assume(c.symbolName(rhs), AssumeDomain::Real);
+                } else {
+                    SymbolNameSet syms;
+                    collectSymbolsRec(c, e, syms);
+                    for (const auto &nm : syms)
+                        c.assume(nm, AssumeDomain::Real);
+                }
+            } else {
+                SymbolNameSet syms;
+                collectSymbolsRec(c, e, syms);
+                for (const auto &nm : syms)
+                    c.assume(nm, AssumeDomain::Real);
+            }
+        }
+    }
+    return condVal;
+}
+
+keel::String symEvalSource(const numkit::Value &v)
+{
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+    auto isIdChar = [](char ch) -> bool {
+        return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+               (ch >= '0' && ch <= '9') || ch == '_';
+    };
+    auto fmtOne = [&](Expr e) -> keel::String {
+        keel::String s = c.toString(e);
+        // Replace standalone symbolic imaginary unit 'I' with '1i'.
+        keel::String out;
+        out.reserve(s.size() + 8);
+        for (keel::usize i = 0; i < s.size(); ++i) {
+            if (s[i] == 'I') {
+                const bool prevId = (i > 0) && isIdChar(s[i - 1]);
+                const bool nextId = (i + 1 < s.size()) && isIdChar(s[i + 1]);
+                if (!prevId && !nextId) {
+                    out.append("1i");
+                    continue;
+                }
+            }
+            out.push_back(s[i]);
+        }
+        return out;
+    };
+    SymMatrix M = toSymMatrix(v, c, "eval");
+    if (M.rows() == 1 && M.cols() == 1)
+        return fmtOne(M(0, 0));
+    keel::String out;
+    out.push_back('[');
+    for (keel::usize r = 0; r < M.rows(); ++r) {
+        if (r > 0)
+            out.append("; ");
+        for (keel::usize col = 0; col < M.cols(); ++col) {
+            if (col > 0)
+                out.append(", ");
+            out.append(fmtOne(M(r, col)));
+        }
+    }
+    out.push_back(']');
+    return out;
 }
 
 numkit::Value symAssumptions(const numkit::Value &symVal,
@@ -1010,26 +1558,51 @@ numkit::Value symDouble(const numkit::Value &v,
         if (n == 1 && v.dims().rows() == 1 && v.dims().cols() == 1) {
             Expr e = toSymExpr(v, c, "double");
             keel::f64 val = 0.0;
-            if (!c.evalDouble(e, {}, val)) {
-                casFail("nk:double:unresolvedSymbol",
-                        keel::format("double: cannot convert symbolic expression '{}' to double", c.toString(e)));
+            if (c.evalDouble(e, {}, val))
+                return Value::scalar(val, mr);
+            keel::c64 z;
+            if (evalComplexExprRec(c, e, z)) {
+                if (std::fabs(z.im) <= 1e-15 * std::max(1.0, std::fabs(z.re)))
+                    return Value::scalar(z.re, mr);
+                return Value::complexScalar(z.re, z.im, mr);
             }
-            return Value::scalar(val, mr);
+            casFail("nk:double:unresolvedSymbol",
+                    keel::format("double: cannot convert symbolic expression '{}' to double", c.toString(e)));
         }
-        Value out = Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::DOUBLE, mr);
-        keel::f64 *dst = out.doubleDataMut();
+        keel::Array<keel::c64> cvals(mr);
+        cvals.reserve(n);
+        bool anyComplex = false;
         for (keel::usize i = 0; i < n; ++i) {
             const ObjectState *st = v.objectStateAt(i);
             Expr e = (st && st->native)
                          ? static_cast<const SymPayload *>(st->native.get())->expr
                          : c.zero();
             keel::f64 val = 0.0;
-            if (!c.evalDouble(e, {}, val)) {
-                casFail("nk:double:unresolvedSymbol",
-                        keel::format("double: cannot convert symbolic element '{}' to double", c.toString(e)));
+            if (c.evalDouble(e, {}, val)) {
+                cvals.push_back(keel::c64(val, 0.0));
+                continue;
             }
-            dst[i] = val;
+            keel::c64 z;
+            if (evalComplexExprRec(c, e, z)) {
+                if (std::fabs(z.im) > 1e-15 * std::max(1.0, std::fabs(z.re)))
+                    anyComplex = true;
+                else
+                    z.im = 0.0;
+                cvals.push_back(z);
+                continue;
+            }
+            casFail("nk:double:unresolvedSymbol",
+                    keel::format("double: cannot convert symbolic element '{}' to double", c.toString(e)));
         }
+        if (anyComplex) {
+            Value out = Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::COMPLEX, mr);
+            keel::c64 *dst = out.complexDataMut();
+            for (keel::usize i = 0; i < n; ++i) dst[i] = cvals[i];
+            return out;
+        }
+        Value out = Value::matrix(v.dims().rows(), v.dims().cols(), ValueType::DOUBLE, mr);
+        keel::f64 *dst = out.doubleDataMut();
+        for (keel::usize i = 0; i < n; ++i) dst[i] = cvals[i].re;
         return out;
     }
     Expr e = parseExprFlexible(c, v.toString(), "double");
@@ -1086,12 +1659,39 @@ numkit::Value symCCode(const numkit::Value &v,
     return Value::fromString(toCCode(c, e), mr);
 }
 
+numkit::Value symPretty(const numkit::Value &v,
+                        keel::Allocator *mr)
+{
+    mr = resolveMr(mr);
+    auto ctxPtr = defaultCtx();
+    Ctx &c = *ctxPtr;
+    if (isSymValue(v)) {
+        if (v.objectCount() == 1 && v.dims().rows() == 1 && v.dims().cols() == 1) {
+            return Value::fromString(c.toString(toSymExpr(v, c, "pretty")), mr);
+        }
+        return Value::fromString(toSymMatrix(v, c, "pretty").toString(c), mr);
+    }
+    if (v.isChar() || v.isString())
+        return Value::fromString(v.toString(), mr);
+    Expr e = toSymExpr(v, c, "pretty");
+    return Value::fromString(c.toString(e), mr);
+}
+
 numkit::Value symSimplify(const numkit::Value &v,
                           keel::Allocator *mr)
 {
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    return mapSymUnary(v, c, [&](Expr e) { return simplify(c, e); }, mr, "simplify");
+    return mapSymUnary(v, c, [&](Expr e) {
+        if (c.leafCount(e) > 256)
+            return e;
+        SymbolNameSet syms;
+        collectSymbolsRec(c, e, syms);
+        if (syms.size() > 6 && c.leafCount(e) > 64)
+            return e;
+        Budget b(4096);
+        return simplify(c, e, &b);
+    }, mr, "simplify");
 }
 
 numkit::Value symExpand(const numkit::Value &v,
@@ -1219,6 +1819,50 @@ numkit::Value symPartfrac(keel::ArrayRef<numkit::Value> args,
     }, mr, "partfrac");
 }
 
+namespace {
+
+Expr subsMultiRec(Ctx &c, Expr e, keel::ArrayRef<Expr> fromList, keel::ArrayRef<Expr> toList)
+{
+    for (keel::usize i = 0; i < fromList.size(); ++i) {
+        if (e == fromList[i])
+            return toList[i];
+    }
+    switch (c.kind(e)) {
+    case NodeKind::Number:
+    case NodeKind::Symbol:
+    case NodeKind::RootOf:
+        return e;
+    case NodeKind::Func: {
+        if (c.funcName(e) == "diff" && (c.childCount(e) == 2 || c.childCount(e) == 3)) {
+            const Expr dvar = c.child(e, 1);
+            for (keel::usize i = 0; i < fromList.size(); ++i) {
+                if (fromList[i] == dvar && fromList[i] != toList[i])
+                    return c.func("subs", {e, fromList[i], toList[i]});
+            }
+        }
+        keel::Array<Expr> kids;
+        kids.reserve(c.childCount(e));
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
+            kids.push_back(subsMultiRec(c, c.child(e, i), fromList, toList));
+        return c.func(c.funcName(e), kids);
+    }
+    case NodeKind::Pow:
+        return c.pow(subsMultiRec(c, c.child(e, 0), fromList, toList),
+                     subsMultiRec(c, c.child(e, 1), fromList, toList));
+    case NodeKind::Add:
+    case NodeKind::Mul: {
+        keel::Array<Expr> kids;
+        kids.reserve(c.childCount(e));
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
+            kids.push_back(subsMultiRec(c, c.child(e, i), fromList, toList));
+        return c.kind(e) == NodeKind::Add ? c.add(kids) : c.mul(kids);
+    }
+    }
+    return e;
+}
+
+} // namespace
+
 numkit::Value symSubs(keel::ArrayRef<numkit::Value> args,
                       keel::Allocator *mr)
 {
@@ -1227,22 +1871,43 @@ numkit::Value symSubs(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
     keel::Array<Expr> fromList;
     keel::Array<Expr> toList;
+    const Value *broadcastTarget = nullptr;
     if (args.size() == 2) {
         fromList.push_back(defaultSymVar(c, args[0]));
-        toList.push_back(toSymExpr(args[1], c, "subs"));
+        toList = toSymVector(args[1], c, "subs");
+        if (toList.size() > 1)
+            broadcastTarget = &args[1];
     } else {
         fromList = toSymVector(args[1], c, "subs");
         toList = toSymVector(args[2], c, "subs");
-        if (fromList.size() != toList.size()) {
+        if (fromList.size() == 1 && toList.size() > 1) {
+            broadcastTarget = &args[2];
+        } else if (fromList.size() != toList.size()) {
             casFail("nk:subs:lengthMismatch",
                     "subs: old and new substitution lists must have the same number of elements");
         }
     }
+    if (broadcastTarget != nullptr) {
+        SymMatrix S = toSymMatrix(args[0], c, "subs");
+        if (S.rows() == 1 && S.cols() == 1) {
+            SymMatrix T = toSymMatrix(*broadcastTarget, c, "subs");
+            SymMatrix out(T.rows(), T.cols());
+            for (keel::usize r = 0; r < T.rows(); ++r) {
+                for (keel::usize col = 0; col < T.cols(); ++col)
+                    out(r, col) = c.subs(S(0, 0), fromList[0], T(r, col));
+            }
+            return fromSymMatrix(ctxPtr, out, resolveMr(mr));
+        }
+        casFail("nk:subs:lengthMismatch",
+                "subs: old and new substitution lists must have the same number of elements");
+    }
+    if (fromList.size() == 1) {
+        return mapSymUnary(args[0], c, [&](Expr e) {
+            return c.subs(e, fromList[0], toList[0]);
+        }, mr, "subs");
+    }
     return mapSymUnary(args[0], c, [&](Expr e) {
-        Expr cur = e;
-        for (keel::usize i = 0; i < fromList.size(); ++i)
-            cur = c.subs(cur, fromList[i], toList[i]);
-        return cur;
+        return subsMultiRec(c, e, fromList.as_ref(), toList.as_ref());
     }, mr, "subs");
 }
 
@@ -1330,25 +1995,41 @@ numkit::Value symDiff(keel::ArrayRef<numkit::Value> args,
     symDiff_argcheck(args);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    Expr var = defaultSymVar(c, args[0]);
+    Expr var;
+    bool varSpecified = false;
     keel::i32 order = 1;
     if (args.size() == 2) {
         if (args[1].isNumeric() && args[1].isScalar()) {
             order = keel::as<keel::i32>(args[1].toScalar());
         } else {
             var = toSymExpr(args[1], c, "diff");
+            varSpecified = true;
         }
     } else if (args.size() == 3) {
         if (args[1].isNumeric() && args[1].isScalar()) {
             order = keel::as<keel::i32>(args[1].toScalar());
             var = toSymExpr(args[2], c, "diff");
+            varSpecified = true;
         } else {
             var = toSymExpr(args[1], c, "diff");
+            varSpecified = true;
             if (!args[2].isNumeric() || !args[2].isScalar()) {
                 casFail("nk:diff:invalidOrder", "diff: differentiation order must be a non-negative integer");
             }
             order = keel::as<keel::i32>(args[2].toScalar());
         }
+    }
+    if (!varSpecified) {
+        if (isSymfunValue(args[0])) {
+            const ObjectState *st = args[0].objectStateConst();
+            if (st && st->native) {
+                auto *sp = static_cast<const SymPayload *>(st->native.get());
+                if (!sp->funParams.empty())
+                    var = sp->funParams[0];
+            }
+        }
+        if (var.isNull())
+            var = defaultSymVar(c, args[0]);
     }
     if (order < 0) {
         casFail("nk:diff:negativeOrder", "diff: differentiation order must be >= 0");
@@ -1356,10 +2037,153 @@ numkit::Value symDiff(keel::ArrayRef<numkit::Value> args,
     if (c.kind(var) != NodeKind::Symbol) {
         casFail("nk:diff:invalidVar", "diff: differentiation variable must be a symbol");
     }
+    auto diffStep = [&](Expr e) -> Expr {
+        auto hasKnownBuiltinFunc = [](keel::StringRef name) -> bool {
+            return name == "__eq" || name == "__ne" || name == "__lt" || name == "__le" ||
+                   name == "__gt" || name == "__ge" || name == "diff" ||
+                   name == "sin" || name == "cos" || name == "tan" || name == "sec" || name == "csc" || name == "cot" ||
+                   name == "asin" || name == "acos" || name == "atan" || name == "acsc" || name == "asec" || name == "acot" ||
+                   name == "sinh" || name == "cosh" || name == "tanh" || name == "sech" || name == "csch" || name == "coth" ||
+                   name == "asinh" || name == "acosh" || name == "atanh" || name == "acsch" || name == "asech" || name == "acoth" ||
+                   name == "exp" || name == "log" || name == "sqrt" || name == "abs" || name == "sign" ||
+                   name == "erf" || name == "erfc" || name == "erfi" || name == "gamma" || name == "lgamma" ||
+                   name == "heaviside" || name == "dirac" || name == "zeta" || name == "Ei" ||
+                   name == "besselJ" || name == "besselY" || name == "besselI" || name == "besselK" ||
+                   name == "airyAi" || name == "airyBi" || name == "legendreP" || name == "legendreQ" ||
+                   name == "chebyshevT" || name == "chebyshevU" || name == "hermiteH" || name == "laguerreL" ||
+                   name == "Si" || name == "Ci" || name == "Shi" || name == "Chi" || name == "Li" || name == "li" ||
+                   name == "fresnelS" || name == "fresnelC" || name == "polylog" || name == "hypergeom2F1" ||
+                   name == "lambertw" || name == "dF" || name == "dF2" || name == "ddF" || name == "ddF2";
+        };
+        struct AbstractDiffer {
+            Ctx &ctx;
+            Expr v;
+            decltype(hasKnownBuiltinFunc) &isKnown;
+            bool containsAbstract(Expr ex) const
+            {
+                if (ex.isNull())
+                    return false;
+                if (ctx.kind(ex) == NodeKind::Func && !isKnown(ctx.funcName(ex)))
+                    return true;
+                for (keel::usize i = 0; i < ctx.childCount(ex); ++i) {
+                    if (containsAbstract(ctx.child(ex, i)))
+                        return true;
+                }
+                return false;
+            }
+            Expr run(Expr ex) const
+            {
+                if (!containsAbstract(ex))
+                    return ctx.diff(ex, v);
+                switch (ctx.kind(ex)) {
+                case NodeKind::Number:
+                case NodeKind::RootOf:
+                    return ctx.zero();
+                case NodeKind::Symbol:
+                    return (ex == v) ? ctx.one() : ctx.zero();
+                case NodeKind::Add: {
+                    keel::Array<Expr> parts;
+                    parts.reserve(ctx.childCount(ex));
+                    for (keel::usize i = 0; i < ctx.childCount(ex); ++i) {
+                        Expr di = run(ctx.child(ex, i));
+                        if (di.isNull()) return Expr();
+                        parts.push_back(di);
+                    }
+                    return ctx.add(parts);
+                }
+                case NodeKind::Mul: {
+                    const keel::usize n = ctx.childCount(ex);
+                    keel::Array<Expr> sumTerms;
+                    sumTerms.reserve(n);
+                    for (keel::usize i = 0; i < n; ++i) {
+                        Expr di = run(ctx.child(ex, i));
+                        if (di.isNull()) return Expr();
+                        if (ctx.isZero(di)) continue;
+                        keel::Array<Expr> prod;
+                        prod.reserve(n);
+                        for (keel::usize j = 0; j < n; ++j)
+                            prod.push_back(i == j ? di : ctx.child(ex, j));
+                        sumTerms.push_back(ctx.mul(prod));
+                    }
+                    return sumTerms.empty() ? ctx.zero() : ctx.add(sumTerms);
+                }
+                case NodeKind::Pow: {
+                    const Expr base = ctx.child(ex, 0);
+                    const Expr exp = ctx.child(ex, 1);
+                    const Expr db = run(base);
+                    const Expr de = run(exp);
+                    if (db.isNull() || de.isNull()) return Expr();
+                    if (ctx.isZero(de)) {
+                        if (ctx.isZero(db)) return ctx.zero();
+                        return ctx.mul({exp, ctx.pow(base, ctx.add({exp, ctx.neg(ctx.one())})), db});
+                    }
+                    return ctx.mul({ex, ctx.add({ctx.mul({de, ctx.func("log", base)}),
+                                                 ctx.div(ctx.mul({exp, db}), base)})});
+                }
+                case NodeKind::Func: {
+                    const keel::String &fn = ctx.funcName(ex);
+                    if (ctx.childCount(ex) == 2 &&
+                        (fn == "__eq" || fn == "__ne" || fn == "__lt" ||
+                         fn == "__le" || fn == "__gt" || fn == "__ge")) {
+                        Expr dl = run(ctx.child(ex, 0));
+                        Expr dr = run(ctx.child(ex, 1));
+                        if (dl.isNull() || dr.isNull()) return Expr();
+                        return ctx.func(fn, dl, dr);
+                    }
+                    if (fn == "diff" && ctx.childCount(ex) == 2) {
+                        if (ctx.child(ex, 1) == v)
+                            return ctx.func("diff", {ctx.child(ex, 0), v, ctx.number(keel::i64{2})});
+                        Expr df = run(ctx.child(ex, 0));
+                        return ctx.isZero(df) ? ctx.zero() : ctx.func("diff", {ex, v});
+                    }
+                    if (fn == "diff" && ctx.childCount(ex) == 3) {
+                        if (ctx.child(ex, 1) == v)
+                            return ctx.func("diff", {ctx.child(ex, 0), v, ctx.add({ctx.child(ex, 2), ctx.one()})});
+                        Expr df = run(ctx.child(ex, 0));
+                        return ctx.isZero(df) ? ctx.zero() : ctx.func("diff", {ex, v});
+                    }
+                    if (ctx.childCount(ex) == 1) {
+                        const Expr u = ctx.child(ex, 0);
+                        const Expr du = run(u);
+                        if (du.isNull()) return Expr();
+                        if (ctx.isZero(du)) return ctx.zero();
+                        if (!isKnown(fn)) {
+                            return (u == v) ? ctx.func("diff", ex, v)
+                                            : ctx.mul({ctx.func("diff", ex, u), du});
+                        }
+                        // Known unary function applied to abstract inner expression: chain rule
+                        const Expr dummy = ctx.symbol("__nk_diff_u__");
+                        const Expr outerD = ctx.diff(ctx.func(fn, dummy), dummy);
+                        if (outerD.isNull()) return Expr();
+                        return ctx.mul({ctx.subs(outerD, dummy, u), du});
+                    }
+                    return Expr();
+                }
+                }
+                return Expr();
+            }
+        };
+        AbstractDiffer differ{c, var, hasKnownBuiltinFunc};
+        return differ.run(e);
+    };
+    if (isSymfunValue(args[0])) {
+        const ObjectState *st = args[0].objectStateConst();
+        if (st && st->native) {
+            auto *sp = static_cast<const SymPayload *>(st->native.get());
+            Expr cur = sp->expr;
+            for (keel::i32 k = 0; k < order; ++k) {
+                cur = diffStep(cur);
+                if (cur.isNull()) {
+                    casFail("nk:diff:unsupported", "diff: cannot differentiate expression");
+                }
+            }
+            return fromSymfunExpr(ctxPtr, cur, sp->funParams.as_ref(), mr);
+        }
+    }
     return mapSymUnary(args[0], c, [&](Expr e) {
         Expr cur = e;
         for (keel::i32 k = 0; k < order; ++k) {
-            cur = c.diff(cur, var);
+            cur = diffStep(cur);
             if (cur.isNull()) {
                 casFail("nk:diff:unsupported", "diff: cannot differentiate expression");
             }
@@ -1726,10 +2550,61 @@ void symSolve(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
-    keel::Array<Expr> eqs = toSymVector(args[0], c, "solve");
-    keel::Array<Expr> vars;
+
+    auto isPureVarArg = [&](const Value &v) -> bool {
+        if (isSymValue(v)) {
+            const keel::usize n = v.objectCount();
+            if (n == 0)
+                return false;
+            for (keel::usize i = 0; i < n; ++i) {
+                const ObjectState *st = v.objectStateAt(i);
+                if (!st || !st->native)
+                    return false;
+                const Expr e = static_cast<const SymPayload *>(st->native.get())->expr;
+                if (c.kind(e) != NodeKind::Symbol || isReservedConstantSymbol(c.symbolName(e)))
+                    return false;
+            }
+            return true;
+        }
+        if (v.isChar() || v.isString()) {
+            keel::String s = trimStr(v.toString());
+            if (s.empty())
+                return false;
+            if (!keel::is_ascii_alpha(s[0]) && s[0] != '_')
+                return false;
+            for (keel::usize i = 1; i < s.size(); ++i)
+                if (!keel::is_ascii_alnum(s[i]) && s[i] != '_')
+                    return false;
+            return !isReservedConstantSymbol(s);
+        }
+        return false;
+    };
+
+    // Split variadic arguments into leading equation arguments and trailing variable arguments:
+    //   solve(eq1, eq2, [x y])  |  solve(eq1, eq2, x, y)  |  solve([eq1, eq2], [x y])  |  solve(eq)
+    keel::usize varStart = args.size();
     if (args.size() >= 2) {
-        vars = toSymVector(args[1], c, "solve");
+        while (varStart > 1 && isPureVarArg(args[varStart - 1]))
+            --varStart;
+    }
+
+    keel::Array<Expr> eqs;
+    for (keel::usize i = 0; i < varStart; ++i) {
+        keel::Array<Expr> part = toSymVector(args[i], c, "solve");
+        for (Expr e : part) {
+            if (c.kind(e) == NodeKind::Func && c.childCount(e) == 2 && c.funcName(e) == "__eq")
+                e = c.add({c.child(e, 0), c.neg(c.child(e, 1))});
+            eqs.push_back(e);
+        }
+    }
+
+    keel::Array<Expr> vars;
+    if (varStart < args.size()) {
+        for (keel::usize i = varStart; i < args.size(); ++i) {
+            keel::Array<Expr> part = toSymVector(args[i], c, "solve");
+            for (const Expr v : part)
+                vars.push_back(v);
+        }
     } else {
         SymbolNameSet symSet;
         for (const auto &eq : eqs)
@@ -1850,7 +2725,7 @@ namespace {
 
 void symDsolve_argcheck(keel::ArrayRef<Value> args)
 {
-    argcheck::checkNargin(args.size(), 1, 8, "dsolve");
+    argcheck::checkNargin(args.size(), 1, 16, "dsolve");
 }
 
 void symPdsolve_argcheck(keel::ArrayRef<Value> args)
@@ -2000,6 +2875,638 @@ void symSurfaceIntegral_argcheck(keel::ArrayRef<Value> args)
     argcheck::checkNargin(args.size(), 9, 9, "surfaceintegral");
 }
 
+bool exprMentionsSymbol(const Ctx &c, Expr e, Expr sym)
+{
+    if (e.isNull())
+        return false;
+    if (e == sym)
+        return true;
+    const keel::usize n = c.childCount(e);
+    for (keel::usize i = 0; i < n; ++i)
+        if (exprMentionsSymbol(c, c.child(e, i), sym))
+            return true;
+    return false;
+}
+
+bool extractLinearInSym(Ctx &c, Expr expr, Expr sym, Expr &coeffOut, Expr &restOut)
+{
+    Expr coeff = c.simplify(c.diff(expr, sym));
+    if (exprMentionsSymbol(c, coeff, sym))
+        return false;
+    Expr rest = c.simplify(c.add({expr, c.neg(c.mul({coeff, sym}))}));
+    if (exprMentionsSymbol(c, rest, sym))
+        return false;
+    coeffOut = coeff;
+    restOut = rest;
+    return true;
+}
+
+bool isSimpleIdentStr(keel::StringRef s)
+{
+    if (s.empty())
+        return false;
+    if (!keel::is_ascii_alpha(s[0]) && s[0] != '_')
+        return false;
+    for (keel::usize i = 1; i < s.size(); ++i)
+        if (!keel::is_ascii_alnum(s[i]) && s[i] != '_')
+            return false;
+    return true;
+}
+
+keel::Array<keel::String> splitTopLevelCommas(keel::StringRef raw)
+{
+    keel::Array<keel::String> out;
+    keel::i32 depth = 0;
+    keel::usize start = 0;
+    for (keel::usize i = 0; i < raw.size(); ++i) {
+        const char ch = raw[i];
+        if (ch == '(' || ch == '[' || ch == '{')
+            ++depth;
+        else if (ch == ')' || ch == ']' || ch == '}')
+            --depth;
+        else if (ch == ',' && depth == 0) {
+            keel::String item = trimStr(raw.substr(start, i - start));
+            if (!item.empty())
+                out.push_back(std::move(item));
+            start = i + 1;
+        }
+    }
+    keel::String tail = trimStr(raw.substr(start));
+    if (!tail.empty())
+        out.push_back(std::move(tail));
+    return out;
+}
+
+bool findTopLevelEq(keel::StringRef s, keel::usize &posOut, keel::usize &lenOut)
+{
+    keel::i32 depth = 0;
+    for (keel::usize i = 0; i < s.size(); ++i) {
+        if (s[i] == '(' || s[i] == '[')
+            ++depth;
+        else if (s[i] == ')' || s[i] == ']')
+            --depth;
+        else if (depth == 0 && s[i] == '=') {
+            if (i > 0 && (s[i - 1] == '<' || s[i - 1] == '>' || s[i - 1] == '~' || s[i - 1] == '!'))
+                continue;
+            posOut = i;
+            lenOut = (i + 1 < s.size() && s[i + 1] == '=') ? 2 : 1;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Parse D<k?><dep> identifier: "Dy" -> (1, "y"), "D2y" -> (2, "y").
+bool parseDerivIdent(keel::StringRef id, keel::i32 &orderOut, keel::String &depOut)
+{
+    if (id.size() < 2 || id[0] != 'D')
+        return false;
+    keel::usize pos = 1;
+    keel::i32 ord = 0;
+    while (pos < id.size() && keel::is_ascii_digit(id[pos])) {
+        ord = ord * 10 + (id[pos] - '0');
+        ++pos;
+    }
+    if (pos >= id.size())
+        return false;
+    keel::StringRef dep = id.substr(pos);
+    if (!isSimpleIdentStr(dep))
+        return false;
+    if (pos == 1)
+        ord = 1;
+    if (ord < 1 || ord > 12)
+        return false;
+    orderOut = ord;
+    depOut = keel::String::from(dep);
+    return true;
+}
+
+struct ParsedDsolveIc {
+    keel::i32 order = 0;
+    Expr x0;
+    Expr val;
+};
+
+bool tryParseIcClause(Ctx &c, keel::StringRef clause, keel::String &depOut, ParsedDsolveIc &icOut)
+{
+    keel::usize eqPos = 0, eqLen = 0;
+    if (!findTopLevelEq(clause, eqPos, eqLen))
+        return false;
+    keel::String lhs = trimStr(clause.substr(0, eqPos));
+    keel::String rhs = trimStr(clause.substr(eqPos + eqLen));
+    if (lhs.empty() || rhs.empty() || lhs.back() != ')')
+        return false;
+    const keel::usize lp = lhs.as_ref().find('(');
+    if (lp == keel::kInvalidIndex || lp == 0)
+        return false;
+    // Ensure '(' matches the final ')' at depth 0
+    keel::i32 depth = 0;
+    for (keel::usize i = lp; i < lhs.size(); ++i) {
+        if (lhs[i] == '(') ++depth;
+        else if (lhs[i] == ')') --depth;
+        if (depth == 0 && i + 1 < lhs.size())
+            return false;
+    }
+    keel::String head = trimStr(lhs.as_ref().substr(0, lp));
+    keel::String argStr = trimStr(lhs.as_ref().substr(lp + 1, lhs.size() - lp - 2));
+    if (!isSimpleIdentStr(head.as_ref()) || argStr.empty())
+        return false;
+    keel::i32 ord = 0;
+    keel::String dep;
+    if (parseDerivIdent(head.as_ref(), ord, dep)) {
+        // Dy(0)=... or D2y(0)=...
+    } else {
+        ord = 0;
+        dep = std::move(head);
+    }
+    icOut.order = ord;
+    icOut.x0 = parseExprFlexible(c, argStr, "dsolve");
+    icOut.val = parseExprFlexible(c, rhs, "dsolve");
+    if (depOut.empty())
+        depOut = std::move(dep);
+    return true;
+}
+
+// Replace occurrences of `<dep>(<indep>)` in a string ODE with `<dep>`.
+keel::String stripDepCallArg(keel::StringRef s, keel::StringRef dep, keel::StringRef indep)
+{
+    keel::String pattern = keel::format("{}({})", dep, indep);
+    keel::String out;
+    keel::usize pos = 0;
+    while (pos < s.size()) {
+        const keel::usize found = s.substr(pos).find(pattern.as_ref());
+        if (found == keel::kInvalidIndex) {
+            out.append(s.substr(pos));
+            break;
+        }
+        const keel::usize absPos = pos + found;
+        const bool prevIdent = (absPos > 0) && (keel::is_ascii_alnum(s[absPos - 1]) || s[absPos - 1] == '_');
+        if (!prevIdent) {
+            out.append(s.substr(pos, found));
+            out.append(dep);
+            pos = absPos + pattern.size();
+        } else {
+            out.append(s.substr(pos, found + 1));
+            pos = absPos + 1;
+        }
+    }
+    return out;
+}
+
+bool solveParsedOdeExpr(keel::Arc<Ctx> ctxPtr, Expr eq, keel::StringRef depName,
+                        Expr xSym, keel::i32 maxOrder,
+                        keel::ArrayRef<ParsedDsolveIc> ics,
+                        keel::Allocator *mr, numkit::Value &outVal)
+{
+    Ctx &c = *ctxPtr;
+    Expr ySym = c.symbol(depName);
+
+    auto derivSym = [&](keel::i32 k) -> Expr {
+        if (k == 0)
+            return ySym;
+        if (k == 1)
+            return c.symbol(keel::format("D{}", depName));
+        return c.symbol(keel::format("D{}{}", k, depName));
+    };
+
+    auto applyBoundaryIcs = [&](Expr generalSol) -> Expr {
+        if (ics.empty())
+            return generalSol;
+        keel::Array<Expr> constVars;
+        for (keel::i32 k = 1; k <= maxOrder; ++k) {
+            Expr ck = c.symbol(keel::format("C{}", k));
+            if (exprMentionsSymbol(c, generalSol, ck))
+                constVars.push_back(ck);
+        }
+        if (constVars.empty() || ics.size() < constVars.size())
+            return generalSol;
+        keel::Array<Expr> icEqs;
+        for (keel::usize i = 0; i < ics.size(); ++i) {
+            Expr d = generalSol;
+            for (keel::i32 k = 0; k < ics[i].order; ++k)
+                d = c.diff(d, xSym);
+            Expr atX0 = c.simplify(c.subs(d, xSym, ics[i].x0));
+            icEqs.push_back(c.add({atX0, c.neg(ics[i].val)}));
+        }
+        auto sol = solveSystem(c, icEqs, constVars);
+        if (sol.empty() || sol[0].size() != constVars.size())
+            return generalSol;
+        Expr res = generalSol;
+        for (keel::usize i = 0; i < constVars.size(); ++i)
+            res = c.subs(res, constVars[i], sol[0][i]);
+        return c.simplify(res);
+    };
+
+    if (maxOrder == 1) {
+        Expr a1, rest;
+        if (!extractLinearInSym(c, eq, derivSym(1), a1, rest) || c.isZero(a1))
+            casFail("nk:dsolve:failed", "dsolve: could not isolate 1st derivative");
+        Expr rhs = c.simplify(c.neg(c.div(rest, a1)));
+        OdeResult res;
+        if (ics.size() == 1 && ics[0].order == 0) {
+            res = dsolve1IVP(c, rhs, xSym, ySym, ics[0].x0, ics[0].val);
+            if (!res.proved()) {
+                OdeResult gen = dsolve1(c, rhs, xSym, ySym);
+                if (gen.proved()) {
+                    outVal = fromSymExpr(ctxPtr, applyBoundaryIcs(gen.y), mr);
+                    return true;
+                }
+            }
+        } else {
+            res = dsolve1(c, rhs, xSym, ySym);
+        }
+        if (!res.proved())
+            casFail("nk:dsolve:failed", keel::format("dsolve: could not solve 1st-order ODE ({})", res.reason));
+        outVal = fromSymExpr(ctxPtr, res.y, mr);
+        return true;
+    }
+
+    if (maxOrder == 2) {
+        Expr a2, r2;
+        if (!extractLinearInSym(c, eq, derivSym(2), a2, r2) || c.isZero(a2))
+            casFail("nk:dsolve:failed", "dsolve: could not isolate 2nd derivative");
+        Expr a1, r1, a0, r0;
+        const bool isLin = extractLinearInSym(c, r2, derivSym(1), a1, r1) &&
+                           extractLinearInSym(c, r1, ySym, a0, r0);
+        if (isLin) {
+            Expr f = c.simplify(c.neg(r0));
+            bool hasSamePointIvp = false;
+            Expr x0, y0, dy0;
+            if (ics.size() == 2) {
+                keel::i32 i0 = -1, i1 = -1;
+                for (keel::i32 k = 0; k < 2; ++k) {
+                    if (ics[k].order == 0) i0 = k;
+                    else if (ics[k].order == 1) i1 = k;
+                }
+                if (i0 >= 0 && i1 >= 0 && c.isZero(c.simplify(c.add({ics[i0].x0, c.neg(ics[i1].x0)})))) {
+                    hasSamePointIvp = true;
+                    x0 = ics[i0].x0;
+                    y0 = ics[i0].val;
+                    dy0 = ics[i1].val;
+                }
+            }
+            OdeResult res;
+            if (hasSamePointIvp) {
+                res = dsolve2LinearIVP(c, a2, a1, a0, f, xSym, x0, y0, dy0);
+                if (!res.proved())
+                    res = dsolve2EulerCauchyIVP(c, a2, a1, a0, f, xSym, x0, y0, dy0);
+                if (!res.proved())
+                    res = dsolve2SpecialIVP(c, a2, a1, a0, f, xSym, x0, y0, dy0);
+                if (!res.proved()) {
+                    keel::Array<Expr> cf = {a2, a1, a0};
+                    keel::Array<Expr> iv = {y0, dy0};
+                    res = dsolveNLinearIVP(c, cf, f, xSym, x0, iv);
+                }
+            } else {
+                res = dsolve2Linear(c, a2, a1, a0, f, xSym);
+                if (!res.proved())
+                    res = dsolve2EulerCauchy(c, a2, a1, a0, f, xSym);
+                if (!res.proved())
+                    res = dsolve2Special(c, a2, a1, a0, f, xSym);
+                if (!res.proved()) {
+                    keel::Array<Expr> cf = {a2, a1, a0};
+                    res = dsolveNLinear(c, cf, f, xSym);
+                }
+                if (res.proved() && !ics.empty())
+                    res.y = applyBoundaryIcs(res.y);
+            }
+            if (!res.proved())
+                casFail("nk:dsolve:failed", keel::format("dsolve: could not solve 2nd-order ODE ({})", res.reason));
+            outVal = fromSymExpr(ctxPtr, res.y, mr);
+            return true;
+        }
+        Expr dySym = derivSym(1);
+        Expr rhs = c.simplify(c.neg(c.div(r2, a2)));
+        OdeResult res;
+        if (ics.size() == 2) {
+            keel::i32 i0 = -1, i1 = -1;
+            for (keel::i32 k = 0; k < 2; ++k) {
+                if (ics[k].order == 0) i0 = k;
+                else if (ics[k].order == 1) i1 = k;
+            }
+            if (i0 >= 0 && i1 >= 0)
+                res = dsolve2NonlinearIVP(c, rhs, xSym, ySym, dySym, ics[i0].x0, ics[i0].val, ics[i1].val);
+        }
+        if (!res.proved())
+            res = dsolve2Nonlinear(c, rhs, xSym, ySym, dySym);
+        if (!res.proved())
+            casFail("nk:dsolve:failed", keel::format("dsolve: could not solve 2nd-order nonlinear ODE ({})", res.reason));
+        outVal = fromSymExpr(ctxPtr, res.y, mr);
+        return true;
+    }
+
+    keel::Array<Expr> cf;
+    cf.reserve(keel::as<keel::usize>(maxOrder + 1));
+    Expr cur = eq;
+    for (keel::i32 k = maxOrder; k >= 0; --k) {
+        Expr ck, rk;
+        if (!extractLinearInSym(c, cur, derivSym(k), ck, rk))
+            casFail("nk:dsolve:failed", "dsolve: higher-order nonlinear ODE not supported");
+        cf.push_back(ck);
+        cur = rk;
+    }
+    Expr f = c.simplify(c.neg(cur));
+    OdeResult res;
+    if (keel::as<keel::i32>(ics.size()) == maxOrder) {
+        keel::Array<Expr> initVals(keel::as<keel::usize>(maxOrder));
+        keel::Array<bool> seen(keel::as<keel::usize>(maxOrder), false);
+        bool sameX0 = true;
+        Expr x0 = ics[0].x0;
+        for (const auto &ic : ics) {
+            if (ic.order < 0 || ic.order >= maxOrder || seen[keel::as<keel::usize>(ic.order)]) {
+                sameX0 = false;
+                break;
+            }
+            if (!c.isZero(c.simplify(c.add({ic.x0, c.neg(x0)})))) {
+                sameX0 = false;
+                break;
+            }
+            seen[keel::as<keel::usize>(ic.order)] = true;
+            initVals[keel::as<keel::usize>(ic.order)] = ic.val;
+        }
+        if (sameX0)
+            res = dsolveNLinearIVP(c, cf, f, xSym, x0, initVals);
+    }
+    if (!res.proved()) {
+        res = dsolveNLinear(c, cf, f, xSym);
+        if (res.proved() && !ics.empty())
+            res.y = applyBoundaryIcs(res.y);
+    }
+    if (!res.proved())
+        casFail("nk:dsolve:failed", keel::format("dsolve: N-th order ODE solve failed ({})", res.reason));
+    outVal = fromSymExpr(ctxPtr, res.y, mr);
+    return true;
+}
+
+bool trySolveStringDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> args,
+                          keel::Allocator *mr, numkit::Value &outVal)
+{
+    if (args.empty() || !(args[0].isChar() || args[0].isString()))
+        return false;
+    bool hasEqArg = false;
+    for (keel::usize i = 0; i < args.size(); ++i) {
+        if (args[i].isChar() || args[i].isString()) {
+            keel::usize p = 0, l = 0;
+            if (findTopLevelEq(args[i].toString(), p, l)) {
+                hasEqArg = true;
+                break;
+            }
+        } else {
+            return false;
+        }
+    }
+    if (!hasEqArg)
+        return false;
+
+    Ctx &c = *ctxPtr;
+    keel::usize nClauseArgs = args.size();
+    keel::String indepName = keel::String::from("t");
+    if (args.size() >= 2) {
+        keel::String last = trimStr(args[args.size() - 1].toString());
+        if (isSimpleIdentStr(last)) {
+            indepName = std::move(last);
+            --nClauseArgs;
+        }
+    }
+
+    keel::Array<keel::String> clauses;
+    for (keel::usize i = 0; i < nClauseArgs; ++i) {
+        auto parts = splitTopLevelCommas(args[i].toString());
+        for (auto &p : parts)
+            clauses.push_back(std::move(p));
+    }
+
+    keel::Array<keel::String> odeClauses;
+    keel::Array<ParsedDsolveIc> ics;
+    keel::String depName;
+    for (const auto &cl : clauses) {
+        ParsedDsolveIc ic;
+        if (tryParseIcClause(c, cl, depName, ic)) {
+            ics.push_back(std::move(ic));
+        } else {
+            odeClauses.push_back(cl.clone());
+        }
+    }
+    if (odeClauses.size() != 1)
+        return false;
+
+    const keel::String &odeRaw = odeClauses[0];
+    keel::i32 maxOrder = 0;
+    for (keel::usize i = 0; i < odeRaw.size();) {
+        if (keel::is_ascii_alpha(odeRaw[i]) || odeRaw[i] == '_') {
+            keel::usize j = i + 1;
+            while (j < odeRaw.size() && (keel::is_ascii_alnum(odeRaw[j]) || odeRaw[j] == '_'))
+                ++j;
+            keel::StringRef id = odeRaw.as_ref().substr(i, j - i);
+            keel::i32 ord = 0;
+            keel::String dep;
+            if (parseDerivIdent(id, ord, dep)) {
+                if (depName.empty() || dep == depName) {
+                    depName = std::move(dep);
+                    if (ord > maxOrder)
+                        maxOrder = ord;
+                }
+            }
+            i = j;
+        } else {
+            ++i;
+        }
+    }
+    if (depName.empty())
+        depName = keel::String::from("y");
+    if (maxOrder < 1)
+        return false;
+
+    keel::String odeNorm = stripDepCallArg(odeRaw, depName, indepName);
+    Expr eq = parseExprFlexible(c, odeNorm, "dsolve");
+    Expr xSym = c.symbol(indepName);
+    return solveParsedOdeExpr(ctxPtr, eq, depName.as_ref(), xSym, maxOrder, ics.as_ref(), mr, outVal);
+}
+
+// Scan an expression tree for `diff(y(t), t [, n])` nodes to find (depName, indepSym, maxOrder).
+void scanSymOdeDiffs(const Ctx &c, Expr e, keel::String &depName, Expr &indepSym, keel::i32 &maxOrder)
+{
+    if (e.isNull())
+        return;
+    if (c.kind(e) == NodeKind::Func && c.funcName(e) == "diff" &&
+        (c.childCount(e) == 2 || c.childCount(e) == 3)) {
+        const Expr target = c.child(e, 0);
+        const Expr var = c.child(e, 1);
+        if (c.kind(target) == NodeKind::Func && c.childCount(target) == 1 &&
+            c.kind(var) == NodeKind::Symbol && c.child(target, 0) == var) {
+            keel::i32 ord = 1;
+            if (c.childCount(e) == 3 && c.kind(c.child(e, 2)) == NodeKind::Number) {
+                keel::i64 k = 1;
+                if (c.numberValue(c.child(e, 2)).fitsInt64(k))
+                    ord = keel::as<keel::i32>(k);
+            }
+            if (depName.empty()) {
+                depName = c.funcName(target).clone();
+                indepSym = var;
+            }
+            if (c.funcName(target) == depName && var == indepSym && ord > maxOrder)
+                maxOrder = ord;
+            return;
+        }
+    }
+    for (keel::usize i = 0; i < c.childCount(e); ++i)
+        scanSymOdeDiffs(c, c.child(e, i), depName, indepSym, maxOrder);
+}
+
+// Replace `y(t)` -> `y`, `diff(y(t), t)` -> `Dy`, `diff(y(t), t, k)` -> `D<k>y`.
+Expr replaceSymOdeFuncs(Ctx &c, Expr e, keel::StringRef depName, Expr indepSym)
+{
+    if (e.isNull())
+        return e;
+    const NodeKind k = c.kind(e);
+    if (k == NodeKind::Func) {
+        const keel::String &fn = c.funcName(e);
+        if (fn == "diff" && (c.childCount(e) == 2 || c.childCount(e) == 3)) {
+            const Expr target = c.child(e, 0);
+            const Expr var = c.child(e, 1);
+            if (c.kind(target) == NodeKind::Func && c.childCount(target) == 1 &&
+                c.funcName(target) == depName && var == indepSym && c.child(target, 0) == indepSym) {
+                keel::i32 ord = 1;
+                if (c.childCount(e) == 3 && c.kind(c.child(e, 2)) == NodeKind::Number) {
+                    keel::i64 kv = 1;
+                    if (c.numberValue(c.child(e, 2)).fitsInt64(kv))
+                        ord = keel::as<keel::i32>(kv);
+                }
+                if (ord == 1)
+                    return c.symbol(keel::format("D{}", depName));
+                return c.symbol(keel::format("D{}{}", ord, depName));
+            }
+        }
+        if (fn == depName && c.childCount(e) == 1 && c.child(e, 0) == indepSym)
+            return c.symbol(depName);
+        keel::Array<Expr> kids;
+        kids.reserve(c.childCount(e));
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
+            kids.push_back(replaceSymOdeFuncs(c, c.child(e, i), depName, indepSym));
+        return c.func(fn, kids);
+    }
+    if (k == NodeKind::Add || k == NodeKind::Mul) {
+        keel::Array<Expr> kids;
+        kids.reserve(c.childCount(e));
+        for (keel::usize i = 0; i < c.childCount(e); ++i)
+            kids.push_back(replaceSymOdeFuncs(c, c.child(e, i), depName, indepSym));
+        return (k == NodeKind::Add) ? c.add(kids) : c.mul(kids);
+    }
+    if (k == NodeKind::Pow) {
+        return c.pow(replaceSymOdeFuncs(c, c.child(e, 0), depName, indepSym),
+                     replaceSymOdeFuncs(c, c.child(e, 1), depName, indepSym));
+    }
+    return e;
+}
+
+bool tryMatchSymIc(const Ctx &c, Expr eq, keel::StringRef depName, Expr indepSym, ParsedDsolveIc &icOut)
+{
+    if (c.kind(eq) != NodeKind::Func || c.funcName(eq) != "__eq" || c.childCount(eq) != 2)
+        return false;
+    auto matchSide = [&](Expr side, Expr other) -> bool {
+        // y(x0) == val
+        if (c.kind(side) == NodeKind::Func && c.funcName(side) == depName &&
+            c.childCount(side) == 1 && c.child(side, 0) != indepSym) {
+            icOut.order = 0;
+            icOut.x0 = c.child(side, 0);
+            icOut.val = other;
+            return true;
+        }
+        // subs(diff(y(t), t [, k]), t, x0) == val (produced by Dy = diff(y, t); Dy(x0) == val)
+        if (c.kind(side) == NodeKind::Func && c.funcName(side) == "subs" &&
+            c.childCount(side) == 3) {
+            const Expr inner = c.child(side, 0);
+            const Expr var = c.child(side, 1);
+            const Expr x0 = c.child(side, 2);
+            if (var == indepSym && x0 != indepSym &&
+                c.kind(inner) == NodeKind::Func && c.funcName(inner) == "diff" &&
+                (c.childCount(inner) == 2 || c.childCount(inner) == 3) &&
+                c.child(inner, 1) == indepSym) {
+                const Expr target = c.child(inner, 0);
+                if (c.kind(target) == NodeKind::Func && c.funcName(target) == depName &&
+                    c.childCount(target) == 1 && c.child(target, 0) == indepSym) {
+                    keel::i32 ord = 1;
+                    if (c.childCount(inner) == 3 && c.kind(c.child(inner, 2)) == NodeKind::Number) {
+                        keel::i64 kv = 1;
+                        if (c.numberValue(c.child(inner, 2)).fitsInt64(kv))
+                            ord = keel::as<keel::i32>(kv);
+                    }
+                    icOut.order = ord;
+                    icOut.x0 = x0;
+                    icOut.val = other;
+                    return true;
+                }
+            }
+        }
+        // diff(y(x0), x0 [, k]) == val (fallback form)
+        if (c.kind(side) == NodeKind::Func && c.funcName(side) == "diff" &&
+            (c.childCount(side) == 2 || c.childCount(side) == 3)) {
+            const Expr target = c.child(side, 0);
+            const Expr x0 = c.child(side, 1);
+            if (c.kind(target) == NodeKind::Func && c.funcName(target) == depName &&
+                c.childCount(target) == 1 && x0 != indepSym) {
+                keel::i32 ord = 1;
+                if (c.childCount(side) == 3 && c.kind(c.child(side, 2)) == NodeKind::Number) {
+                    keel::i64 kv = 1;
+                    if (c.numberValue(c.child(side, 2)).fitsInt64(kv))
+                        ord = keel::as<keel::i32>(kv);
+                }
+                icOut.order = ord;
+                icOut.x0 = x0;
+                icOut.val = other;
+                return true;
+            }
+        }
+        return false;
+    };
+    return matchSide(c.child(eq, 0), c.child(eq, 1)) || matchSide(c.child(eq, 1), c.child(eq, 0));
+}
+
+bool trySolveSymEqDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> args,
+                         keel::Allocator *mr, numkit::Value &outVal)
+{
+    if (args.empty() || !isSymValue(args[0]))
+        return false;
+    Ctx &c = *ctxPtr;
+
+    keel::Array<Expr> items;
+    for (keel::usize i = 0; i < args.size(); ++i) {
+        if (!isSymValue(args[i]))
+            return false;
+        keel::Array<Expr> part = toSymVector(args[i], c, "dsolve");
+        for (const Expr e : part)
+            items.push_back(e);
+    }
+
+    keel::String depName;
+    Expr indepSym;
+    keel::i32 maxOrder = 0;
+    for (const Expr e : items)
+        scanSymOdeDiffs(c, e, depName, indepSym, maxOrder);
+
+    if (maxOrder < 1 || depName.empty() || indepSym.isNull())
+        return false;
+
+    keel::Array<Expr> odeEqs;
+    keel::Array<ParsedDsolveIc> ics;
+    for (const Expr e : items) {
+        ParsedDsolveIc ic;
+        if (tryMatchSymIc(c, e, depName.as_ref(), indepSym, ic)) {
+            ics.push_back(std::move(ic));
+        } else {
+            Expr norm = e;
+            if (c.kind(norm) == NodeKind::Func && c.funcName(norm) == "__eq" && c.childCount(norm) == 2)
+                norm = c.add({c.child(norm, 0), c.neg(c.child(norm, 1))});
+            odeEqs.push_back(replaceSymOdeFuncs(c, norm, depName.as_ref(), indepSym));
+        }
+    }
+    if (odeEqs.size() != 1)
+        return false;
+
+    return solveParsedOdeExpr(ctxPtr, odeEqs[0], depName.as_ref(), indepSym, maxOrder,
+                              ics.as_ref(), mr, outVal);
+}
+
 } // namespace
 
 numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
@@ -2009,6 +3516,20 @@ numkit::Value symDsolve(keel::ArrayRef<numkit::Value> args,
     mr = resolveMr(mr);
     auto ctxPtr = defaultCtx();
     Ctx &c = *ctxPtr;
+
+    // 0a. Classic string-equation API: dsolve('Dy = -5*y', 'y(0)=1', 't')
+    {
+        numkit::Value strRes;
+        if (trySolveStringDsolve(ctxPtr, args, mr, strRes))
+            return strRes;
+    }
+
+    // 0b. Modern symbolic-equation API: dsolve(diff(y, t) == -5*y, y(0) == 1)
+    {
+        numkit::Value symRes;
+        if (trySolveSymEqDsolve(ctxPtr, args, mr, symRes))
+            return symRes;
+    }
 
     // 1. First-order linear ODE system: dsolve(A, x) or dsolve(A, x, x0, y0)
     //    or inhomogeneous dsolve(A, f, x) / dsolve(A, f, x, x0, y0)
@@ -2213,6 +3734,82 @@ numkit::Value symPdsolve(keel::ArrayRef<numkit::Value> args,
     casFail("nk:pdsolve:invalidArgs", "pdsolve: unsupported PDE signature");
 }
 
+namespace {
+
+bool containsAbstractFuncRec(const Ctx &c, Expr e)
+{
+    if (e.isNull())
+        return false;
+    if (c.kind(e) == NodeKind::Func) {
+        const keel::String &fn = c.funcName(e);
+        if (fn == "diff" || fn == "laplace" || fn == "ilaplace")
+            return true;
+        const bool isBuiltin =
+            fn == "__eq" || fn == "__ne" || fn == "__lt" || fn == "__le" || fn == "__gt" || fn == "__ge" ||
+            fn == "exp" || fn == "log" || fn == "sqrt" || fn == "abs" || fn == "sign" ||
+            fn == "sin" || fn == "cos" || fn == "tan" || fn == "asin" || fn == "acos" || fn == "atan" ||
+            fn == "sinh" || fn == "cosh" || fn == "tanh" || fn == "asinh" || fn == "acosh" || fn == "atanh" ||
+            fn == "erf" || fn == "erfc" || fn == "erfi" || fn == "gamma" || fn == "heaviside" ||
+            fn == "dirac" || fn == "zeta" || fn == "Ei";
+        if (!isBuiltin)
+            return true;
+    }
+    for (keel::usize i = 0; i < c.childCount(e); ++i) {
+        if (containsAbstractFuncRec(c, c.child(e, i)))
+            return true;
+    }
+    return false;
+}
+
+bool exprHasSymbolRec(const Ctx &c, Expr e, Expr sym)
+{
+    if (e == sym)
+        return true;
+    for (keel::usize i = 0; i < c.childCount(e); ++i) {
+        if (exprHasSymbolRec(c, c.child(e, i), sym))
+            return true;
+    }
+    return false;
+}
+
+Expr laplaceWithAbstractFallback(Ctx &c, Expr f, Expr t, Expr s)
+{
+    LaplaceResult res = laplace(c, f, t, s);
+    if (res.proved())
+        return res.F;
+    if (c.kind(f) == NodeKind::Func && c.funcName(f) == "__eq" && c.childCount(f) == 2) {
+        return c.func("__eq",
+                      laplaceWithAbstractFallback(c, c.child(f, 0), t, s),
+                      laplaceWithAbstractFallback(c, c.child(f, 1), t, s));
+    }
+    if (c.kind(f) == NodeKind::Add) {
+        keel::Array<Expr> parts;
+        parts.reserve(c.childCount(f));
+        for (keel::usize i = 0; i < c.childCount(f); ++i)
+            parts.push_back(laplaceWithAbstractFallback(c, c.child(f, i), t, s));
+        return c.add(parts);
+    }
+    if (c.kind(f) == NodeKind::Mul) {
+        keel::Array<Expr> freeFactors;
+        keel::Array<Expr> depFactors;
+        for (keel::usize i = 0; i < c.childCount(f); ++i) {
+            const Expr ch = c.child(f, i);
+            if (!exprHasSymbolRec(c, ch, t))
+                freeFactors.push_back(ch);
+            else
+                depFactors.push_back(ch);
+        }
+        if (!freeFactors.empty() && !depFactors.empty()) {
+            const Expr dep = (depFactors.size() == 1) ? depFactors[0] : c.mul(depFactors);
+            freeFactors.push_back(laplaceWithAbstractFallback(c, dep, t, s));
+            return c.mul(freeFactors);
+        }
+    }
+    return c.func("laplace", {f, t, s});
+}
+
+} // namespace
+
 numkit::Value symLaplace(keel::ArrayRef<numkit::Value> args,
                          keel::Allocator *mr)
 {
@@ -2224,9 +3821,11 @@ numkit::Value symLaplace(keel::ArrayRef<numkit::Value> args,
     Expr t = (args.size() >= 2) ? toSymExpr(args[1], c, "laplace") : defaultSymVar(c, args[0], "t");
     Expr s = (args.size() >= 3) ? toSymExpr(args[2], c, "laplace") : c.symbol("s");
     LaplaceResult res = laplace(c, f, t, s);
-    if (!res.proved())
-        casFail("nk:laplace:unevaluated", keel::format("laplace: could not compute Laplace transform ({})", res.reason));
-    return fromSymExpr(ctxPtr, res.F, mr);
+    if (res.proved())
+        return fromSymExpr(ctxPtr, res.F, mr);
+    if (containsAbstractFuncRec(c, f))
+        return fromSymExpr(ctxPtr, laplaceWithAbstractFallback(c, f, t, s), mr);
+    casFail("nk:laplace:unevaluated", keel::format("laplace: could not compute Laplace transform ({})", res.reason));
 }
 
 numkit::Value symIlaplace(keel::ArrayRef<numkit::Value> args,
@@ -2240,9 +3839,11 @@ numkit::Value symIlaplace(keel::ArrayRef<numkit::Value> args,
     Expr s = (args.size() >= 2) ? toSymExpr(args[1], c, "ilaplace") : defaultSymVar(c, args[0], "s");
     Expr t = (args.size() >= 3) ? toSymExpr(args[2], c, "ilaplace") : c.symbol("t");
     LaplaceResult res = ilaplace(c, F, s, t);
-    if (!res.proved())
-        casFail("nk:ilaplace:unevaluated", keel::format("ilaplace: could not compute inverse Laplace transform ({})", res.reason));
-    return fromSymExpr(ctxPtr, res.F, mr);
+    if (res.proved())
+        return fromSymExpr(ctxPtr, res.F, mr);
+    if (containsAbstractFuncRec(c, F))
+        return fromSymExpr(ctxPtr, c.func("ilaplace", {F, s, t}), mr);
+    casFail("nk:ilaplace:unevaluated", keel::format("ilaplace: could not compute inverse Laplace transform ({})", res.reason));
 }
 
 numkit::Value symFourier(keel::ArrayRef<numkit::Value> args,
@@ -3269,47 +4870,24 @@ numkit::BuiltinClass makeSymBuiltinClass()
     cls.ops.put(keel::String::from("transpose"), transposeOp);
     cls.ops.put(keel::String::from("ctranspose"), transposeOp);
 
-    auto eqHelper = [](const Value &lhs, const Value &rhs, bool negate, keel::Allocator *mr) -> Value {
-        mr = resolveMr(mr);
-        auto ctxPtr = defaultCtx();
-        Ctx &c = *ctxPtr;
-        SymMatrix A = toSymMatrix(lhs, c, "eq");
-        SymMatrix B = toSymMatrix(rhs, c, "eq");
-        auto checkPair = [&](Expr a, Expr b) -> bool {
-            bool eq = (a == b) || c.isZero(simplify(c, c.add({a, c.neg(b)})));
-            return negate ? !eq : eq;
+    auto makeRelOp = [](const char *casRelName, const char *opLabel) {
+        return [casRelName, opLabel](Value &, keel::ArrayRef<Value> args, keel::usize,
+                                     keel::MutArrayRef<Value> outs, CallContext &ctx) {
+            keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
+            auto ctxPtr = defaultCtx();
+            Ctx &c = *ctxPtr;
+            outs[0] = mapSymElementwiseBinary(args[0], args[1], c, [&](Expr a, Expr b) {
+                return c.func(casRelName, a, b);
+            }, mr, opLabel);
         };
-        const bool aScalar = (A.rows() == 1 && A.cols() == 1);
-        const bool bScalar = (B.rows() == 1 && B.cols() == 1);
-        if (aScalar && bScalar) {
-            return Value::logicalScalar(checkPair(A(0, 0), B(0, 0)), mr);
-        }
-        keel::usize rows = aScalar ? B.rows() : A.rows();
-        keel::usize cols = aScalar ? B.cols() : A.cols();
-        if (!aScalar && !bScalar && (A.rows() != B.rows() || A.cols() != B.cols())) {
-            casFail("nk:eq:dimMismatch", "eq: matrix dimensions must agree");
-        }
-        Value out = Value::matrix(rows, cols, ValueType::LOGICAL, mr);
-        keel::u8 *dst = out.logicalDataMut();
-        for (keel::usize col = 0; col < cols; ++col) {
-            for (keel::usize r = 0; r < rows; ++r) {
-                Expr ea = aScalar ? A(0, 0) : A(r, col);
-                Expr eb = bScalar ? B(0, 0) : B(r, col);
-                dst[col * rows + r] = checkPair(ea, eb);
-            }
-        }
-        return out;
     };
 
-    cls.ops.put(keel::String::from("eq"), [eqHelper](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
-        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
-        outs[0] = eqHelper(args[0], args[1], /*negate=*/false, mr);
-    });
-
-    cls.ops.put(keel::String::from("ne"), [eqHelper](Value &, keel::ArrayRef<Value> args, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
-        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
-        outs[0] = eqHelper(args[0], args[1], /*negate=*/true, mr);
-    });
+    cls.ops.put(keel::String::from("eq"), makeRelOp("__eq", "eq"));
+    cls.ops.put(keel::String::from("ne"), makeRelOp("__ne", "ne"));
+    cls.ops.put(keel::String::from("lt"), makeRelOp("__lt", "lt"));
+    cls.ops.put(keel::String::from("le"), makeRelOp("__le", "le"));
+    cls.ops.put(keel::String::from("gt"), makeRelOp("__gt", "gt"));
+    cls.ops.put(keel::String::from("ge"), makeRelOp("__ge", "ge"));
 
     // Elementary & special 1-argument functions on sym
     const char *kUnaryElemFns[] = {
@@ -3380,6 +4958,18 @@ numkit::BuiltinClass makeSymBuiltinClass()
     });
     cls.methods.put(keel::String::from("ccode"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symCCode(self, ctx.engine ? ctx.engine->allocator() : nullptr);
+    });
+    cls.methods.put(keel::String::from("pretty"), [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        Value s = symPretty(self, ctx.engine ? ctx.engine->allocator() : nullptr);
+        if (nargout == 0 && ctx.engine) {
+            if (const ExternalFunc *dispFn = ctx.engine->findExternal("disp", ctx.env)) {
+                Value dargs[1] = {s};
+                Value douts[1];
+                (*dispFn)(keel::ArrayRef<Value>(dargs, 1), 0, keel::MutArrayRef<Value>(douts, 1), ctx);
+            }
+        } else {
+            outs[0] = std::move(s);
+        }
     });
     cls.methods.put(keel::String::from("simplify"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symSimplify(self, ctx.engine ? ctx.engine->allocator() : nullptr);
@@ -3568,13 +5158,96 @@ numkit::BuiltinClass makeSymBuiltinClass()
         outs[0] = symPotential(self, rest[0], ctx.engine ? ctx.engine->allocator() : nullptr);
     });
     cls.methods.put(keel::String::from("assume"), [](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
-        argcheck::checkNargin(rest.size() + 1, 2, 2, "assume");
-        outs[0] = symAssume(self, rest[0].toString(), ctx.engine ? ctx.engine->allocator() : nullptr);
+        argcheck::checkNargin(rest.size() + 1, 1, 2, "assume");
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
+        if (rest.empty()) {
+            outs[0] = symAssumeCond(self, mr);
+            return;
+        }
+        outs[0] = symAssume(self, rest[0].toString(), mr);
+    });
+    cls.methods.put(keel::String::from("eval"), [](Value &self, keel::ArrayRef<Value>, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
+        keel::String src = symEvalSource(self);
+        if (ctx.engine) {
+            if (const ExternalFunc *evalFn = ctx.engine->findExternal("eval", ctx.env)) {
+                Value eargs[1] = {Value::fromString(src.as_ref(), mr)};
+                (*evalFn)(keel::ArrayRef<Value>(eargs, 1), nargout == 0 ? 1 : nargout, outs, ctx);
+                return;
+            }
+        }
+        outs[0] = symDouble(self, mr);
     });
     cls.methods.put(keel::String::from("assumptions"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
         outs[0] = symAssumptions(self, ctx.engine ? ctx.engine->allocator() : nullptr);
     });
+    cls.methods.put(keel::String::from("lhs"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symLhs(self, ctx.engine ? ctx.engine->allocator() : nullptr);
+    });
+    cls.methods.put(keel::String::from("rhs"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symRhs(self, ctx.engine ? ctx.engine->allocator() : nullptr);
+    });
+    cls.methods.put(keel::String::from("isAlways"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symIsAlways(self, ctx.engine ? ctx.engine->allocator() : nullptr);
+    });
+    cls.methods.put(keel::String::from("logical"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symIsAlways(self, ctx.engine ? ctx.engine->allocator() : nullptr);
+    });
+    cls.methods.put(keel::String::from("formula"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symFormula(self, ctx.engine ? ctx.engine->allocator() : nullptr);
+    });
+    cls.methods.put(keel::String::from("argnames"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        outs[0] = symArgnames(self, ctx.engine ? ctx.engine->allocator() : nullptr);
+    });
+    cls.methods.put(keel::String::from("matlabFunction"), [prependSelf](Value &self, keel::ArrayRef<Value> rest, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        auto all = prependSelf(self, rest);
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
+        keel::String src = symMatlabFunctionSource(all, mr);
+        if (ctx.engine) {
+            if (const ExternalFunc *s2f = ctx.engine->findExternal("str2func", ctx.env)) {
+                Value sargs[1] = {Value::fromString(src, mr)};
+                (*s2f)(keel::ArrayRef<Value>(sargs, 1), 1, outs, ctx);
+                return;
+            }
+        }
+        outs[0] = Value::fromString(src, mr);
+    });
 
+    return cls;
+}
+
+numkit::BuiltinClass makeSymfunBuiltinClass()
+{
+    BuiltinClass cls = makeSymBuiltinClass();
+    cls.name = keel::String::from("symfun");
+    cls.superclasses.push_back(keel::String::from("sym"));
+    cls.construct = [](keel::ArrayRef<Value> args, CallContext &ctx) -> Value {
+        keel::Allocator *mr = ctx.engine ? ctx.engine->allocator() : nullptr;
+        return symfunCreate(args, mr);
+    };
+    cls.subsref = [](Value &self, keel::ArrayRef<Value> idxArgs, keel::usize,
+                     keel::MutArrayRef<Value> outs, CallContext &ctx) {
+        keel::Allocator *mr = resolveMr(ctx.engine ? ctx.engine->allocator() : nullptr);
+        auto ctxPtr = defaultCtx();
+        Ctx &c = *ctxPtr;
+        const ObjectState *st = self.objectStateConst();
+        if (!st || !st->native) {
+            outs[0] = fromSymExpr(ctxPtr, c.zero(), mr);
+            return;
+        }
+        const auto *sp = static_cast<const SymPayload *>(st->native.get());
+        if (idxArgs.size() != sp->funParams.size()) {
+            casFail("nk:symfun:arity",
+                    keel::format("symfun: expected {} input argument(s), got {}",
+                                 sp->funParams.size(), idxArgs.size()));
+        }
+        Expr res = sp->expr;
+        for (keel::usize i = 0; i < idxArgs.size(); ++i) {
+            Expr val = toSymExpr(idxArgs[i], c, "symfun");
+            res = c.subs(res, sp->funParams[i], val);
+        }
+        outs[0] = fromSymExpr(ctxPtr, c.simplify(res), mr);
+    };
     return cls;
 }
 

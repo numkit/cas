@@ -546,6 +546,26 @@ void Ctx::printPrec(Expr e, keel::String &out, keel::i32 parentPrec) const
         break;
     }
     case NodeKind::Func: {
+        if (n.childCount == 2) {
+            const keel::StringRef fn = funcNames_[n.aux].as_ref();
+            keel::StringRef relOp;
+            if (fn == "__eq") relOp = " == ";
+            else if (fn == "__ne") relOp = " ~= ";
+            else if (fn == "__lt") relOp = " < ";
+            else if (fn == "__le") relOp = " <= ";
+            else if (fn == "__gt") relOp = " > ";
+            else if (fn == "__ge") relOp = " >= ";
+            if (!relOp.empty()) {
+                if (parentPrec > 0)
+                    out.push_back('(');
+                printPrec(child(e, 0), out, 10);
+                out.append(relOp);
+                printPrec(child(e, 1), out, 10);
+                if (parentPrec > 0)
+                    out.push_back(')');
+                break;
+            }
+        }
         if (prec < parentPrec)
             out.push_back('(');
         out.append(funcNames_[n.aux]);
@@ -2963,6 +2983,10 @@ bool evalDoubleRec(
             res = std::sqrt(a);
         } else if (fn == "abs") {
             res = keel::abs(a);
+        } else if (fn == "heaviside") {
+            res = (a > 0.0) ? 1.0 : ((a < 0.0) ? 0.0 : 0.5);
+        } else if (fn == "sign") {
+            res = (a > 0.0) ? 1.0 : ((a < 0.0) ? -1.0 : 0.0);
         } else if (fn == "sin") {
             res = std::sin(a);
         } else if (fn == "cos") {
@@ -3515,6 +3539,14 @@ Expr Ctx::subs(Expr e, Expr from, Expr to)
     case NodeKind::RootOf:
         return e; // atoms: no children to descend into
     case NodeKind::Func: {
+        // Evaluating an abstract symbolic derivative at a point (e.g.
+        // subs(diff(y(t), t), t, 0) or Dy(0)): preserve as unevaluated
+        // subs(diff(y(t), t), t, 0) so differentiation variable isn't
+        // replaced by a constant and y(0) substitutions don't corrupt it.
+        if (funcName(e) == "diff" && (childCount(e) == 2 || childCount(e) == 3) &&
+            child(e, 1) == from && from != to) {
+            return func("subs", {e, from, to});
+        }
         keel::Array<Expr> kids;
         kids.reserve(childCount(e));
         for (keel::usize i = 0; i < childCount(e); ++i)

@@ -24,6 +24,57 @@ void sym_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArray
     outs[0] = symCreate(args, mrOf(ctx));
 }
 
+void symfun_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 2, 64, "symfun");
+    outs[0] = symfunCreate(args, mrOf(ctx));
+}
+
+void formula_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 1, 1, "formula");
+    outs[0] = symFormula(args[0], mrOf(ctx));
+}
+
+void argnames_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 1, 1, "argnames");
+    outs[0] = symArgnames(args[0], mrOf(ctx));
+}
+
+void lhs_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 1, 1, "lhs");
+    outs[0] = symLhs(args[0], mrOf(ctx));
+}
+
+void rhs_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 1, 1, "rhs");
+    outs[0] = symRhs(args[0], mrOf(ctx));
+}
+
+void isAlways_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 1, 1, "isAlways");
+    outs[0] = symIsAlways(args[0], mrOf(ctx));
+}
+
+void matlabFunction_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 1, 16, "matlabFunction");
+    keel::Allocator *mr = mrOf(ctx);
+    keel::String src = symMatlabFunctionSource(args, mr);
+    if (ctx.engine) {
+        if (const ExternalFunc *s2f = ctx.engine->findExternal("str2func", ctx.env)) {
+            Value sargs[1] = {Value::fromString(src, mr)};
+            (*s2f)(keel::ArrayRef<Value>(sargs, 1), 1, outs, ctx);
+            return;
+        }
+    }
+    outs[0] = Value::fromString(src, mr);
+}
+
 void syms_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 64, "syms");
@@ -42,7 +93,11 @@ void syms_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArra
 
 void assume_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
-    argcheck::checkNargin(args.size(), 2, 2, "assume");
+    argcheck::checkNargin(args.size(), 1, 2, "assume");
+    if (args.size() == 1) {
+        outs[0] = symAssumeCond(args[0], mrOf(ctx));
+        return;
+    }
     if (!(args[1].isChar() || args[1].isString())) {
         argcheck::detail::fail("assume: input 2 (domain) must be a string or character vector.", "assume", "numkit:assume:invalidDomain");
     }
@@ -183,7 +238,7 @@ void eulermaclaurin_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, kee
 
 void solve_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
-    argcheck::checkNargin(args.size(), 1, 2, "solve");
+    argcheck::checkNargin(args.size(), 1, 64, "solve");
     symSolve(args, nargout, outs, mrOf(ctx));
 }
 
@@ -201,7 +256,7 @@ void polyreduce_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::M
 
 void dsolve_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
-    argcheck::checkNargin(args.size(), 1, 8, "dsolve");
+    argcheck::checkNargin(args.size(), 1, 16, "dsolve");
     outs[0] = symDsolve(args, mrOf(ctx));
 }
 
@@ -263,6 +318,21 @@ void ccode_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArr
 {
     argcheck::checkNargin(args.size(), 1, 1, "ccode");
     outs[0] = symCCode(args[0], mrOf(ctx));
+}
+
+void pretty_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 1, 1, "pretty");
+    Value s = symPretty(args[0], mrOf(ctx));
+    if (nargout == 0 && ctx.engine) {
+        if (const ExternalFunc *dispFn = ctx.engine->findExternal("disp", ctx.env)) {
+            Value dargs[1] = {s};
+            Value douts[1];
+            (*dispFn)(keel::ArrayRef<Value>(dargs, 1), 0, keel::MutArrayRef<Value>(douts, 1), ctx);
+        }
+    } else {
+        outs[0] = std::move(s);
+    }
 }
 
 void charpoly_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
@@ -482,9 +552,17 @@ namespace numkit {
 void CasLibrary::install(PluginContext &engine)
 {
     engine.registerClass(cas::makeSymBuiltinClass());
+    engine.registerClass(cas::makeSymfunBuiltinClass());
 
     engine.registerFunction("cas", "sym", &cas::detail::sym_reg);
+    engine.registerFunction("cas", "symfun", &cas::detail::symfun_reg);
     engine.registerFunction("cas", "syms", &cas::detail::syms_reg);
+    engine.registerFunction("cas", "formula", &cas::detail::formula_reg);
+    engine.registerFunction("cas", "argnames", &cas::detail::argnames_reg);
+    engine.registerFunction("cas", "lhs", &cas::detail::lhs_reg);
+    engine.registerFunction("cas", "rhs", &cas::detail::rhs_reg);
+    engine.registerFunction("cas", "isAlways", &cas::detail::isAlways_reg);
+    engine.registerFunction("cas", "matlabFunction", &cas::detail::matlabFunction_reg);
     engine.registerFunction("cas", "assume", &cas::detail::assume_reg);
     engine.registerFunction("cas", "assumptions", &cas::detail::assumptions_reg);
     engine.registerFunction("cas", "vpa", &cas::detail::vpa_reg);
@@ -523,6 +601,7 @@ void CasLibrary::install(PluginContext &engine)
     engine.registerFunction("cas", "rsolve", &cas::detail::rsolve_reg);
     engine.registerFunction("cas", "latex", &cas::detail::latex_reg);
     engine.registerFunction("cas", "ccode", &cas::detail::ccode_reg);
+    engine.registerFunction("cas", "pretty", &cas::detail::pretty_reg);
     engine.registerFunction("cas", "charpoly", &cas::detail::charpoly_reg);
     engine.registerFunction("cas", "adjugate", &cas::detail::adjugate_reg);
     engine.registerFunction("cas", "jordan", &cas::detail::jordan_reg);

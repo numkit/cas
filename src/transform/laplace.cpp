@@ -400,6 +400,64 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
         return out;
     }
 
+    // 0a. Relational equation: L{LHS == RHS} = L{LHS} == L{RHS}.
+    if (c.kind(f) == NodeKind::Func && c.funcName(f) == "__eq" &&
+        c.childCount(f) == 2) {
+        LaplaceResult lhsR = laplaceRec(c, c.child(f, 0), t, s, budget, depth + 1);
+        if (!lhsR.proved())
+            return lhsR;
+        LaplaceResult rhsR = laplaceRec(c, c.child(f, 1), t, s, budget, depth + 1);
+        if (!rhsR.proved())
+            return rhsR;
+        out.status = LaplaceResult::Status::ProvedSymbolic;
+        out.F = c.func("__eq", lhsR.F, rhsR.F);
+        return out;
+    }
+
+    // 0b. Symbolic derivative of an abstract function:
+    //     L{diff(y(t), t, k)}(s) = s^k * L{y(t)}(s) - sum_{j=0}^{k-1} s^(k-1-j) * D^j y(0).
+    if (c.kind(f) == NodeKind::Func && c.funcName(f) == "diff" &&
+        (c.childCount(f) == 2 || c.childCount(f) == 3) &&
+        c.child(f, 1) == t) {
+        keel::i64 order = 1;
+        bool validOrder = true;
+        if (c.childCount(f) == 3) {
+            const Expr ordExpr = c.child(f, 2);
+            if (c.kind(ordExpr) == NodeKind::Number &&
+                c.numberValue(ordExpr).den() == BigInt(1) &&
+                c.numberValue(ordExpr).num().fitsInt64(order) &&
+                order >= 1 && order <= 6) {
+                validOrder = true;
+            } else {
+                validOrder = false;
+            }
+        }
+        if (validOrder) {
+            const Expr yExpr = c.child(f, 0);
+            LaplaceResult ly = laplaceRec(c, yExpr, t, s, budget, depth + 1);
+            if (ly.proved()) {
+                keel::Array<Expr> terms;
+                terms.push_back(c.mul({c.pow(s, c.number(order)), ly.F}));
+                for (keel::i64 j = 0; j < order; ++j) {
+                    Expr icVal;
+                    if (j == 0) {
+                        icVal = c.subs(yExpr, t, c.zero());
+                    } else if (j == 1) {
+                        icVal = c.subs(c.func("diff", yExpr, t), t, c.zero());
+                    } else {
+                        icVal = c.subs(c.func("diff", {yExpr, t, c.number(j)}), t, c.zero());
+                    }
+                    const keel::i64 sPow = order - 1 - j;
+                    const Expr sFactor = (sPow == 0) ? c.one() : c.pow(s, c.number(sPow));
+                    terms.push_back(c.neg(c.mul({sFactor, icVal})));
+                }
+                out.status = LaplaceResult::Status::ProvedSymbolic;
+                out.F = c.add(terms);
+                return out;
+            }
+        }
+    }
+
     // 1. Constant (free of t): L{C}(s) = C / s.
     if (!mentionsSymbol(c, f, t)) {
         out.status = LaplaceResult::Status::ProvedSymbolic;
@@ -523,14 +581,108 @@ LaplaceResult laplaceRec(Ctx &c, Expr f, Expr t, Expr s, Budget *budget,
                 out.F = c.div(num, den);
                 return out;
             }
+            if (fn == "heaviside" || fn == "dirac") {
+                // w*t + phi = w*(t - a), a = -phi / w.
+                bool wPos = (w == c.one());
+                if (!wPos && c.kind(w) == NodeKind::Number &&
+                    c.numberValue(w).signum() > 0) {
+                    wPos = true;
+                }
+                if (wPos) {
+                    const Expr a = c.simplify(c.neg(c.div(phi, w)));
+                    bool aNeg = (c.kind(a) == NodeKind::Number &&
+                                 c.numberValue(a).signum() < 0);
+                    if (fn == "heaviside") {
+                        out.status = LaplaceResult::Status::ProvedSymbolic;
+                        if (aNeg || c.isZero(a)) {
+                            out.F = c.div(c.one(), s);
+                        } else {
+                            out.F = c.div(c.func("exp", c.neg(c.mul({a, s}))), s);
+                        }
+                        return out;
+                    }
+                    // dirac(w*(t - a)) = (1/w)*dirac(t - a)
+                    if (!aNeg) {
+                        out.status = LaplaceResult::Status::ProvedSymbolic;
+                        const Expr expPart = c.isZero(a)
+                                                 ? c.one()
+                                                 : c.func("exp", c.neg(c.mul({a, s})));
+                        out.F = c.div(expPart, w);
+                        return out;
+                    }
+                }
+            }
+        }
+        // Abstract symbolic function (e.g. y(t) from syms y(t)): return unevaluated laplace(y(t), t, s).
+        if (c.childCount(f) == 1 && c.child(f, 0) == t) {
+            const keel::String &fn = c.funcName(f);
+            const bool isKnownBuiltin =
+                fn == "exp" || fn == "log" || fn == "sqrt" || fn == "abs" || fn == "sign" ||
+                fn == "sin" || fn == "cos" || fn == "tan" || fn == "asin" || fn == "acos" || fn == "atan" ||
+                fn == "sinh" || fn == "cosh" || fn == "tanh" || fn == "asinh" || fn == "acosh" || fn == "atanh" ||
+                fn == "erf" || fn == "erfc" || fn == "erfi" || fn == "gamma" || fn == "heaviside" ||
+                fn == "dirac" || fn == "zeta" || fn == "Ei" || fn == "laplace" || fn == "ilaplace";
+            if (!isKnownBuiltin) {
+                out.status = LaplaceResult::Status::ProvedSymbolic;
+                out.F = c.func("laplace", {f, t, s});
+                return out;
+            }
         }
     }
 
     // 6. Product rules in Mul:
+    //    - Second shifting theorem: L{heaviside(t - a) * g(t)}(s) = exp(-a*s) * L{g(t + a)}(s)
+    //    - Dirac sifting: L{dirac(t - a) * g(t)}(s) = g(a) * exp(-a*s)
     //    - Factor out t-free constants: L{C * g(t)} = C * L{g(t)}(s)
     //    - First shifting theorem: L{exp(phi + a*t) * g(t)}(s) = exp(phi) * G(s - a)
     //    - Frequency differentiation: L{t^n * g(t)}(s) = (-1)^n d^n/ds^n G(s)
     if (c.kind(f) == NodeKind::Mul) {
+        // 6a. Check for heaviside(w*t + phi) or dirac(w*t + phi) factor first.
+        for (keel::usize i = 0; i < c.childCount(f); ++i) {
+            const Expr ch = c.child(f, i);
+            if (c.kind(ch) != NodeKind::Func)
+                continue;
+            const keel::String &fn = c.funcName(ch);
+            if (fn != "heaviside" && fn != "dirac")
+                continue;
+            Expr phi, w;
+            if (!extractLinearInVar(c, c.child(ch, 0), t, phi, w))
+                continue;
+            bool wPos = (w == c.one()) ||
+                        (c.kind(w) == NodeKind::Number && c.numberValue(w).signum() > 0);
+            if (!wPos)
+                continue;
+            const Expr a = c.simplify(c.neg(c.div(phi, w)));
+            const bool aNeg = (c.kind(a) == NodeKind::Number &&
+                               c.numberValue(a).signum() < 0);
+            keel::Array<Expr> rest;
+            rest.reserve(c.childCount(f) - 1);
+            for (keel::usize j = 0; j < c.childCount(f); ++j) {
+                if (j != i)
+                    rest.push_back(c.child(f, j));
+            }
+            const Expr g = rest.empty() ? c.one() : (rest.size() == 1 ? rest[0] : c.mul(rest));
+            if (fn == "heaviside") {
+                if (aNeg || c.isZero(a)) {
+                    return laplaceRec(c, g, t, s, budget, depth + 1);
+                }
+                const Expr gShift = c.simplify(c.subs(g, t, c.add({t, a})));
+                const LaplaceResult sub = laplaceRec(c, gShift, t, s, budget, depth + 1);
+                if (sub.proved()) {
+                    out.status = LaplaceResult::Status::ProvedSymbolic;
+                    out.F = c.mul({c.func("exp", c.neg(c.mul({a, s}))), sub.F});
+                    return out;
+                }
+            } else if (!aNeg) {
+                const Expr ga = c.simplify(c.subs(g, t, a));
+                const Expr expPart = c.isZero(a)
+                                         ? c.one()
+                                         : c.func("exp", c.neg(c.mul({a, s})));
+                out.status = LaplaceResult::Status::ProvedSymbolic;
+                out.F = c.div(c.mul({ga, expPart}), w);
+                return out;
+            }
+        }
         keel::Array<Expr> constFactors;
         keel::Array<Expr> expPhis;
         keel::Array<Expr> expShifts;
@@ -1066,6 +1218,105 @@ bool verifyIlaplaceRoundTrip(Ctx &c, Expr fCand, Expr origF, Expr s, Expr t,
     return c.isZero(simplifyRationalExpr(c, simpDiff));
 }
 
+// Try second shifting theorem in s-domain:
+//   L^{-1}{exp(phi - a*s) * G(s)}(t) = exp(phi) * heaviside(t - a) * g(t - a)
+//   L^{-1}{exp(phi - a*s) * C}(t)    = C * exp(phi) * dirac(t - a)
+// Also handles sums of shifted terms via linearity.
+bool tryTimeShiftIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
+                          Expr &outF, keel::i32 depth)
+{
+    if (depth > 8 || F.isNull())
+        return false;
+
+    if (c.kind(F) == NodeKind::Add) {
+        keel::Array<Expr> terms;
+        terms.reserve(c.childCount(F));
+        bool anyShift = false;
+        for (keel::usize i = 0; i < c.childCount(F); ++i) {
+            const Expr ch = c.child(F, i);
+            Expr subOut;
+            if (tryTimeShiftIlaplace(c, ch, s, t, budget, subOut, depth + 1)) {
+                terms.push_back(subOut);
+                anyShift = true;
+            } else {
+                const LaplaceResult r = ilaplace(c, ch, s, t, budget);
+                if (!r.proved())
+                    return false;
+                terms.push_back(r.F);
+            }
+        }
+        if (!anyShift)
+            return false;
+        outF = c.add(terms);
+        return true;
+    }
+
+    keel::Array<Expr> factors;
+    if (c.kind(F) == NodeKind::Mul) {
+        factors.reserve(c.childCount(F));
+        for (keel::usize i = 0; i < c.childCount(F); ++i)
+            factors.push_back(c.child(F, i));
+    } else {
+        factors.push_back(F);
+    }
+
+    keel::Array<Expr> expPhis;
+    keel::Array<Expr> expCoeffs;
+    keel::Array<Expr> rest;
+    for (const Expr fac : factors) {
+        if (c.kind(fac) == NodeKind::Func && c.funcName(fac) == "exp") {
+            Expr phi, b;
+            if (extractLinearInVar(c, c.child(fac, 0), s, phi, b) && !c.isZero(b)) {
+                if (!c.isZero(phi))
+                    expPhis.push_back(phi);
+                expCoeffs.push_back(b);
+                continue;
+            }
+        } else if (c.kind(fac) == NodeKind::Pow &&
+                   c.kind(c.child(fac, 0)) == NodeKind::Func &&
+                   c.funcName(c.child(fac, 0)) == "exp" &&
+                   !mentionsSymbol(c, c.child(fac, 1), s)) {
+            Expr phi, b;
+            const Expr expArg = c.mul({c.child(fac, 1), c.child(c.child(fac, 0), 0)});
+            if (extractLinearInVar(c, expArg, s, phi, b) && !c.isZero(b)) {
+                if (!c.isZero(phi))
+                    expPhis.push_back(phi);
+                expCoeffs.push_back(b);
+                continue;
+            }
+        }
+        rest.push_back(fac);
+    }
+
+    if (expCoeffs.empty())
+        return false;
+
+    const Expr totalB = c.simplify(c.add(expCoeffs));
+    if (c.isZero(totalB))
+        return false;
+    // Shift delay a = -totalB (must be non-negative if numeric).
+    const Expr a = c.simplify(c.neg(totalB));
+    if (c.kind(a) == NodeKind::Number && c.numberValue(a).signum() < 0)
+        return false;
+
+    const Expr pref = expPhis.empty() ? c.one() : c.func("exp", c.add(expPhis));
+    const Expr G = rest.empty() ? c.one() : (rest.size() == 1 ? rest[0] : c.mul(rest));
+    const Expr tMinusA = c.add({t, c.neg(a)});
+
+    if (!mentionsSymbol(c, G, s)) {
+        outF = c.mul({pref, G, c.func("dirac", tMinusA)});
+        return true;
+    }
+
+    const LaplaceResult gRes = ilaplace(c, G, s, t, budget);
+    if (!gRes.proved())
+        return false;
+
+    const Expr gShifted = c.subs(gRes.F, t, tMinusA);
+    outF = c.mul({pref, c.func("heaviside", tMinusA), gShifted});
+    return true;
+}
+
 } // namespace
 
 LaplaceResult laplace(Ctx &c, Expr f, Expr t, Expr s, Budget *budget)
@@ -1115,6 +1366,15 @@ LaplaceResult ilaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget)
                 out.F = c.simplify(cand);
                 return out;
             }
+        }
+    }
+
+    // 3. Time-shift exponential factors: exp(-a*s) * G(s) -> heaviside(t - a) * g(t - a).
+    for (Expr form : {F, c.expand(F), c.simplify(F)}) {
+        if (tryTimeShiftIlaplace(c, form, s, t, budget, cand, 0)) {
+            out.status = LaplaceResult::Status::ProvedSymbolic;
+            out.F = c.simplify(cand);
+            return out;
         }
     }
 

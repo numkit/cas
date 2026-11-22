@@ -245,3 +245,96 @@ TEST_F(CasPluginTest, CodeGenerationAndValidationErrors)
     expectThrowsBoth("assume(x, 'invalid_domain')");
     expectThrowsBoth("divergence([x, y], [x, y])");
 }
+
+TEST_F(CasPluginTest, FieldtestRegressionsRelationalSymfunDsolveIlaplaceSolveComplexPretty)
+{
+    // 1. Symbolic relational operators return sym (not logical) + lhs/rhs/isAlways
+    evalBoth("syms x y s t");
+    evalBoth("eq1 = (x^2 == 4);");
+    expectString("class(eq1)", "sym");
+    expectString("char(eq1)", "x^2 == 4");
+    expectSymEqual("lhs(eq1)", "x^2");
+    expectSymEqual("rhs(eq1)", "4");
+    expectScalar("double(isAlways(sym(2) == sym(2)))", 1.0);
+    expectScalar("double(isAlways(sym(2) < sym(3)))", 1.0);
+
+    // 2. Complex numeric * sym arithmetic
+    evalBoth("zc = 1i * x;");
+    expectString("class(zc)", "sym");
+    evalBoth("zc_val = double(subs(zc, x, 3));");
+    expectScalar("real(zc_val)", 0.0);
+    expectScalar("imag(zc_val)", 3.0);
+
+    // 3. Variadic solve(eq1, eq2, [x y]) and solve(eq1, eq2, x, y) + == equations
+    evalBoth("[sx1, sy1] = solve(x + y - 3, x - y - 1, [x y]);");
+    expectScalar("double(sx1)", 2.0);
+    expectScalar("double(sy1)", 1.0);
+    evalBoth("s_struct = solve(x + y == 3, x - y == 1, [x y]);");
+    expectScalar("double(s_struct.x)", 2.0);
+    expectScalar("double(s_struct.y)", 1.0);
+    evalBoth("[sx2, sy2] = solve(x + y == 3, x - y == 1, x, y);");
+    expectScalar("double(sx2)", 2.0);
+    expectScalar("double(sy2)", 1.0);
+
+    // 4. Classic string dsolve (1st-order linear + comma-separated ICs)
+    evalBoth("yd1 = dsolve('Dy = -5*y', 'y(0)=1', 't');");
+    expectSymEqual("yd1", "exp(-5*t)");
+    evalBoth("yd2 = dsolve('D2y = -sin(t)', 'y(0)=0, Dy(0)=0', 't');");
+    expectSymEqual("yd2", "sin(t) - t");
+
+    // 5. ilaplace time-shift exponential factor
+    evalBoth("fl = ilaplace(exp(-2*s) / (s*(s + 1)), s, t);");
+    expectScalar("double(subs(fl, t, 5))", 1.0 - std::exp(-3.0), 1e-10);
+
+    // 6. symfun: syms yf(t), f(x) = x^2 + 1, symbolic dsolve with diff(yf, t) == ...
+    evalBoth("syms yf(t)");
+    expectString("class(yf)", "symfun");
+    expectScalar("double(isa(yf, 'sym'))", 1.0);
+    expectString("char(yf)", "yf(t)");
+    evalBoth("f(x) = x^2 + 1;");
+    expectString("class(f)", "symfun");
+    expectScalar("double(f(3))", 10.0);
+    evalBoth("sol_sf1 = dsolve(diff(yf, t) == -5*yf, yf(0) == 1);");
+    expectSymEqual("sol_sf1", "exp(-5*t)");
+    evalBoth("Dyf = diff(yf, t);");
+    evalBoth("sol_sf2 = dsolve(diff(yf, t, 2) == -sin(t), [yf(0) == 0, Dyf(0) == 0]);");
+    expectSymEqual("sol_sf2", "sin(t) - t");
+
+    // 7. pretty and matlabFunction
+    evalBoth("pretty(x^2 + 1);");
+    evalBoth("ps = pretty(x^2 + 1);");
+    expectString("ps", "1 + x^2");
+    evalBoth("fh = matlabFunction(sol_sf1);");
+    expectScalar("fh(0)", 1.0, 1e-12);
+    expectScalar("fh(1)", std::exp(-5.0), 1e-12);
+    evalBoth("fh2 = matlabFunction(x^2 + y, 'Vars', [x, y]);");
+    expectScalar("fh2(3, 4)", 13.0, 1e-12);
+
+    // 8. eval(sym) scalar/matrix, subs scalar-old/vector-new broadcast, vectorize,
+    //    1-arg relational assume, and Laplace ODE with diff(y(t), t, 2) + subs
+    evalBoth("a_num = 3; b_num = 4; syms a_num_s b_num_s;");
+    evalBoth("ev_s = eval(sym(5) + sym(2));");
+    expectScalar("ev_s", 7.0);
+    evalBoth("ev_m = eval([sym(1) sym(2); sym(3) sym(4)]);");
+    expectScalar("ev_m(2, 1)", 3.0);
+    evalBoth("sub_v = double(subs(x^2 + 1, x, [1 2 3]));");
+    expectScalar("sub_v(1)", 2.0);
+    expectScalar("sub_v(3)", 10.0);
+    expectString("vectorize(x^2 * y)", "y.*x.^2");
+    evalBoth("syms tl sl Yl yl(tl); assume([tl, Yl] > 0);");
+    evalBoth("Dyl = diff(yl, tl); D2yl = diff(yl, tl, 2);");
+    evalBoth("LT = laplace(D2yl + Dyl == sin(tl), tl, sl);");
+    evalBoth("LT = subs(LT, laplace(yl(tl), tl, sl), Yl);");
+    evalBoth("LT = subs(LT, yl(0), 1);");
+    evalBoth("LT = subs(LT, subs(diff(yl(tl), tl), tl, 0), 2);");
+    evalBoth("Ysol = solve(LT, Yl);");
+    evalBoth("Lsol = ilaplace(Ysol, sl, tl);");
+    evalBoth("Dsol = dsolve(D2yl + Dyl == sin(tl), [yl(0) == 1, Dyl(0) == 2]);");
+    expectScalar("double(subs(Lsol - Dsol, tl, 1.5))", 0.0, 1e-9);
+
+    // 9. evalc capture and simultaneous multi-variable subs
+    evalBoth("cap_s = evalc('disp(42)');");
+    expectScalar("double(~isempty(strfind(cap_s, '42')))", 1.0);
+    expectSymEqual("subs(x + 2*y, [x, y], [y, 3])", "y + 6");
+    expectSymEqual("subs(x - y, [x, y], [y, x])", "y - x");
+}

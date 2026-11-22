@@ -941,6 +941,87 @@ void backSubstituteLexBasis(Ctx &c, keel::ArrayRef<Expr> basis,
     }
 }
 
+bool extractAffineRowRec(Ctx &c, Expr e, keel::ArrayRef<Expr> vars,
+                         keel::Array<Expr> &coeffsOut, Expr &constOut)
+{
+    coeffsOut.assign(vars.size(), c.zero());
+    constOut = c.zero();
+    bool mentionsAny = false;
+    for (const Expr &v : vars) {
+        if (mentionsVar(c, e, v)) {
+            mentionsAny = true;
+            break;
+        }
+    }
+    if (!mentionsAny) {
+        constOut = e;
+        return true;
+    }
+    for (keel::usize j = 0; j < vars.size(); ++j) {
+        if (e == vars[j]) {
+            coeffsOut[j] = c.one();
+            return true;
+        }
+    }
+    if (c.kind(e) == NodeKind::Add) {
+        keel::Array<keel::Array<Expr>> colTerms(vars.size());
+        keel::Array<Expr> constTerms;
+        for (keel::usize k = 0; k < c.childCount(e); ++k) {
+            keel::Array<Expr> subC;
+            Expr subK;
+            if (!extractAffineRowRec(c, c.child(e, k), vars, subC, subK))
+                return false;
+            if (!c.isZero(subK))
+                constTerms.push_back(subK);
+            for (keel::usize j = 0; j < vars.size(); ++j) {
+                if (!c.isZero(subC[j]))
+                    colTerms[j].push_back(subC[j]);
+            }
+        }
+        constOut = constTerms.empty() ? c.zero() : c.add(constTerms);
+        for (keel::usize j = 0; j < vars.size(); ++j)
+            coeffsOut[j] = colTerms[j].empty() ? c.zero() : c.add(colTerms[j]);
+        return true;
+    }
+    if (c.kind(e) == NodeKind::Mul) {
+        keel::Array<Expr> freeFactors;
+        Expr varFactor;
+        for (keel::usize k = 0; k < c.childCount(e); ++k) {
+            const Expr ch = c.child(e, k);
+            bool chMentions = false;
+            for (const Expr &v : vars) {
+                if (mentionsVar(c, ch, v)) {
+                    chMentions = true;
+                    break;
+                }
+            }
+            if (!chMentions) {
+                freeFactors.push_back(ch);
+            } else {
+                if (!varFactor.isNull())
+                    return false;
+                varFactor = ch;
+            }
+        }
+        if (varFactor.isNull()) {
+            constOut = e;
+            return true;
+        }
+        keel::Array<Expr> subC;
+        Expr subK;
+        if (!extractAffineRowRec(c, varFactor, vars, subC, subK))
+            return false;
+        const Expr scale = freeFactors.empty()
+                               ? c.one()
+                               : (freeFactors.size() == 1 ? freeFactors[0] : c.mul(freeFactors));
+        constOut = c.isZero(subK) ? c.zero() : c.mul({scale, subK});
+        for (keel::usize j = 0; j < vars.size(); ++j)
+            coeffsOut[j] = c.isZero(subC[j]) ? c.zero() : c.mul({scale, subC[j]});
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 keel::Array<keel::Array<Expr>> solveSystem(Ctx &c,
@@ -974,6 +1055,101 @@ keel::Array<keel::Array<Expr>> solveSystem(Ctx &c,
                 addUniqueSystemTuple(c, solutions, tup);
         }
         return solutions;
+    }
+
+    // 1b. Fast exact symbolic linear-system solver (avoids Groebner/GCD blowup
+    //     on parametric linear systems with many symbolic parameters).
+    if (eqs.size() == vars.size() && vars.size() >= 2 && vars.size() <= 8) {
+        const keel::usize n = vars.size();
+        keel::Array<keel::Array<Expr>> A(n);
+        keel::Array<Expr> rhs(n);
+        bool allLinear = true;
+        for (keel::usize i = 0; i < n; ++i) {
+            Expr b;
+            if (!extractAffineRowRec(c, eqs[i], vars, A[i], b)) {
+                allLinear = false;
+                break;
+            }
+            rhs[i] = c.neg(b);
+        }
+        if (allLinear) {
+            if (n == 2) {
+                const Expr det = c.add({c.mul({A[0][0], A[1][1]}),
+                                        c.neg(c.mul({A[0][1], A[1][0]}))});
+                bool detZero = c.isZero(det);
+                if (!detZero && c.leafCount(det) <= 256)
+                    detZero = c.isZero(c.expand(det));
+                if (!detZero) {
+                    const Expr num0 = c.add({c.mul({rhs[0], A[1][1]}),
+                                             c.neg(c.mul({A[0][1], rhs[1]}))});
+                    const Expr num1 = c.add({c.mul({A[0][0], rhs[1]}),
+                                             c.neg(c.mul({rhs[0], A[1][0]}))});
+                    Expr x0 = c.div(num0, det);
+                    Expr x1 = c.div(num1, det);
+                    if (c.leafCount(x0) <= 128)
+                        x0 = c.simplify(x0);
+                    if (c.leafCount(x1) <= 128)
+                        x1 = c.simplify(x1);
+                    solutions.push_back(keel::Array<Expr>{x0, x1});
+                    return solutions;
+                }
+            } else {
+                bool singular = false;
+                for (keel::usize col = 0; col < n; ++col) {
+                    keel::usize pivot = n;
+                    keel::usize bestCost = static_cast<keel::usize>(-1);
+                    for (keel::usize r = col; r < n; ++r) {
+                        if (c.isZero(A[r][col]))
+                            continue;
+                        if (c.leafCount(A[r][col]) <= 128 && c.isZero(c.expand(A[r][col]))) {
+                            A[r][col] = c.zero();
+                            continue;
+                        }
+                        const keel::usize cost = c.leafCount(A[r][col]);
+                        if (cost < bestCost) {
+                            bestCost = cost;
+                            pivot = r;
+                        }
+                    }
+                    if (pivot == n) {
+                        singular = true;
+                        break;
+                    }
+                    if (pivot != col) {
+                        std::swap(A[pivot], A[col]);
+                        std::swap(rhs[pivot], rhs[col]);
+                    }
+                    const Expr piv = A[col][col];
+                    for (keel::usize r = col + 1; r < n; ++r) {
+                        if (c.isZero(A[r][col]))
+                            continue;
+                        const Expr factor = c.div(A[r][col], piv);
+                        A[r][col] = c.zero();
+                        for (keel::usize k = col + 1; k < n; ++k) {
+                            A[r][k] = c.add({A[r][k], c.neg(c.mul({factor, A[col][k]}))});
+                        }
+                        rhs[r] = c.add({rhs[r], c.neg(c.mul({factor, rhs[col]}))});
+                    }
+                }
+                if (!singular) {
+                    keel::Array<Expr> sol(n);
+                    for (keel::i32 i = keel::as<keel::i32>(n) - 1; i >= 0; --i) {
+                        const keel::usize ui = keel::as<keel::usize>(i);
+                        Expr acc = rhs[ui];
+                        for (keel::usize k = ui + 1; k < n; ++k) {
+                            if (!c.isZero(A[ui][k]))
+                                acc = c.add({acc, c.neg(c.mul({A[ui][k], sol[k]}))});
+                        }
+                        Expr xi = c.div(acc, A[ui][ui]);
+                        if (c.leafCount(xi) <= 128)
+                            xi = c.simplify(xi);
+                        sol[ui] = xi;
+                    }
+                    solutions.push_back(std::move(sol));
+                    return solutions;
+                }
+            }
+        }
     }
 
     // 2. Lexicographic Groebner basis triangular elimination over Q[vars]

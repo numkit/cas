@@ -6,7 +6,6 @@
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/poly/upoly.hpp>
 
-#include <cmath>
 #include <cstdint>
 #include <keel/array.h>
 #include <keel/string.h>

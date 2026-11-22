@@ -1107,23 +1107,23 @@ double evalDouble(const Ctx &c, Expr e, double x)
     case NodeKind::Pow: {
         const double b = evalDouble(c, c.child(e, 0), x);
         const double p = evalDouble(c, c.child(e, 1), x);
-        return std::pow(b, p);
+        return keel::pow(b, p);
     }
     case NodeKind::Func: {
         const double a = evalDouble(c, c.child(e, 0), x);
         const keel::String &n = c.funcName(e);
         if (n == "log")
-            return std::log(a);
+            return keel::log(a);
         if (n == "atan")
-            return std::atan(a);
+            return keel::atan(a);
         if (n == "exp")
-            return std::exp(a);
+            return keel::exp(a);
         if (n == "sin")
-            return std::sin(a);
+            return keel::sin(a);
         if (n == "cos")
-            return std::cos(a);
+            return keel::cos(a);
         if (n == "tan")
-            return std::tan(a);
+            return keel::tan(a);
         ADD_FAILURE() << "no double eval for " << n.c_str();
         return 0.0;
     }

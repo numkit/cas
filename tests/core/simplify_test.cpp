@@ -719,9 +719,9 @@ TEST(SimplifyTest, HypergeometricBetaPochhammerAndIncompleteGamma)
     double f21 = 0.0, igVal = 0.0;
     ASSERT_TRUE(
         c.evalDouble(parseExpr(c, "hypergeom2F1(1, 1, 2, 1/2)"), {}, f21));
-    EXPECT_NEAR(f21, 2.0 * std::log(2.0), 1e-13);
+    EXPECT_NEAR(f21, 2.0 * keel::log(2.0), 1e-13);
     ASSERT_TRUE(c.evalDouble(parseExpr(c, "igamma(2, 1)"), {}, igVal));
-    EXPECT_NEAR(igVal, 2.0 * std::exp(-1.0), 1e-13);
+    EXPECT_NEAR(igVal, 2.0 * keel::exp(-1.0), 1e-13);
 }
 
 TEST(SimplifyTest, StirlingNumbersAndMatlabScriptingUtilities)

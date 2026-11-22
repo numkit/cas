@@ -1,4 +1,5 @@
 #include <keel/algo.h>
+#include <keel/bits.h>
 #include <keel/core.h>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
@@ -281,8 +282,7 @@ keel::i32 popcount32(keel::u32 v)
 keel::Array<keel::u32> subsetMasks(keel::usize n)
 {
     keel::Array<keel::u32> masks;
-    const keel::u32 full = (n >= 32) ? ~keel::u32{0}
-                                         : ((keel::u32{1} << n) - 1);
+    const keel::u32 full = keel::low_bits_mask<keel::u32>(keel::as<keel::u32>(n));
     for (keel::u32 m = 1; m <= full - 1 && m != 0; ++m)
         masks.push_back(m);
     keel::sort(masks, [](keel::u32 a, keel::u32 b) {

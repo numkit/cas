@@ -2,6 +2,7 @@
 // for the Symbolic Math Toolbox (numkit::cas) plugin and `sym` object class.
 
 #include <numkit/core/standard_engine.hpp>
+#include <keel/math.h>
 #include <numkit/core/engine.hpp>
 #include <gtest/gtest.h>
 
@@ -81,7 +82,7 @@ TEST_F(CasPluginTest, SymbolicArithmeticAndElementaryFunctions)
     evalBoth("syms x y");
     expectSymEqual("(x + y)^2 - (x^2 + 2*x*y + y^2)", "0");
     expectSymEqual("sin(x)^2 + cos(x)^2", "1");
-    expectScalar("double(subs(exp(x) + log(x), x, 1))", std::exp(1.0), 1e-12);
+    expectScalar("double(subs(exp(x) + log(x), x, 1))", keel::exp(1.0), 1e-12);
     expectScalar("double(vpa(sym('pi'), 15))", 3.141592653589793, 1e-12);
 }
 
@@ -284,7 +285,7 @@ TEST_F(CasPluginTest, FieldtestRegressionsRelationalSymfunDsolveIlaplaceSolveCom
 
     // 5. ilaplace time-shift exponential factor
     evalBoth("fl = ilaplace(exp(-2*s) / (s*(s + 1)), s, t);");
-    expectScalar("double(subs(fl, t, 5))", 1.0 - std::exp(-3.0), 1e-10);
+    expectScalar("double(subs(fl, t, 5))", 1.0 - keel::exp(-3.0), 1e-10);
 
     // 6. symfun: syms yf(t), f(x) = x^2 + 1, symbolic dsolve with diff(yf, t) == ...
     evalBoth("syms yf(t)");
@@ -306,7 +307,7 @@ TEST_F(CasPluginTest, FieldtestRegressionsRelationalSymfunDsolveIlaplaceSolveCom
     expectString("ps", "1 + x^2");
     evalBoth("fh = matlabFunction(sol_sf1);");
     expectScalar("fh(0)", 1.0, 1e-12);
-    expectScalar("fh(1)", std::exp(-5.0), 1e-12);
+    expectScalar("fh(1)", keel::exp(-5.0), 1e-12);
     evalBoth("fh2 = matlabFunction(x^2 + y, 'Vars', [x, y]);");
     expectScalar("fh2(3, 4)", 13.0, 1e-12);
 

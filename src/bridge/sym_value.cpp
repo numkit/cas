@@ -31,7 +31,6 @@
 #include <numkit/value/error.hpp>
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
@@ -122,7 +121,7 @@ Rational doubleToRational(keel::f64 v);
 
 Expr doubleToSymExpr(Ctx &c, keel::f64 v)
 {
-    if (std::isinf(v))
+    if (keel::is_inf(v))
         return (v > 0.0) ? c.symbol("oo") : c.neg(c.symbol("oo"));
     return c.number(doubleToRational(v));
 }
@@ -217,21 +216,21 @@ bool evalComplexExprRec(const Ctx &c, Expr e, keel::c64 &out)
 
 Rational doubleToRational(keel::f64 v)
 {
-    if (!std::isfinite(v))
+    if (!keel::is_finite(v))
         casFail("nk:sym:nonfinite", "sym: cannot convert non-finite double to exact rational");
     if (v == 0.0)
         return Rational(keel::i64{0});
-    const keel::f64 fl = std::floor(v);
-    if (fl == v && std::fabs(v) <= 9.0e15)
+    const keel::f64 fl = keel::floor(v);
+    if (fl == v && keel::abs(v) <= 9.0e15)
         return Rational(keel::as<keel::i64>(v));
 
     const keel::i32 sign = (v < 0.0) ? -1 : 1;
-    const keel::f64 av = std::fabs(v);
+    const keel::f64 av = keel::abs(v);
     keel::i64 p0 = 0, q0 = 1;
     keel::i64 p1 = 1, q1 = 0;
     keel::f64 x = av;
     for (keel::i32 iter = 0; iter < 32; ++iter) {
-        const keel::f64 aDbl = std::floor(x);
+        const keel::f64 aDbl = keel::floor(x);
         if (aDbl > 1.0e12)
             break;
         const keel::i64 a = keel::as<keel::i64>(aDbl);
@@ -244,7 +243,7 @@ Rational doubleToRational(keel::f64 v)
         p1 = p2;
         q1 = q2;
         const keel::f64 approx = keel::as<keel::f64>(p1) / keel::as<keel::f64>(q1);
-        if (std::fabs(approx - av) <= 1e-13 * std::max(1.0, av))
+        if (keel::abs(approx - av) <= 1e-13 * std::max(1.0, av))
             break;
         const keel::f64 rem = x - aDbl;
         if (rem <= 1e-15)
@@ -1563,7 +1562,7 @@ numkit::Value symDouble(const numkit::Value &v,
                 return Value::scalar(val, mr);
             keel::c64 z;
             if (evalComplexExprRec(c, e, z)) {
-                if (std::fabs(z.im) <= 1e-15 * std::max(1.0, std::fabs(z.re)))
+                if (keel::abs(z.im) <= 1e-15 * std::max(1.0, keel::abs(z.re)))
                     return Value::scalar(z.re, mr);
                 return Value::complexScalar(z.re, z.im, mr);
             }
@@ -1585,7 +1584,7 @@ numkit::Value symDouble(const numkit::Value &v,
             }
             keel::c64 z;
             if (evalComplexExprRec(c, e, z)) {
-                if (std::fabs(z.im) > 1e-15 * std::max(1.0, std::fabs(z.re)))
+                if (keel::abs(z.im) > 1e-15 * std::max(1.0, keel::abs(z.re)))
                     anyComplex = true;
                 else
                     z.im = 0.0;

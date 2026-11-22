@@ -3,6 +3,7 @@
 // double -> Q) and Ctx::evalExact (exact rational evaluation of an
 // expression, honest decline outside Q).
 #include <keel/core.h>
+#include <keel/math.h>
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
@@ -214,7 +215,7 @@ TEST(ToDouble, ExactRoundTripAndScaleInvariance)
     const BigInt p = BigInt::powUInt(BigInt(3), 1200); // > 1900 bits
     const BigInt q = BigInt::powUInt(BigInt(2), 1902);
     const Rational hugeRatio(p, q);
-    EXPECT_TRUE(std::isfinite(hugeRatio.toDouble()));
+    EXPECT_TRUE(keel::is_finite(hugeRatio.toDouble()));
     EXPECT_GT(hugeRatio.toDouble(), 0.0);
 }
 
@@ -235,7 +236,7 @@ TEST(EvalDouble, TranscendentalRootOfAndOddRoots)
         numkit::cas::parseExpr(c, "atanh(1/2) + asinh(1) + acosh(2) + erf(1)"),
         {}, out));
     const double want =
-        std::atanh(0.5) + std::asinh(1.0) + std::acosh(2.0) + std::erf(1.0);
+        keel::atanh(0.5) + keel::asinh(1.0) + keel::acosh(2.0) + keel::erf(1.0);
     EXPECT_NEAR(out, want, 1e-15);
 
     // Odd fractional power of a negative value: (-8)^(1/3) = -2, (-8)^(2/3) = 4.
@@ -250,7 +251,7 @@ TEST(EvalDouble, TranscendentalRootOfAndOddRoots)
     const Expr cbrt2 = c.rootOf(
         {Rational(keel::i64{-2}), Rational(0), Rational(0), Rational(1)}, 0);
     ASSERT_TRUE(c.evalDouble(cbrt2, {}, out));
-    EXPECT_NEAR(out, std::cbrt(2.0), 1e-15);
+    EXPECT_NEAR(out, keel::cbrt(2.0), 1e-15);
 
     // Numerical derivative check of a full Rioboo + Rubi cascade integral via evalDouble!
     const Expr f =

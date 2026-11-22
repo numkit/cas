@@ -200,9 +200,9 @@ TEST(RationalFits, Int64Boundary)
     EXPECT_TRUE(Rational(42).fitsInt64(out));
     EXPECT_EQ(out, 42);
     EXPECT_TRUE(parseR("-9223372036854775808").fitsInt64(out));
-    EXPECT_EQ(out, std::numeric_limits<keel::i64>::min());
+    EXPECT_EQ(out, keel::Limits<keel::i64>::kMin);
     EXPECT_FALSE(parseR("1/2").fitsInt64(out));
     EXPECT_FALSE(parseR("9223372036854775808").fitsInt64(out));
-    EXPECT_EQ(Rational(std::numeric_limits<keel::i64>::min()).toString(),
+    EXPECT_EQ(Rational(keel::Limits<keel::i64>::kMin).toString(),
               "-9223372036854775808");
 }

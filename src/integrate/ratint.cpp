@@ -14,7 +14,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <numeric>
 #include <keel/array.h>
 #include <keel/format.h>
@@ -4759,13 +4758,13 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
     keel::f64 aVal = 0.0, bVal = 0.0;
     bool hasNumA = false, hasNumB = false;
     if (aIsInf) {
-        aVal = aInfDir > 0 ? HUGE_VAL : -HUGE_VAL;
+        aVal = aInfDir > 0 ? keel::kInf : -keel::kInf;
         hasNumA = true;
     } else {
         hasNumA = c.evalDouble(a, {}, aVal);
     }
     if (bIsInf) {
-        bVal = bInfDir > 0 ? HUGE_VAL : -HUGE_VAL;
+        bVal = bInfDir > 0 ? keel::kInf : -keel::kInf;
         hasNumB = true;
     } else {
         hasNumB = c.evalDouble(b, {}, bVal);

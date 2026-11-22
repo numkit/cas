@@ -114,7 +114,7 @@ TEST(BigIntParse, ValidAndInvalid)
     EXPECT_TRUE(BigInt::tryParse(v, "+7"));
     EXPECT_EQ(v.toString(), "7");
     EXPECT_TRUE(BigInt::tryParse(v, "-9223372036854775808"));
-    EXPECT_EQ(v, BigInt(std::numeric_limits<keel::i64>::min()));
+    EXPECT_EQ(v, BigInt(keel::Limits<keel::i64>::kMin));
     EXPECT_FALSE(BigInt::tryParse(v, ""));
     EXPECT_FALSE(BigInt::tryParse(v, "-"));
     EXPECT_FALSE(BigInt::tryParse(v, "12a"));
@@ -261,15 +261,15 @@ TEST(BigIntFits, Int64Uint64Boundaries)
 
     EXPECT_TRUE(BigInt(0).fitsInt64(i64));
     EXPECT_EQ(i64, 0);
-    EXPECT_TRUE(BigInt(std::numeric_limits<keel::i64>::min()).fitsInt64(i64));
-    EXPECT_EQ(i64, std::numeric_limits<keel::i64>::min());
-    EXPECT_TRUE(BigInt(std::numeric_limits<keel::i64>::max()).fitsInt64(i64));
-    EXPECT_EQ(i64, std::numeric_limits<keel::i64>::max());
+    EXPECT_TRUE(BigInt(keel::Limits<keel::i64>::kMin).fitsInt64(i64));
+    EXPECT_EQ(i64, keel::Limits<keel::i64>::kMin);
+    EXPECT_TRUE(BigInt(keel::Limits<keel::i64>::kMax).fitsInt64(i64));
+    EXPECT_EQ(i64, keel::Limits<keel::i64>::kMax);
     EXPECT_FALSE(parse("9223372036854775808").fitsInt64(i64));  // 2^63 positive
     EXPECT_FALSE(parse("-9223372036854775809").fitsInt64(i64));
 
-    EXPECT_TRUE(BigInt(std::numeric_limits<keel::u64>::max()).fitsUint64(u64));
-    EXPECT_EQ(u64, std::numeric_limits<keel::u64>::max());
+    EXPECT_TRUE(BigInt(keel::Limits<keel::u64>::kMax).fitsUint64(u64));
+    EXPECT_EQ(u64, keel::Limits<keel::u64>::kMax);
     EXPECT_FALSE(parse("18446744073709551616").fitsUint64(u64)); // 2^64
     EXPECT_FALSE(BigInt(-1).fitsUint64(u64));
 }
@@ -279,7 +279,7 @@ TEST(BigIntSBO, InlineForUpTo128BitsAndSpillsCleanly)
     const BigInt zero(0);
     EXPECT_TRUE(zero.isInline());
 
-    const BigInt oneLimb(std::numeric_limits<keel::u64>::max());
+    const BigInt oneLimb(keel::Limits<keel::u64>::kMax);
     EXPECT_TRUE(oneLimb.isInline());
 
     // Product of two 64-bit max values is 128 bits (2 limbs) -> still inline!

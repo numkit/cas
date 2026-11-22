@@ -721,18 +721,18 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
                            head == "ArcTanh" || head == "ArcCoth" ||
                            head == "ArcSinh" || head == "ArcCosh" ||
                            head == "ArcSin" || head == "ArcCos" ||
-                           head == "Sin" || head == "sin" ||
-                           head == "Cos" || head == "cos" ||
-                           head == "Tan" || head == "tan" ||
-                           head == "Cot" || head == "cot" ||
-                           head == "Sec" || head == "sec" ||
-                           head == "Csc" || head == "csc" ||
-                           head == "Sinh" || head == "sinh" ||
-                           head == "Cosh" || head == "cosh" ||
-                           head == "Tanh" || head == "tanh" ||
-                           head == "Coth" || head == "coth" ||
-                           head == "Sech" || head == "sech" ||
-                           head == "Csch" || head == "csch")) {
+                           head.equals_ignore_ascii_case("sin") ||
+                           head.equals_ignore_ascii_case("cos") ||
+                           head.equals_ignore_ascii_case("tan") ||
+                           head.equals_ignore_ascii_case("cot") ||
+                           head.equals_ignore_ascii_case("sec") ||
+                           head.equals_ignore_ascii_case("csc") ||
+                           head.equals_ignore_ascii_case("sinh") ||
+                           head.equals_ignore_ascii_case("cosh") ||
+                           head.equals_ignore_ascii_case("tanh") ||
+                           head.equals_ignore_ascii_case("coth") ||
+                           head.equals_ignore_ascii_case("sech") ||
+                           head.equals_ignore_ascii_case("csch"))) {
             const Expr arg = buildReplacement(
                 t, terms, c, currentE, var, bnd, childOf(terms, term, 0), depth,
                 budget);
@@ -748,17 +748,17 @@ Expr buildReplacement(const RuleTables &t, const keel::i32 *terms, Ctx &c,
             if (head == "ArcCosh") return c.func("acosh", arg);
             if (head == "ArcSin") return c.func("asin", arg);
             if (head == "ArcCos") return c.func("acos", arg);
-            if (head == "Sin" || head == "sin") return c.func("sin", arg);
-            if (head == "Cos" || head == "cos") return c.func("cos", arg);
-            if (head == "Tan" || head == "tan") return c.func("tan", arg);
-            if (head == "Cot" || head == "cot") return c.func("cot", arg);
-            if (head == "Sec" || head == "sec") return c.func("sec", arg);
-            if (head == "Csc" || head == "csc") return c.func("csc", arg);
-            if (head == "Sinh" || head == "sinh") return c.func("sinh", arg);
-            if (head == "Cosh" || head == "cosh") return c.func("cosh", arg);
-            if (head == "Tanh" || head == "tanh") return c.func("tanh", arg);
-            if (head == "Coth" || head == "coth") return c.func("coth", arg);
-            if (head == "Sech" || head == "sech") return c.func("sech", arg);
+            if (head.equals_ignore_ascii_case("sin")) return c.func("sin", arg);
+            if (head.equals_ignore_ascii_case("cos")) return c.func("cos", arg);
+            if (head.equals_ignore_ascii_case("tan")) return c.func("tan", arg);
+            if (head.equals_ignore_ascii_case("cot")) return c.func("cot", arg);
+            if (head.equals_ignore_ascii_case("sec")) return c.func("sec", arg);
+            if (head.equals_ignore_ascii_case("csc")) return c.func("csc", arg);
+            if (head.equals_ignore_ascii_case("sinh")) return c.func("sinh", arg);
+            if (head.equals_ignore_ascii_case("cosh")) return c.func("cosh", arg);
+            if (head.equals_ignore_ascii_case("tanh")) return c.func("tanh", arg);
+            if (head.equals_ignore_ascii_case("coth")) return c.func("coth", arg);
+            if (head.equals_ignore_ascii_case("sech")) return c.func("sech", arg);
             return c.func("csch", arg);
         }
         if (nkids == 1 && head == "Sqrt") {

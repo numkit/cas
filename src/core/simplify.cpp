@@ -3614,9 +3614,9 @@ keel::String toCCodeRec(const Ctx &c, Expr e, keel::i32 parentPrec)
     case NodeKind::Symbol: {
         const keel::String &name = c.symbolName(e);
         if (name == "pi")
-            return keel::String::from("M_PI");
+            return keel::String::from("keel::kPi");
         if (name == "e")
-            return keel::String::from("M_E");
+            return keel::String::from("keel::kE");
         return name.clone();
     }
     case NodeKind::RootOf:

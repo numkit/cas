@@ -1246,8 +1246,8 @@ bool Ctx::evalExact(
 
 namespace {
 
-constexpr keel::f64 kPiDouble = 3.141592653589793238462643383279502884;
-constexpr keel::f64 kEulerGamma = 0.577215664901532860606512090082402431;
+constexpr keel::f64 kPiDouble = keel::kPi;
+constexpr keel::f64 kEulerGamma = keel::kEulerGamma;
 
 keel::f64 evalErfiDouble(keel::f64 x)
 {
@@ -2800,10 +2800,10 @@ bool evalDoubleRec(
             }
         }
         if (!found) {
-            if (name == "pi" || name == "Pi") {
-                res = 3.141592653589793238462643383279502884;
+            if (name.equals_ignore_ascii_case("pi")) {
+                res = keel::kPi;
                 found = true;
-            } else if (name == "e" || name == "E") {
+            } else if (name.equals_ignore_ascii_case("e")) {
                 res = 2.718281828459045235360287471352662498;
                 found = true;
             } else if (name == "euler_gamma" || name == "EulerGamma") {
@@ -3015,7 +3015,7 @@ bool evalDoubleRec(
             res = std::atan(a);
         } else if (fn == "acot") {
             res = (a >= 0.0) ? std::atan(1.0 / a)
-                             : (3.141592653589793238462643383279502884 +
+                             : (keel::kPi +
                                 std::atan(1.0 / a));
         } else if (fn == "asec") {
             if (a > -1.0 && a < 1.0) return false;

@@ -8,6 +8,7 @@
 #include <keel/smart_ptr.h>
 #include <keel/string.h>
 #include <keel/utf8.h>
+#include <keel/math.h>
 #include <numkit/cas/sym_value.hpp>
 
 #include <numkit/cas/core/parser.hpp>
@@ -155,9 +156,9 @@ bool evalComplexExprRec(const Ctx &c, Expr e, keel::c64 &out)
         return true;
     case NodeKind::Symbol: {
         const keel::StringRef nm = c.symbolName(e).as_ref();
-        if (nm == "I" || nm == "i") { out = keel::c64(0.0, 1.0); return true; }
-        if (nm == "pi" || nm == "Pi") { out = keel::c64(3.14159265358979323846, 0.0); return true; }
-        if (nm == "e" || nm == "E") { out = keel::c64(2.71828182845904523536, 0.0); return true; }
+        if (nm.equals_ignore_ascii_case("i")) { out = keel::c64(0.0, 1.0); return true; }
+        if (nm.equals_ignore_ascii_case("pi")) { out = keel::c64(keel::kPi, 0.0); return true; }
+        if (nm.equals_ignore_ascii_case("e")) { out = keel::c64(2.71828182845904523536, 0.0); return true; }
         return false;
     }
     case NodeKind::Add: {

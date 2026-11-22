@@ -1,4 +1,5 @@
 #include <keel/core.h>
+#include <keel/math.h>
 #include <numkit/cas/core/parser.hpp>
 #include <numkit/cas/core/simplify.hpp>
 
@@ -816,7 +817,7 @@ TEST(SimplifyTest, StirlingNumbersAndMatlabScriptingUtilities)
     EXPECT_NE(cc.find("std::exp"), std::string::npos);
     EXPECT_NE(cc.find("std::cos"), std::string::npos);
     EXPECT_NE(cc.find("std::sqrt"), std::string::npos);
-    EXPECT_NE(cc.find("M_PI"), std::string::npos);
+    EXPECT_NE(cc.find("keel::kPi"), std::string::npos);
 }
 
 } // namespace

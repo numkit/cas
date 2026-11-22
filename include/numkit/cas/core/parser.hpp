@@ -2,20 +2,20 @@
 #pragma once
 
 #include <keel/core.h>
+#include <keel/exception.h>
 #include <keel/string.h>
 #include <numkit/cas/core/expr.hpp>
 
 #include <cstddef>
-#include <stdexcept>
 
 namespace numkit::cas {
 
 // Thrown by parseExpr on malformed input; pos() is the 0-based offset
 // of the offending character (or src.size() for unexpected end).
-class ParseError : public std::runtime_error {
+class ParseError : public keel::Exception {
 public:
     ParseError(keel::usize pos, keel::StringRef msg)
-        : std::runtime_error(keel::String::from(msg).c_str()), pos_(pos)
+        : keel::Exception(msg, keel::Error{keel::ErrorCode::InvalidData, 0}), pos_(pos)
     {
     }
     keel::usize pos() const { return pos_; }

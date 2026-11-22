@@ -32,7 +32,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <stdexcept>
 #include <utility>
 
 namespace numkit::cas {

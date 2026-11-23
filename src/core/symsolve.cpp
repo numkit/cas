@@ -1,4 +1,5 @@
 #include <keel/core.h>
+#include <keel/algo.h>
 #include <keel/math.h>
 #include <numkit/cas/core/symsolve.hpp>
 
@@ -10,7 +11,6 @@
 #include <numkit/cas/poly/upoly.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
-#include <algorithm>
 #include <cstdlib>
 #include <keel/array.h>
 #include <keel/string.h>
@@ -574,7 +574,7 @@ void collectAllSymbols(const Ctx &c, Expr e, keel::Array<Expr> &syms)
     if (e.isNull())
         return;
     if (c.kind(e) == NodeKind::Symbol) {
-        if (std::find(syms.begin(), syms.end(), e) == syms.end())
+        if (keel::find(syms.begin(), syms.end(), e) == syms.end())
             syms.push_back(e);
         return;
     }
@@ -699,7 +699,7 @@ keel::Array<Expr> solveSymbolic(Ctx &c, Expr eqn, Expr var, Budget *budget)
         if (!hasPoleAt(c, eqn, var, r))
             addUniqueRoot(c, valid, r);
     }
-    std::sort(valid.begin(), valid.end(),
+    keel::sort(valid.begin(), valid.end(),
               [&c](Expr a, Expr b) { return c.compare(a, b) < 0; });
     return valid;
 }
@@ -920,7 +920,7 @@ void backSubstituteLexBasis(Ctx &c, keel::ArrayRef<Expr> basis,
         return; // positive-dimensional component in curVar
 
     // Pick the lowest-cost univariate polynomial in `curVar` to solve first.
-    auto bestIt = std::min_element(
+    auto bestIt = keel::min_element(
         uniPolys.begin(), uniPolys.end(),
         [&](Expr a, Expr b) { return c.exprCost(a) < c.exprCost(b); });
     const keel::Array<Expr> roots = solveSymbolic(c, *bestIt, curVar, budget);

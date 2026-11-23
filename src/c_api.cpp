@@ -11,7 +11,6 @@
 #include <numkit/sys/lite_context.hpp>
 #include <numkit/value/c_api_bridge.hpp>
 
-#include <algorithm>
 #include <exception>
 
 struct numkit_cas_ctx_s {
@@ -201,7 +200,7 @@ keel::usize numkit_cas_format(const numkit_cas_ctx *ctx,
     try {
         keel::String s = ctx->ctx.formatValue(numkit::c_abi::unboxValue(v));
         if (!buf || buf_cap == 0) return s.size();
-        keel::usize n = std::min(s.size(), buf_cap - 1);
+        keel::usize n = keel::min(s.size(), buf_cap - 1);
         if (n > 0) keel::mem_copy(buf, s.data(), n);
         buf[n] = '\0';
         return s.size();

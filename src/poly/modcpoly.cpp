@@ -1,7 +1,6 @@
 #include <keel/core.h>
 #include <numkit/cas/poly/modcpoly.hpp>
 
-#include <algorithm>
 #include <cassert>
 
 namespace numkit::cas {
@@ -178,8 +177,8 @@ ModCPoly operator+(const ModCPoly &a, const ModCPoly &b)
     const ModCRing *rg = a.hasRing() ? a.ring_ : b.ring_;
     assert(rg != nullptr);
     keel::Array<UPoly> cs;
-    cs.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    cs.reserve(keel::max(a.c_.size(), b.c_.size()));
+    for (keel::usize i = 0; i < keel::max(a.c_.size(), b.c_.size()); ++i)
         cs.push_back(rg->add(a.coeff(i), b.coeff(i)));
     return ModCPoly(*rg, keel::move(cs));
 }
@@ -190,8 +189,8 @@ ModCPoly operator-(const ModCPoly &a, const ModCPoly &b)
     const ModCRing *rg = a.hasRing() ? a.ring_ : b.ring_;
     assert(rg != nullptr);
     keel::Array<UPoly> cs;
-    cs.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    cs.reserve(keel::max(a.c_.size(), b.c_.size()));
+    for (keel::usize i = 0; i < keel::max(a.c_.size(), b.c_.size()); ++i)
         cs.push_back(rg->sub(a.coeff(i), b.coeff(i)));
     return ModCPoly(*rg, keel::move(cs));
 }

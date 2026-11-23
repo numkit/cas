@@ -2,7 +2,6 @@
 #include <keel/format.h>
 #include <numkit/cas/poly/upoly.hpp>
 
-#include <algorithm>
 #include <cassert>
 
 namespace numkit::cas {
@@ -61,8 +60,8 @@ Rational UPoly::eval(const Rational &x) const
 UPoly operator+(const UPoly &a, const UPoly &b)
 {
     UPoly out;
-    out.c_.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    out.c_.reserve(keel::max(a.c_.size(), b.c_.size()));
+    for (keel::usize i = 0; i < keel::max(a.c_.size(), b.c_.size()); ++i)
         out.c_.push_back(a.coeff(i) + b.coeff(i));
     out.trim();
     return out;
@@ -71,8 +70,8 @@ UPoly operator+(const UPoly &a, const UPoly &b)
 UPoly operator-(const UPoly &a, const UPoly &b)
 {
     UPoly out;
-    out.c_.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    out.c_.reserve(keel::max(a.c_.size(), b.c_.size()));
+    for (keel::usize i = 0; i < keel::max(a.c_.size(), b.c_.size()); ++i)
         out.c_.push_back(a.coeff(i) - b.coeff(i));
     out.trim();
     return out;

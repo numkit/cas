@@ -1,7 +1,7 @@
 #include <keel/core.h>
+#include <keel/algo.h>
 #include <numkit/cas/poly/sturm.hpp>
 
-#include <algorithm>
 #include <cassert>
 
 namespace numkit::cas {
@@ -115,7 +115,7 @@ keel::Array<RootInterval> isolateRealRoots(const UPoly &p0)
         }
     }
 
-    std::sort(out.begin(), out.end(),
+    keel::sort(out.begin(), out.end(),
               [](const RootInterval &a, const RootInterval &b) {
                   return a.lo < b.lo;
               });

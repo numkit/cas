@@ -30,7 +30,6 @@
 #include <numkit/value/argcheck.hpp>
 #include <numkit/value/error.hpp>
 
-#include <algorithm>
 
 namespace numkit::cas {
 
@@ -240,7 +239,7 @@ Rational doubleToRational(keel::f64 v)
         p1 = p2;
         q1 = q2;
         const keel::f64 approx = keel::as<keel::f64>(p1) / keel::as<keel::f64>(q1);
-        if (keel::abs(approx - av) <= 1e-13 * std::max(1.0, av))
+        if (keel::abs(approx - av) <= 1e-13 * keel::max(1.0, av))
             break;
         const keel::f64 rem = x - aDbl;
         if (rem <= 1e-15)
@@ -960,7 +959,7 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
                 for (keel::usize col = 0; col < cols; ++col) {
                     keel::String elemName;
                     if (rows == 1 || cols == 1) {
-                        elemName = keel::format("{}{}", base, std::max(r, col) + 1);
+                        elemName = keel::format("{}{}", base, keel::max(r, col) + 1);
                     } else {
                         elemName = keel::format("{}{}_{}", base, r + 1, col + 1);
                     }
@@ -1559,7 +1558,7 @@ numkit::Value symDouble(const numkit::Value &v,
                 return Value::scalar(val, mr);
             keel::c64 z;
             if (evalComplexExprRec(c, e, z)) {
-                if (keel::abs(z.im) <= 1e-15 * std::max(1.0, keel::abs(z.re)))
+                if (keel::abs(z.im) <= 1e-15 * keel::max(1.0, keel::abs(z.re)))
                     return Value::scalar(z.re, mr);
                 return Value::complexScalar(z.re, z.im, mr);
             }
@@ -1581,7 +1580,7 @@ numkit::Value symDouble(const numkit::Value &v,
             }
             keel::c64 z;
             if (evalComplexExprRec(c, e, z)) {
-                if (keel::abs(z.im) > 1e-15 * std::max(1.0, keel::abs(z.re)))
+                if (keel::abs(z.im) > 1e-15 * keel::max(1.0, keel::abs(z.re)))
                     anyComplex = true;
                 else
                     z.im = 0.0;
@@ -1920,7 +1919,7 @@ numkit::Value symSymvar(keel::ArrayRef<numkit::Value> args,
     keel::Array<keel::String> sorted = keel::move(syms.items);
     if (args.size() == 2) {
         const keel::usize n = keel::as<keel::usize>(args[1].toScalar());
-        std::sort(sorted.begin(), sorted.end(), [](const keel::String &a, const keel::String &b) {
+        keel::sort(sorted.begin(), sorted.end(), [](const keel::String &a, const keel::String &b) {
             const keel::i32 da = symvarDistance(a);
             const keel::i32 db = symvarDistance(b);
             return (da != db) ? (da < db) : (a.as_ref().compare(b.as_ref()) < 0);

@@ -1,4 +1,5 @@
 #include <keel/core.h>
+#include <keel/algo.h>
 #include <keel/math.h>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/integrate/verify.hpp>
@@ -12,9 +13,7 @@
 #include <numkit/cas/poly/zassenhaus.hpp>
 #include <numkit/cas/rubi/rules.hpp>
 
-#include <algorithm>
 #include <cassert>
-#include <numeric>
 #include <keel/array.h>
 #include <keel/format.h>
 #include <keel/string.h>
@@ -1387,7 +1386,7 @@ keel::i32 radicalIndex(const Ctx &c, Expr e, Expr var)
             const keel::i32 q = radicalIndex(c, c.child(e, i), var);
             if (q < 0)
                 return -1;
-            const keel::i64 lcm64 = std::lcm(keel::as<keel::i64>(l),
+            const keel::i64 lcm64 = keel::lcm(keel::as<keel::i64>(l),
                                            keel::as<keel::i64>(q));
             if (lcm64 > 60)
                 return -1;
@@ -3211,7 +3210,7 @@ bool factorExpr(Ctx &c, Expr e, Expr var, Expr &out)
     // multiplicity copy separately).
     const auto withPowers = [&c](keel::Array<Expr> &fs) {
         keel::Array<Expr> out;
-        std::sort(fs.begin(), fs.end(), [&c](Expr a, Expr b) {
+        keel::sort(fs.begin(), fs.end(), [&c](Expr a, Expr b) {
             return c.compare(a, b) < 0;
         });
         for (keel::usize i = 0; i < fs.size();) {
@@ -4772,8 +4771,8 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 
     // 1. Interior pole guard on (min(a,b), max(a,b)).
     if (hasNumA && hasNumB) {
-        const keel::f64 xMin = std::min(aVal, bVal);
-        const keel::f64 xMax = std::max(aVal, bVal);
+        const keel::f64 xMin = keel::min(aVal, bVal);
+        const keel::f64 xMax = keel::max(aVal, bVal);
         keel::Array<UPoly> denPolys;
         collectPoleDenominators(c, f, var, denPolys);
         for (const UPoly &D : denPolys) {
@@ -4963,8 +4962,8 @@ DefiniteIntegral definiteIntegrate(Ctx &c, Expr f, Expr var, Expr a, Expr b,
 
     keel::Array<Expr> jumpTerms{limB.value, c.neg(limA.value)};
     if (hasNumA && hasNumB) {
-        const keel::f64 xMin = std::min(aVal, bVal);
-        const keel::f64 xMax = std::max(aVal, bVal);
+        const keel::f64 xMin = keel::min(aVal, bVal);
+        const keel::f64 xMax = keel::max(aVal, bVal);
         keel::Array<UPoly> fDenPolys;
         collectPoleDenominators(c, indef.F, var, fDenPolys);
         keel::Array<Rational> jumpPts;

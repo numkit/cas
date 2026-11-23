@@ -11,15 +11,14 @@
 // DAG canonicalizes division away - their step-3 matcher twin will
 // handle that).
 #include <keel/core.h>
+#include <keel/algo.h>
 #include <numkit/cas/rubi/rules.hpp>
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/integrate/verify.hpp>
 #include <numkit/cas/poly/upoly.hpp>
 
-#include <algorithm>
 #include <keel/static_array.h>
 #include <keel/function_ref.h>
-#include <numeric>
 #include <keel/array.h>
 #include <keel/string.h>
 
@@ -180,7 +179,7 @@ bool matchStep(const RuleTables &t, Ctx &c, Expr var, keel::i32 node,
                     return true;
                 work.resize(work.size() - keel::as<keel::usize>(arity));
                 work.push_back(e);
-            } while (std::next_permutation(
+            } while (keel::next_permutation(
                 perm.begin(), perm.begin() + keel::as<keel::usize>(arity)));
         } else {
             work.pop_back();
@@ -1829,7 +1828,7 @@ keel::i64 radicalExponentLcm(const Ctx &c, Expr q)
             const keel::i64 d = denomOf(c.child(q, i));
             if (d <= 0)
                 return 0;
-            L = std::lcm(L, d);
+            L = keel::lcm(L, d);
             if (L > 12)
                 return 0;
         }
@@ -1899,7 +1898,7 @@ bool collectSingleLinearRadical(Ctx &c, Expr e, Expr var, Expr &radBase,
                 radBase = c.child(e, 0);
             else if (!(radBase == c.child(e, 0)))
                 return false;
-            qLcm = std::lcm(qLcm, q);
+            qLcm = keel::lcm(qLcm, q);
             if (qLcm > 12)
                 return false;
             return true;
@@ -2334,7 +2333,7 @@ Expr rubiApplyDepth(const RuleTables &t, Ctx &c, Expr e, Expr var, keel::i32 dep
             }
             return false;
         });
-    std::stable_sort(hits.begin(), hits.end(),
+    keel::stable_sort(hits.begin(), hits.end(),
                      [](const CandidateHit &a, const CandidateHit &b) {
                          return a.rule < b.rule;
                      });

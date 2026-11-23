@@ -5,7 +5,6 @@
 #include <numkit/cas/linalg/symmatrix.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
-#include <algorithm>
 #include <keel/array.h>
 #include <keel/format.h>
 #include <keel/string.h>
@@ -257,8 +256,8 @@ Laurent makeConstSeries(Ctx &c, Expr val, keel::i32 maxDeg)
 Laurent addSeries(Ctx &c, const Laurent &a, const Laurent &b)
 {
     Laurent out;
-    out.maxDeg = std::min(a.maxDeg, b.maxDeg);
-    out.val = std::min(a.val, b.val);
+    out.maxDeg = keel::min(a.maxDeg, b.maxDeg);
+    out.val = keel::min(a.val, b.val);
     if (out.val > out.maxDeg) {
         out.val = out.maxDeg + 1;
         return out;
@@ -284,7 +283,7 @@ Laurent scaleSeries(Ctx &c, const Laurent &a, Expr factor)
 Laurent mulSeries(Ctx &c, const Laurent &a, const Laurent &b)
 {
     Laurent out;
-    out.maxDeg = std::min(a.maxDeg + b.val, b.maxDeg + a.val);
+    out.maxDeg = keel::min(a.maxDeg + b.val, b.maxDeg + a.val);
     if (a.coeffs.empty() || b.coeffs.empty()) {
         out.val = out.maxDeg + 1;
         return out;
@@ -518,7 +517,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
         const keel::i32 sgn = exprSign(c, arg.coeffs.front());
         if (sgn == 0)
             return false;
-        const keel::i32 highDeg = std::max(32, -arg.val * 8);
+        const keel::i32 highDeg = keel::max(32, -arg.val * 8);
         if (fn == "atan") {
             Laurent invArg, atanInv;
             if (!invSeries(c, arg, invArg) ||
@@ -896,9 +895,9 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
                 {c.number(Rational(keel::i64{1}, BigInt(12))), pi2});
 
             auto buildLgamma1PlusU = [&](Laurent &lgOut) {
-                const keel::i32 degCap = std::min(L, 2);
+                const keel::i32 degCap = keel::min(L, 2);
                 Laurent uCap = u;
-                uCap.maxDeg = std::min(uCap.maxDeg, degCap);
+                uCap.maxDeg = keel::min(uCap.maxDeg, degCap);
                 normalizeSeries(c, uCap);
                 const Laurent u2Cap = mulSeries(c, uCap, uCap);
                 lgOut = addSeries(
@@ -906,9 +905,9 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
                     scaleSeries(c, u2Cap, pi2Over12));
             };
             auto buildDigamma1PlusU = [&](Laurent &psiOut) {
-                const keel::i32 degCap = std::min(L, 1);
+                const keel::i32 degCap = keel::min(L, 1);
                 Laurent uCap = u;
-                uCap.maxDeg = std::min(uCap.maxDeg, degCap);
+                uCap.maxDeg = keel::min(uCap.maxDeg, degCap);
                 normalizeSeries(c, uCap);
                 psiOut = addSeries(
                     c, makeConstSeries(c, c.neg(eg), degCap),
@@ -960,7 +959,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
                     return true;
                 }
                 // trigamma at m >= 1: pi^2/6 - sum_{k=1}^{m-1} (k + u)^(-2) + O(u)
-                Laurent acc = makeConstSeries(c, pi2Over6, std::min(L, 0));
+                Laurent acc = makeConstSeries(c, pi2Over6, keel::min(L, 0));
                 for (keel::i64 k = 1; k < m; ++k) {
                     Laurent invK;
                     if (!invSeries(
@@ -1017,7 +1016,7 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
                 return true;
             }
             // trigamma at m = -n <= 0: pi^2/6 + sum_{k=0}^n (u - k)^(-2) + O(u)
-            Laurent acc = makeConstSeries(c, pi2Over6, std::min(L, 0));
+            Laurent acc = makeConstSeries(c, pi2Over6, keel::min(L, 0));
             for (keel::i64 k = 0; k <= n; ++k) {
                 Laurent step =
                     k == 0 ? u
@@ -1042,15 +1041,15 @@ bool evalFuncSeries(Ctx &c, keel::StringRef fn, const Laurent &arg,
                 if (!invSeries(c, u, invU))
                     return false;
                 out = addSeries(
-                    c, invU, makeConstSeries(c, eg, std::min(L, 0)));
+                    c, invU, makeConstSeries(c, eg, keel::min(L, 0)));
                 return true;
             }
             // dirichletEta(1 + u) = (1 - 2^(-u)) * zeta(1 + u)
             // = log(2) + (euler_gamma * log(2) - 1/2 * log(2)^2) * u + O(u^2)
             const Expr log2 = c.func("log", c.number(keel::i64{2}));
-            const keel::i32 degCap = std::min(L, 1);
+            const keel::i32 degCap = keel::min(L, 1);
             Laurent uCap = u;
-            uCap.maxDeg = std::min(uCap.maxDeg, degCap);
+            uCap.maxDeg = keel::min(uCap.maxDeg, degCap);
             normalizeSeries(c, uCap);
             const Expr c1 = c.add({
                 c.mul({eg, log2}),
@@ -3947,7 +3946,7 @@ PadeResult pade(Ctx &c, Expr f, Expr var, Expr x0, keel::i32 m, keel::i32 n, Bud
     keel::Array<Expr> p(m + 1, c.zero());
     for (keel::i32 k = 0; k <= m; ++k) {
         keel::Array<Expr> terms;
-        const keel::i32 jMax = std::min(k, n);
+        const keel::i32 jMax = keel::min(k, n);
         for (keel::i32 j = 0; j <= jMax; ++j) {
             const Expr &ckj = coeffs[keel::as<keel::usize>(k - j)];
             const Expr &qj = q[keel::as<keel::usize>(j)];
@@ -4044,11 +4043,11 @@ Expr mtaylor(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
                 return Expr(); // pole at x0s
             if (sSeries.maxDeg >= order) {
                 bool polyOk = true;
-                const keel::i32 checkDeg = std::max(
+                const keel::i32 checkDeg = keel::max(
                     order,
                     sSeries.coeffs.empty()
                         ? order
-                        : std::min(sSeries.maxDeg, sSeries.val + 1));
+                        : keel::min(sSeries.maxDeg, sSeries.val + 1));
                 keel::Array<Expr> terms;
                 for (keel::i32 m = 0; m <= checkDeg; ++m) {
                     Expr cm = coeffAt(c, sSeries, m);

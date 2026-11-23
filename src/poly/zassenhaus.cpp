@@ -5,7 +5,6 @@
 
 #include <numkit/cas/poly/fppoly.hpp>
 
-#include <algorithm>
 #include <cassert>
 
 namespace numkit::cas {
@@ -44,7 +43,7 @@ keel::Array<BigInt> bpMul(keel::ArrayRef<BigInt> a, keel::ArrayRef<BigInt> b)
 
 keel::Array<BigInt> bpSub(keel::ArrayRef<BigInt> a, keel::ArrayRef<BigInt> b)
 {
-    keel::Array<BigInt> out(std::max(a.size(), b.size()), B0());
+    keel::Array<BigInt> out(keel::max(a.size(), b.size()), B0());
     for (keel::usize i = 0; i < a.size(); ++i)
         out[i] = a[i];
     for (keel::usize i = 0; i < b.size(); ++i)

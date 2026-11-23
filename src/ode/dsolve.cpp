@@ -1,4 +1,5 @@
 #include <keel/core.h>
+#include <keel/algo.h>
 #include <numkit/cas/ode/dsolve.hpp>
 
 #include <numkit/cas/core/series.hpp>
@@ -8,7 +9,6 @@
 #include <numkit/cas/linalg/symmatrix.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
-#include <algorithm>
 #include <keel/array.h>
 #include <keel/format.h>
 #include <keel/string.h>
@@ -3326,7 +3326,7 @@ OdeResult dsolveSeries(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x, Expr x0,
     }
 
     // Sort rational roots in descending order so the larger root r1 comes first
-    std::sort(roots.begin(), roots.end(), [&](Expr lhs, Expr rhs) {
+    keel::sort(roots.begin(), roots.end(), [&](Expr lhs, Expr rhs) {
         if (c.kind(lhs) == NodeKind::Number && c.kind(rhs) == NodeKind::Number)
             return c.numberValue(rhs) < c.numberValue(lhs);
         return c.compare(lhs, rhs) < 0;

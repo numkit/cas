@@ -6,8 +6,6 @@
 #include <numkit/cas/poly/upoly.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
-#include <algorithm>
-#include <numeric>
 #include <keel/algo.h>
 #include <keel/string.h>
 #include <keel/array.h>
@@ -105,7 +103,7 @@ keel::Array<keel::i32> monomialLcm(const keel::Array<keel::i32> &a,
 {
     keel::Array<keel::i32> out(a.size(), 0);
     for (keel::usize i = 0; i < a.size(); ++i)
-        out[i] = std::max(a[i], b[i]);
+        out[i] = keel::max(a[i], b[i]);
     return out;
 }
 
@@ -152,7 +150,7 @@ void normalizeMPoly(MPoly &p, MonomialOrder order)
 {
     if (p.terms.empty())
         return;
-    std::sort(p.terms.begin(), p.terms.end(),
+    keel::sort(p.terms.begin(), p.terms.end(),
               [&](const MTerm &x, const MTerm &y) {
                   return compareMonomial(x.exp, y.exp, order) > 0;
               });
@@ -487,7 +485,7 @@ GroebnerResult groebnerBasis(Ctx &c, keel::ArrayRef<Expr> polys,
             return out;
 
         // Normal selection strategy: pick critical pair with smallest total degree of lcm(LM(g_i), LM(g_j)).
-        auto bestIt = std::min_element(
+        auto bestIt = keel::min_element(
             pairs.begin(), pairs.end(),
             [](const Pair &a, const Pair &b) { return a.lcmDeg < b.lcmDeg; });
         const Pair cur = *bestIt;
@@ -571,7 +569,7 @@ GroebnerResult groebnerBasis(Ctx &c, keel::ArrayRef<Expr> polys,
 
     // Sort in ascending leading-monomial order (so in Lex order, the univariate
     // elimination polynomial in vars.back() comes first).
-    std::sort(minimal.begin(), minimal.end(),
+    keel::sort(minimal.begin(), minimal.end(),
               [&](const MPoly &a, const MPoly &b) {
                   return compareMonomial(a.lt().exp, b.lt().exp, order) < 0;
               });
@@ -650,7 +648,7 @@ void collectPolyVarsRec(const Ctx &c, Expr e, keel::Array<Expr> &vars)
     if (e.isNull())
         return;
     if (c.kind(e) == NodeKind::Symbol) {
-        if (std::find(vars.begin(), vars.end(), e) == vars.end())
+        if (keel::find(vars.begin(), vars.end(), e) == vars.end())
             vars.push_back(e);
         return;
     }
@@ -667,7 +665,7 @@ keel::Array<Expr> resolvePolyVars(const Ctx &c,
     keel::Array<Expr> vars;
     for (const Expr &e : exprs)
         collectPolyVarsRec(c, e, vars);
-    std::sort(vars.begin(), vars.end(),
+    keel::sort(vars.begin(), vars.end(),
               [&](Expr a, Expr b) { return c.compare(a, b) < 0; });
     return vars;
 }
@@ -705,7 +703,7 @@ keel::Array<keel::i32> mpolyMinMonomial(const MPoly &p, keel::usize kVars)
     minExp = p.terms[0].exp.clone();
     for (keel::usize i = 1; i < p.terms.size(); ++i) {
         for (keel::usize j = 0; j < kVars; ++j)
-            minExp[j] = std::min(minExp[j], p.terms[i].exp[j]);
+            minExp[j] = keel::min(minExp[j], p.terms[i].exp[j]);
     }
     return minExp;
 }
@@ -901,7 +899,7 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
     keel::Array<keel::i32> gExp(kVars, 0);
     keel::Array<keel::i32> negA(kVars, 0), negB(kVars, 0);
     for (keel::usize i = 0; i < kVars; ++i) {
-        gExp[i] = std::min(minA[i], minB[i]);
+        gExp[i] = keel::min(minA[i], minB[i]);
         negA[i] = -minA[i];
         negB[i] = -minB[i];
     }
@@ -962,12 +960,12 @@ MPoly mpolyGcdRec(const MPoly &a, const MPoly &b, keel::usize kVars,
     // 3. Pick active variable `mainVar` of smallest positive max-degree
     keel::usize mainVar = activeVars[0];
     keel::i32 bestMaxDeg =
-        std::max(mpolyDegInVar(P, mainVar), mpolyDegInVar(Q, mainVar));
+        keel::max(mpolyDegInVar(P, mainVar), mpolyDegInVar(Q, mainVar));
     keel::i32 bestSumDeg =
         mpolyDegInVar(P, mainVar) + mpolyDegInVar(Q, mainVar);
     for (keel::usize idx = 1; idx < activeVars.size(); ++idx) {
         const keel::usize v = activeVars[idx];
-        const keel::i32 mx = std::max(mpolyDegInVar(P, v), mpolyDegInVar(Q, v));
+        const keel::i32 mx = keel::max(mpolyDegInVar(P, v), mpolyDegInVar(Q, v));
         const keel::i32 sm = mpolyDegInVar(P, v) + mpolyDegInVar(Q, v);
         if (mx < bestMaxDeg || (mx == bestMaxDeg && sm < bestSumDeg)) {
             mainVar = v;
@@ -1263,14 +1261,14 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
 
     keel::i32 maxOtherDeg = 0;
     for (const MTerm &t : sShifted.terms)
-        maxOtherDeg = std::max(maxOtherDeg, otherTotalDeg(t.exp));
+        maxOtherDeg = keel::max(maxOtherDeg, otherTotalDeg(t.exp));
 
     // Try lifting singletons first, then pairs if needed, via Multivariate Total-Degree Hensel Lifting
     for (keel::usize subSize = 1; subSize <= uFactors.size() / 2; ++subSize) {
         if (uFactors.size() <= 1)
             break;
         keel::Array<bool> mask(uFactors.size(), false);
-        std::fill(mask.begin(),
+        keel::fill(mask.begin(),
                   mask.begin() + keel::as<keel::isize>(subSize), true);
 
         bool factorFoundInPass = false;
@@ -1397,7 +1395,7 @@ void factorPrimitiveSquarefreeMPoly(const MPoly &S, keel::usize kVars,
                 return;
             }
         } while (!factorFoundInPass &&
-                 std::prev_permutation(mask.begin(), mask.end()));
+                 keel::prev_permutation(mask.begin(), mask.end()));
     }
 
     irredOut.push_back(curS);
@@ -1594,7 +1592,7 @@ FactorMultiResult factorMulti(Ctx &c, Expr f, keel::ArrayRef<Expr> vars,
             merged.push_back(FactorMultiItem{facExpr, pf.second});
     }
 
-    std::sort(merged.begin(), merged.end(),
+    keel::sort(merged.begin(), merged.end(),
               [&](const FactorMultiItem &a, const FactorMultiItem &b) {
                   return c.compare(a.factor, b.factor) < 0;
               });

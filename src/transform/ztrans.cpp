@@ -8,7 +8,6 @@
 #include <numkit/cas/poly/upoly.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
-#include <algorithm>
 #include <keel/format.h>
 #include <keel/string.h>
 #include <keel/array.h>

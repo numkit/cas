@@ -1,4 +1,5 @@
 #include <keel/core.h>
+#include <keel/algo.h>
 #include <keel/math.h>
 #include <numkit/cas/core/simplify.hpp>
 
@@ -6,7 +7,6 @@
 #include <numkit/cas/linalg/symmatrix.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
-#include <algorithm>
 #include <keel/string.h>
 #include <keel/array.h>
 
@@ -212,24 +212,24 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                     if (i == j)
                         continue;
                     if (ti.kind == SqTrigKind::Sin2 && terms[j] == negCof) {
-                        terms[std::min(i, j)] = c.mul(
+                        terms[keel::min(i, j)] = c.mul(
                             {negCof, c.pow(c.func("cos", u), c.number(keel::i64{2}))});
-                        terms.remove_at(std::max(i, j));
+                        terms.remove_at(keel::max(i, j));
                         changed = true;
                     } else if (ti.kind == SqTrigKind::Cos2 && terms[j] == negCof) {
-                        terms[std::min(i, j)] = c.mul(
+                        terms[keel::min(i, j)] = c.mul(
                             {negCof, c.pow(c.func("sin", u), c.number(keel::i64{2}))});
-                        terms.remove_at(std::max(i, j));
+                        terms.remove_at(keel::max(i, j));
                         changed = true;
                     } else if (ti.kind == SqTrigKind::Sinh2 && terms[j] == cof) {
-                        terms[std::min(i, j)] = c.mul(
+                        terms[keel::min(i, j)] = c.mul(
                             {cof, c.pow(c.func("cosh", u), c.number(keel::i64{2}))});
-                        terms.remove_at(std::max(i, j));
+                        terms.remove_at(keel::max(i, j));
                         changed = true;
                     } else if (ti.kind == SqTrigKind::Cosh2 && terms[j] == negCof) {
-                        terms[std::min(i, j)] = c.mul(
+                        terms[keel::min(i, j)] = c.mul(
                             {cof, c.pow(c.func("sinh", u), c.number(keel::i64{2}))});
-                        terms.remove_at(std::max(i, j));
+                        terms.remove_at(keel::max(i, j));
                         changed = true;
                     }
                 }
@@ -410,9 +410,9 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                     break;
                 }
                 if (terms[j] == negCoefI) {
-                    terms[std::min(i, j)] =
+                    terms[keel::min(i, j)] =
                         c.mul({negCoefI, c.func(compFn, argI)});
-                    terms.remove_at(std::max(i, j));
+                    terms.remove_at(keel::max(i, j));
                     changed = true;
                     break;
                 }
@@ -740,8 +740,8 @@ Expr simplifyAddNode(Ctx &c, Expr e)
             }
             if (idxEK2 < terms.size() && idxKK < terms.size()) {
                 terms[i] = c.mul({cI, halfPi});
-                const keel::usize hi = std::max(idxEK2, idxKK);
-                const keel::usize lo = std::min(idxEK2, idxKK);
+                const keel::usize hi = keel::max(idxEK2, idxKK);
+                const keel::usize lo = keel::min(idxEK2, idxKK);
                 terms.remove_at(hi);
                 terms.remove_at(lo);
                 changed = true;
@@ -2589,7 +2589,7 @@ void collectTrigArgs(const Ctx &c, Expr e, keel::Array<Expr> &args)
             fn == "sec" || fn == "csc" || fn == "sinh" || fn == "cosh" ||
             fn == "tanh" || fn == "coth" || fn == "sech" || fn == "csch") {
             const Expr arg = c.child(e, 0);
-            if (std::find(args.begin(), args.end(), arg) == args.end())
+            if (keel::find(args.begin(), args.end(), arg) == args.end())
                 args.push_back(arg);
         }
     }
@@ -2718,7 +2718,7 @@ void collectSymbols(const Ctx &c, Expr e, keel::Array<Expr> &syms)
     if (e.isNull())
         return;
     if (c.kind(e) == NodeKind::Symbol) {
-        if (std::find(syms.begin(), syms.end(), e) == syms.end())
+        if (keel::find(syms.begin(), syms.end(), e) == syms.end())
             syms.push_back(e);
         return;
     }
@@ -2747,7 +2747,7 @@ void collectRecurrenceFuncNodes(const Ctx &c, Expr e, keel::Array<Expr> &nodes)
         return;
     if (c.kind(e) == NodeKind::Func &&
         isThreeTermRecurrenceFunc(c.funcName(e), c.childCount(e))) {
-        if (std::find(nodes.begin(), nodes.end(), e) == nodes.end())
+        if (keel::find(nodes.begin(), nodes.end(), e) == nodes.end())
             nodes.push_back(e);
     }
     for (keel::usize i = 0; i < c.childCount(e); ++i)

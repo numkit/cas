@@ -1,7 +1,7 @@
 #include <keel/core.h>
+#include <keel/algo.h>
 #include <numkit/cas/poly/fppoly.hpp>
 
-#include <algorithm>
 #include <cassert>
 
 namespace numkit::cas {
@@ -96,8 +96,8 @@ FpPoly operator+(const FpPoly &a, const FpPoly &b)
     const keel::u64 p = a.hasP() ? a.p_ : b.p_;
     FpPoly out;
     out.p_ = p;
-    out.c_.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    out.c_.reserve(keel::max(a.c_.size(), b.c_.size()));
+    for (keel::usize i = 0; i < keel::max(a.c_.size(), b.c_.size()); ++i)
         out.c_.push_back(addMod(a.coeff(i), b.coeff(i), p));
     out.trim();
     return out;
@@ -109,8 +109,8 @@ FpPoly operator-(const FpPoly &a, const FpPoly &b)
     const keel::u64 p = a.hasP() ? a.p_ : b.p_;
     FpPoly out;
     out.p_ = p;
-    out.c_.reserve(std::max(a.c_.size(), b.c_.size()));
-    for (keel::usize i = 0; i < std::max(a.c_.size(), b.c_.size()); ++i)
+    out.c_.reserve(keel::max(a.c_.size(), b.c_.size()));
+    for (keel::usize i = 0; i < keel::max(a.c_.size(), b.c_.size()); ++i)
         out.c_.push_back(subMod(a.coeff(i), b.coeff(i), p));
     out.trim();
     return out;
@@ -386,7 +386,7 @@ keel::Array<FpPoly> FpPoly::factor(const FpPoly &f)
         if (rest.deg() == 0)
             break;
     }
-    std::sort(out.begin(), out.end(), [](const FpPoly &a, const FpPoly &b) {
+    keel::sort(out.begin(), out.end(), [](const FpPoly &a, const FpPoly &b) {
         if (a.deg() != b.deg())
             return a.deg() < b.deg();
         for (keel::usize i = a.size(); i-- > 0;)

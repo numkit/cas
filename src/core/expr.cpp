@@ -5,7 +5,6 @@
 #include <numkit/cas/core/expr.hpp>
 #include <numkit/cas/poly/sturm.hpp>
 
-#include <algorithm>
 
 namespace numkit::cas {
 
@@ -469,7 +468,7 @@ keel::i32 Ctx::compare(Expr a, Expr b) const
         const keel::i32 byName = funcNames_[na.aux].as_ref().compare(funcNames_[nb.aux].as_ref());
         if (byName != 0)
             return signOf(byName);
-        const keel::usize n = std::min(na.childCount, nb.childCount);
+        const keel::usize n = keel::min(na.childCount, nb.childCount);
         for (keel::usize i = 0; i < n; ++i) {
             const keel::i32 c = compare(child(a, i), child(b, i));
             if (c != 0)
@@ -488,7 +487,7 @@ keel::i32 Ctx::compare(Expr a, Expr b) const
         if (na.aux != nb.aux) {
             const RootOfDesc &da = rootofs_[na.aux];
             const RootOfDesc &db = rootofs_[nb.aux];
-            const keel::usize n = std::min(da.poly.size(), db.poly.size());
+            const keel::usize n = keel::min(da.poly.size(), db.poly.size());
             for (keel::usize i = 0; i < n; ++i)
                 if (!(da.poly[i] == db.poly[i]))
                     return da.poly[i] < db.poly[i] ? -1 : 1;
@@ -500,7 +499,7 @@ keel::i32 Ctx::compare(Expr a, Expr b) const
     }
     case NodeKind::Add:
     case NodeKind::Mul: {
-        const keel::usize n = std::min(na.childCount, nb.childCount);
+        const keel::usize n = keel::min(na.childCount, nb.childCount);
         for (keel::usize i = 0; i < n; ++i) {
             const keel::i32 c = compare(child(a, i), child(b, i));
             if (c != 0)
@@ -943,7 +942,7 @@ bool Ctx::evalExact(
                                             BigInt(0));
                     row[0] = BigInt(1);
                     for (keel::i64 i = 1; i <= nInt; ++i) {
-                        const keel::i64 jMax = std::min(i, kInt);
+                        const keel::i64 jMax = keel::min(i, kInt);
                         for (keel::i64 j = jMax; j >= 1; --j) {
                             const auto ju = keel::as<keel::usize>(j);
                             if (name == "stirlingS1") {
@@ -1375,7 +1374,7 @@ keel::f64 evalSiDouble(keel::f64 x)
     }
     if (ax <= 32.0) {
         const keel::f64 si4 = evalSiDouble(4.0);
-        const keel::i32 panels = std::max(8, keel::as<keel::i32>(keel::ceil((ax - 4.0) * 2.0)));
+        const keel::i32 panels = keel::max(8, keel::as<keel::i32>(keel::ceil((ax - 4.0) * 2.0)));
         const keel::f64 tail = gauss8Integrate(
             [](keel::f64 t) { return keel::sin(t) / t; }, 4.0, ax, panels);
         return sgn * (si4 + tail);
@@ -1418,7 +1417,7 @@ bool evalCiDouble(keel::f64 x, keel::f64 &out)
     if (x <= 32.0) {
         keel::f64 ci4 = 0.0;
         evalCiDouble(4.0, ci4);
-        const keel::i32 panels = std::max(8, keel::as<keel::i32>(keel::ceil((x - 4.0) * 2.0)));
+        const keel::i32 panels = keel::max(8, keel::as<keel::i32>(keel::ceil((x - 4.0) * 2.0)));
         const keel::f64 tail = gauss8Integrate(
             [](keel::f64 t) { return keel::cos(t) / t; }, 4.0, x, panels);
         out = ci4 + tail;
@@ -1478,7 +1477,7 @@ keel::f64 evalFresnelDouble(keel::f64 x, bool isSine)
     }
     if (ax <= 12.0) {
         const keel::f64 base = evalFresnelDouble(2.5, isSine);
-        const keel::i32 panels = std::max(16, keel::as<keel::i32>(keel::ceil((ax * ax - 6.25) * 4.0)));
+        const keel::i32 panels = keel::max(16, keel::as<keel::i32>(keel::ceil((ax * ax - 6.25) * 4.0)));
         const keel::f64 tail = gauss8Integrate(
             [isSine](keel::f64 t) {
                 const keel::f64 arg = 0.5 * kPiDouble * t * t;
@@ -2108,7 +2107,7 @@ bool carlsonRF(keel::f64 x, keel::f64 y, keel::f64 z, keel::f64 &out)
         const keel::f64 dx = keel::abs(A - x);
         const keel::f64 dy = keel::abs(A - y);
         const keel::f64 dz = keel::abs(A - z);
-        if (std::max({dx, dy, dz}) <= 1e-6 * A)
+        if (keel::max({dx, dy, dz}) <= 1e-6 * A)
             break;
         const keel::f64 sx = keel::sqrt(x);
         const keel::f64 sy = keel::sqrt(y);
@@ -2145,7 +2144,7 @@ bool carlsonRD(keel::f64 x, keel::f64 y, keel::f64 z, keel::f64 &out)
         const keel::f64 dx = keel::abs(A - x);
         const keel::f64 dy = keel::abs(A - y);
         const keel::f64 dz = keel::abs(A - z);
-        if (std::max({dx, dy, dz}) <= 1e-6 * A)
+        if (keel::max({dx, dy, dz}) <= 1e-6 * A)
             break;
         const keel::f64 sx = keel::sqrt(x);
         const keel::f64 sy = keel::sqrt(y);
@@ -2192,7 +2191,7 @@ bool carlsonRJ(keel::f64 x, keel::f64 y, keel::f64 z, keel::f64 p, keel::f64 &ou
         const keel::f64 dy = keel::abs(A - y);
         const keel::f64 dz = keel::abs(A - z);
         const keel::f64 dp = keel::abs(A - p);
-        if (std::max({dx, dy, dz, dp}) <= 1e-6 * A)
+        if (keel::max({dx, dy, dz, dp}) <= 1e-6 * A)
             break;
         const keel::f64 sx = keel::sqrt(x);
         const keel::f64 sy = keel::sqrt(y);
@@ -2722,7 +2721,7 @@ bool evalHypergeom2F1Double(keel::f64 a, keel::f64 b, keel::f64 c, keel::f64 z, 
     const bool terminates = aNegInt || bNegInt;
     keel::i32 termCount = 500;
     if (aNegInt && bNegInt)
-        termCount = keel::as<keel::i32>(std::min(-a, -b));
+        termCount = keel::as<keel::i32>(keel::min(-a, -b));
     else if (aNegInt)
         termCount = keel::as<keel::i32>(-a);
     else if (bNegInt)
@@ -2947,7 +2946,7 @@ bool evalDoubleRec(
                         kInt + 1, BigInt(0));
                     row[0] = BigInt(1);
                     for (keel::i64 i = 1; i <= nInt; ++i) {
-                        const keel::i64 jMax = std::min(i, kInt);
+                        const keel::i64 jMax = keel::min(i, kInt);
                         for (keel::i64 j = jMax; j >= 1; --j) {
                             const auto ju = keel::as<keel::usize>(j);
                             if (fn == "stirlingS1") {

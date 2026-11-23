@@ -1,4 +1,5 @@
 #include <keel/core.h>
+#include <keel/algo.h>
 #include <keel/math.h>
 #include <numkit/cas/linalg/symmatrix.hpp>
 
@@ -9,7 +10,6 @@
 #include <numkit/cas/poly/zassenhaus.hpp>
 #include <numkit/cas/transform/laplace.hpp>
 
-#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <keel/array.h>
@@ -38,7 +38,7 @@ void collectSymbolsAndCheckPureRat(const Ctx &c, Expr e,
     case NodeKind::Number:
         return;
     case NodeKind::Symbol:
-        if (std::find(syms.begin(), syms.end(), e) == syms.end())
+        if (keel::find(syms.begin(), syms.end(), e) == syms.end())
             syms.push_back(e);
         return;
     case NodeKind::RootOf:
@@ -271,7 +271,7 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
             for (const auto &tf : cur) {
                 if (cf.first == tf.first) {
                     nextCommon.emplace_back(cf.first,
-                                            std::min(cf.second, tf.second));
+                                            keel::min(cf.second, tf.second));
                     break;
                 }
             }
@@ -365,7 +365,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
         }
         if (deg > 24)
             return false;
-        maxDeg = std::max(maxDeg, deg);
+        maxDeg = keel::max(maxDeg, deg);
         parsed.emplace_back(deg, rest.empty() ? c.one() : c.mul(rest));
     }
 
@@ -1578,7 +1578,7 @@ keel::Array<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
     }
 
     // Sort eigenvalues deterministically (by numeric value when evaluable, else by string)
-    std::sort(distinctLams.begin(), distinctLams.end(),
+    keel::sort(distinctLams.begin(), distinctLams.end(),
               [&](const keel::Pair<Expr, keel::usize> &a,
                   const keel::Pair<Expr, keel::usize> &b) {
                   keel::f64 va = 0.0, vb = 0.0;
@@ -1835,7 +1835,7 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
         perm[i] = i;
     keel::i32 sign = 1;
 
-    const keel::usize steps = std::min(m, n);
+    const keel::usize steps = keel::min(m, n);
     for (keel::usize k = 0; k < steps; ++k) {
         if (!checkLinalgBudget(c, budget)) {
             out.reason.assign("budget exhausted in lu");
@@ -2658,7 +2658,7 @@ LagrangeExtremaResult lagrangeExtrema(
         return out;
     }
 
-    std::sort(out.points.begin(), out.points.end(),
+    keel::sort(out.points.begin(), out.points.end(),
               [&c](const ExtremumPoint &a, const ExtremumPoint &b) {
                   for (keel::usize i = 0; i < a.point.size(); ++i) {
                       const keel::i32 cmp = c.compare(a.point[i], b.point[i]);

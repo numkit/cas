@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cstdint>
 #include <cstdlib>
 #include <keel/array.h>
 #include <keel/format.h>

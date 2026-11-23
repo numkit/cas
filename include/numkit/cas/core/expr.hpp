@@ -4,16 +4,46 @@
 #include <keel/array.h>
 #include <keel/core.h>
 #include <keel/hash_map.h>
+#include <keel/smart_ptr.h>
 #include <keel/string.h>
 #include <numkit/cas/num/rational.hpp>
 
 #include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <deque>
-#include <utility>
 
 namespace numkit::cas {
+
+// Pointer-stable append-only chunked array (replaces std::deque for DAG storage).
+template <typename T, keel::usize BlockSize = 64>
+class StableBlocks
+{
+public:
+    keel::usize size() const noexcept { return count_; }
+    bool empty() const noexcept { return count_ == 0; }
+
+    void push_back(T val)
+    {
+        if (blocks_.empty() || blocks_.back()->size() == BlockSize) {
+            auto blk = keel::make_unique<keel::Array<T>>();
+            blk->reserve(BlockSize);
+            blocks_.push_back(keel::move(blk));
+        }
+        blocks_.back()->push_back(keel::move(val));
+        ++count_;
+    }
+
+    T &operator[](keel::usize idx) noexcept
+    {
+        return (*blocks_[idx / BlockSize])[idx % BlockSize];
+    }
+    const T &operator[](keel::usize idx) const noexcept
+    {
+        return (*blocks_[idx / BlockSize])[idx % BlockSize];
+    }
+
+private:
+    keel::Array<keel::UniquePtr<keel::Array<T>>> blocks_;
+    keel::usize count_ = 0;
+};
 
 enum class NodeKind : keel::u8 {
     Number, // Rational atom
@@ -237,7 +267,7 @@ private:
 
     keel::u32 internName(keel::StringRef name,
                              keel::HashMap<keel::String, keel::u32> &ids,
-                             std::deque<keel::String> &names);
+                             StableBlocks<keel::String> &names);
 
     Expr makeNode(NodeKind kind, keel::u32 aux,
                   keel::ArrayRef<Expr> children, const Rational &num);
@@ -253,14 +283,14 @@ private:
     void printPrec(Expr e, keel::String &out, keel::i32 parentPrec) const;
     static keel::i32 kindRank(NodeKind k);
 
-    std::deque<Node> nodes_;
+    StableBlocks<Node> nodes_;
     keel::Array<keel::u32> childArena_;
     keel::HashMap<keel::u32, keel::u32> internHead_;
     keel::Array<keel::u32> internNext_;
     keel::HashMap<keel::String, keel::u32> symbolIds_;
     keel::HashMap<keel::String, keel::u32> funcIds_;
-    std::deque<keel::String> symbolNames_;
-    std::deque<keel::String> funcNames_;
+    StableBlocks<keel::String> symbolNames_;
+    StableBlocks<keel::String> funcNames_;
     // RootOf payload table (index by node aux). Coefficients ascending;
     // stored as plain vectors to keep the core layer independent of
     // the poly layer.
@@ -270,7 +300,7 @@ private:
         keel::i32 index;
         keel::u32 nodeId = 0; // id of the interning node (filled after makeNode)
     };
-    std::deque<RootOfDesc> rootofs_;
+    StableBlocks<RootOfDesc> rootofs_;
     keel::HashMap<keel::String, AssumeDomain> assumptions_;
 };
 

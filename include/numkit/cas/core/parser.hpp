@@ -6,7 +6,6 @@
 #include <keel/string.h>
 #include <numkit/cas/core/expr.hpp>
 
-#include <cstddef>
 
 namespace numkit::cas {
 

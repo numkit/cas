@@ -2,8 +2,6 @@
 #pragma once
 
 #include <keel/core.h>
-#include <cstddef>
-#include <cstdint>
 
 namespace numkit::cas {
 

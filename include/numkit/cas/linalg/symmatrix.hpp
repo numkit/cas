@@ -7,7 +7,6 @@
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 
-#include <cstddef>
 
 namespace numkit::cas {
 

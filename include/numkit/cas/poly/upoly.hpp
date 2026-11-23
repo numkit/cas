@@ -6,7 +6,6 @@
 #include <keel/string.h>
 #include <numkit/cas/num/rational.hpp>
 
-#include <cstdint>
 
 namespace numkit::cas {
 

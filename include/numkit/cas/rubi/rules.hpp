@@ -20,7 +20,6 @@
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 
-#include <cstdint>
 
 namespace numkit::cas::rubi {
 

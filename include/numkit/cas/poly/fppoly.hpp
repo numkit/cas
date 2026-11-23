@@ -5,8 +5,6 @@
 #include <keel/core.h>
 #include <numkit/cas/num/bigint.hpp>
 
-#include <cstddef>
-#include <cstdint>
 
 namespace numkit::cas {
 

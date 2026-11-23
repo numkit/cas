@@ -31,7 +31,6 @@
 #include <numkit/value/error.hpp>
 
 #include <algorithm>
-#include <cstdint>
 #include <utility>
 
 namespace numkit::cas {

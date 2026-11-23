@@ -7,7 +7,6 @@
 #include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <algorithm>
-#include <cstdint>
 #include <keel/string.h>
 #include <keel/array.h>
 

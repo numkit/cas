@@ -11,7 +11,6 @@
 #include <numkit/cas/poly/zassenhaus.hpp>
 
 #include <algorithm>
-#include <cstdint>
 #include <cstdlib>
 #include <keel/array.h>
 #include <keel/string.h>

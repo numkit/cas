@@ -7,7 +7,6 @@
 #include <numkit/cas/poly/upoly.hpp>
 
 #include <keel/static_array.h>
-#include <cstdint>
 #include <cassert>
 
 namespace numkit::cas {

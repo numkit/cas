@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <deque>
 
 namespace numkit::cas {
 
@@ -92,11 +91,11 @@ keel::Array<RootInterval> isolateRealRoots(const UPoly &p0)
         Rational lo, hi;
         bool rootAtHi;
     };
-    std::deque<Item> work;
+    keel::Array<Item> work;
     work.push_back({-B, B, false});
     while (!work.empty()) {
-        const Item it = work.front();
-        work.pop_front();
+        const Item it = keel::move(work.back());
+        work.pop_back();
         const keel::usize n =
             countRealRoots(sturm, it.lo, it.hi) - (it.rootAtHi ? 1 : 0);
         if (n == 0)

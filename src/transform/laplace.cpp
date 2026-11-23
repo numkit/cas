@@ -6,7 +6,6 @@
 #include <numkit/cas/linalg/symmatrix.hpp>
 #include <numkit/cas/poly/zassenhaus.hpp>
 
-#include <cstdint>
 #include <keel/array.h>
 #include <keel/string.h>
 

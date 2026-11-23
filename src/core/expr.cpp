@@ -71,7 +71,7 @@ Expr Ctx::number(Rational v)
 
 keel::u32 Ctx::internName(keel::StringRef name,
                               keel::HashMap<keel::String, keel::u32> &ids,
-                              std::deque<keel::String> &names)
+                              StableBlocks<keel::String> &names)
 {
     if (const keel::u32 *hit = ids.get(name))
         return *hit;
@@ -125,7 +125,8 @@ Expr Ctx::rootOf(keel::Array<Rational> poly, keel::i32 index)
         hash = mix32(hash, keel::as<keel::u32>(h64));
         hash = mix32(hash, keel::as<keel::u32>(h64 >> 32));
     }
-    for (const RootOfDesc &d : rootofs_) {
+    for (keel::usize i = 0; i < rootofs_.size(); ++i) {
+        const RootOfDesc &d = rootofs_[i];
         if (d.index == index && d.poly == poly && d.nodeId != 0)
             return Expr(this, d.nodeId);
     }

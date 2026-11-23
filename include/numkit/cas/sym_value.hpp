@@ -12,7 +12,6 @@
 #include <numkit/value/object.hpp>
 #include <numkit/value/value.hpp>
 
-#include <cstddef>
 #include <utility>
 
 namespace numkit::cas {

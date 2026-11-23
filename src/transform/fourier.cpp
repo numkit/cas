@@ -6,7 +6,6 @@
 #include <numkit/cas/integrate/ratint.hpp>
 #include <numkit/cas/poly/upoly.hpp>
 
-#include <cstdint>
 #include <keel/array.h>
 #include <keel/string.h>
 
@@ -896,15 +895,15 @@ Expr canonicalizeHeavisideExp(Ctx &c, Expr e, Expr t)
                     continue;
                 if (terms[j] == K) {
                     const Expr kPos = c.subs(K, absT, t);
-                    terms[std::min(i, j)] = c.simplify(
+                    terms[keel::min(i, j)] = c.simplify(
                         c.mul({c.number(2), kPos, c.func("heaviside", t)}));
-                    terms.remove_at(std::max(i, j));
+                    terms.remove_at(keel::max(i, j));
                     changed = true;
                 } else if (terms[j] == negK) {
                     const Expr kNeg = c.subs(negK, absT, c.neg(t));
-                    terms[std::min(i, j)] = c.simplify(c.mul(
+                    terms[keel::min(i, j)] = c.simplify(c.mul(
                         {c.number(2), kNeg, c.func("heaviside", c.neg(t))}));
-                    terms.remove_at(std::max(i, j));
+                    terms.remove_at(keel::max(i, j));
                     changed = true;
                 }
             }

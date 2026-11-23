@@ -5,7 +5,6 @@
 #include <keel/core.h>
 #include <numkit/cas/poly/upoly.hpp>
 
-#include <utility>
 
 namespace numkit::cas {
 

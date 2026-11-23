@@ -71,7 +71,7 @@ using numkit::Value;
         doInvoke(keel::ArrayRef<Value>(inPtr, nargs), nargout, keel::MutArrayRef<Value>(outPtr, outSlots));
 
         for (keel::usize i = 0; i < nargout; ++i) {
-            outs[i] = boxValue(std::move(outPtr[i]));
+            outs[i] = boxValue(keel::move(outPtr[i]));
         }
         return 0;
     } catch (const std::exception &ex) {
@@ -133,7 +133,7 @@ int numkit_cas_register_fn(numkit_cas_ctx *ctx,
                                   numkit::CallContext & /*c*/) {
             numkit::c_abi::invokeHostCallback(fn, user_data, args, nargout, outs);
         };
-        ctx->ctx.registerFunction(kToolboxNs, name, std::move(cb));
+        ctx->ctx.registerFunction(kToolboxNs, name, keel::move(cb));
         return 0;
     } catch (const std::exception &ex) {
         numkit::c_abi::setError(err, 1, ex.what());

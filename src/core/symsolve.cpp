@@ -680,7 +680,7 @@ void solveRaw(Ctx &c, Expr e, Expr var, Budget *budget,
     // 5. Symbolic polynomial in `var` with symbolic parameters (degree <= 8).
     keel::Array<Expr> coeffs;
     if (extractPolyCoeffsInVar(c, numExpr, var, 8, coeffs)) {
-        solvePolyCoeffs(c, std::move(coeffs), candidates);
+        solvePolyCoeffs(c, keel::move(coeffs), candidates);
     }
 }
 
@@ -704,10 +704,10 @@ keel::Array<Expr> solveSymbolic(Ctx &c, Expr eqn, Expr var, Budget *budget)
     return valid;
 }
 
-keel::Array<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
+keel::Array<keel::Pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
                                                 Expr x, Expr y, Budget *budget)
 {
-    keel::Array<std::pair<Expr, Expr>> solutions;
+    keel::Array<keel::Pair<Expr, Expr>> solutions;
     if (eq1.isNull() || eq2.isNull() || x.isNull() || y.isNull())
         return solutions;
 
@@ -1115,8 +1115,8 @@ keel::Array<keel::Array<Expr>> solveSystem(Ctx &c,
                         break;
                     }
                     if (pivot != col) {
-                        std::swap(A[pivot], A[col]);
-                        std::swap(rhs[pivot], rhs[col]);
+                        keel::swap(A[pivot], A[col]);
+                        keel::swap(rhs[pivot], rhs[col]);
                     }
                     const Expr piv = A[col][col];
                     for (keel::usize r = col + 1; r < n; ++r) {
@@ -1144,7 +1144,7 @@ keel::Array<keel::Array<Expr>> solveSystem(Ctx &c,
                             xi = c.simplify(xi);
                         sol[ui] = xi;
                     }
-                    solutions.push_back(std::move(sol));
+                    solutions.push_back(keel::move(sol));
                     return solutions;
                 }
             }

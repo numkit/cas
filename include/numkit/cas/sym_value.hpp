@@ -12,7 +12,6 @@
 #include <numkit/value/object.hpp>
 #include <numkit/value/value.hpp>
 
-#include <utility>
 
 namespace numkit::cas {
 
@@ -81,7 +80,7 @@ numkit::Value symIsAlways(const numkit::Value &v,
 keel::String symMatlabFunctionSource(keel::ArrayRef<numkit::Value> args,
                                      keel::Allocator *mr = nullptr);
 void symsCommand(keel::ArrayRef<numkit::Value> args,
-                 keel::Array<std::pair<keel::String, numkit::Value>> &bindingsOut,
+                 keel::Array<keel::Pair<keel::String, numkit::Value>> &bindingsOut,
                  keel::Allocator *mr = nullptr);
 numkit::Value symAssume(const numkit::Value &symVal, keel::StringRef domainStr,
                         keel::Allocator *mr = nullptr);

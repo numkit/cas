@@ -92,7 +92,7 @@ TEST(EvalExact, FixedVectors)
 {
     Ctx c;
     const Expr x = c.symbol("x");
-    const keel::Array<std::pair<keel::StringRef, Rational>> env{{"x", Rational(keel::i64{3})}};
+    const keel::Array<keel::Pair<keel::StringRef, Rational>> env{{"x", Rational(keel::i64{3})}};
     Rational out;
 
     ASSERT_TRUE(c.evalExact(c.add({c.pow(x, c.number(keel::i64{2})),
@@ -142,7 +142,7 @@ TEST(EvalExact, ZeroNegativePowerDeclines)
     Ctx c;
     Rational out;
     const Expr y = c.symbol("y");
-    const keel::Array<std::pair<keel::StringRef, Rational>> env{
+    const keel::Array<keel::Pair<keel::StringRef, Rational>> env{
         {"y", Rational(keel::i64{-1})}};
     EXPECT_FALSE(c.evalExact(c.pow(c.zero(), y), env, out));
 }

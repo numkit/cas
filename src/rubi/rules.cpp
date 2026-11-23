@@ -2074,7 +2074,7 @@ Expr clearNestedDenominators(Ctx &c, Expr e)
         if (c.kind(b) == NodeKind::Add && c.kind(p) == NodeKind::Number) {
             const Rational &pr = c.numberValue(p);
             if (pr.den() == BigInt(1) && pr.num().isNegative()) {
-                keel::Array<std::pair<Expr, Rational>> denBases;
+                keel::Array<keel::Pair<Expr, Rational>> denBases;
                 auto recordFactor = [&](Expr f) {
                     if (c.kind(f) == NodeKind::Pow &&
                         c.kind(c.child(f, 1)) == NodeKind::Number) {
@@ -2139,7 +2139,7 @@ bool isZeroOrClearedZero(Ctx &c, Expr delta, Expr var)
         return true;
 
     if (c.kind(delta) == NodeKind::Add) {
-        keel::Array<std::pair<Expr, Rational>> denBases;
+        keel::Array<keel::Pair<Expr, Rational>> denBases;
         auto recordNegPow = [&](Expr f) {
             if (c.kind(f) == NodeKind::Pow &&
                 c.kind(c.child(f, 1)) == NodeKind::Number) {

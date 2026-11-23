@@ -6,7 +6,6 @@
 #include <keel/bigint.h>
 #include <keel/core.h>
 #include <keel/string.h>
-#include <utility>
 
 namespace numkit::cas {
 
@@ -91,10 +90,10 @@ public:
     {
         return keel::bignum::BigInt::is_prime(n.v_);
     }
-    static keel::Array<std::pair<BigInt, keel::i32>> factorize(const BigInt &n)
+    static keel::Array<keel::Pair<BigInt, keel::i32>> factorize(const BigInt &n)
     {
         keel::Array<keel::bignum::PrimeFactor> raw = keel::bignum::BigInt::factorize(n.v_);
-        keel::Array<std::pair<BigInt, keel::i32>> out;
+        keel::Array<keel::Pair<BigInt, keel::i32>> out;
         out.reserve(raw.size());
         for (keel::usize i = 0; i < raw.size(); ++i) {
             out.emplace_back(BigInt(keel::move(raw[i].prime)), keel::as<keel::i32>(raw[i].exponent));

@@ -9,7 +9,6 @@
 #include <numkit/sys/plugin.hpp>
 #include <numkit/value/argcheck.hpp>
 
-#include <utility>
 
 namespace numkit::cas::detail {
 
@@ -78,12 +77,12 @@ void matlabFunction_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, kee
 void syms_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 64, "syms");
-    keel::Array<std::pair<keel::String, Value>> bindings;
+    keel::Array<keel::Pair<keel::String, Value>> bindings;
     symsCommand(args, bindings, mrOf(ctx));
     if (ctx.engine) {
         auto *pluginCtx = reinterpret_cast<PluginContext *>(ctx.engine);
         for (auto &kv : bindings) {
-            pluginCtx->assignToCaller(0, kv.first, std::move(kv.second));
+            pluginCtx->assignToCaller(0, kv.first, keel::move(kv.second));
         }
     }
     if (!outs.empty()) {
@@ -331,7 +330,7 @@ void pretty_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayR
             (*dispFn)(keel::ArrayRef<Value>(dargs, 1), 0, keel::MutArrayRef<Value>(douts, 1), ctx);
         }
     } else {
-        outs[0] = std::move(s);
+        outs[0] = keel::move(s);
     }
 }
 

@@ -24,7 +24,7 @@ bool containsRoot(Ctx &c, keel::ArrayRef<Expr> roots, Expr target)
     return false;
 }
 
-bool containsPair(Ctx &c, keel::ArrayRef<std::pair<Expr, Expr>> sols,
+bool containsPair(Ctx &c, keel::ArrayRef<keel::Pair<Expr, Expr>> sols,
                   Expr wantX, Expr wantY)
 {
     for (const auto &kv : sols) {

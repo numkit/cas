@@ -155,7 +155,7 @@ UPoly polyIntegral(const UPoly &p)
     keel::Array<Rational> cs{R0()};
     for (keel::usize i = 0; i < p.coeffs().size(); ++i)
         cs.push_back(p.coeff(i) / Rational(keel::as<keel::i64>(i + 1)));
-    return UPoly(std::move(cs));
+    return UPoly(keel::move(cs));
 }
 
 // All divisors of |n| by trial division; false if |n| exceeds the
@@ -487,7 +487,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                     for (keel::usize i = 0; i < q.coeffs().size(); ++i)
                         cs.push_back(mulT ? ring.mul(tEl, UPoly(q.coeff(i)))
                                           : UPoly(q.coeff(i)));
-                    return ModCPoly(ring, std::move(cs));
+                    return ModCPoly(ring, keel::move(cs));
                 };
                 const ModCPoly v =
                     ModCPoly::gcd(lift(leftN, false) - lift(dLpair, true),
@@ -580,7 +580,7 @@ bool integrateSquarefree(Ctx &c, Expr var, const UPoly &A, const UPoly &F,
                 for (keel::usize i = 0; i < q.coeffs().size(); ++i)
                     cs.push_back(mulT ? ring.mul(tEl, UPoly(q.coeff(i)))
                                       : UPoly(q.coeff(i)));
-                return ModCPoly(ring, std::move(cs));
+                return ModCPoly(ring, keel::move(cs));
             };
             const UPoly dL3 = leftD.derivative();
             const ModCPoly v =
@@ -2695,7 +2695,7 @@ RationalIntegral integrateSpecialFunctions(Ctx &c, Expr f, Expr var,
                 Expr term0 = c.child(expDenom, 0);
                 Expr term1 = c.child(expDenom, 1);
                 if (mentionsVar(c, term0, var) && !mentionsVar(c, term1, var))
-                    std::swap(term0, term1);
+                    keel::swap(term0, term1);
                 if (!mentionsVar(c, term0, var) && mentionsVar(c, term1, var)) {
                     const Expr B = term0;
                     Expr A = c.one();

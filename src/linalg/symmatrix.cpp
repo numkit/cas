@@ -238,7 +238,7 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
     }
 
     auto decomposeTerm = [&](Expr t,
-                             keel::Array<std::pair<Expr, keel::i64>> &facs) {
+                             keel::Array<keel::Pair<Expr, keel::i64>> &facs) {
         auto inspect = [&](Expr f) {
             if (c.kind(f) == NodeKind::Number)
                 return;
@@ -261,12 +261,12 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
         }
     };
 
-    keel::Array<std::pair<Expr, keel::i64>> common;
+    keel::Array<keel::Pair<Expr, keel::i64>> common;
     decomposeTerm(terms[0], common);
     for (keel::usize i = 1; i < terms.size() && !common.empty(); ++i) {
-        keel::Array<std::pair<Expr, keel::i64>> cur;
+        keel::Array<keel::Pair<Expr, keel::i64>> cur;
         decomposeTerm(terms[i], cur);
-        keel::Array<std::pair<Expr, keel::i64>> nextCommon;
+        keel::Array<keel::Pair<Expr, keel::i64>> nextCommon;
         for (const auto & cf : common) {
             for (const auto &tf : cur) {
                 if (cf.first == tf.first) {
@@ -276,7 +276,7 @@ void splitMonomialAndScale(Ctx &c, Expr e, Expr &scaleMonomOut, Expr &primOut)
                 }
             }
         }
-        common = std::move(nextCommon);
+        common = keel::move(nextCommon);
     }
 
     keel::Array<Expr> monomFacs;
@@ -328,7 +328,7 @@ bool extractPolyCoeffsInSym(Ctx &c, Expr e, Expr var,
     }
 
     keel::i32 maxDeg = 0;
-    keel::Array<std::pair<keel::i32, Expr>> parsed;
+    keel::Array<keel::Pair<keel::i32, Expr>> parsed;
     parsed.reserve(terms.size());
     for (const Expr &t : terms) {
         if (c.isZero(t))
@@ -570,7 +570,7 @@ SymMatrix::SymMatrix(keel::usize rows, keel::usize cols, Expr fill)
 
 SymMatrix::SymMatrix(keel::usize rows, keel::usize cols,
                      keel::Array<Expr> entries)
-    : rows_(rows), cols_(cols), data_(std::move(entries))
+    : rows_(rows), cols_(cols), data_(keel::move(entries))
 {
     assert(data_.size() == rows_ * cols_);
 }
@@ -1175,9 +1175,9 @@ SymMatrix linsolve(Ctx &c, const SymMatrix &A, const SymMatrix &B,
 
         if (pivotRow != col) {
             for (keel::usize j = col; j < n; ++j)
-                std::swap(M.at(col, j), M.at(pivotRow, j));
+                keel::swap(M.at(col, j), M.at(pivotRow, j));
             for (keel::usize j = 0; j < rhsCols; ++j)
-                std::swap(R.at(col, j), R.at(pivotRow, j));
+                keel::swap(R.at(col, j), R.at(pivotRow, j));
         }
 
         const Expr pivot = M.at(col, col);
@@ -1321,7 +1321,7 @@ bool computeRREF(Ctx &c, SymMatrix &M, keel::usize pivotColLimit,
 
         if (pivotRow != curRow) {
             for (keel::usize j = 0; j < cols; ++j)
-                std::swap(M.at(curRow, j), M.at(pivotRow, j));
+                keel::swap(M.at(curRow, j), M.at(pivotRow, j));
         }
 
         const Expr pivot = M.at(curRow, col);
@@ -1472,7 +1472,7 @@ keel::Array<SymMatrix> nullspace(Ctx &c, const SymMatrix &A, Budget *budget)
             if (!c.isZero(coef))
                 v.at(pivotCols[k], 0) = normLinalg(c, c.neg(coef), budget);
         }
-        basis.push_back(std::move(v));
+        basis.push_back(keel::move(v));
     }
     return basis;
 }
@@ -1485,7 +1485,7 @@ keel::Array<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
     if (!checkLinalgBudget(c, budget))
         return {};
 
-    keel::Array<std::pair<Expr, keel::usize>> distinctLams;
+    keel::Array<keel::Pair<Expr, keel::usize>> distinctLams;
     auto addEigenvalue = [&](Expr lam, keel::usize mult) {
         lam = normLinalg(c, lam, budget);
         for (auto &kv : distinctLams) {
@@ -1514,7 +1514,7 @@ keel::Array<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
             const keel::Array<UPoly> factors = factorOverQ(up, budget);
             if (budget && !budget->ok())
                 return {};
-            keel::Array<std::pair<UPoly, keel::usize>> grouped;
+            keel::Array<keel::Pair<UPoly, keel::usize>> grouped;
             for (UPoly f : factors) {
                 f.makeMonic();
                 bool found = false;
@@ -1579,8 +1579,8 @@ keel::Array<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
 
     // Sort eigenvalues deterministically (by numeric value when evaluable, else by string)
     std::sort(distinctLams.begin(), distinctLams.end(),
-              [&](const std::pair<Expr, keel::usize> &a,
-                  const std::pair<Expr, keel::usize> &b) {
+              [&](const keel::Pair<Expr, keel::usize> &a,
+                  const keel::Pair<Expr, keel::usize> &b) {
                   keel::f64 va = 0.0, vb = 0.0;
                   const bool okA = c.evalDouble(a.first, {}, va);
                   const bool okB = c.evalDouble(b.first, {}, vb);
@@ -1600,7 +1600,7 @@ keel::Array<EigenPair> eigenvectors(Ctx &c, const SymMatrix &A, Budget *budget)
         ep.lambda = lm.first;
         ep.multiplicity = lm.second;
         ep.vectors = nullspace(c, shifted, budget);
-        out.push_back(std::move(ep));
+        out.push_back(keel::move(ep));
     }
     return out;
 }
@@ -1795,7 +1795,7 @@ SymMatrix rref(Ctx &c, const SymMatrix &A,
     if (!computeRREF(c, M, A.cols(), pivotCols, budget))
         return SymMatrix();
     if (pivotColsOut)
-        *pivotColsOut = std::move(pivotCols);
+        *pivotColsOut = keel::move(pivotCols);
     return M;
 }
 
@@ -1860,10 +1860,10 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
 
         if (pivotRow != k) {
             for (keel::usize j = 0; j < n; ++j)
-                std::swap(U.at(k, j), U.at(pivotRow, j));
+                keel::swap(U.at(k, j), U.at(pivotRow, j));
             for (keel::usize j = 0; j < k; ++j)
-                std::swap(L.at(k, j), L.at(pivotRow, j));
-            std::swap(perm[k], perm[pivotRow]);
+                keel::swap(L.at(k, j), L.at(pivotRow, j));
+            keel::swap(perm[k], perm[pivotRow]);
             sign = -sign;
         }
 
@@ -1936,10 +1936,10 @@ LUDecomposition lu(Ctx &c, const SymMatrix &A, Budget *budget)
         }
     }
 
-    out.L = std::move(L);
-    out.U = std::move(U);
-    out.P = std::move(P);
-    out.perm = std::move(perm);
+    out.L = keel::move(L);
+    out.U = keel::move(U);
+    out.P = keel::move(P);
+    out.perm = keel::move(perm);
     out.sign = sign;
     out.status = LUDecomposition::Status::ProvedSymbolic;
     return out;
@@ -1990,7 +1990,7 @@ keel::Array<SymMatrix> gramSchmidt(Ctx &c, keel::ArrayRef<SymMatrix> cols,
         const Expr d = dotCols(c, u, u, budget);
         if (isZeroLinalg(c, d, budget))
             continue; // linearly dependent column
-        orthoCols.push_back(std::move(u));
+        orthoCols.push_back(keel::move(u));
         normSq.push_back(d);
     }
 
@@ -2008,7 +2008,7 @@ keel::Array<SymMatrix> gramSchmidt(Ctx &c, keel::ArrayRef<SymMatrix> cols,
         SymMatrix q = orthoCols[i].scale(c, invNorm);
         for (keel::usize r = 0; r < m; ++r)
             q.at(r, 0) = simplify(c, q.at(r, 0), budget);
-        out.push_back(std::move(q));
+        out.push_back(keel::move(q));
     }
     return out;
 }
@@ -2054,7 +2054,7 @@ QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
             out.reason.assign("columns of A are linearly dependent or have non-positive norm");
             return out;
         }
-        uCols.push_back(std::move(u));
+        uCols.push_back(keel::move(u));
         dNorms.push_back(d);
     }
 
@@ -2103,8 +2103,8 @@ QRDecomposition qr(Ctx &c, const SymMatrix &A, Budget *budget)
         }
     }
 
-    out.Q = std::move(Q);
-    out.R = std::move(R);
+    out.Q = keel::move(Q);
+    out.R = keel::move(R);
     out.status = QRDecomposition::Status::ProvedSymbolic;
     return out;
 }
@@ -2241,7 +2241,7 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
                     J.at(colIdx, colIdx) = lam;
                     if (step + 1 < k)
                         J.at(colIdx, colIdx + 1) = c.one();
-                    pCols.push_back(std::move(vj));
+                    pCols.push_back(keel::move(vj));
                 }
                 collectedForLam += k;
             }
@@ -2293,9 +2293,9 @@ JordanDecomposition jordanForm(Ctx &c, const SymMatrix &A, Budget *budget)
         }
     }
 
-    out.J = std::move(J);
-    out.P = std::move(P);
-    out.PInv = std::move(PInv);
+    out.J = keel::move(J);
+    out.P = keel::move(P);
+    out.PInv = keel::move(PInv);
     out.status = JordanDecomposition::Status::ProvedSymbolic;
     return out;
 }
@@ -2599,7 +2599,7 @@ LagrangeExtremaResult lagrangeExtrema(
             for (keel::usize i = 0; i < n; ++i) {
                 keel::i32 sG = 0;
                 if (evalExprSign(c, gGrad[i], sG) && sG != 0) {
-                    std::swap(perm[0], perm[i]);
+                    keel::swap(perm[0], perm[i]);
                     break;
                 }
             }
@@ -2650,7 +2650,7 @@ LagrangeExtremaResult lagrangeExtrema(
             }
         }
         if (!dup)
-            out.points.push_back(std::move(pt));
+            out.points.push_back(keel::move(pt));
     }
 
     if (out.points.empty()) {
@@ -3042,7 +3042,7 @@ Expr positiveSqrtLinalg(Ctx &c, Expr sqExpr, keel::ArrayRef<Expr> vars)
                 Expr base = c.child(f, 0);
                 // Ensure canonical positive orientation for polynomial sum bases
                 keel::f64 dProbe = 0.0;
-                keel::Array<std::pair<keel::StringRef, keel::f64>> env;
+                keel::Array<keel::Pair<keel::StringRef, keel::f64>> env;
                 for (const Expr &v : vars) {
                     if (!v.isNull() && c.kind(v) == NodeKind::Symbol)
                         env.emplace_back(c.symbolName(v).as_ref(), 0.7);

@@ -1695,7 +1695,7 @@ Expr combineLogsForLimit(Ctx &c, Expr e)
     }
     case NodeKind::Add: {
         keel::Array<Expr> otherTerms;
-        keel::Array<std::pair<Rational, Expr>> logTerms;
+        keel::Array<keel::Pair<Rational, Expr>> logTerms;
         auto matchRatLog = [&](Expr t, Rational &rOut, Expr &uOut) -> bool {
             if (c.kind(t) == NodeKind::Func && c.funcName(t) == "log") {
                 rOut = Rational(keel::i64{1});

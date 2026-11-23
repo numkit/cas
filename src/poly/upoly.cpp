@@ -10,7 +10,7 @@ namespace numkit::cas {
 UPoly::UPoly(Rational c)
 {
     if (!c.isZero())
-        c_.push_back(std::move(c));
+        c_.push_back(keel::move(c));
 }
 
 UPoly::UPoly(keel::Array<Rational> coeffs) : c_(keel::move(coeffs))
@@ -24,7 +24,7 @@ UPoly UPoly::monomial(Rational c, keel::u64 exp)
     if (!c.isZero()) {
         out.c_.assign(keel::as<keel::usize>(exp) + 1,
                       Rational(keel::i64{0}));
-        out.c_[keel::as<keel::usize>(exp)] = std::move(c);
+        out.c_[keel::as<keel::usize>(exp)] = keel::move(c);
     }
     return out;
 }
@@ -285,7 +285,7 @@ Rational UPoly::resultant(const UPoly &a, const UPoly &b)
 
     const UPoly *hi = &a, *lo = &b;
     if (hi->deg() < lo->deg()) {
-        std::swap(hi, lo);
+        keel::swap(hi, lo);
         const keel::i64 mn = keel::as<keel::i64>(a.deg()) *
                              keel::as<keel::i64>(b.deg());
         if (mn & 1)

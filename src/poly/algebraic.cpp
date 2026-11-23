@@ -60,7 +60,7 @@ Algebraic::Algebraic(UPoly p, RootInterval iv)
         return;
     }
     p.makeMonic();
-    poly_ = std::move(p);
+    poly_ = keel::move(p);
     iv_ = iv;
 }
 

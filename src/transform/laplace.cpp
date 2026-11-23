@@ -919,7 +919,7 @@ bool tryRationalIlaplace(Ctx &c, Expr F, Expr s, Expr t, Budget *budget,
     if (rawFactors.empty())
         return false;
 
-    keel::Array<std::pair<UPoly, keel::u64>> grouped;
+    keel::Array<keel::Pair<UPoly, keel::u64>> grouped;
     for (UPoly f : rawFactors) {
         f.makeMonic();
         bool found = false;

@@ -5,7 +5,6 @@
 #include <numkit/cas/core/budget.hpp>
 #include <numkit/cas/core/expr.hpp>
 
-#include <utility>
 
 namespace numkit::cas {
 
@@ -26,7 +25,7 @@ keel::Array<Expr> solveSymbolic(Ctx &c, Expr eqn, Expr var,
 // Solve a system of two algebraic equations `eq1 == 0, eq2 == 0` in two
 // variables `(x, y)` via the Sylvester resultant `det(Sylv_y(eq1, eq2))`
 // over `SymMatrix`, back-substitution, and symbolic residual verification.
-keel::Array<std::pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
+keel::Array<keel::Pair<Expr, Expr>> solveSystem2(Ctx &c, Expr eq1, Expr eq2,
                                                 Expr x, Expr y,
                                                 Budget *budget = nullptr);
 

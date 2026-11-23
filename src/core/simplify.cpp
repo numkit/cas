@@ -176,7 +176,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                              tj.kind == SqTrigKind::Sin2) ||
                             (ti.kind == SqTrigKind::Cosh2 &&
                              tj.kind == SqTrigKind::Sinh2)) {
-                            std::swap(pA, pB);
+                            keel::swap(pA, pB);
                         }
                         if (pA->kind == SqTrigKind::Sin2 &&
                             pB->kind == SqTrigKind::Cos2 &&
@@ -254,7 +254,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                              tj.kind == SqTrigKind::Sin2) ||
                             (ti.kind == SqTrigKind::Cosh2 &&
                              tj.kind == SqTrigKind::Sinh2)) {
-                            std::swap(pA, pB);
+                            keel::swap(pA, pB);
                         }
                         if (pA->kind == SqTrigKind::Sin2 &&
                             pB->kind == SqTrigKind::Cos2 &&
@@ -632,7 +632,7 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 }
             }
             if (c.kind(t) == NodeKind::Mul) {
-                keel::Array<std::pair<keel::StringRef, Expr>> ellFactors;
+                keel::Array<keel::Pair<keel::StringRef, Expr>> ellFactors;
                 keel::Array<Expr> others;
                 for (keel::usize i = 0; i < c.childCount(t); ++i) {
                     const Expr ch = c.child(t, i);
@@ -677,8 +677,8 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 continue;
             // Normalize so if one is E and one is K, f1I == "ellipticE" and f2I == "ellipticK".
             if (f1I == "ellipticK" && f2I == "ellipticE") {
-                std::swap(f1I, f2I);
-                std::swap(a1I, a2I);
+                keel::swap(f1I, f2I);
+                keel::swap(a1I, a2I);
             }
             if (!(f1I == "ellipticE" && f2I == "ellipticK"))
                 continue;
@@ -724,8 +724,8 @@ Expr simplifyAddNode(Ctx &c, Expr e)
                 if (!matchEllipticPair(terms[j], cJ, f1J, a1J, f2J, a2J))
                     continue;
                 if (f1J == "ellipticK" && f2J == "ellipticE") {
-                    std::swap(f1J, f2J);
-                    std::swap(a1J, a2J);
+                    keel::swap(f1J, f2J);
+                    keel::swap(a1J, a2J);
                 }
                 if (f1J == "ellipticE" && f2J == "ellipticK" && a1J == a2I &&
                     a2J == a1I &&
@@ -1176,10 +1176,10 @@ Expr simplifyMulNode(Ctx &c, Expr e)
                                   rI < Rational(keel::i64{1})) &&
                                 (rJ > Rational(keel::i64{0}) &&
                                  rJ < Rational(keel::i64{1}))) {
-                                std::swap(uBase, vOther);
+                                keel::swap(uBase, vOther);
                             }
                         } else if (c.exprCost(uJ) < c.exprCost(uI)) {
-                            std::swap(uBase, vOther);
+                            keel::swap(uBase, vOther);
                         }
                         // Shift uBase by integer if rational outside (0, 1), or shift vOther
                         // relative to (1 - uBase): vOther = (1 - uBase) + (m - 1).
@@ -3195,7 +3195,7 @@ PolyCoeffsResult coeffs(Ctx &c, Expr e, Expr var)
     }
 
     keel::i64 maxDeg = 0;
-    keel::Array<std::pair<keel::i64, Expr>> buckets;
+    keel::Array<keel::Pair<keel::i64, Expr>> buckets;
     buckets.reserve(terms.size());
 
     for (const Expr &t : terms) {
@@ -3348,7 +3348,7 @@ Expr partfrac(Ctx &c, Expr e, Expr var, Budget *budget)
                              : UPoly::invMod(Qi, groups[i].Pm);
         UPoly Ai = (rem * Ui) % groups[i].Pm;
 
-        keel::Array<std::pair<keel::u64, UPoly>> padicNumerators;
+        keel::Array<keel::Pair<keel::u64, UPoly>> padicNumerators;
         for (keel::u64 k = groups[i].mult; k >= 1; --k) {
             UPoly qk, rk;
             UPoly::divMod(Ai, groups[i].P, qk, rk);
@@ -3386,7 +3386,7 @@ keel::String strCat(const Parts &...parts)
 
 keel::String symbolToLatex(keel::StringRef name)
 {
-    static const std::pair<const char *, const char *> kGreek[] = {
+    static const keel::Pair<const char *, const char *> kGreek[] = {
         {"pi", "\\pi"},         {"alpha", "\\alpha"},   {"beta", "\\beta"},
         {"gamma", "\\gamma"},   {"delta", "\\delta"},   {"epsilon", "\\epsilon"},
         {"zeta", "\\zeta"},     {"eta", "\\eta"},       {"theta", "\\theta"},
@@ -3460,8 +3460,8 @@ keel::String toLatex(const Ctx &c, Expr e)
     }
     case NodeKind::Mul: {
         keel::i32 sign = 1;
-        keel::Array<std::pair<keel::String, bool>> numFacs;
-        keel::Array<std::pair<keel::String, bool>> denFacs;
+        keel::Array<keel::Pair<keel::String, bool>> numFacs;
+        keel::Array<keel::Pair<keel::String, bool>> denFacs;
         for (keel::usize i = 0; i < c.childCount(e); ++i) {
             const Expr f = c.child(e, i);
             if (c.kind(f) == NodeKind::Number) {
@@ -3501,7 +3501,7 @@ keel::String toLatex(const Ctx &c, Expr e)
         }
 
         auto joinFactors =
-            [&](keel::ArrayRef<std::pair<keel::String, bool>> facs)
+            [&](keel::ArrayRef<keel::Pair<keel::String, bool>> facs)
             -> keel::String {
             if (facs.empty())
                 return keel::String::from("1");

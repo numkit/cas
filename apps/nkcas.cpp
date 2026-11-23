@@ -179,7 +179,7 @@ int runEval(keel::StringRef exprSrc, keel::StringRef varName,
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    keel::Array<std::pair<keel::StringRef, double>> env;
+    keel::Array<keel::Pair<keel::StringRef, double>> env;
     if (!varName.empty()) {
         numkit::cas::Expr valExpr;
         try {

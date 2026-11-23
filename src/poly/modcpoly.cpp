@@ -32,7 +32,7 @@ ModCRing::ModCRing(UPoly c)
 {
     assert(!c.isZero() && c.deg() >= 1);
     c.makeMonic();
-    c_ = std::move(c);
+    c_ = keel::move(c);
     zero_ = UPoly();
     one_ = UPoly(R1());
 }

@@ -113,7 +113,7 @@ TEST(FactorizeProperty, RandomSmoothNumbersExact)
                                             23, 29, 31, 37, 41, 43, 47};
     keel::u64 st = 0x5EED12ACEULL;
     for (int iter = 0; iter < 3000; ++iter) {
-        std::vector<std::pair<BigInt, int>> want;
+        std::vector<keel::Pair<BigInt, int>> want;
         BigInt n(1);
         const int parts = 1 + static_cast<int>(nextU64(st) % 5);
         for (int i = 0; i < parts; ++i) {
@@ -130,8 +130,8 @@ TEST(FactorizeProperty, RandomSmoothNumbersExact)
             n = n * BigInt::powUInt(BigInt(p), static_cast<keel::u64>(e));
         }
         std::sort(want.begin(), want.end(),
-                  [](const std::pair<BigInt, int> &a,
-                     const std::pair<BigInt, int> &b) {
+                  [](const keel::Pair<BigInt, int> &a,
+                     const keel::Pair<BigInt, int> &b) {
                       return a.first < b.first;
                   });
         // exact comparison happens inside expectFactors; on mismatch

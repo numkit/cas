@@ -145,7 +145,7 @@ bool verifyOde2(Ctx &c, Expr ySol, Expr a, Expr b, Expr d, Expr f, Expr x)
 // each additive child is split into `(constFactor, xAtom)` where `constFactor`
 // is independent of `x`.
 void splitIntoBasisTerms(Ctx &c, Expr e, Expr x,
-                         keel::Array<std::pair<Expr, Expr>> &out)
+                         keel::Array<keel::Pair<Expr, Expr>> &out)
 {
     const Expr expd = c.expand(e);
     auto processTerm = [&](Expr t) {
@@ -212,7 +212,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
         for (keel::i32 drv = 0; drv < 4; ++drv) {
             if (drv > 0)
                 cur = c.diff(cur, x);
-            keel::Array<std::pair<Expr, Expr>> terms;
+            keel::Array<keel::Pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, cur, x, terms);
             for (const auto &kv : terms)
                 addUniqueAtom(c, rawAtoms, kv.second);
@@ -233,7 +233,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
     keel::Array<Expr> psiImages;
     keel::Array<Expr> rowAtoms;
 
-    keel::Array<std::pair<Expr, Expr>> fTerms;
+    keel::Array<keel::Pair<Expr, Expr>> fTerms;
     splitIntoBasisTerms(c, f, x, fTerms);
     for (const auto &kv : fTerms)
         addUniqueAtom(c, rowAtoms, kv.second);
@@ -244,7 +244,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             continue;
         phiBasis.push_back(phi);
         psiImages.push_back(psi);
-        keel::Array<std::pair<Expr, Expr>> psiTerms;
+        keel::Array<keel::Pair<Expr, Expr>> psiTerms;
         splitIntoBasisTerms(c, psi, x, psiTerms);
         for (const auto &kv : psiTerms)
             addUniqueAtom(c, rowAtoms, kv.second);
@@ -273,7 +273,7 @@ bool tryUndeterminedCoeffs(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
 
         SymMatrix M = SymMatrix::zeros(c, mRows, nCols);
         for (keel::usize j = 0; j < nCols; ++j) {
-            keel::Array<std::pair<Expr, Expr>> terms;
+            keel::Array<keel::Pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, activePsi[j], x, terms);
             for (const auto &kv : terms) {
                 const keel::usize r = findAtomRow(kv.second);
@@ -1499,7 +1499,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
         for (keel::usize drv = 0; drv < n + 2; ++drv) {
             if (drv > 0)
                 cur = c.diff(cur, x);
-            keel::Array<std::pair<Expr, Expr>> terms;
+            keel::Array<keel::Pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, cur, x, terms);
             for (const auto &kv : terms)
                 addUniqueAtom(c, rawAtoms, kv.second);
@@ -1524,7 +1524,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
     keel::Array<Expr> psiImages;
     keel::Array<Expr> rowAtoms;
 
-    keel::Array<std::pair<Expr, Expr>> fTerms;
+    keel::Array<keel::Pair<Expr, Expr>> fTerms;
     splitIntoBasisTerms(c, f, x, fTerms);
     for (const auto &kv : fTerms)
         addUniqueAtom(c, rowAtoms, kv.second);
@@ -1535,7 +1535,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
             continue;
         phiBasis.push_back(phi);
         psiImages.push_back(psi);
-        keel::Array<std::pair<Expr, Expr>> psiTerms;
+        keel::Array<keel::Pair<Expr, Expr>> psiTerms;
         splitIntoBasisTerms(c, psi, x, psiTerms);
         for (const auto &kv : psiTerms)
             addUniqueAtom(c, rowAtoms, kv.second);
@@ -1564,7 +1564,7 @@ bool tryUndeterminedCoeffsN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr f,
 
         SymMatrix M = SymMatrix::zeros(c, mRows, nCols);
         for (keel::usize j = 0; j < nCols; ++j) {
-            keel::Array<std::pair<Expr, Expr>> terms;
+            keel::Array<keel::Pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, activePsi[j], x, terms);
             for (const auto &kv : terms) {
                 const keel::usize r = findAtomRow(kv.second);
@@ -1620,7 +1620,7 @@ bool buildHomogeneousBasisN(Ctx &c, keel::ArrayRef<Expr> coeffs, Expr x,
     if (allRational) {
         const UPoly charPoly(keel::move(ratCoeffs));
         const keel::Array<UPoly> rawFactors = factorOverQ(charPoly, budget);
-        keel::Array<std::pair<UPoly, keel::usize>> grouped;
+        keel::Array<keel::Pair<UPoly, keel::usize>> grouped;
         for (const UPoly &fac : rawFactors) {
             bool found = false;
             for (auto &gm : grouped) {
@@ -2081,7 +2081,7 @@ OdeSystemResult dsolveSystem1Linear(Ctx &c, const SymMatrix &A,
     }
 
     out.status = OdeSystemResult::Status::Proved;
-    out.y = std::move(ySol);
+    out.y = keel::move(ySol);
     out.fundamental = Phi;
     return out;
 }
@@ -2155,8 +2155,8 @@ OdeSystemResult dsolveSystem1LinearIVP(Ctx &c, const SymMatrix &A,
     }
 
     out.status = OdeSystemResult::Status::Proved;
-    out.y = std::move(yIVP);
-    out.fundamental = std::move(gen.fundamental);
+    out.y = keel::move(yIVP);
+    out.fundamental = keel::move(gen.fundamental);
     return out;
 }
 
@@ -2901,7 +2901,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
                         if (c.kind(aG) == NodeKind::Number &&
                             c.kind(bG) == NodeKind::Number &&
                             c.numberValue(bG) < c.numberValue(aG)) {
-                            std::swap(aG, bG);
+                            keel::swap(aG, bG);
                         }
                         const bool cIsInt =
                             c.kind(cG) == NodeKind::Number &&
@@ -2966,7 +2966,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             }
             polyBasis.push_back(phi);
             polyImages.push_back(img);
-            keel::Array<std::pair<Expr, Expr>> terms;
+            keel::Array<keel::Pair<Expr, Expr>> terms;
             splitIntoBasisTerms(c, img, x, terms);
             for (const auto &kv : terms)
                 addUniqueAtom(c, rowAtoms, kv.second);
@@ -2975,7 +2975,7 @@ OdeResult dsolve2Special(Ctx &c, Expr a, Expr b, Expr d, Expr f, Expr x,
             SymMatrix M =
                 SymMatrix::zeros(c, rowAtoms.size(), polyBasis.size());
             for (keel::usize j = 0; j < polyBasis.size(); ++j) {
-                keel::Array<std::pair<Expr, Expr>> terms;
+                keel::Array<keel::Pair<Expr, Expr>> terms;
                 splitIntoBasisTerms(c, polyImages[j], x, terms);
                 for (const auto &kv : terms) {
                     for (keel::usize r = 0; r < rowAtoms.size(); ++r) {
@@ -3461,7 +3461,7 @@ Expr applyTrigProductToSum(Ctx &c, Expr e)
         if (c.kind(term) != NodeKind::Mul)
             return term;
         keel::Array<Expr> other;
-        keel::Array<std::pair<keel::StringRef, Expr>> trigFactors;
+        keel::Array<keel::Pair<keel::StringRef, Expr>> trigFactors;
         for (keel::usize i = 0; i < c.childCount(term); ++i) {
             const Expr f = c.child(term, i);
             if (c.kind(f) == NodeKind::Func && c.childCount(f) == 1 &&

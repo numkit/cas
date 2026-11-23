@@ -205,7 +205,7 @@ public:
     // decline otherwise.
     bool evalExact(
         Expr e,
-        keel::ArrayRef<std::pair<keel::StringRef, Rational>> vals,
+        keel::ArrayRef<keel::Pair<keel::StringRef, Rational>> vals,
         Rational &out);
 
     // Real IEEE-754 double evaluation (vpa/double bridge, item 35):
@@ -218,7 +218,7 @@ public:
     // values, poles, or non-finite overflow.
     bool evalDouble(
         Expr e,
-        keel::ArrayRef<std::pair<keel::StringRef, keel::f64>> vals,
+        keel::ArrayRef<keel::Pair<keel::StringRef, keel::f64>> vals,
         keel::f64 &out) const;
 
     keel::String toString(Expr e) const;

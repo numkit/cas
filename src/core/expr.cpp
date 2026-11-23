@@ -229,7 +229,7 @@ Expr Ctx::makeAdd(keel::ArrayRef<Expr> children)
     // the first child — and coefficients of equal terms sum up. Run-only
     // merging would not be canonical: y + y + 2*y would fold the two y's
     // into a 2*y that then coexists with the original 2*y child.
-    keel::Array<std::pair<Expr, Rational>> acc;
+    keel::Array<keel::Pair<Expr, Rational>> acc;
     Rational constSum(0);
     const auto absorbTerm = [&](Expr c) {
         Rational coef(keel::i64{1});
@@ -303,7 +303,7 @@ Expr Ctx::makeMul(keel::ArrayRef<Expr> children)
     // (base, exponent) — Pow with a numeric exponent — and exponents of
     // equal bases sum up. Mirrors the coefficient collection of makeAdd;
     // run-only merging would leave x * x * x^2 as x^2 * x^2.
-    keel::Array<std::pair<Expr, Rational>> acc;
+    keel::Array<keel::Pair<Expr, Rational>> acc;
     Rational constProd(1);
     const auto absorbBase = [&](Expr c) {
         Expr base = c;
@@ -399,7 +399,7 @@ Expr Ctx::makeNode(NodeKind kind, keel::u32 aux,
         childArena_.push_back(c.id_);
 
     const auto id = keel::as<keel::u32>(nodes_.size() + 1);
-    nodes_.push_back(std::move(n));
+    nodes_.push_back(keel::move(n));
     const keel::u32 prevHead = internHead_.get(hash) ? *internHead_.get(hash) : 0u;
     internNext_.push_back(prevHead);
     internHead_.put(hash, id);
@@ -781,7 +781,7 @@ bool evalPolylogNegIntExact(keel::i64 m, const Rational &z, Rational &out)
 } // namespace
 
 bool Ctx::evalExact(
-    Expr e, keel::ArrayRef<std::pair<keel::StringRef, Rational>> vals,
+    Expr e, keel::ArrayRef<keel::Pair<keel::StringRef, Rational>> vals,
     Rational &out)
 {
     switch (kind(e)) {
@@ -2771,7 +2771,7 @@ bool evalHypergeom2F1Double(keel::f64 a, keel::f64 b, keel::f64 c, keel::f64 z, 
 
 bool evalDoubleRec(
     const Ctx &c, Expr e,
-    keel::ArrayRef<std::pair<keel::StringRef, keel::f64>> vals,
+    keel::ArrayRef<keel::Pair<keel::StringRef, keel::f64>> vals,
     keel::HashMap<keel::u32, keel::f64> &memo, keel::f64 &out)
 {
     if (e.isNull())
@@ -3142,7 +3142,7 @@ bool evalDoubleRec(
 } // namespace
 
 bool Ctx::evalDouble(
-    Expr e, keel::ArrayRef<std::pair<keel::StringRef, keel::f64>> vals,
+    Expr e, keel::ArrayRef<keel::Pair<keel::StringRef, keel::f64>> vals,
     keel::f64 &out) const
 {
     keel::HashMap<keel::u32, keel::f64> memo;

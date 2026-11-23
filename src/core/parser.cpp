@@ -207,7 +207,7 @@ private:
         if (!BigInt::tryParse(ipart, t.text))
             fail(t.pos, keel::format("malformed number '{}'", t.text));
         if (t.frac.empty())
-            return c_.number(Rational(std::move(ipart), BigInt(1)));
+            return c_.number(Rational(keel::move(ipart), BigInt(1)));
         // value = (ipart*10^k + frac)/10^k, k = frac.size(). The
         // literal is exact iff frac is divisible by 5^k (only then
         // does the value live in Z[1/2]); strip the fives and keep
@@ -222,7 +222,7 @@ private:
             BigInt::divMod(frac, five, q, r);
             if (!r.isZero())
                 break;
-            frac = std::move(q);
+            frac = keel::move(q);
             --k;
         }
         if (k != 0)
@@ -230,7 +230,7 @@ private:
                                      t.text, t.frac));
         const BigInt scale = BigInt::powUInt(BigInt(2), t.frac.size());
         BigInt num = ipart * scale + frac;
-        return c_.number(Rational(std::move(num), scale));
+        return c_.number(Rational(keel::move(num), scale));
     }
 
     Expr identLiteral()

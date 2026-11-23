@@ -70,7 +70,7 @@ TEST(ExpandProperty, EvaluationInvariant)
         const Rational q(
             BigInt(static_cast<keel::i64>(nextU64(st) % 9) - 4),
             BigInt(1 + static_cast<keel::i64>(nextU64(st) % 3)));
-        const keel::Array<std::pair<keel::StringRef, Rational>> env{{"x", q}};
+        const keel::Array<keel::Pair<keel::StringRef, Rational>> env{{"x", q}};
         Rational v1, v2;
         ASSERT_TRUE(c.evalExact(e, env, v1));
         ASSERT_TRUE(c.evalExact(c.expand(e), env, v2));

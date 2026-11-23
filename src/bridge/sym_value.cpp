@@ -31,7 +31,6 @@
 #include <numkit/value/error.hpp>
 
 #include <algorithm>
-#include <utility>
 
 namespace numkit::cas {
 
@@ -110,7 +109,7 @@ struct SymbolNameSet
         }
         items.push_back(keel::String::from(s));
         for (keel::usize i = items.size() - 1; i > pos; --i) {
-            std::swap(items[i], items[i - 1]);
+            keel::swap(items[i], items[i - 1]);
         }
     }
 };
@@ -425,9 +424,9 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
                           : c.zero();
             auto nst = keel::make_arc_in<ObjectState>(mr, mr);
             nst->native = keel::make_arc_in<SymPayload>(mr, ctxPtr, fn(in));
-            states.push_back(std::move(nst));
+            states.push_back(keel::move(nst));
         }
-        return Value::objectArray("sym", v.dims(), std::move(states), /*isHandle=*/false, mr);
+        return Value::objectArray("sym", v.dims(), keel::move(states), /*isHandle=*/false, mr);
     }
     if (v.isNumeric() || v.isLogical()) {
         if (v.isScalar()) {
@@ -441,9 +440,9 @@ Value mapSymUnary(const Value &v, Ctx &c, UnaryFn &&fn,
             Expr in = numericElemToSymExpr(c, v, i);
             auto nst = keel::make_arc_in<ObjectState>(mr, mr);
             nst->native = keel::make_arc_in<SymPayload>(mr, ctxPtr, fn(in));
-            states.push_back(std::move(nst));
+            states.push_back(keel::move(nst));
         }
-        return Value::objectArray("sym", v.dims(), std::move(states), /*isHandle=*/false, mr);
+        return Value::objectArray("sym", v.dims(), keel::move(states), /*isHandle=*/false, mr);
     }
     if (v.isChar() || v.isString()) {
         Expr in = parseExprFlexible(c, v.toString(), fnName);
@@ -620,7 +619,7 @@ SymMatrix toSymMatrix(const numkit::Value &v, Ctx &c, const char *fnName)
                     colPos += comma + 1;
                 }
                 if (!curRow.empty())
-                    rowVecs.push_back(std::move(curRow));
+                    rowVecs.push_back(keel::move(curRow));
                 if (semi == keel::kInvalidIndex)
                     break;
                 rowPos += semi + 1;
@@ -679,7 +678,7 @@ numkit::Value fromSymExpr(const keel::Arc<Ctx> &c, Expr e,
     mr = resolveMr(mr);
     auto st = keel::make_arc_in<ObjectState>(mr, mr);
     st->native = keel::make_arc_in<SymPayload>(mr, c, e);
-    return Value::object("sym", std::move(st), /*isHandle=*/false, mr);
+    return Value::object("sym", keel::move(st), /*isHandle=*/false, mr);
 }
 
 numkit::Value fromSymfunExpr(const keel::Arc<Ctx> &c, Expr e,
@@ -693,7 +692,7 @@ numkit::Value fromSymfunExpr(const keel::Arc<Ctx> &c, Expr e,
         pvec.push_back(params[i]);
     auto st = keel::make_arc_in<ObjectState>(mr, mr);
     st->native = keel::make_arc_in<SymPayload>(mr, c, e, keel::move(pvec));
-    return Value::object("symfun", std::move(st), /*isHandle=*/false, mr);
+    return Value::object("symfun", keel::move(st), /*isHandle=*/false, mr);
 }
 
 numkit::Value fromSymMatrix(const keel::Arc<Ctx> &c, const SymMatrix &M,
@@ -710,10 +709,10 @@ numkit::Value fromSymMatrix(const keel::Arc<Ctx> &c, const SymMatrix &M,
         for (keel::usize r = 0; r < rows; ++r) {
             auto st = keel::make_arc_in<ObjectState>(mr, mr);
             st->native = keel::make_arc_in<SymPayload>(mr, c, M(r, col));
-            states.push_back(std::move(st));
+            states.push_back(keel::move(st));
         }
     }
-    return Value::objectArray("sym", Dims(rows, cols), std::move(states), /*isHandle=*/false, mr);
+    return Value::objectArray("sym", Dims(rows, cols), keel::move(states), /*isHandle=*/false, mr);
 }
 
 numkit::Value fromSymVector(const keel::Arc<Ctx> &c, keel::ArrayRef<Expr> vec,
@@ -729,9 +728,9 @@ numkit::Value fromSymVector(const keel::Arc<Ctx> &c, keel::ArrayRef<Expr> vec,
     for (keel::usize i = 0; i < vec.size(); ++i) {
         auto st = keel::make_arc_in<ObjectState>(mr, mr);
         st->native = keel::make_arc_in<SymPayload>(mr, c, vec[i]);
-        states.push_back(std::move(st));
+        states.push_back(keel::move(st));
     }
-    return Value::objectArray("sym", Dims(rows, cols), std::move(states), /*isHandle=*/false, mr);
+    return Value::objectArray("sym", Dims(rows, cols), keel::move(states), /*isHandle=*/false, mr);
 }
 
 // ============================================================================
@@ -996,7 +995,7 @@ numkit::Value symCreate(keel::ArrayRef<numkit::Value> args,
 }
 
 void symsCommand(keel::ArrayRef<numkit::Value> args,
-                 keel::Array<std::pair<keel::String, numkit::Value>> &bindingsOut,
+                 keel::Array<keel::Pair<keel::String, numkit::Value>> &bindingsOut,
                  keel::Allocator *mr)
 {
     symsCommand_argcheck(args);
@@ -1045,7 +1044,7 @@ void symsCommand(keel::ArrayRef<numkit::Value> args,
                     else if (ch == ')') --depth;
                 }
                 if (depth <= 0) {
-                    joinedTokens.push_back(std::move(cur));
+                    joinedTokens.push_back(keel::move(cur));
                     cur.clear();
                     depth = 0;
                 }
@@ -1057,14 +1056,14 @@ void symsCommand(keel::ArrayRef<numkit::Value> args,
                 else if (ch == ')') --d;
             }
             if (d > 0) {
-                cur = std::move(tok);
+                cur = keel::move(tok);
                 depth = d;
             } else {
-                joinedTokens.push_back(std::move(tok));
+                joinedTokens.push_back(keel::move(tok));
             }
         }
         if (!cur.empty())
-            joinedTokens.push_back(std::move(cur));
+            joinedTokens.push_back(keel::move(cur));
     }
 
     auto hasBinding = [&](keel::StringRef nm) -> bool {
@@ -1107,7 +1106,7 @@ void symsCommand(keel::ArrayRef<numkit::Value> args,
                 pos = comma + 1;
             }
             Expr fnExpr = c.func(fnName, paramExprs);
-            bindingsOut.emplace_back(std::move(fnName),
+            bindingsOut.emplace_back(keel::move(fnName),
                                      fromSymfunExpr(ctxPtr, fnExpr, paramExprs.as_ref(), mr));
             continue;
         }
@@ -1268,7 +1267,7 @@ keel::String symMatlabFunctionSource(keel::ArrayRef<numkit::Value> args,
 
     // Build parameter list and any vector-element substitutions (e.g. {t, [y1; y2]} -> @(t, in2)).
     keel::Array<keel::String> paramNames;
-    keel::Array<std::pair<Expr, keel::String>> vecSubsts;
+    keel::Array<keel::Pair<Expr, keel::String>> vecSubsts;
     if (hasVars) {
         if (varsArg.isCell()) {
             for (keel::usize i = 0; i < varsArg.numel(); ++i) {
@@ -1310,14 +1309,14 @@ keel::String symMatlabFunctionSource(keel::ArrayRef<numkit::Value> args,
     }
 
     // Apply vector-parameter substitutions using unique placeholder symbols, then replace in text.
-    keel::Array<std::pair<keel::String, keel::String>> textRepls;
+    keel::Array<keel::Pair<keel::String, keel::String>> textRepls;
     for (keel::usize i = 0; i < vecSubsts.size(); ++i) {
         keel::String ph = keel::format("__nk_mf_arg_{}__", i);
         Expr phSym = c.symbol(ph);
         for (keel::usize r = 0; r < M.rows(); ++r)
             for (keel::usize col = 0; col < M.cols(); ++col)
                 M(r, col) = c.subs(M(r, col), vecSubsts[i].first, phSym);
-        textRepls.emplace_back(std::move(ph), vecSubsts[i].second.clone());
+        textRepls.emplace_back(keel::move(ph), vecSubsts[i].second.clone());
     }
 
     auto vectorizeExprStr = [&](Expr e) -> keel::String {
@@ -1336,7 +1335,7 @@ keel::String symMatlabFunctionSource(keel::ArrayRef<numkit::Value> args,
                 next.append(rp.second);
                 pos = f + rp.first.size();
             }
-            raw = std::move(next);
+            raw = keel::move(next);
         }
         // Vectorize *, /, ^ -> .*, ./, .^ and standalone I -> 1i, oo -> inf.
         keel::String out;
@@ -1746,7 +1745,7 @@ void symFactor(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
         keel::f64 *mp = mVal.doubleDataMut();
         for (keel::usize i = 0; i < mults.size(); ++i)
             mp[i] = mults[i];
-        outs[1] = std::move(mVal);
+        outs[1] = keel::move(mVal);
     }
 }
 
@@ -1918,7 +1917,7 @@ numkit::Value symSymvar(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
     SymbolNameSet syms;
     collectSymbolsFromValue(args[0], c, syms);
-    keel::Array<keel::String> sorted = std::move(syms.items);
+    keel::Array<keel::String> sorted = keel::move(syms.items);
     if (args.size() == 2) {
         const keel::usize n = keel::as<keel::usize>(args[1].toScalar());
         std::sort(sorted.begin(), sorted.end(), [](const keel::String &a, const keel::String &b) {
@@ -2647,7 +2646,7 @@ void symSolve(keel::ArrayRef<numkit::Value> args, keel::usize nargout,
                                        : keel::format("x{}", j + 1);
         s.field(vname) = fromSymVector(ctxPtr, colVec, /*column=*/true, mr);
     }
-    outs[0] = std::move(s);
+    outs[0] = keel::move(s);
 }
 
 numkit::Value symGroebner(keel::ArrayRef<numkit::Value> args,
@@ -2925,13 +2924,13 @@ keel::Array<keel::String> splitTopLevelCommas(keel::StringRef raw)
         else if (ch == ',' && depth == 0) {
             keel::String item = trimStr(raw.substr(start, i - start));
             if (!item.empty())
-                out.push_back(std::move(item));
+                out.push_back(keel::move(item));
             start = i + 1;
         }
     }
     keel::String tail = trimStr(raw.substr(start));
     if (!tail.empty())
-        out.push_back(std::move(tail));
+        out.push_back(keel::move(tail));
     return out;
 }
 
@@ -3015,13 +3014,13 @@ bool tryParseIcClause(Ctx &c, keel::StringRef clause, keel::String &depOut, Pars
         // Dy(0)=... or D2y(0)=...
     } else {
         ord = 0;
-        dep = std::move(head);
+        dep = keel::move(head);
     }
     icOut.order = ord;
     icOut.x0 = parseExprFlexible(c, argStr, "dsolve");
     icOut.val = parseExprFlexible(c, rhs, "dsolve");
     if (depOut.empty())
-        depOut = std::move(dep);
+        depOut = keel::move(dep);
     return true;
 }
 
@@ -3262,7 +3261,7 @@ bool trySolveStringDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> a
     if (args.size() >= 2) {
         keel::String last = trimStr(args[args.size() - 1].toString());
         if (isSimpleIdentStr(last)) {
-            indepName = std::move(last);
+            indepName = keel::move(last);
             --nClauseArgs;
         }
     }
@@ -3271,7 +3270,7 @@ bool trySolveStringDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> a
     for (keel::usize i = 0; i < nClauseArgs; ++i) {
         auto parts = splitTopLevelCommas(args[i].toString());
         for (auto &p : parts)
-            clauses.push_back(std::move(p));
+            clauses.push_back(keel::move(p));
     }
 
     keel::Array<keel::String> odeClauses;
@@ -3280,7 +3279,7 @@ bool trySolveStringDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> a
     for (const auto &cl : clauses) {
         ParsedDsolveIc ic;
         if (tryParseIcClause(c, cl, depName, ic)) {
-            ics.push_back(std::move(ic));
+            ics.push_back(keel::move(ic));
         } else {
             odeClauses.push_back(cl.clone());
         }
@@ -3300,7 +3299,7 @@ bool trySolveStringDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> a
             keel::String dep;
             if (parseDerivIdent(id, ord, dep)) {
                 if (depName.empty() || dep == depName) {
-                    depName = std::move(dep);
+                    depName = keel::move(dep);
                     if (ord > maxOrder)
                         maxOrder = ord;
                 }
@@ -3490,7 +3489,7 @@ bool trySolveSymEqDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> ar
     for (const Expr e : items) {
         ParsedDsolveIc ic;
         if (tryMatchSymIc(c, e, depName.as_ref(), indepSym, ic)) {
-            ics.push_back(std::move(ic));
+            ics.push_back(keel::move(ic));
         } else {
             Expr norm = e;
             if (c.kind(norm) == NodeKind::Func && c.funcName(norm) == "__eq" && c.childCount(norm) == 2)
@@ -4028,7 +4027,7 @@ void symRref(const numkit::Value &A, keel::usize nargout,
         keel::f64 *jp = jb.doubleDataMut();
         for (keel::usize i = 0; i < pivots.size(); ++i)
             jp[i] = keel::as<keel::f64>(pivots[i] + 1);
-        outs[1] = std::move(jb);
+        outs[1] = keel::move(jb);
     }
 }
 
@@ -4512,7 +4511,7 @@ numkit::Value symChristoffel(const numkit::Value &metric, const numkit::Value &c
     Value gammaCell = Value::cell(1, res.secondKind.size(), mr);
     for (keel::usize k = 0; k < res.secondKind.size(); ++k)
         gammaCell.cellAt(k) = fromSymMatrix(ctxPtr, res.secondKind[k], mr);
-    s.field("secondKind") = std::move(gammaCell);
+    s.field("secondKind") = keel::move(gammaCell);
     return s;
 }
 
@@ -4966,7 +4965,7 @@ numkit::BuiltinClass makeSymBuiltinClass()
                 (*dispFn)(keel::ArrayRef<Value>(dargs, 1), 0, keel::MutArrayRef<Value>(douts, 1), ctx);
             }
         } else {
-            outs[0] = std::move(s);
+            outs[0] = keel::move(s);
         }
     });
     cls.methods.put(keel::String::from("simplify"), [](Value &self, keel::ArrayRef<Value>, keel::usize, keel::MutArrayRef<Value> outs, CallContext &ctx) {

@@ -62,7 +62,7 @@ keel::Array<RealRootSolution> solveRealRoots(const UPoly &p)
             assert(!ivs[k].exact() &&
                    "exact interval without a rational root: inconsistent");
         }
-        out.push_back(std::move(s));
+        out.push_back(keel::move(s));
     }
     assert(nextRational == rationals.size() &&
            "unmatched rational root: isolation inconsistent");

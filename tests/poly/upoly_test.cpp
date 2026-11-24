@@ -1,13 +1,13 @@
 #include <keel/core.h>
-#include <numkit/cas/poly/upoly.hpp>
+#include <keel/cas/poly/upoly.hpp>
 
 #include <gtest/gtest.h>
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Rational;
-using numkit::cas::UPoly;
+using keel::cas::BigInt;
+using keel::cas::Rational;
+using keel::cas::UPoly;
 
 // Parse an ascending comma-separated coefficient list ("1,-2,3/4").
 UPoly P(const std::string &csv)

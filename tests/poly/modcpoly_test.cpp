@@ -1,15 +1,15 @@
 #include <keel/core.h>
-#include <numkit/cas/poly/modcpoly.hpp>
+#include <keel/cas/poly/modcpoly.hpp>
 
 #include <gtest/gtest.h>
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::ModCPoly;
-using numkit::cas::ModCRing;
-using numkit::cas::Rational;
-using numkit::cas::UPoly;
+using keel::cas::BigInt;
+using keel::cas::ModCPoly;
+using keel::cas::ModCRing;
+using keel::cas::Rational;
+using keel::cas::UPoly;
 
 keel::u64 nextU64(keel::u64 &state)
 {

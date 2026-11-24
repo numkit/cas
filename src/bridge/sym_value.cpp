@@ -11,20 +11,20 @@
 #include <keel/math.h>
 #include <numkit/cas/sym_value.hpp>
 
-#include <numkit/cas/core/parser.hpp>
-#include <numkit/cas/core/series.hpp>
-#include <numkit/cas/core/simplify.hpp>
-#include <numkit/cas/core/symsolve.hpp>
-#include <numkit/cas/integrate/ratint.hpp>
-#include <numkit/cas/linalg/symmatrix.hpp>
-#include <numkit/cas/ode/dsolve.hpp>
-#include <numkit/cas/pde/pdsolve.hpp>
-#include <numkit/cas/poly/groebner.hpp>
-#include <numkit/cas/poly/solve.hpp>
-#include <numkit/cas/poly/zassenhaus.hpp>
-#include <numkit/cas/transform/fourier.hpp>
-#include <numkit/cas/transform/laplace.hpp>
-#include <numkit/cas/transform/ztrans.hpp>
+#include <numkit/cas/parse_expr.hpp>
+#include <keel/cas/core/series.hpp>
+#include <keel/cas/core/simplify.hpp>
+#include <keel/cas/core/symsolve.hpp>
+#include <keel/cas/integrate/ratint.hpp>
+#include <keel/cas/linalg/symmatrix.hpp>
+#include <keel/cas/ode/dsolve.hpp>
+#include <keel/cas/pde/pdsolve.hpp>
+#include <keel/cas/poly/groebner.hpp>
+#include <keel/cas/poly/solve.hpp>
+#include <keel/cas/poly/zassenhaus.hpp>
+#include <keel/cas/transform/fourier.hpp>
+#include <keel/cas/transform/laplace.hpp>
+#include <keel/cas/transform/ztrans.hpp>
 
 #include <numkit/sys/plugin.hpp>
 #include <numkit/value/argcheck.hpp>
@@ -32,6 +32,8 @@
 
 
 namespace numkit::cas {
+
+using namespace keel::cas;
 
 namespace {
 

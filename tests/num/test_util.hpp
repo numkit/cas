@@ -3,14 +3,14 @@
 #pragma once
 
 #include <keel/core.h>
-#include <numkit/cas/num/bigint.hpp>
-#include <numkit/cas/num/rational.hpp>
+#include <keel/cas/num/bigint.hpp>
+#include <keel/cas/num/rational.hpp>
 
 #include <cstdint>
 #include <ostream>
 #include <string>
 
-namespace numkit::cas {
+namespace keel::cas {
 
 inline void PrintTo(const BigInt &v, std::ostream *os)
 {
@@ -22,12 +22,12 @@ inline void PrintTo(const Rational &v, std::ostream *os)
     *os << v.toString().c_str();
 }
 
-} // namespace numkit::cas
+} // namespace keel::cas
 
 namespace cas_test {
 
-using numkit::cas::BigInt;
-using numkit::cas::Rational;
+using keel::cas::BigInt;
+using keel::cas::Rational;
 
 inline keel::u64 nextU64(keel::u64 &state)
 {

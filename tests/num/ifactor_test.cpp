@@ -7,7 +7,7 @@
 //      exactly, divisor lists satisfy divide/uniqueness/count laws;
 //   3. boundary: 0, 1, negatives, small primes, prime squares.
 #include <keel/core.h>
-#include <numkit/cas/num/bigint.hpp>
+#include <keel/cas/num/bigint.hpp>
 
 #include <gtest/gtest.h>
 
@@ -18,7 +18,7 @@
 
 namespace {
 
-using numkit::cas::BigInt;
+using keel::cas::BigInt;
 
 BigInt N(const char *s)
 {

@@ -1,5 +1,5 @@
 #include <keel/core.h>
-#include <numkit/cas/core/expr.hpp>
+#include <keel/cas/core/expr.hpp>
 
 #include <algorithm>
 
@@ -7,11 +7,11 @@
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Ctx;
-using numkit::cas::Expr;
-using numkit::cas::NodeKind;
-using numkit::cas::Rational;
+using keel::cas::BigInt;
+using keel::cas::Ctx;
+using keel::cas::Expr;
+using keel::cas::NodeKind;
+using keel::cas::Rational;
 
 keel::u64 nextU64(keel::u64 &state)
 {

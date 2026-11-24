@@ -57,6 +57,25 @@ if(NOT TARGET keel::bignum)
     FetchContent_MakeAvailable(keel_bignum)
 endif()
 
+if(NOT TARGET keel::cas)
+    find_package(keel_cas QUIET CONFIG)
+    if(TARGET keel::keel_cas AND NOT TARGET keel::cas)
+        add_library(keel::cas ALIAS keel::keel_cas)
+    endif()
+endif()
+if(NOT TARGET keel::cas)
+    set(KEEL_CAS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../keelcpp/cas/CMakeLists.txt" AND NOT DEFINED FETCHCONTENT_SOURCE_DIR_KEEL_CAS)
+        set(FETCHCONTENT_SOURCE_DIR_KEEL_CAS "${CMAKE_CURRENT_SOURCE_DIR}/../../../keelcpp/cas" CACHE PATH "Local keel_cas checkout")
+    endif()
+    FetchContent_Declare(
+        keel_cas
+        GIT_REPOSITORY https://github.com/keelcpp/cas.git
+        GIT_TAG        9667d80ecac031bf2e351676f6dc2f49608afb1f
+    )
+    FetchContent_MakeAvailable(keel_cas)
+endif()
+
 add_subdirectory(src)
 add_subdirectory(apps)
 add_subdirectory(examples)

@@ -1,8 +1,8 @@
 #include <keel/core.h>
 #include <keel/math.h>
-#include <numkit/cas/core/parser.hpp>
-#include <numkit/cas/core/simplify.hpp>
-#include <numkit/cas/core/symsolve.hpp>
+#include <numkit/cas/parse_expr.hpp>
+#include <keel/cas/core/simplify.hpp>
+#include <keel/cas/core/symsolve.hpp>
 
 #include <gtest/gtest.h>
 
@@ -13,6 +13,8 @@
 #include <vector>
 
 namespace numkit::cas {
+
+using namespace keel::cas;
 namespace {
 
 bool containsRoot(Ctx &c, keel::ArrayRef<Expr> roots, Expr target)

@@ -1,8 +1,8 @@
 #include <keel/core.h>
 #include <keel/math.h>
-#include <numkit/cas/integrate/ratint.hpp>
-#include <numkit/cas/integrate/verify.hpp>
-#include <numkit/cas/core/parser.hpp>
+#include <keel/cas/integrate/ratint.hpp>
+#include <keel/cas/integrate/verify.hpp>
+#include <numkit/cas/parse_expr.hpp>
 
 #include <gtest/gtest.h>
 
@@ -13,12 +13,12 @@
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Ctx;
-using numkit::cas::Expr;
-using numkit::cas::NodeKind;
-using numkit::cas::Rational;
-using numkit::cas::UPoly;
+using keel::cas::BigInt;
+using keel::cas::Ctx;
+using keel::cas::Expr;
+using keel::cas::NodeKind;
+using keel::cas::Rational;
+using keel::cas::UPoly;
 
 keel::u64 nextU64(keel::u64 &state)
 {
@@ -66,15 +66,15 @@ struct RatIntTest : public ::testing::Test
     Expr build(const UPoly &num, const UPoly &den)
     {
         if (den.isConst() && den.coeff(0) == Rational(keel::i64{1}))
-            return numkit::cas::toExpr(c, num, x);
-        return c.mul({numkit::cas::toExpr(c, num, x),
-                      c.pow(numkit::cas::toExpr(c, den, x),
+            return keel::cas::toExpr(c, num, x);
+        return c.mul({keel::cas::toExpr(c, num, x),
+                      c.pow(keel::cas::toExpr(c, den, x),
                             c.number(keel::i64{-1}))});
     }
 
     // d(Rn/Rd) + g/S == N/D in Q(x):
     // (dn*S + gn*dd) * D == N * dd * S.
-    bool hermiteIdentity(const numkit::cas::HermiteResult &h,
+    bool hermiteIdentity(const keel::cas::HermiteResult &h,
                          const UPoly &N, const UPoly &D)
     {
         const UPoly dn = h.rn.derivative() * h.rd - h.rn * h.rd.derivative();
@@ -88,20 +88,20 @@ struct RatIntTest : public ::testing::Test
 TEST_F(RatIntTest, ToRationalExtraction)
 {
     UPoly n, d;
-    EXPECT_TRUE(numkit::cas::toRational(c, x, x, n, d));
+    EXPECT_TRUE(keel::cas::toRational(c, x, x, n, d));
     EXPECT_EQ(n, P("0,1"));
     EXPECT_EQ(d, P("1"));
 
     const Expr e = c.mul({c.number(keel::i64{3}),
                           c.pow(c.add({x, c.number(keel::i64{1})}),
                                 c.number(keel::i64{-2}))});
-    EXPECT_TRUE(numkit::cas::toRational(c, e, x, n, d));
+    EXPECT_TRUE(keel::cas::toRational(c, e, x, n, d));
     // 3/(x+1)^2: num = 3, den = (x+1)^2 = 1,2,1
     EXPECT_EQ(n * d, P("3") * P("1,2,1"));
 
-    EXPECT_FALSE(numkit::cas::toRational(c, c.func("sin", x), x, n, d));
-    EXPECT_FALSE(numkit::cas::toRational(c, c.symbol("y"), x, n, d));
-    EXPECT_FALSE(numkit::cas::toRational(
+    EXPECT_FALSE(keel::cas::toRational(c, c.func("sin", x), x, n, d));
+    EXPECT_FALSE(keel::cas::toRational(c, c.symbol("y"), x, n, d));
+    EXPECT_FALSE(keel::cas::toRational(
         c, c.pow(x, c.number(Rational(keel::i64{1}, BigInt(2)))), x, n, d));
 }
 
@@ -123,9 +123,9 @@ TEST_F(RatIntTest, ToRationalRoundTrip)
 
         const Expr e = build(num, den);
         UPoly n2, d2;
-        ASSERT_TRUE(numkit::cas::toRational(c, e, x, n2, d2))
-            << c.toString(numkit::cas::toExpr(c, num, x)).c_str() << " / "
-            << c.toString(numkit::cas::toExpr(c, den, x)).c_str();
+        ASSERT_TRUE(keel::cas::toRational(c, e, x, n2, d2))
+            << c.toString(keel::cas::toExpr(c, num, x)).c_str() << " / "
+            << c.toString(keel::cas::toExpr(c, den, x)).c_str();
         ASSERT_EQ(n2 * den, num * d2) << "fraction equality after round trip";
     }
 }
@@ -145,11 +145,11 @@ TEST_F(RatIntTest, HermiteProperty)
         if (den.isZero())
             continue;
 
-        const numkit::cas::HermiteResult h = numkit::cas::hermiteReduce(num, den);
+        const keel::cas::HermiteResult h = keel::cas::hermiteReduce(num, den);
         ASSERT_TRUE(hermiteIdentity(h, num, den))
             << "N=" << num.toString().c_str() << " D=" << den.toString().c_str();
         ASSERT_TRUE(h.S.isZero() ||
-                    numkit::cas::UPoly::gcd(h.S, h.S.derivative()).isConst())
+                    keel::cas::UPoly::gcd(h.S, h.S.derivative()).isConst())
             << "S not squarefree: " << h.S.toString().c_str();
         ASSERT_TRUE(h.gn.isZero() || h.gn.deg() < h.S.deg())
             << "residual not proper";
@@ -202,8 +202,8 @@ TEST_F(RatIntTest, FullIntegrationDoD)
             continue;
 
         const Expr f = build(num, den);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         if (!r.proved()) {
             std::string yun;
             for (const UPoly &F : den.squarefreeDecomposition())
@@ -220,8 +220,8 @@ TEST_F(RatIntTest, FixedDemos)
 {
     auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
         const Expr f = build(P(numCsv), P(denCsv));
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_TRUE(r.proved()) << r.reason.c_str();
         return r.proved() ? std::string(c.toString(r.F).as_ref()) : std::string("<failed>");
     };
@@ -244,8 +244,8 @@ TEST_F(RatIntTest, GroupedLogsByResidue)
 {
     auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
         const Expr f = build(P(numCsv), P(denCsv));
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_TRUE(r.proved()) << r.reason.c_str();
         return r.proved() ? std::string(c.toString(r.F).as_ref()) : std::string("<failed>");
     };
@@ -296,7 +296,7 @@ TEST_F(RatIntTest, ResultantTEvaluationAndResidues)
         }
         // Proper fraction (deg A < deg S by construction).
 
-        const UPoly R = numkit::cas::resultantT(A, S.derivative(), S);
+        const UPoly R = keel::cas::resultantT(A, S.derivative(), S);
 
         // Evaluation identity at fresh points.
         for (int probe = 0; probe < 3; ++probe) {
@@ -330,8 +330,8 @@ TEST_F(RatIntTest, QuadraticResidueForms)
 {
     auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
         const Expr f = build(P(numCsv), P(denCsv));
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_TRUE(r.proved()) << r.reason.c_str();
         return r.proved() ? std::string(c.toString(r.F).as_ref()) : std::string("<failed>");
     };
@@ -381,8 +381,8 @@ TEST_F(RatIntTest, QuadraticResidueDoD)
             continue;
 
         const Expr f = build(num, den);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << "iter " << iter << " reason=" << r.reason.c_str()
                                 << " f=" << c.toString(f).c_str();
     }
@@ -395,8 +395,8 @@ TEST_F(RatIntTest, MultipleQuadraticResidueFactors) // guard for the closed bug
     // limits), now handled by the factorized residue pipeline.
     auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
         const Expr f = build(P(numCsv), P(denCsv));
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_TRUE(r.proved()) << r.reason.c_str();
         return r.proved() ? std::string(c.toString(r.F).as_ref()) : std::string("<failed>");
     };
@@ -426,8 +426,8 @@ TEST_F(RatIntTest, MultipleQuadraticResidueFactors) // guard for the closed bug
         if (num.isZero())
             continue;
         const Expr f = build(num, den);
-        const numkit::cas::RationalIntegral ri =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral ri =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(ri.proved()) << "iter " << iter << " reason=" << ri.reason.c_str()
                                  << " f=" << c.toString(f).c_str();
     }
@@ -461,7 +461,7 @@ TEST_F(RatIntTest, CubicResidueRootOfForms)
         if (num.isZero())
             continue;
         const Expr f = build(num, den);
-        const numkit::cas::RationalIntegral r = numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r = keel::cas::integrateRational(c, f, x);
         ++total;
         if (r.proved()) {
             ++provedCount;
@@ -481,8 +481,8 @@ TEST_F(RatIntTest, TwoCubicResidueFactors)
     // Norm-subtraction loop must process both factors and leave nothing.
     auto integrate = [&](const std::string &numCsv, const std::string &denCsv) {
         const Expr f = build(P(numCsv), P(denCsv));
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_TRUE(r.proved()) << r.reason.c_str();
         return r.proved() ? std::string(c.toString(r.F).as_ref()) : std::string("<failed>");
     };
@@ -518,7 +518,7 @@ TEST_F(RatIntTest, TwoCubicResidueFactors)
         if (num.isZero())
             continue;
         const Expr f = build(num, den);
-        const numkit::cas::RationalIntegral r = numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r = keel::cas::integrateRational(c, f, x);
         ++total;
         if (r.proved())
             ++proved;
@@ -589,8 +589,8 @@ TEST_F(RatIntTest, C1CompletenessDoD)
             continue;
 
         const Expr f = build(num, den);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << "iter " << iter << " reason=" << r.reason.c_str()
                                 << " f=" << c.toString(f).c_str();
     }
@@ -598,17 +598,17 @@ TEST_F(RatIntTest, C1CompletenessDoD)
 
 TEST_F(RatIntTest, HonestFailures)
 {
-    numkit::cas::RationalIntegral r;
+    keel::cas::RationalIntegral r;
 
     // Not rational in x, exp(x), log(x)/x or sin/cos: sin(x)/x mixes
     // a bare x with trig (the sine integral, non-elementary).
-    r = numkit::cas::integrateRational(c, c.div(c.func("sin", x), x), x);
+    r = keel::cas::integrateRational(c, c.div(c.func("sin", x), x), x);
     EXPECT_FALSE(r.proved());
     EXPECT_FALSE(r.reason.empty());
 
     // FLAGSHIP: int dx/(x^3+2) — residues in a degree-3 extension,
     // proved via the trace certificate with RootOf atoms.
-    r = numkit::cas::integrateRational(
+    r = keel::cas::integrateRational(
         c, build(P("1"), P("2,0,0,1")), x);
     if (r.proved()) {
         const std::string fs(c.toString(r.F).as_ref());
@@ -619,7 +619,7 @@ TEST_F(RatIntTest, HonestFailures)
     }
 
     // FLAGSHIP: degree-4 irreducible residues — RootOf branch proves it.
-    r = numkit::cas::integrateRational(
+    r = keel::cas::integrateRational(
         c, build(P("1"), P("1,0,0,0,1")), x);
     if (r.proved()) {
         const std::string fs(c.toString(r.F).as_ref());
@@ -632,8 +632,8 @@ TEST_F(RatIntTest, HonestFailures)
 
 TEST_F(RatIntTest, CertificateCatchesNothingOnZero)
 {
-    const numkit::cas::RationalIntegral r =
-        numkit::cas::integrateRational(c, c.zero(), x);
+    const keel::cas::RationalIntegral r =
+        keel::cas::integrateRational(c, c.zero(), x);
     EXPECT_TRUE(r.proved());
     EXPECT_EQ(c.toString(r.F), "0");
 }
@@ -657,8 +657,8 @@ TEST_F(RatIntTest, ExpRationalFixedVectors)
     };
     for (const Case &k : cases) {
         const Expr f = numkit::cas::parseExpr(c, k.f);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << k.f << ": " << r.reason.c_str();
         EXPECT_EQ(c.toString(r.F), k.F) << k.f;
     }
@@ -676,8 +676,8 @@ TEST_F(RatIntTest, ExpRationalHonestFailures)
     };
     for (const char *s : bad) {
         const Expr f = numkit::cas::parseExpr(c, s);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_FALSE(r.proved()) << s;
         EXPECT_FALSE(r.reason.empty()) << s;
     }
@@ -731,8 +731,8 @@ TEST_F(RatIntTest, ExpRationalProperty)
             }
         };
         const Expr f = sub(R);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << c.toString(f).c_str() << ": " << r.reason.c_str();
     }
 }
@@ -755,8 +755,8 @@ TEST_F(RatIntTest, LogRationalFixedVectors)
     };
     for (const Case &k : cases) {
         const Expr f = numkit::cas::parseExpr(c, k.f);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << k.f << ": " << r.reason.c_str();
         EXPECT_EQ(c.toString(r.F), k.F) << k.f;
     }
@@ -774,8 +774,8 @@ TEST_F(RatIntTest, LogRationalHonestFailures)
     };
     for (const char *s : bad) {
         const Expr f = numkit::cas::parseExpr(c, s);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_FALSE(r.proved()) << s;
         EXPECT_FALSE(r.reason.empty()) << s;
     }
@@ -783,8 +783,8 @@ TEST_F(RatIntTest, LogRationalHonestFailures)
     // exp(log(x))/x == 1, and the composed substitution returns
     // exp(log(x)) whose derivative is exactly the integrand.
     const Expr nested = numkit::cas::parseExpr(c, "exp(log(x))/x");
-    const numkit::cas::RationalIntegral nr =
-        numkit::cas::integrateRational(c, nested, x);
+    const keel::cas::RationalIntegral nr =
+        keel::cas::integrateRational(c, nested, x);
     EXPECT_TRUE(nr.proved()) << nr.reason.c_str();
     EXPECT_EQ(c.toString(nr.F), "exp(log(x))");
 }
@@ -834,8 +834,8 @@ TEST_F(RatIntTest, LogRationalProperty)
             }
         };
         const Expr f = c.div(sub(R), x);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << c.toString(f).c_str() << ": " << r.reason.c_str();
     }
 }
@@ -861,8 +861,8 @@ TEST_F(RatIntTest, TanRationalFixedVectors)
     };
     for (const Case &k : cases) {
         const Expr f = numkit::cas::parseExpr(c, k.f);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << k.f << ": " << r.reason.c_str();
         EXPECT_EQ(c.toString(r.F), k.F) << k.f;
     }
@@ -879,8 +879,8 @@ TEST_F(RatIntTest, TanRationalHonestFailures)
     };
     for (const char *s : bad) {
         const Expr f = numkit::cas::parseExpr(c, s);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_FALSE(r.proved()) << s;
         EXPECT_FALSE(r.reason.empty()) << s;
     }
@@ -915,8 +915,8 @@ TEST_F(RatIntTest, TanRationalProperty)
         const Expr den = c.add({smallPoly(s), smallPoly(co),
                                 c.number(keel::i64{2})});
         const Expr f = c.div(num, den);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << c.toString(f).c_str() << ": " << r.reason.c_str();
     }
 }
@@ -940,14 +940,14 @@ TEST_F(RatIntTest, FactorExprVectors)
     for (const Case &k : cases) {
         const Expr f = numkit::cas::parseExpr(c, k.f);
         Expr out;
-        ASSERT_TRUE(numkit::cas::factorExpr(c, f, x, out)) << k.f;
+        ASSERT_TRUE(keel::cas::factorExpr(c, f, x, out)) << k.f;
         EXPECT_EQ(c.toString(out), k.want) << k.f;
     }
     // Non-rational input declines.
     Expr out;
-    EXPECT_FALSE(numkit::cas::factorExpr(
+    EXPECT_FALSE(keel::cas::factorExpr(
         c, numkit::cas::parseExpr(c, "sin(x)"), x, out));
-    EXPECT_FALSE(numkit::cas::factorExpr(
+    EXPECT_FALSE(keel::cas::factorExpr(
         c, numkit::cas::parseExpr(c, "1/(x+x^2) + sin(x)"), x, out));
 }
 
@@ -972,7 +972,7 @@ TEST_F(RatIntTest, FactorExprRoundTripProperty)
                                  c.number(b)})});
         }
         Expr out;
-        ASSERT_TRUE(numkit::cas::factorExpr(c, e, x, out)) << c.toString(e).c_str();
+        ASSERT_TRUE(keel::cas::factorExpr(c, e, x, out)) << c.toString(e).c_str();
         // Value identity: factor(e) evaluates to the same number.
         const Rational q(
             BigInt(static_cast<keel::i64>(nextU64(st) % 9) - 4),
@@ -1001,8 +1001,8 @@ TEST_F(RatIntTest, RadicalFixedVectors)
     };
     for (const Case &k : cases) {
         const Expr f = numkit::cas::parseExpr(c, k.f);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << k.f << ": " << r.reason.c_str();
         EXPECT_EQ(c.toString(r.F), k.F) << k.f;
     }
@@ -1018,8 +1018,8 @@ TEST_F(RatIntTest, RadicalHonestFailures)
     };
     for (const char *s : bad) {
         const Expr f = numkit::cas::parseExpr(c, s);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         EXPECT_FALSE(r.proved()) << s;
         EXPECT_FALSE(r.reason.empty()) << s;
     }
@@ -1058,8 +1058,8 @@ TEST_F(RatIntTest, RadicalProperty)
                                  c.pow(t, c.number(
                                               static_cast<keel::i64>(i)))}));
         const Expr f = c.div(c.add(num), c.add(den));
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << "q=" << q << " " << c.toString(f).c_str()
                                 << ": " << r.reason.c_str();
     }
@@ -1161,7 +1161,7 @@ TEST_F(RatIntTest, RiobooCubicOneRealRoot)
     // int dx/(x^3+2): the flagship - real form with atan, PROVED,
     // and the form differentiates back to the integrand numerically.
     const Expr f = build(P("1"), P("2,0,0,1"));
-    const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
+    const keel::cas::RationalIntegral r = integrateRational(c, f, x);
     ASSERT_TRUE(r.proved()) << r.reason.c_str();
     const std::string form(c.toString(r.F).as_ref());
     EXPECT_NE(form.find("atan"), std::string::npos)
@@ -1182,7 +1182,7 @@ TEST_F(RatIntTest, RiobooCubicVariant)
     // int dx/(x^3+3x+5): irreducible (no rational root), one real
     // root (discriminant -783 < 0) - the Rioboo path.
     const Expr f = build(P("1"), P("5,3,0,1"));
-    const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
+    const keel::cas::RationalIntegral r = integrateRational(c, f, x);
     ASSERT_TRUE(r.proved()) << r.reason.c_str();
     EXPECT_NE(c.toString(r.F).find("atan"), keel::kInvalidIndex);
     expectFormDerivativeMatches(c, r.F, f, 0.5);
@@ -1194,7 +1194,7 @@ TEST_F(RatIntTest, RiobooCubicThreeRealRootsUnchanged)
     // x^3-3x+1: irreducible with THREE real roots (disc 81 > 0) -
     // no pair to rewrite; the general emission stays (already real).
     const Expr f = build(P("1"), P("1,-3,0,1"));
-    const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
+    const keel::cas::RationalIntegral r = integrateRational(c, f, x);
     ASSERT_TRUE(r.proved()) << r.reason.c_str();
     // all three RootOf indices of the RESIDUE polynomial appear
     // (all roots real; the residue poly here is z^3 - z/9 + 1/81)
@@ -1237,8 +1237,8 @@ TEST_F(RatIntTest, Tier2aTinyBaseFractionalPower)
     {
         Ctx c3;
         const auto [f3, F3] = build(c3, 30);
-        EXPECT_EQ(numkit::cas::tier2aFormCheck(c3, F3, f3, c3.symbol("x")),
-                  numkit::cas::Tier2aStatus::Match);
+        EXPECT_EQ(keel::cas::tier2aFormCheck(c3, F3, f3, c3.symbol("x")),
+                  keel::cas::Tier2aStatus::Match);
     }
     // k = 60: bases at x0 = 1/2 (2^-60), 3, 17/6 and 9/2 have roots
     // beyond the 24-step reach -> those points are SKIPPED (only 5/4
@@ -1247,8 +1247,8 @@ TEST_F(RatIntTest, Tier2aTinyBaseFractionalPower)
     {
         Ctx c3;
         const auto [f3, F3] = build(c3, 60);
-        EXPECT_EQ(numkit::cas::tier2aFormCheck(c3, F3, f3, c3.symbol("x")),
-                  numkit::cas::Tier2aStatus::Unknown);
+        EXPECT_EQ(keel::cas::tier2aFormCheck(c3, F3, f3, c3.symbol("x")),
+                  keel::cas::Tier2aStatus::Unknown);
     }
 }
 
@@ -1262,8 +1262,8 @@ TEST_F(RatIntTest, Tier2aStatuses)
                               c2.add({c2.pow(v2, c2.number(keel::i64{2})),
                                       c2.number(keel::i64{1})}));
         const Expr F = c2.func("atan", v2);
-        EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2),
-                  numkit::cas::Tier2aStatus::Match);
+        EXPECT_EQ(keel::cas::tier2aFormCheck(c2, F, f, v2),
+                  keel::cas::Tier2aStatus::Match);
     }
     // Mismatch: F' = 1/(2(1+x^2)) against 2/(1+x^2) - factor 4.
     {
@@ -1272,14 +1272,14 @@ TEST_F(RatIntTest, Tier2aStatuses)
                                       c2.number(keel::i64{1})}));
         const Expr F = c2.mul({c2.number(Rational(keel::i64{1}, BigInt(2))),
                                c2.func("atan", v2)});
-        EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2),
-                  numkit::cas::Tier2aStatus::Mismatch);
+        EXPECT_EQ(keel::cas::tier2aFormCheck(c2, F, f, v2),
+                  keel::cas::Tier2aStatus::Mismatch);
     }
     // Unknown: transcendental integrand (Func outside the fragment).
     {
         const Expr f = c2.func("exp", v2);
         const Expr F = c2.func("exp", v2);
-        EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2), numkit::cas::Tier2aStatus::Unknown);
+        EXPECT_EQ(keel::cas::tier2aFormCheck(c2, F, f, v2), keel::cas::Tier2aStatus::Unknown);
     }
     // Algebraic fragment with sqrt: F = sqrt(x) vs f = 1/(2 sqrt(x)).
     {
@@ -1287,7 +1287,7 @@ TEST_F(RatIntTest, Tier2aStatuses)
         const Expr f = c2.mul({c2.number(Rational(keel::i64{1}, BigInt(2))),
                                c2.pow(v2, c2.number(Rational(keel::i64{-1},
                                                              BigInt(2))))});
-        EXPECT_EQ(numkit::cas::tier2aFormCheck(c2, F, f, v2), numkit::cas::Tier2aStatus::Match);
+        EXPECT_EQ(keel::cas::tier2aFormCheck(c2, F, f, v2), keel::cas::Tier2aStatus::Match);
     }
 }
 
@@ -1311,10 +1311,10 @@ TEST_F(RatIntTest, Tier2aRealFormsProperty)
         const UPoly den({cc, b, Rational(keel::i64{0}),
                          Rational(keel::i64{1})});
         const Expr f = build(P("1"), den);
-        const numkit::cas::RationalIntegral r = integrateRational(c, f, x);
+        const keel::cas::RationalIntegral r = integrateRational(c, f, x);
         ASSERT_TRUE(r.proved()) << r.reason.c_str();
         // Tier-2a re-run explicitly (Match for the algebraic form).
-        EXPECT_EQ(numkit::cas::tier2aFormCheck(c, r.F, f, x), numkit::cas::Tier2aStatus::Match)
+        EXPECT_EQ(keel::cas::tier2aFormCheck(c, r.F, f, x), keel::cas::Tier2aStatus::Match)
             << c.toString(f).c_str();
     }
 }
@@ -1356,9 +1356,9 @@ TEST_F(RatIntTest, UnifiedIntegrateCascade)
     };
     for (const Case &tc : cases) {
         const Expr f = numkit::cas::parseExpr(c, tc.expr);
-        numkit::cas::Budget budget(10000, 64 * 1024 * 1024);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrate(c, f, x, &budget);
+        keel::cas::Budget budget(10000, 64 * 1024 * 1024);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrate(c, f, x, &budget);
         ASSERT_TRUE(r.proved()) << tc.expr << ": " << r.reason.c_str();
         EXPECT_FALSE(r.F.isNull()) << tc.expr;
         EXPECT_TRUE(budget.ok()) << tc.expr;
@@ -1373,22 +1373,22 @@ TEST_F(RatIntTest, BudgetExhaustionStopsCleanly)
     {
         // Step budget of 1 is enough to enter, but not enough to complete
         // multi-step expansion + integration.
-        numkit::cas::Budget stepBudget(1, 64 * 1024 * 1024);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrate(c, fRubi, x, &stepBudget);
+        keel::cas::Budget stepBudget(1, 64 * 1024 * 1024);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrate(c, fRubi, x, &stepBudget);
         EXPECT_FALSE(r.proved());
         EXPECT_EQ(stepBudget.status(),
-                  numkit::cas::BudgetStatus::StepExhausted);
+                  keel::cas::BudgetStatus::StepExhausted);
         EXPECT_EQ(r.reason, "step budget exhausted");
     }
     {
         // Tiny arena byte budget triggers ArenaExhausted cleanly.
-        numkit::cas::Budget arenaBudget(10000, 16);
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrate(c, fRubi, x, &arenaBudget);
+        keel::cas::Budget arenaBudget(10000, 16);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrate(c, fRubi, x, &arenaBudget);
         EXPECT_FALSE(r.proved());
         EXPECT_EQ(arenaBudget.status(),
-                  numkit::cas::BudgetStatus::ArenaExhausted);
+                  keel::cas::BudgetStatus::ArenaExhausted);
         EXPECT_EQ(r.reason, "arena byte budget exhausted");
     }
 }
@@ -1444,8 +1444,8 @@ TEST_F(RatIntTest, DefiniteIntegrateFixedVectors)
         const Expr a = numkit::cas::parseExpr(c, tc.a);
         const Expr b = numkit::cas::parseExpr(c, tc.b);
         const Expr want = c.simplify(numkit::cas::parseExpr(c, tc.expected));
-        const numkit::cas::DefiniteIntegral r =
-            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        const keel::cas::DefiniteIntegral r =
+            keel::cas::definiteIntegrate(c, f, x, a, b);
         ASSERT_TRUE(r.proved())
             << "f = " << tc.f << " on [" << tc.a << ", " << tc.b
             << "]: " << r.reason.c_str();
@@ -1477,9 +1477,9 @@ TEST_F(RatIntTest, DefiniteIntegrateDivergentAndHonestFailures)
         const Expr f = numkit::cas::parseExpr(c, tc.f);
         const Expr a = numkit::cas::parseExpr(c, tc.a);
         const Expr b = numkit::cas::parseExpr(c, tc.b);
-        const numkit::cas::DefiniteIntegral r =
-            numkit::cas::definiteIntegrate(c, f, x, a, b);
-        EXPECT_EQ(r.status, numkit::cas::DefiniteIntegral::Status::Divergent)
+        const keel::cas::DefiniteIntegral r =
+            keel::cas::definiteIntegrate(c, f, x, a, b);
+        EXPECT_EQ(r.status, keel::cas::DefiniteIntegral::Status::Divergent)
             << "expected Divergent for " << tc.f << " on [" << tc.a << ", "
             << tc.b << "], got status=" << static_cast<int>(r.status)
             << " reason=" << r.reason.c_str();
@@ -1500,10 +1500,10 @@ TEST_F(RatIntTest, DefiniteIntegrateAdditivityAndOrientationProperty)
         const Expr b = c.number(rr(st, 4));
         const Expr m = c.number(rr(st, 4));
 
-        const auto rab = numkit::cas::definiteIntegrate(c, f, x, a, b);
-        const auto rba = numkit::cas::definiteIntegrate(c, f, x, b, a);
-        const auto ram = numkit::cas::definiteIntegrate(c, f, x, a, m);
-        const auto rmb = numkit::cas::definiteIntegrate(c, f, x, m, b);
+        const auto rab = keel::cas::definiteIntegrate(c, f, x, a, b);
+        const auto rba = keel::cas::definiteIntegrate(c, f, x, b, a);
+        const auto ram = keel::cas::definiteIntegrate(c, f, x, a, m);
+        const auto rmb = keel::cas::definiteIntegrate(c, f, x, m, b);
         ASSERT_TRUE(rab.proved());
         ASSERT_TRUE(rba.proved());
         ASSERT_TRUE(ram.proved());
@@ -1583,7 +1583,7 @@ TEST_F(RatIntTest, SpecialFunctionsIndefiniteAndDefinite)
 
     for (const char *src : indefCases) {
         const Expr f = numkit::cas::parseExpr(c, src);
-        const numkit::cas::RationalIntegral r = numkit::cas::integrate(c, f, x);
+        const keel::cas::RationalIntegral r = keel::cas::integrate(c, f, x);
         ASSERT_TRUE(r.proved()) << "failed to integrate: " << src
                                 << " (" << r.reason.c_str() << ")";
         const Expr diffErr = c.simplify(c.add({c.diff(r.F, x), c.neg(f)}));
@@ -1621,8 +1621,8 @@ TEST_F(RatIntTest, SpecialFunctionsIndefiniteAndDefinite)
         const Expr a = numkit::cas::parseExpr(c, tc.a);
         const Expr b = numkit::cas::parseExpr(c, tc.b);
         const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
-        const numkit::cas::DefiniteIntegral r =
-            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        const keel::cas::DefiniteIntegral r =
+            keel::cas::definiteIntegrate(c, f, x, a, b);
         ASSERT_TRUE(r.proved())
             << "definiteIntegrate failed for " << tc.f << " on [" << tc.a
             << ", " << tc.b << "]: " << r.reason.c_str();
@@ -1632,8 +1632,8 @@ TEST_F(RatIntTest, SpecialFunctionsIndefiniteAndDefinite)
     }
 
     // Symbolic parameter Gaussian and Dirichlet with AssumeDomain::Positive
-    c.assume("a", numkit::cas::AssumeDomain::Positive);
-    const auto gaussSym = numkit::cas::definiteIntegrate(
+    c.assume("a", keel::cas::AssumeDomain::Positive);
+    const auto gaussSym = keel::cas::definiteIntegrate(
         c, numkit::cas::parseExpr(c, "exp(-a*x^2)"), x,
         numkit::cas::parseExpr(c, "-inf"), numkit::cas::parseExpr(c, "inf"));
     ASSERT_TRUE(gaussSym.proved()) << gaussSym.reason.c_str();
@@ -1642,7 +1642,7 @@ TEST_F(RatIntTest, SpecialFunctionsIndefiniteAndDefinite)
                           c.neg(numkit::cas::parseExpr(c, "a^(-1/2)*pi^(1/2)"))})),
         c.zero());
 
-    const auto dirichSym = numkit::cas::definiteIntegrate(
+    const auto dirichSym = keel::cas::definiteIntegrate(
         c, numkit::cas::parseExpr(c, "sin(a*x)/x"), x, c.zero(),
         numkit::cas::parseExpr(c, "inf"));
     ASSERT_TRUE(dirichSym.proved()) << dirichSym.reason.c_str();
@@ -1695,8 +1695,8 @@ TEST_F(RatIntTest, ContourDefiniteIntegralsUnitCircleAndJordan)
         const Expr a = numkit::cas::parseExpr(c, tc.a);
         const Expr b = numkit::cas::parseExpr(c, tc.b);
         const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
-        const numkit::cas::DefiniteIntegral r =
-            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        const keel::cas::DefiniteIntegral r =
+            keel::cas::definiteIntegrate(c, f, x, a, b);
         ASSERT_TRUE(r.proved())
             << "contour definiteIntegrate failed for " << tc.f << " on ["
             << tc.a << ", " << tc.b << "]: " << r.reason.c_str();
@@ -1706,9 +1706,9 @@ TEST_F(RatIntTest, ContourDefiniteIntegralsUnitCircleAndJordan)
     }
 
     // Parametric Jordan's lemma integral with AssumeDomain::Positive
-    c.assume("a", numkit::cas::AssumeDomain::Positive);
-    c.assume("w", numkit::cas::AssumeDomain::Positive);
-    const auto paramCos = numkit::cas::definiteIntegrate(
+    c.assume("a", keel::cas::AssumeDomain::Positive);
+    c.assume("w", keel::cas::AssumeDomain::Positive);
+    const auto paramCos = keel::cas::definiteIntegrate(
         c, numkit::cas::parseExpr(c, "cos(w*x)/(x^2 + a^2)"), x,
         numkit::cas::parseExpr(c, "-inf"), numkit::cas::parseExpr(c, "inf"));
     ASSERT_TRUE(paramCos.proved()) << paramCos.reason.c_str();
@@ -1717,7 +1717,7 @@ TEST_F(RatIntTest, ContourDefiniteIntegralsUnitCircleAndJordan)
                    c.neg(numkit::cas::parseExpr(c, "pi*a^(-1)*exp(-w*a)"))})),
               c.zero());
 
-    const auto paramSin = numkit::cas::definiteIntegrate(
+    const auto paramSin = keel::cas::definiteIntegrate(
         c, numkit::cas::parseExpr(c, "x*sin(w*x)/(x^2 + a^2)"), x, c.zero(),
         numkit::cas::parseExpr(c, "inf"));
     ASSERT_TRUE(paramSin.proved()) << paramSin.reason.c_str();
@@ -1728,10 +1728,10 @@ TEST_F(RatIntTest, ContourDefiniteIntegralsUnitCircleAndJordan)
     c.clearAssumptions();
 
     // Divergent pole on unit circle: 1/(1 + cos(x)) on [0, 2*pi] (pole at x = pi)
-    const auto divUc = numkit::cas::definiteIntegrate(
+    const auto divUc = keel::cas::definiteIntegrate(
         c, numkit::cas::parseExpr(c, "1/(1 + cos(x))"), x, c.zero(),
         numkit::cas::parseExpr(c, "2*pi"));
-    EXPECT_EQ(divUc.status, numkit::cas::DefiniteIntegral::Status::Divergent);
+    EXPECT_EQ(divUc.status, keel::cas::DefiniteIntegral::Status::Divergent);
 }
 
 TEST_F(RatIntTest, DilogarithmIdentitiesIndefiniteAndDefinite)
@@ -1778,7 +1778,7 @@ TEST_F(RatIntTest, DilogarithmIdentitiesIndefiniteAndDefinite)
     };
     for (const char *src : indefCases) {
         const Expr f = numkit::cas::parseExpr(c, src);
-        const numkit::cas::RationalIntegral r = numkit::cas::integrate(c, f, x);
+        const keel::cas::RationalIntegral r = keel::cas::integrate(c, f, x);
         ASSERT_TRUE(r.proved()) << "failed to integrate: " << src
                                 << " (" << r.reason.c_str() << ")";
         const Expr diffErr = c.simplify(c.add({c.diff(r.F, x), c.neg(f)}));
@@ -1813,8 +1813,8 @@ TEST_F(RatIntTest, DilogarithmIdentitiesIndefiniteAndDefinite)
         const Expr a = numkit::cas::parseExpr(c, tc.a);
         const Expr b = numkit::cas::parseExpr(c, tc.b);
         const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
-        const numkit::cas::DefiniteIntegral r =
-            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        const keel::cas::DefiniteIntegral r =
+            keel::cas::definiteIntegrate(c, f, x, a, b);
         ASSERT_TRUE(r.proved())
             << "definiteIntegrate failed for " << tc.f << " on [" << tc.a
             << ", " << tc.b << "]: " << r.reason.c_str();
@@ -1865,8 +1865,8 @@ TEST_F(RatIntTest, EulerGammaBetaAndWallisDefiniteIntegrals)
         const Expr a = numkit::cas::parseExpr(c, tc.a);
         const Expr b = numkit::cas::parseExpr(c, tc.b);
         const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
-        const numkit::cas::DefiniteIntegral r =
-            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        const keel::cas::DefiniteIntegral r =
+            keel::cas::definiteIntegrate(c, f, x, a, b);
         ASSERT_TRUE(r.proved())
             << "Euler/Beta definiteIntegrate failed for " << tc.f << " on ["
             << tc.a << ", " << tc.b << "]: " << r.reason.c_str();
@@ -1876,16 +1876,16 @@ TEST_F(RatIntTest, EulerGammaBetaAndWallisDefiniteIntegrals)
     }
 
     // Symbolic parameter Gamma/Beta integrals under AssumeDomain::Positive
-    c.assume("s", numkit::cas::AssumeDomain::Positive);
-    c.assume("p", numkit::cas::AssumeDomain::Positive);
-    c.assume("q", numkit::cas::AssumeDomain::Positive);
-    const auto symGam = numkit::cas::definiteIntegrate(
+    c.assume("s", keel::cas::AssumeDomain::Positive);
+    c.assume("p", keel::cas::AssumeDomain::Positive);
+    c.assume("q", keel::cas::AssumeDomain::Positive);
+    const auto symGam = keel::cas::definiteIntegrate(
         c, numkit::cas::parseExpr(c, "x^(s - 1)*exp(-x)"), x, c.zero(),
         numkit::cas::parseExpr(c, "inf"));
     ASSERT_TRUE(symGam.proved()) << symGam.reason.c_str();
     EXPECT_EQ(symGam.value, numkit::cas::parseExpr(c, "gamma(s)"));
 
-    const auto symBeta = numkit::cas::definiteIntegrate(
+    const auto symBeta = keel::cas::definiteIntegrate(
         c, numkit::cas::parseExpr(c, "x^(p - 1)*(1 - x)^(q - 1)"), x, c.zero(),
         c.one());
     ASSERT_TRUE(symBeta.proved()) << symBeta.reason.c_str();
@@ -1913,8 +1913,8 @@ TEST_F(RatIntTest, EulerGammaBetaAndWallisDefiniteIntegrals)
         const Expr a = numkit::cas::parseExpr(c, tc.a);
         const Expr b = numkit::cas::parseExpr(c, tc.b);
         const Expr expVal = numkit::cas::parseExpr(c, tc.expected);
-        const numkit::cas::DefiniteIntegral r =
-            numkit::cas::definiteIntegrate(c, f, x, a, b);
+        const keel::cas::DefiniteIntegral r =
+            keel::cas::definiteIntegrate(c, f, x, a, b);
         ASSERT_TRUE(r.proved())
             << "Orthogonality definiteIntegrate failed for " << tc.f << ": "
             << r.reason.c_str();
@@ -1922,7 +1922,7 @@ TEST_F(RatIntTest, EulerGammaBetaAndWallisDefiniteIntegrals)
             << "for " << tc.f << ": got " << c.toString(r.value).c_str();
     }
 
-    const auto intBessel = numkit::cas::integrate(
+    const auto intBessel = keel::cas::integrate(
         c, numkit::cas::parseExpr(c, "x^2*besselj(1, x)"), x);
     ASSERT_TRUE(intBessel.proved()) << intBessel.reason.c_str();
     EXPECT_EQ(c.simplify(c.add(
@@ -1933,9 +1933,9 @@ TEST_F(RatIntTest, EulerGammaBetaAndWallisDefiniteIntegrals)
 
 TEST_F(RatIntTest, MultipleAndLineIntegrals)
 {
-    using numkit::cas::Ctx;
-    using numkit::cas::DefiniteBound;
-    using numkit::cas::Expr;
+    using keel::cas::Ctx;
+    using keel::cas::DefiniteBound;
+    using keel::cas::Expr;
 
     Ctx c;
     const Expr x = c.symbol("x");
@@ -1946,7 +1946,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
     // 1. Iterated indefinite integral integrateMulti: int int (6*x*y^2 + cos(x)*sin(y)) dx dy
     {
         const Expr f = numkit::cas::parseExpr(c, "6*x*y^2 + cos(x)*sin(y)");
-        const auto res = numkit::cas::integrateMulti(c, f, {x, y});
+        const auto res = keel::cas::integrateMulti(c, f, {x, y});
         ASSERT_TRUE(res.proved()) << res.reason.c_str();
         const Expr dxy = c.diff(c.diff(res.F, y), x);
         EXPECT_EQ(c.simplify(c.add({dxy, c.neg(f)})), c.zero());
@@ -1956,7 +1956,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
     // 2a. Rectangular box: int_0^2 int_0^1 (x^2 + y^2) dy dx = 10/3
     {
         const Expr f = numkit::cas::parseExpr(c, "x^2 + y^2");
-        const auto res = numkit::cas::definiteIntegrateMulti(
+        const auto res = keel::cas::definiteIntegrateMulti(
             c, f, {{y, c.zero(), c.one()}, {x, c.zero(), c.number(2)}});
         ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_EQ(res.value, numkit::cas::parseExpr(c, "10/3"));
@@ -1965,7 +1965,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
     // 2b. Dependent triangular domain: int_0^1 int_0^(1 - x) (x + y) dy dx = 1/3
     {
         const Expr f = numkit::cas::parseExpr(c, "x + y");
-        const auto res = numkit::cas::definiteIntegrateMulti(
+        const auto res = keel::cas::definiteIntegrateMulti(
             c, f,
             {{y, c.zero(), numkit::cas::parseExpr(c, "1 - x")},
              {x, c.zero(), c.one()}});
@@ -1978,7 +1978,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
     {
         const Expr hiY = numkit::cas::parseExpr(c, "(1 - x^2)^(1/2)");
         const Expr loY = c.neg(hiY);
-        const auto res = numkit::cas::definiteIntegrateMulti(
+        const auto res = keel::cas::definiteIntegrateMulti(
             c, c.one(),
             {{y, loY, hiY}, {x, c.number(-1), c.one()}});
         ASSERT_TRUE(res.proved()) << res.reason.c_str();
@@ -1987,7 +1987,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
 
     // 2d. 3D tetrahedron volume: int_0^1 int_0^(1-x) int_0^(1-x-y) 1 dz dy dx = 1/6
     {
-        const auto res = numkit::cas::definiteIntegrateMulti(
+        const auto res = keel::cas::definiteIntegrateMulti(
             c, c.one(),
             {{z, c.zero(), numkit::cas::parseExpr(c, "1 - x - y")},
              {y, c.zero(), numkit::cas::parseExpr(c, "1 - x")},
@@ -2006,7 +2006,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
             numkit::cas::parseExpr(c, "sin(t)"),
             t};
         const Expr f = numkit::cas::parseExpr(c, "x^2 + y^2 + z");
-        const auto res = numkit::cas::lineIntegral(
+        const auto res = keel::cas::lineIntegral(
             c, f, {x, y, z}, curve, t, c.zero(),
             numkit::cas::parseExpr(c, "2*pi"));
         ASSERT_TRUE(res.proved()) << res.reason.c_str();
@@ -2021,7 +2021,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
         const std::vector<Expr> curve = {
             numkit::cas::parseExpr(c, "cos(t) + t*sin(t)"),
             numkit::cas::parseExpr(c, "sin(t) - t*cos(t)")};
-        const auto res = numkit::cas::lineIntegralScalar(
+        const auto res = keel::cas::lineIntegralScalar(
             c, c.one(), {x, y}, curve, t, c.zero(), c.symbol("pi"));
         ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_EQ(res.value, numkit::cas::parseExpr(c, "1/2*pi^2"));
@@ -2034,7 +2034,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
         const std::vector<Expr> curve = {
             numkit::cas::parseExpr(c, "cos(t)"),
             numkit::cas::parseExpr(c, "sin(t)")};
-        const auto res = numkit::cas::lineIntegral(
+        const auto res = keel::cas::lineIntegral(
             c, field, {x, y}, curve, t, c.zero(),
             numkit::cas::parseExpr(c, "2*pi"));
         ASSERT_TRUE(res.proved()) << res.reason.c_str();
@@ -2052,7 +2052,7 @@ TEST_F(RatIntTest, MultipleAndLineIntegrals)
         const std::vector<Expr> curve = {
             t, numkit::cas::parseExpr(c, "t^2"),
             numkit::cas::parseExpr(c, "t^3")};
-        const auto res = numkit::cas::lineIntegralVector(
+        const auto res = keel::cas::lineIntegralVector(
             c, field, {x, y, z}, curve, t, c.zero(), c.number(2));
         ASSERT_TRUE(res.proved()) << res.reason.c_str();
         EXPECT_EQ(res.value, c.number(68));
@@ -2063,20 +2063,20 @@ TEST_F(RatIntTest, EllipticIntegralsIndefiniteAndDefinite)
 {
     // 1. Indefinite elliptic integrals of the 1st and 2nd kind
     {
-        const auto r1 = numkit::cas::integrate(
+        const auto r1 = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "(1 - m*sin(x)^2)^(-1/2)"), x);
         ASSERT_TRUE(r1.proved()) << r1.reason.c_str();
         EXPECT_EQ(c.simplify(r1.F),
                   numkit::cas::parseExpr(c, "ellipticF(x, m)"));
 
-        const auto r2 = numkit::cas::integrate(
+        const auto r2 = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "(1 - m*sin(2*x)^2)^(1/2)"), x);
         ASSERT_TRUE(r2.proved()) << r2.reason.c_str();
         EXPECT_EQ(c.simplify(r2.F),
                   c.simplify(numkit::cas::parseExpr(c, "1/2*ellipticEInc(2*x, m)")));
 
         // Ellipse arc-length integrand: sqrt(4*cos(x)^2 + sin(x)^2) = 2*sqrt(1 - 3/4*sin(x)^2)
-        const auto r3 = numkit::cas::integrate(
+        const auto r3 = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "(4*cos(x)^2 + sin(x)^2)^(1/2)"), x);
         ASSERT_TRUE(r3.proved()) << r3.reason.c_str();
         EXPECT_EQ(c.simplify(r3.F),
@@ -2086,20 +2086,20 @@ TEST_F(RatIntTest, EllipticIntegralsIndefiniteAndDefinite)
     // 2. Definite trigonometric elliptic integrals on [0, pi/2] and [0, pi]
     {
         const Expr halfPi = numkit::cas::parseExpr(c, "1/2*pi");
-        const auto dK = numkit::cas::definiteIntegrate(
+        const auto dK = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "(1 - 1/3*sin(x)^2)^(-1/2)"), x,
             c.zero(), halfPi);
         ASSERT_TRUE(dK.proved()) << dK.reason.c_str();
         EXPECT_EQ(dK.value, numkit::cas::parseExpr(c, "ellipticK(1/3)"));
 
-        const auto dE = numkit::cas::definiteIntegrate(
+        const auto dE = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "(1 - 1/3*sin(x)^2)^(1/2)"), x,
             c.zero(), c.symbol("pi"));
         ASSERT_TRUE(dE.proved()) << dE.reason.c_str();
         EXPECT_EQ(dE.value,
                   c.simplify(numkit::cas::parseExpr(c, "2*ellipticE(1/3)")));
 
-        const auto dPi = numkit::cas::definiteIntegrate(
+        const auto dPi = keel::cas::definiteIntegrate(
             c,
             numkit::cas::parseExpr(
                 c, "(1 - n*sin(x)^2)^(-1)*(1 - m*sin(x)^2)^(-1/2)"),
@@ -2110,7 +2110,7 @@ TEST_F(RatIntTest, EllipticIntegralsIndefiniteAndDefinite)
 
     // 3. Jacobi algebraic complete elliptic integrals on [0, 1]
     {
-        const auto jK = numkit::cas::definiteIntegrate(
+        const auto jK = keel::cas::definiteIntegrate(
             c,
             numkit::cas::parseExpr(
                 c, "(1 - x^2)^(-1/2)*(1 - m*x^2)^(-1/2)"),
@@ -2118,7 +2118,7 @@ TEST_F(RatIntTest, EllipticIntegralsIndefiniteAndDefinite)
         ASSERT_TRUE(jK.proved()) << jK.reason.c_str();
         EXPECT_EQ(jK.value, numkit::cas::parseExpr(c, "ellipticK(m)"));
 
-        const auto jE = numkit::cas::definiteIntegrate(
+        const auto jE = keel::cas::definiteIntegrate(
             c,
             numkit::cas::parseExpr(
                 c, "(1 - x^2)^(-1/2)*(1 - m*x^2)^(1/2)"),
@@ -2126,7 +2126,7 @@ TEST_F(RatIntTest, EllipticIntegralsIndefiniteAndDefinite)
         ASSERT_TRUE(jE.proved()) << jE.reason.c_str();
         EXPECT_EQ(jE.value, numkit::cas::parseExpr(c, "ellipticE(m)"));
 
-        const auto jPi = numkit::cas::definiteIntegrate(
+        const auto jPi = keel::cas::definiteIntegrate(
             c,
             numkit::cas::parseExpr(
                 c, "(1 - n*x^2)^(-1)*(1 - x^2)^(-1/2)*(1 - m*x^2)^(-1/2)"),
@@ -2138,8 +2138,8 @@ TEST_F(RatIntTest, EllipticIntegralsIndefiniteAndDefinite)
 
 TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
 {
-    using numkit::cas::AssumeDomain;
-    using numkit::cas::Expr;
+    using keel::cas::AssumeDomain;
+    using keel::cas::Expr;
 
     const Expr a = c.symbol("a");
     c.assume(a, AssumeDomain::Positive);
@@ -2147,23 +2147,23 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
 
     // 1. Indefinite polylogarithm and Bernoulli/Euler polynomial antiderivatives
     {
-        const auto r1 = numkit::cas::integrate(
+        const auto r1 = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "x^(-1)*dilog(x)"), x);
         ASSERT_TRUE(r1.proved()) << r1.reason.c_str();
         EXPECT_EQ(c.simplify(r1.F),
                   numkit::cas::parseExpr(c, "polylog(3, x)"));
 
-        const auto r2 = numkit::cas::integrate(
+        const auto r2 = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "x^(-1)*polylog(3, -a*x^2)"), x);
         ASSERT_TRUE(r2.proved()) << r2.reason.c_str();
         EXPECT_EQ(c.simplify(r2.F),
                   c.simplify(numkit::cas::parseExpr(
                       c, "1/2*polylog(4, -a*x^2)")));
 
-        const auto rBern = numkit::cas::integrate(
+        const auto rBern = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "bernoulliB(2, x)"), x);
         ASSERT_TRUE(rBern.proved()) << rBern.reason.c_str();
-        const auto dBern = numkit::cas::definiteIntegrate(
+        const auto dBern = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "bernoulliB(2, x)"), x, c.zero(),
             c.one());
         ASSERT_TRUE(dBern.proved()) << dBern.reason.c_str();
@@ -2173,7 +2173,7 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
     // 2. Polylogarithm log-power integrals on [0, 1]
     {
         // int_0^1 log(x)^2 / (1 - x) dx = 2*zeta(3)
-        const auto d1 = numkit::cas::definiteIntegrate(
+        const auto d1 = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "log(x)^2*(1 - x)^(-1)"), x, c.zero(),
             c.one());
         ASSERT_TRUE(d1.proved()) << d1.reason.c_str();
@@ -2181,7 +2181,7 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
                   c.simplify(numkit::cas::parseExpr(c, "2*zeta(3)")));
 
         // int_0^1 log(x)^2 / (1 + x) dx = 3/2*zeta(3)
-        const auto d2 = numkit::cas::definiteIntegrate(
+        const auto d2 = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "log(x)^2*(1 + x)^(-1)"), x, c.zero(),
             c.one());
         ASSERT_TRUE(d2.proved()) << d2.reason.c_str();
@@ -2189,7 +2189,7 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
                   c.simplify(numkit::cas::parseExpr(c, "3/2*zeta(3)")));
 
         // int_0^1 log(x)^3 / (1 - x) dx = -pi^4 / 15
-        const auto d3 = numkit::cas::definiteIntegrate(
+        const auto d3 = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "log(x)^3*(1 - x)^(-1)"), x, c.zero(),
             c.one());
         ASSERT_TRUE(d3.proved()) << d3.reason.c_str();
@@ -2200,7 +2200,7 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
     // 3. Bose-Einstein and Fermi-Dirac integrals on [0, +inf)
     {
         // int_0^inf x^3 / (exp(x) - 1) dx = pi^4 / 15
-        const auto be3 = numkit::cas::definiteIntegrate(
+        const auto be3 = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "x^3*(exp(x) - 1)^(-1)"), x, c.zero(),
             inf);
         ASSERT_TRUE(be3.proved()) << be3.reason.c_str();
@@ -2208,7 +2208,7 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
                   c.simplify(numkit::cas::parseExpr(c, "1/15*pi^4")));
 
         // int_0^inf x^2 / (exp(a*x) - 1) dx = 2*zeta(3) / a^3
-        const auto be2 = numkit::cas::definiteIntegrate(
+        const auto be2 = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "x^2*(exp(a*x) - 1)^(-1)"), x,
             c.zero(), inf);
         ASSERT_TRUE(be2.proved()) << be2.reason.c_str();
@@ -2216,7 +2216,7 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
                   c.simplify(numkit::cas::parseExpr(c, "2*a^(-3)*zeta(3)")));
 
         // int_0^inf x^3 / (exp(x) + 1) dx = 7*pi^4 / 120
-        const auto fd3 = numkit::cas::definiteIntegrate(
+        const auto fd3 = keel::cas::definiteIntegrate(
             c, numkit::cas::parseExpr(c, "x^3*(exp(x) + 1)^(-1)"), x, c.zero(),
             inf);
         ASSERT_TRUE(fd3.proved()) << fd3.reason.c_str();
@@ -2227,11 +2227,11 @@ TEST_F(RatIntTest, PolylogBoseEinsteinAndFermiDiracIntegrals)
 
 TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
 {
-    using numkit::cas::AssumeDomain;
-    using numkit::cas::DefiniteBound;
-    using numkit::cas::Expr;
-    using numkit::cas::ParametricCurveSegment;
-    using numkit::cas::ParametricSurfacePatch;
+    using keel::cas::AssumeDomain;
+    using keel::cas::DefiniteBound;
+    using keel::cas::Expr;
+    using keel::cas::ParametricCurveSegment;
+    using keel::cas::ParametricSurfacePatch;
 
     const Expr y = c.symbol("y");
     const Expr z = c.symbol("z");
@@ -2255,13 +2255,13 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
         const DefiniteBound uB{u, c.zero(), pi};
         const DefiniteBound vB{v, c.zero(), twoPi};
 
-        const auto area = numkit::cas::surfaceIntegral(
+        const auto area = keel::cas::surfaceIntegral(
             c, c.one(), {x, y, z}, sphere, uB, vB);
         ASSERT_TRUE(area.proved()) << area.reason.c_str();
         EXPECT_EQ(area.value,
                   c.simplify(numkit::cas::parseExpr(c, "4*pi*R^2")));
 
-        const auto momZ2 = numkit::cas::surfaceIntegral(
+        const auto momZ2 = keel::cas::surfaceIntegral(
             c, numkit::cas::parseExpr(c, "z^2"), {x, y, z}, sphere, uB, vB);
         ASSERT_TRUE(momZ2.proved()) << momZ2.reason.c_str();
         EXPECT_EQ(momZ2.value,
@@ -2275,7 +2275,7 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
             numkit::cas::parseExpr(c, "u*cos(v)"),
             numkit::cas::parseExpr(c, "u*sin(v)"),
             numkit::cas::parseExpr(c, "u^2")};
-        const auto sInt = numkit::cas::surfaceIntegral(
+        const auto sInt = keel::cas::surfaceIntegral(
             c, numkit::cas::parseExpr(c, "(1 + 4*z)^(1/2)"), {x, y, z}, parab,
             DefiniteBound{u, c.zero(), c.one()},
             DefiniteBound{v, c.zero(), twoPi});
@@ -2299,7 +2299,7 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
                           numkit::cas::parseExpr(c, "-(1 - x^2)^(1/2)"),
                           numkit::cas::parseExpr(c, "(1 - x^2)^(1/2)")},
             DefiniteBound{x, c.number(-1), c.one()}};
-        const auto greenDisk = numkit::cas::verifyGreenTheorem(
+        const auto greenDisk = keel::cas::verifyGreenTheorem(
             c, fieldDisk, {x, y}, circle, t, c.zero(), twoPi, diskBounds);
         ASSERT_TRUE(greenDisk.proved) << greenDisk.reason.c_str();
         EXPECT_EQ(greenDisk.lhs,
@@ -2317,7 +2317,7 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
         const std::vector<DefiniteBound> rectBounds = {
             DefiniteBound{y, c.zero(), c.number(3)},
             DefiniteBound{x, c.zero(), c.number(2)}};
-        const auto greenRect = numkit::cas::verifyGreenTheorem(
+        const auto greenRect = keel::cas::verifyGreenTheorem(
             c, fieldRect, {x, y}, rectBnd, rectBounds);
         ASSERT_TRUE(greenRect.proved) << greenRect.reason.c_str();
         EXPECT_EQ(greenRect.lhs, c.number(10));
@@ -2339,7 +2339,7 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
             numkit::cas::parseExpr(c, "u*cos(v)"),
             numkit::cas::parseExpr(c, "u*sin(v)"),
             numkit::cas::parseExpr(c, "1 - u^2")};
-        const auto stokesRes = numkit::cas::verifyStokesTheorem(
+        const auto stokesRes = keel::cas::verifyStokesTheorem(
             c, field, {x, y, z}, bndCircle, t, c.zero(), twoPi, cap,
             DefiniteBound{u, c.zero(), c.one()},
             DefiniteBound{v, c.zero(), twoPi});
@@ -2370,7 +2370,7 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
             DefiniteBound{w, c.zero(), R},
             DefiniteBound{u, c.zero(), pi},
             DefiniteBound{v, c.zero(), twoPi}};
-        const auto gaussSphere = numkit::cas::verifyGaussDivergenceTheorem(
+        const auto gaussSphere = keel::cas::verifyGaussDivergenceTheorem(
             c, fieldSphere, {x, y, z}, sphereSurf,
             DefiniteBound{u, c.zero(), pi}, DefiniteBound{v, c.zero(), twoPi},
             sphericalVolMap, sphericalVolBounds);
@@ -2403,7 +2403,7 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
             DefiniteBound{z, c.zero(), c.one()},
             DefiniteBound{y, c.zero(), c.one()},
             DefiniteBound{x, c.zero(), c.one()}};
-        const auto gaussCube = numkit::cas::verifyGaussDivergenceTheorem(
+        const auto gaussCube = keel::cas::verifyGaussDivergenceTheorem(
             c, fieldCube, {x, y, z}, cubeFaces, cubeBounds);
         ASSERT_TRUE(gaussCube.proved) << gaussCube.reason.c_str();
         EXPECT_EQ(gaussCube.lhs, numkit::cas::parseExpr(c, "3/2"));
@@ -2412,21 +2412,21 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
 
     // 4. Incomplete gamma and hypergeometric integrals
     {
-        const auto igInt = numkit::cas::integrate(
+        const auto igInt = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "x^(3/2)*exp(-2*x)"), x);
         ASSERT_TRUE(igInt.proved()) << igInt.reason.c_str();
         EXPECT_EQ(c.simplify(igInt.F),
                   c.simplify(numkit::cas::parseExpr(
                       c, "-2^(-5/2)*igamma(5/2, 2*x)")));
 
-        const auto hg1Int = numkit::cas::integrate(
+        const auto hg1Int = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "hypergeom1F1(3, 4, 2*x)"), x);
         ASSERT_TRUE(hg1Int.proved()) << hg1Int.reason.c_str();
         EXPECT_EQ(c.simplify(hg1Int.F),
                   c.simplify(numkit::cas::parseExpr(
                       c, "3/4*hypergeom1F1(2, 3, 2*x)")));
 
-        const auto hg2Int = numkit::cas::integrate(
+        const auto hg2Int = keel::cas::integrate(
             c, numkit::cas::parseExpr(c, "hypergeom2F1(2, 3, 5, x)"), x);
         ASSERT_TRUE(hg2Int.proved()) << hg2Int.reason.c_str();
         EXPECT_EQ(c.simplify(hg2Int.F),
@@ -2434,7 +2434,7 @@ TEST_F(RatIntTest, SurfaceIntegralsAndGreenStokesGaussTheorems)
                       c, "2*hypergeom2F1(1, 2, 4, x)")));
 
         // Euler's integral representation of 2F1 on [0, 1]
-        const auto eul2F1 = numkit::cas::definiteIntegrate(
+        const auto eul2F1 = keel::cas::definiteIntegrate(
             c,
             numkit::cas::parseExpr(
                 c, "x^(-1/2)*(1 - x)^(-1/2)*(1 - 1/3*x)^(-1/2)"),

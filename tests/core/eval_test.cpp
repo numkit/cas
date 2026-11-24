@@ -4,10 +4,10 @@
 // expression, honest decline outside Q).
 #include <keel/core.h>
 #include <keel/math.h>
-#include <numkit/cas/core/expr.hpp>
-#include <numkit/cas/core/parser.hpp>
-#include <numkit/cas/integrate/ratint.hpp>
-#include <numkit/cas/poly/upoly.hpp>
+#include <keel/cas/core/expr.hpp>
+#include <numkit/cas/parse_expr.hpp>
+#include <keel/cas/integrate/ratint.hpp>
+#include <keel/cas/poly/upoly.hpp>
 
 #include <gtest/gtest.h>
 
@@ -21,12 +21,12 @@
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Ctx;
-using numkit::cas::Expr;
-using numkit::cas::NodeKind;
-using numkit::cas::Rational;
-using numkit::cas::UPoly;
+using keel::cas::BigInt;
+using keel::cas::Ctx;
+using keel::cas::Expr;
+using keel::cas::NodeKind;
+using keel::cas::Rational;
+using keel::cas::UPoly;
 
 // ── layer 1: fixed vectors (Python oracle: Fraction(float)) ────
 
@@ -174,7 +174,7 @@ TEST(EvalExact, MatchesUpolyEval)
             BigInt(static_cast<keel::i64>(nextU64(st) % 13) - 6),
             BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
         Rational out;
-        ASSERT_TRUE(c.evalExact(numkit::cas::toExpr(c, p, x),
+        ASSERT_TRUE(c.evalExact(keel::cas::toExpr(c, p, x),
                                 {{"x", q}}, out))
             << "deg " << deg;
         EXPECT_EQ(out, p.eval(q));
@@ -256,7 +256,7 @@ TEST(EvalDouble, TranscendentalRootOfAndOddRoots)
     // Numerical derivative check of a full Rioboo + Rubi cascade integral via evalDouble!
     const Expr f =
         numkit::cas::parseExpr(c, "(1 + 2*x)^(-3/2) + 1/(x^3 + 2)");
-    const numkit::cas::RationalIntegral r = numkit::cas::integrate(c, f, x);
+    const keel::cas::RationalIntegral r = keel::cas::integrate(c, f, x);
     ASSERT_TRUE(r.proved());
     const double x0 = 1.3, h = 1e-6;
     double fPlus = 0.0, fMinus = 0.0, fExact = 0.0;
@@ -294,7 +294,7 @@ TEST(EvalDouble, PropertyAgreesWithEvalExact)
         const Rational q(
             BigInt(static_cast<keel::i64>(nextU64(st) % 13) - 6),
             BigInt(1 + static_cast<keel::i64>(nextU64(st) % 4)));
-        const Expr pe = numkit::cas::toExpr(c, p, x);
+        const Expr pe = keel::cas::toExpr(c, p, x);
         Rational exactOut;
         double dblOut = 0.0;
         ASSERT_TRUE(c.evalExact(pe, {{"x", q}}, exactOut));

@@ -5,7 +5,7 @@
 //      reproduces the same node (fixed seed);
 //   3. boundary: error inputs, error positions, dyadic decimal edges.
 #include <keel/core.h>
-#include <numkit/cas/core/parser.hpp>
+#include <numkit/cas/parse_expr.hpp>
 
 #include <gtest/gtest.h>
 
@@ -15,11 +15,11 @@
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Ctx;
-using numkit::cas::Expr;
+using keel::cas::BigInt;
+using keel::cas::Ctx;
+using keel::cas::Expr;
 using numkit::cas::ParseError;
-using numkit::cas::Rational;
+using keel::cas::Rational;
 
 keel::u64 nextU64(keel::u64 &state)
 {
@@ -113,7 +113,7 @@ TEST(ParserVector, FunctionsAndSymbols)
     EXPECT_EQ(P(c, "sin(x^2)"), c.func("sin", c.pow(x, c.number(keel::i64{2}))));
     // RootOf(...) parses as an ordinary Func, never the algebraic atom
     // (one argument only — commas are rejected by the grammar).
-    EXPECT_EQ(c.kind(P(c, "RootOf(z^2 - 2)")), numkit::cas::NodeKind::Func);
+    EXPECT_EQ(c.kind(P(c, "RootOf(z^2 - 2)")), keel::cas::NodeKind::Func);
 }
 
 TEST(ParserVector, PrintedCanonicalForms)
@@ -134,7 +134,7 @@ TEST(ParserVector, PrintedCanonicalForms)
 // ever receive a small non-negative integer exponent here.
 Expr powSafe(Ctx &c, Expr base, Expr exp)
 {
-    assert(c.kind(exp) == numkit::cas::NodeKind::Number);
+    assert(c.kind(exp) == keel::cas::NodeKind::Number);
     if (c.isZero(base)) {
         keel::i64 n = 0;
         const Rational &e = c.numberValue(exp);

@@ -1,13 +1,13 @@
 #include <keel/core.h>
-#include <numkit/cas/poly/zassenhaus.hpp>
+#include <keel/cas/poly/zassenhaus.hpp>
 
 #include <gtest/gtest.h>
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Rational;
-using numkit::cas::UPoly;
+using keel::cas::BigInt;
+using keel::cas::Rational;
+using keel::cas::UPoly;
 
 keel::u64 nextU64(keel::u64 &state)
 {
@@ -109,24 +109,24 @@ void verifyReconstruction(keel::ArrayRef<BigInt> f,
 TEST(ZassenhausFixed, Classics)
 {
     // x^2 - 1 = (x-1)(x+1)
-    verifyReconstruction(IB({-1, 0, 1}), numkit::cas::factorPrimitiveInteger(IB({-1, 0, 1})));
-    EXPECT_EQ(numkit::cas::factorPrimitiveInteger(IB({-1, 0, 1})).size(), 2u);
+    verifyReconstruction(IB({-1, 0, 1}), keel::cas::factorPrimitiveInteger(IB({-1, 0, 1})));
+    EXPECT_EQ(keel::cas::factorPrimitiveInteger(IB({-1, 0, 1})).size(), 2u);
 
     // x^4 - 5x^2 + 6 = (x^2-2)(x^2-3)
-    const auto f2 = numkit::cas::factorPrimitiveInteger(IB({6, 0, -5, 0, 1}));
+    const auto f2 = keel::cas::factorPrimitiveInteger(IB({6, 0, -5, 0, 1}));
     ASSERT_EQ(f2.size(), 2u);
     verifyReconstruction(IB({6, 0, -5, 0, 1}), f2);
 
     // x^2 + 1 irreducible
-    EXPECT_EQ(numkit::cas::factorPrimitiveInteger(IB({1, 0, 1})).size(), 1u);
+    EXPECT_EQ(keel::cas::factorPrimitiveInteger(IB({1, 0, 1})).size(), 1u);
     // x^3 - 2 irreducible (no rational root)
-    EXPECT_EQ(numkit::cas::factorPrimitiveInteger(IB({-2, 0, 0, 1})).size(), 1u);
+    EXPECT_EQ(keel::cas::factorPrimitiveInteger(IB({-2, 0, 0, 1})).size(), 1u);
     // (x^3-2)(x+1) = x^4 + x^3 - 2x - 2
-    const auto f3 = numkit::cas::factorPrimitiveInteger(IB({-2, -2, 0, 1, 1}));
+    const auto f3 = keel::cas::factorPrimitiveInteger(IB({-2, -2, 0, 1, 1}));
     ASSERT_EQ(f3.size(), 2u);
     verifyReconstruction(IB({-2, -2, 0, 1, 1}), f3);
     // linear input returns itself
-    EXPECT_EQ(numkit::cas::factorPrimitiveInteger(IB({3, 7})).size(), 1u);
+    EXPECT_EQ(keel::cas::factorPrimitiveInteger(IB({3, 7})).size(), 1u);
 }
 
 // Guard for bugs/opened/poly/zassenhaus-cubic-cofactor-unsplit.md:
@@ -134,7 +134,7 @@ TEST(ZassenhausFixed, Classics)
 TEST(ZassenhausFixed, QuarticCubicSplit) // guard for the closed bug
 {
     const UPoly f = P("320,-16,-144,-54,27");
-    const auto fs = numkit::cas::factorOverQ(f);
+    const auto fs = keel::cas::factorOverQ(f);
     ASSERT_EQ(fs.size(), 3u);
 }
 
@@ -144,12 +144,12 @@ TEST(ZassenhausFixed, QuarticCubicSplit) // guard for the closed bug
 TEST(ZassenhausFixed, ZeroConstantTermFactors)
 {
     // x*(x+2)*(x-3) = x^3 - x^2 - 6x
-    const auto f = numkit::cas::factorPrimitiveInteger(IB({0, -6, -1, 1}));
+    const auto f = keel::cas::factorPrimitiveInteger(IB({0, -6, -1, 1}));
     ASSERT_EQ(f.size(), 3u);
     verifyReconstruction(IB({0, -6, -1, 1}), f);
 
     // (2x)*(3x^2+5) = 6x^3 + 10x: non-monic with a zero const term.
-    const auto g = numkit::cas::factorPrimitiveInteger(IB({0, 10, 0, 6}));
+    const auto g = keel::cas::factorPrimitiveInteger(IB({0, 10, 0, 6}));
     ASSERT_EQ(g.size(), 2u);
     verifyReconstruction(IB({0, 10, 0, 6}), g);
 }
@@ -157,10 +157,10 @@ TEST(ZassenhausFixed, ZeroConstantTermFactors)
 TEST(ZassenhausFixed, RationalFactorization)
 {
     // Monic rational input.
-    const keel::Array<UPoly> f = numkit::cas::factorOverQ(P("-2,0,1"));
+    const keel::Array<UPoly> f = keel::cas::factorOverQ(P("-2,0,1"));
     ASSERT_EQ(f.size(), 1u); // x^2 - 2 irreducible over Q
 
-    const keel::Array<UPoly> g = numkit::cas::factorOverQ(P("6,0,-5,0,1"));
+    const keel::Array<UPoly> g = keel::cas::factorOverQ(P("6,0,-5,0,1"));
     ASSERT_EQ(g.size(), 2u);
     UPoly prod(Rational(keel::i64{1}));
     for (const UPoly &q : g)
@@ -168,7 +168,7 @@ TEST(ZassenhausFixed, RationalFactorization)
     EXPECT_EQ(prod, P("6,0,-5,0,1").squarefreePart()); // monic factors multiply to the monic associate
 
     // Non-monic rational input: 2x^2 - 8 = 2(x-2)(x+2); factors monic.
-    const keel::Array<UPoly> h = numkit::cas::factorOverQ(P("-8,0,2"));
+    const keel::Array<UPoly> h = keel::cas::factorOverQ(P("-8,0,2"));
     ASSERT_EQ(h.size(), 2u);
     EXPECT_EQ(h[0], P("-2,1"));
     EXPECT_EQ(h[1], P("2,1"));
@@ -211,7 +211,7 @@ TEST(ZassenhausProperty, AssembleFromKnownFactors)
         if (f.isZero() || f.deg() < 1)
             continue;
 
-        const keel::Array<UPoly> factors = numkit::cas::factorOverQ(f);
+        const keel::Array<UPoly> factors = keel::cas::factorOverQ(f);
         ASSERT_FALSE(factors.empty());
 
         // product reconstructs the monic associate of f
@@ -278,10 +278,10 @@ TEST(ZassenhausProperty, RandomPolynomialsReconstruct)
         f.push_back(BigInt(1 + static_cast<keel::i64>(nextU64(state) % 4)));
         if (f.front().isZero())
             f[0] = BigInt(1);
-verifyReconstruction(f, numkit::cas::factorPrimitiveInteger(f));
+verifyReconstruction(f, keel::cas::factorPrimitiveInteger(f));
         // Determinism.
-        const auto f1 = numkit::cas::factorPrimitiveInteger(f);
-        const auto f2 = numkit::cas::factorPrimitiveInteger(f);
+        const auto f1 = keel::cas::factorPrimitiveInteger(f);
+        const auto f2 = keel::cas::factorPrimitiveInteger(f);
         ASSERT_EQ(f1.size(), f2.size());
         for (keel::usize i = 0; i < f1.size(); ++i)
             ASSERT_EQ(S(f1[i]), S(f2[i]));

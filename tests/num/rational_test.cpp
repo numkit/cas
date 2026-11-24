@@ -1,5 +1,5 @@
 #include <keel/core.h>
-#include <numkit/cas/num/rational.hpp>
+#include <keel/cas/num/rational.hpp>
 
 #include <limits>
 #include <numeric>
@@ -14,8 +14,8 @@ using cas_test::parse;
 using cas_test::parseR;
 using cas_test::randomBig;
 using cas_test::randomRational;
-using numkit::cas::BigInt;
-using numkit::cas::Rational;
+using keel::cas::BigInt;
+using keel::cas::Rational;
 
 // Python-generated oracle vectors (fractions.Fraction): a, b, a+b, a-b, a*b, a/b.
 struct BinCase

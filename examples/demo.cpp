@@ -1,16 +1,16 @@
 // examples/demo.cpp — a showcase of what the numkit-cas core can do.
 #include <keel/core.h>
-#include <numkit/cas/core/expr.hpp>
-#include <numkit/cas/integrate/ratint.hpp>
-#include <numkit/cas/num/bigint.hpp>
-#include <numkit/cas/num/rational.hpp>
-#include <numkit/cas/poly/algebraic.hpp>
+#include <keel/cas/core/expr.hpp>
+#include <keel/cas/integrate/ratint.hpp>
+#include <keel/cas/num/bigint.hpp>
+#include <keel/cas/num/rational.hpp>
+#include <keel/cas/poly/algebraic.hpp>
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-using namespace numkit::cas;
+using namespace keel::cas;
 
 namespace {
 

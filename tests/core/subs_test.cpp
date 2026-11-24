@@ -5,8 +5,8 @@
 //      substitutions, round-trips, commutation with print->parse;
 //   3. boundary: whole-tree match, atom targets, from == to.
 #include <keel/core.h>
-#include <numkit/cas/core/expr.hpp>
-#include <numkit/cas/core/parser.hpp>
+#include <keel/cas/core/expr.hpp>
+#include <numkit/cas/parse_expr.hpp>
 
 #include <gtest/gtest.h>
 
@@ -17,11 +17,11 @@
 
 namespace {
 
-using numkit::cas::Ctx;
-using numkit::cas::Expr;
-using numkit::cas::NodeKind;
+using keel::cas::Ctx;
+using keel::cas::Expr;
+using keel::cas::NodeKind;
 using numkit::cas::parseExpr;
-using numkit::cas::Rational;
+using keel::cas::Rational;
 
 keel::u64 nextU64(keel::u64 &state)
 {
@@ -91,8 +91,8 @@ TEST(SubsProperty, NeutralityAndRoundTrip)
             keel::i64 num = static_cast<keel::i64>((r >> 16) % 9) - 4;
             if (num == 0)
                 num = 1;
-            return c.number(Rational(numkit::cas::BigInt(num),
-                                     numkit::cas::BigInt(3)));
+            return c.number(Rational(keel::cas::BigInt(num),
+                                     keel::cas::BigInt(3)));
         }
         const Expr a = randomExpr(depth - 1);
         switch ((r >> 4) % 5) {
@@ -131,8 +131,8 @@ TEST(SubsProperty, PrintParseSurvival)
         if (num == 0)
             num = 1; // no numeric-zero bases around negative powers
         const Expr e = c.add({c.mul({c.number(
-            Rational(numkit::cas::BigInt(num),
-                     numkit::cas::BigInt(3))),
+            Rational(keel::cas::BigInt(num),
+                     keel::cas::BigInt(3))),
             c.pow(x, c.number(keel::i64{2}))}),
             c.func("sin", x)});
         const Expr s = c.subs(e, x, c.number(keel::i64{7}));

@@ -6,7 +6,7 @@
 //      change of the squarefree carrier (or an exact zero);
 //   3. boundary: linear, constant, near-double roots.
 #include <keel/core.h>
-#include <numkit/cas/poly/solve.hpp>
+#include <keel/cas/poly/solve.hpp>
 
 #include <gtest/gtest.h>
 
@@ -16,9 +16,9 @@
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Rational;
-using numkit::cas::UPoly;
+using keel::cas::BigInt;
+using keel::cas::Rational;
+using keel::cas::UPoly;
 
 Rational R(keel::i64 p, keel::i64 q = 1)
 {
@@ -37,7 +37,7 @@ TEST(SolveVector, ClassicShapes)
 {
     // x^2 - 2: two irrational roots, ascending brackets.
     {
-        const auto rs = numkit::cas::solveRealRoots(
+        const auto rs = keel::cas::solveRealRoots(
             UPoly({R(-2), R(0), R(1)}));
         ASSERT_EQ(rs.size(), 2u);
         EXPECT_FALSE(rs[0].isRational);
@@ -52,7 +52,7 @@ TEST(SolveVector, ClassicShapes)
     }
     // x^2 - 1 = (x-1)(x+1): both roots exact.
     {
-        const auto rs = numkit::cas::solveRealRoots(
+        const auto rs = keel::cas::solveRealRoots(
             UPoly({R(-1), R(0), R(1)}));
         ASSERT_EQ(rs.size(), 2u);
         EXPECT_TRUE(rs[0].isRational);
@@ -63,7 +63,7 @@ TEST(SolveVector, ClassicShapes)
     // x(x - 1/2)(x^2 - 2): root 0 (exact-empty bracket), 1/2, +/-sqrt2.
     {
         // x^3 - 2x = x(x^2 - 2), coefficients ascending
-        const auto rs = numkit::cas::solveRealRoots(
+        const auto rs = keel::cas::solveRealRoots(
             UPoly({R(0), R(-2), R(0), R(1)}) * UPoly({R(-1, 2), R(1)}));
         ASSERT_EQ(rs.size(), 4u);
         EXPECT_FALSE(rs[0].isRational); // -sqrt(2)
@@ -77,10 +77,10 @@ TEST(SolveVector, ClassicShapes)
     }
     // x^2 + 1: no real roots; x^3: the squarefree part is x.
     {
-        EXPECT_TRUE(numkit::cas::solveRealRoots(
+        EXPECT_TRUE(keel::cas::solveRealRoots(
                         UPoly({R(1), R(0), R(1)}))
                         .empty());
-        const auto rs = numkit::cas::solveRealRoots(
+        const auto rs = keel::cas::solveRealRoots(
             UPoly({R(0), R(0), R(0), R(1)}));
         ASSERT_EQ(rs.size(), 1u);
         EXPECT_TRUE(rs[0].isRational);
@@ -118,7 +118,7 @@ TEST(SolveProperty, BuiltRationalRootsFoundExactly)
             c = c + R(1);
         p = p * UPoly({c, b, R(1)});
 
-        const auto rs = numkit::cas::solveRealRoots(p);
+        const auto rs = keel::cas::solveRealRoots(p);
         ASSERT_EQ(rs.size(), roots.size()) << "iter " << iter;
         // every rational root is present, exactly once, ascending
         for (keel::usize k = 0; k < rs.size(); ++k) {
@@ -146,17 +146,17 @@ TEST(SolveProperty, BuiltRationalRootsFoundExactly)
 TEST(SolveBoundary, LinearAndConstant)
 {
     // 2x - 7: x = 7/2 exact.
-    const auto lin = numkit::cas::solveRealRoots(UPoly({R(-7), R(2)}));
+    const auto lin = keel::cas::solveRealRoots(UPoly({R(-7), R(2)}));
     ASSERT_EQ(lin.size(), 1u);
     EXPECT_TRUE(lin[0].isRational);
     EXPECT_EQ(lin[0].value, R(7, 2));
 
     // Non-zero constant: no roots.
-    EXPECT_TRUE(numkit::cas::solveRealRoots(UPoly({R(5)})).empty());
+    EXPECT_TRUE(keel::cas::solveRealRoots(UPoly({R(5)})).empty());
 
     // Near-double rational root collapses through squarefree part:
     // (x - 1)^2 * (x + 3): distinct roots are -3 and 1.
-    const auto dup = numkit::cas::solveRealRoots(
+    const auto dup = keel::cas::solveRealRoots(
         UPoly({R(-1), R(1)}) * UPoly({R(-1), R(1)}) * UPoly({R(3), R(1)}));
     ASSERT_EQ(dup.size(), 2u);
     EXPECT_TRUE(dup[0].isRational);

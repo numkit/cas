@@ -1,5 +1,5 @@
 #include <keel/core.h>
-#include <numkit/cas/poly/algebraic.hpp>
+#include <keel/cas/poly/algebraic.hpp>
 
 #include <string>
 
@@ -7,10 +7,10 @@
 
 namespace {
 
-using numkit::cas::Algebraic;
-using numkit::cas::BigInt;
-using numkit::cas::Rational;
-using numkit::cas::UPoly;
+using keel::cas::Algebraic;
+using keel::cas::BigInt;
+using keel::cas::Rational;
+using keel::cas::UPoly;
 
 keel::u64 nextU64(keel::u64 &state)
 {

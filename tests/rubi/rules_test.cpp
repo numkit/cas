@@ -6,8 +6,8 @@
 //   3. boundary: shapes outside the slice decline (-1), arity
 //      mismatches decline, no bindings leak on failure.
 #include <keel/core.h>
-#include <numkit/cas/rubi/rules.hpp>
-#include <numkit/cas/core/parser.hpp>
+#include <keel/cas/rubi/rules.hpp>
+#include <numkit/cas/parse_expr.hpp>
 
 #include <gtest/gtest.h>
 
@@ -17,12 +17,12 @@
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Ctx;
-using numkit::cas::Expr;
-using numkit::cas::NodeKind;
-using numkit::cas::Rational;
-using namespace numkit::cas::rubi;
+using keel::cas::BigInt;
+using keel::cas::Ctx;
+using keel::cas::Expr;
+using keel::cas::NodeKind;
+using keel::cas::Rational;
+using namespace keel::cas::rubi;
 
 keel::u64 nextU64(keel::u64 &state)
 {
@@ -1035,8 +1035,8 @@ TEST(RubiApply, AssumptionsSymbolicParameters)
     {
         Ctx c;
         const Expr x = c.symbol("x");
-        c.assume("a", numkit::cas::AssumeDomain::Positive);
-        c.assume("b", numkit::cas::AssumeDomain::Positive);
+        c.assume("a", keel::cas::AssumeDomain::Positive);
+        c.assume("b", keel::cas::AssumeDomain::Positive);
         const Expr e = numkit::cas::parseExpr(c, "(a + b*x^2)^-1");
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());
@@ -1049,8 +1049,8 @@ TEST(RubiApply, AssumptionsSymbolicParameters)
     {
         Ctx c;
         const Expr x = c.symbol("x");
-        c.assume("a", numkit::cas::AssumeDomain::Positive);
-        c.assume("b", numkit::cas::AssumeDomain::Negative);
+        c.assume("a", keel::cas::AssumeDomain::Positive);
+        c.assume("b", keel::cas::AssumeDomain::Negative);
         const Expr e = numkit::cas::parseExpr(c, "(a + b*x^2)^-1");
         const Expr F = rubiApply(t, c, e, x);
         ASSERT_FALSE(F.isNull());

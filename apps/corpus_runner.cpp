@@ -4,9 +4,9 @@
 #include <keel/time.h>
 #include "corpus_runner.hpp"
 
-#include <numkit/cas/core/parser.hpp>
-#include <numkit/cas/integrate/ratint.hpp>
-#include <numkit/cas/rubi/rules.hpp>
+#include <numkit/cas/parse_expr.hpp>
+#include <keel/cas/integrate/ratint.hpp>
+#include <keel/cas/rubi/rules.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -117,31 +117,31 @@ TaskOutcome runTask(const CorpusTask &t)
 {
     TaskOutcome o;
     o.id = t.id.clone();
-    numkit::cas::Ctx ctx;
+    keel::cas::Ctx ctx;
     const keel::u64 startNs = keel::monotonic_ns();
     try {
-        const numkit::cas::Expr f = numkit::cas::parseExpr(ctx, t.expr);
-        const numkit::cas::Expr var = ctx.symbol(t.var);
+        const keel::cas::Expr f = numkit::cas::parseExpr(ctx, t.expr);
+        const keel::cas::Expr var = ctx.symbol(t.var);
         bool proved = false;
-        numkit::cas::Expr F;
+        keel::cas::Expr F;
         keel::String reason;
         if (t.op == "rubi") {
             // The C2 rule engine: certified rule application of the
             // committed slice.
-            F = numkit::cas::rubi::rubiApply(
-                numkit::cas::rubi::sliceTables(), ctx, f, var);
+            F = keel::cas::rubi::rubiApply(
+                keel::cas::rubi::sliceTables(), ctx, f, var);
             proved = !F.isNull();
             if (!proved)
                 reason.assign("no certified rule application");
         } else if (t.op == "cascade") {
-            numkit::cas::RationalIntegral r =
-                numkit::cas::integrate(ctx, f, var);
+            keel::cas::RationalIntegral r =
+                keel::cas::integrate(ctx, f, var);
             proved = r.proved();
             F = r.F;
             reason = keel::move(r.reason);
         } else {
-            numkit::cas::RationalIntegral r =
-                numkit::cas::integrateRational(ctx, f, var);
+            keel::cas::RationalIntegral r =
+                keel::cas::integrateRational(ctx, f, var);
             proved = r.proved();
             F = r.F;
             reason = keel::move(r.reason);
@@ -153,7 +153,7 @@ TaskOutcome runTask(const CorpusTask &t)
             o.answerNodes = ctx.nodeCount();
             o.answerLeaves = ctx.leafCount(F);
             if (!t.ref.empty()) {
-                const numkit::cas::Expr refExpr =
+                const keel::cas::Expr refExpr =
                     numkit::cas::parseExpr(ctx, t.ref);
                 o.refLeaves = ctx.leafCount(refExpr);
                 if (o.refLeaves > 0) {

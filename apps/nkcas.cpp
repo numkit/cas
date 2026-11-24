@@ -15,17 +15,17 @@
 #include <keel/format.h>
 #include <keel/fs.h>
 #include <keel/string.h>
-#include <numkit/cas/core/parser.hpp>
-#include <numkit/cas/core/series.hpp>
-#include <numkit/cas/core/simplify.hpp>
-#include <numkit/cas/core/symsolve.hpp>
-#include <numkit/cas/integrate/ratint.hpp>
-#include <numkit/cas/ode/dsolve.hpp>
-#include <numkit/cas/poly/solve.hpp>
-#include <numkit/cas/rubi/rules.hpp>
-#include <numkit/cas/transform/fourier.hpp>
-#include <numkit/cas/transform/laplace.hpp>
-#include <numkit/cas/transform/ztrans.hpp>
+#include <numkit/cas/parse_expr.hpp>
+#include <keel/cas/core/series.hpp>
+#include <keel/cas/core/simplify.hpp>
+#include <keel/cas/core/symsolve.hpp>
+#include <keel/cas/integrate/ratint.hpp>
+#include <keel/cas/ode/dsolve.hpp>
+#include <keel/cas/poly/solve.hpp>
+#include <keel/cas/rubi/rules.hpp>
+#include <keel/cas/transform/fourier.hpp>
+#include <keel/cas/transform/laplace.hpp>
+#include <keel/cas/transform/ztrans.hpp>
 
 #include "corpus_runner.hpp"
 
@@ -153,8 +153,8 @@ bool splitLine(keel::StringRef line, keel::String &cmd,
 int runSubs(keel::StringRef exprSrc, keel::StringRef fromSrc,
             keel::StringRef toSrc)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f, from, to;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f, from, to;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
         from = numkit::cas::parseExpr(ctx, fromSrc);
@@ -170,8 +170,8 @@ int runSubs(keel::StringRef exprSrc, keel::StringRef fromSrc,
 int runEval(keel::StringRef exprSrc, keel::StringRef varName,
             keel::StringRef valSrc)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
@@ -180,7 +180,7 @@ int runEval(keel::StringRef exprSrc, keel::StringRef varName,
     }
     keel::Array<keel::Pair<keel::StringRef, double>> env;
     if (!varName.empty()) {
-        numkit::cas::Expr valExpr;
+        keel::cas::Expr valExpr;
         try {
             valExpr = numkit::cas::parseExpr(ctx, valSrc);
         } catch (const numkit::cas::ParseError &e) {
@@ -206,8 +206,8 @@ int runEval(keel::StringRef exprSrc, keel::StringRef varName,
 int runTaylor(keel::StringRef exprSrc, keel::StringRef varName,
               keel::StringRef x0Src, int order)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f, x0;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f, x0;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
         x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
@@ -215,8 +215,8 @@ int runTaylor(keel::StringRef exprSrc, keel::StringRef varName,
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr var = ctx.symbol(varName);
-    const numkit::cas::Expr out = numkit::cas::taylor(ctx, f, var, x0, order);
+    const keel::cas::Expr var = ctx.symbol(varName);
+    const keel::cas::Expr out = keel::cas::taylor(ctx, f, var, x0, order);
     if (out.isNull()) {
         keel::println("Unevaluated (pole, branch point, or beyond series domain)");
         return 2;
@@ -228,8 +228,8 @@ int runTaylor(keel::StringRef exprSrc, keel::StringRef varName,
 int runLimit(keel::StringRef exprSrc, keel::StringRef varName,
              keel::StringRef x0Src)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f, x0;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f, x0;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
         x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
@@ -237,13 +237,13 @@ int runLimit(keel::StringRef exprSrc, keel::StringRef varName,
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr var = ctx.symbol(varName);
-    const numkit::cas::LimitResult r = numkit::cas::limit(ctx, f, var, x0);
+    const keel::cas::Expr var = ctx.symbol(varName);
+    const keel::cas::LimitResult r = keel::cas::limit(ctx, f, var, x0);
     if (r.proved()) {
         keel::println("{}", ctx.toString(r.value));
         return 0;
     }
-    if (r.status == numkit::cas::LimitResult::Status::Divergent) {
+    if (r.status == keel::cas::LimitResult::Status::Divergent) {
         keel::println("Divergent (pole of order {})", r.poleOrder);
         return 2;
     }
@@ -254,8 +254,8 @@ int runLimit(keel::StringRef exprSrc, keel::StringRef varName,
 int runResidue(keel::StringRef exprSrc, keel::StringRef varName,
                keel::StringRef z0Src)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f, z0;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f, z0;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
         z0 = z0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, z0Src);
@@ -263,8 +263,8 @@ int runResidue(keel::StringRef exprSrc, keel::StringRef varName,
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr var = ctx.symbol(varName.empty() ? keel::StringRef("x") : varName);
-    const numkit::cas::Expr res = numkit::cas::residue(ctx, f, var, z0);
+    const keel::cas::Expr var = ctx.symbol(varName.empty() ? keel::StringRef("x") : varName);
+    const keel::cas::Expr res = keel::cas::residue(ctx, f, var, z0);
     if (res.isNull()) {
         keel::println("Unevaluated (essential singularity, branch point, or beyond domain)");
         return 2;
@@ -276,8 +276,8 @@ int runResidue(keel::StringRef exprSrc, keel::StringRef varName,
 int runDefInt(keel::StringRef exprSrc, keel::StringRef varName,
               keel::StringRef aSrc, keel::StringRef bSrc)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f, a, b;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f, a, b;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
         a = numkit::cas::parseExpr(ctx, aSrc);
@@ -286,15 +286,15 @@ int runDefInt(keel::StringRef exprSrc, keel::StringRef varName,
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr var = ctx.symbol(varName);
-    const numkit::cas::DefiniteIntegral r =
-        numkit::cas::definiteIntegrate(ctx, f, var, a, b);
+    const keel::cas::Expr var = ctx.symbol(varName);
+    const keel::cas::DefiniteIntegral r =
+        keel::cas::definiteIntegrate(ctx, f, var, a, b);
     if (r.proved()) {
         keel::println("{}", ctx.toString(r.value));
         keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
-    if (r.status == numkit::cas::DefiniteIntegral::Status::Divergent) {
+    if (r.status == keel::cas::DefiniteIntegral::Status::Divergent) {
         keel::println("Divergent: {}", r.reason);
         return 2;
     }
@@ -305,8 +305,8 @@ int runDefInt(keel::StringRef exprSrc, keel::StringRef varName,
 int runSymSum(keel::StringRef exprSrc, keel::StringRef varName,
               keel::StringRef aSrc, keel::StringRef bSrc)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f, a, b;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f, a, b;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
         a = numkit::cas::parseExpr(ctx, aSrc);
@@ -315,15 +315,15 @@ int runSymSum(keel::StringRef exprSrc, keel::StringRef varName,
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr var = ctx.symbol(varName);
-    const numkit::cas::SymSumResult r =
-        numkit::cas::symsum(ctx, f, var, a, b);
+    const keel::cas::Expr var = ctx.symbol(varName);
+    const keel::cas::SymSumResult r =
+        keel::cas::symsum(ctx, f, var, a, b);
     if (r.proved()) {
         keel::println("{}", ctx.toString(r.value));
         keel::println("[certificate: PROVED_SYMBOLIC]");
         return 0;
     }
-    if (r.status == numkit::cas::SymSumResult::Status::Divergent) {
+    if (r.status == keel::cas::SymSumResult::Status::Divergent) {
         keel::println("Divergent: {}", r.reason);
         return 2;
     }
@@ -334,8 +334,8 @@ int runSymSum(keel::StringRef exprSrc, keel::StringRef varName,
 int runPade(keel::StringRef exprSrc, keel::StringRef varName,
             keel::StringRef x0Src, int m, int n)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f, x0;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f, x0;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
         x0 = x0Src.empty() ? ctx.zero() : numkit::cas::parseExpr(ctx, x0Src);
@@ -343,9 +343,9 @@ int runPade(keel::StringRef exprSrc, keel::StringRef varName,
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr var = ctx.symbol(varName);
-    const numkit::cas::PadeResult r =
-        numkit::cas::pade(ctx, f, var, x0, m, n);
+    const keel::cas::Expr var = ctx.symbol(varName);
+    const keel::cas::PadeResult r =
+        keel::cas::pade(ctx, f, var, x0, m, n);
     if (r.proved()) {
         keel::println("{}", ctx.toString(r.value));
         keel::println("[certificate: PROVED_SYMBOLIC]");
@@ -358,19 +358,19 @@ int runPade(keel::StringRef exprSrc, keel::StringRef varName,
 int runLaplace(keel::StringRef exprSrc, keel::StringRef inVarName,
                keel::StringRef outVarName, bool inverse)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr vIn = ctx.symbol(inVarName);
-    const numkit::cas::Expr vOut = ctx.symbol(outVarName);
-    const numkit::cas::LaplaceResult r =
-        inverse ? numkit::cas::ilaplace(ctx, f, vIn, vOut)
-                : numkit::cas::laplace(ctx, f, vIn, vOut);
+    const keel::cas::Expr vIn = ctx.symbol(inVarName);
+    const keel::cas::Expr vOut = ctx.symbol(outVarName);
+    const keel::cas::LaplaceResult r =
+        inverse ? keel::cas::ilaplace(ctx, f, vIn, vOut)
+                : keel::cas::laplace(ctx, f, vIn, vOut);
     if (r.proved()) {
         keel::println("{}", ctx.toString(r.F));
         keel::println("[certificate: PROVED_SYMBOLIC]");
@@ -383,19 +383,19 @@ int runLaplace(keel::StringRef exprSrc, keel::StringRef inVarName,
 int runZTrans(keel::StringRef exprSrc, keel::StringRef inVarName,
               keel::StringRef outVarName, bool inverse)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr vIn = ctx.symbol(inVarName);
-    const numkit::cas::Expr vOut = ctx.symbol(outVarName);
-    const numkit::cas::ZTransResult r =
-        inverse ? numkit::cas::iztrans(ctx, f, vIn, vOut)
-                : numkit::cas::ztrans(ctx, f, vIn, vOut);
+    const keel::cas::Expr vIn = ctx.symbol(inVarName);
+    const keel::cas::Expr vOut = ctx.symbol(outVarName);
+    const keel::cas::ZTransResult r =
+        inverse ? keel::cas::iztrans(ctx, f, vIn, vOut)
+                : keel::cas::ztrans(ctx, f, vIn, vOut);
     if (r.proved()) {
         keel::println("{}", ctx.toString(r.F));
         keel::println("[certificate: PROVED_SYMBOLIC]");
@@ -408,19 +408,19 @@ int runZTrans(keel::StringRef exprSrc, keel::StringRef inVarName,
 int runFourier(keel::StringRef exprSrc, keel::StringRef inVarName,
                keel::StringRef outVarName, bool inverse)
 {
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
         keel::println("parse error at offset {}: {}", e.pos(), e.what());
         return 1;
     }
-    const numkit::cas::Expr vIn = ctx.symbol(inVarName);
-    const numkit::cas::Expr vOut = ctx.symbol(outVarName);
-    const numkit::cas::FourierResult r =
-        inverse ? numkit::cas::ifourier(ctx, f, vIn, vOut)
-                : numkit::cas::fourier(ctx, f, vIn, vOut);
+    const keel::cas::Expr vIn = ctx.symbol(inVarName);
+    const keel::cas::Expr vOut = ctx.symbol(outVarName);
+    const keel::cas::FourierResult r =
+        inverse ? keel::cas::ifourier(ctx, f, vIn, vOut)
+                : keel::cas::fourier(ctx, f, vIn, vOut);
     if (r.proved()) {
         keel::println("{}", ctx.toString(r.F));
         keel::println("[certificate: PROVED_SYMBOLIC]");
@@ -475,8 +475,8 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
             return runResidue(exprSrc, varName, "0");
         return runResidue(exprSrc, varName.substr(0, tab), varName.substr(tab + 1));
     }
-    numkit::cas::Ctx ctx;
-    numkit::cas::Expr f;
+    keel::cas::Ctx ctx;
+    keel::cas::Expr f;
     try {
         f = numkit::cas::parseExpr(ctx, exprSrc);
     } catch (const numkit::cas::ParseError &e) {
@@ -495,7 +495,7 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
         keel::println("{}", ctx.toString(ctx.simplify(f)));
         return 0;
     }
-    const numkit::cas::Expr var = ctx.symbol(varName);
+    const keel::cas::Expr var = ctx.symbol(varName);
     if (cmd == "diff") {
         keel::println("{}", ctx.toString(ctx.diff(f, var)));
         return 0;
@@ -517,8 +517,8 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
     if (cmd == "ifourier")
         return runFourier(exprSrc, varName.empty() ? keel::StringRef("w") : varName, "t", true);
     if (cmd == "integrate") {
-        const numkit::cas::RationalIntegral r =
-            numkit::cas::integrate(ctx, f, var);
+        const keel::cas::RationalIntegral r =
+            keel::cas::integrate(ctx, f, var);
         if (r.proved()) {
             keel::println("{}", ctx.toString(r.F));
             keel::println("[certificate: PROVED_SYMBOLIC]");
@@ -528,8 +528,8 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
         return 2;
     }
     if (cmd == "solve") {
-        numkit::cas::UPoly N, D;
-        if (!numkit::cas::toRational(ctx, f, var, N, D) || !D.isConst()) {
+        keel::cas::UPoly N, D;
+        if (!keel::cas::toRational(ctx, f, var, N, D) || !D.isConst()) {
             keel::println("not a polynomial in {}", varName);
             return 1;
         }
@@ -537,7 +537,7 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
             keel::println("every point (zero polynomial)");
             return 0;
         }
-        const auto roots = numkit::cas::solveRealRoots(N);
+        const auto roots = keel::cas::solveRealRoots(N);
         if (roots.empty())
             keel::println("no real roots");
         for (const auto &s : roots) {
@@ -552,7 +552,7 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
         return 0;
     }
     if (cmd == "symsolve") {
-        const auto roots = numkit::cas::solveSymbolic(ctx, f, var);
+        const auto roots = keel::cas::solveSymbolic(ctx, f, var);
         if (roots.empty()) {
             keel::println("no symbolic solutions found");
             return 2;
@@ -562,9 +562,9 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
         return 0;
     }
     if (cmd == "dsolve") {
-        const numkit::cas::Expr y = ctx.symbol("y");
-        const numkit::cas::OdeResult sol =
-            numkit::cas::dsolve1(ctx, f, var, y);
+        const keel::cas::Expr y = ctx.symbol("y");
+        const keel::cas::OdeResult sol =
+            keel::cas::dsolve1(ctx, f, var, y);
         if (sol.proved()) {
             keel::println("{}", ctx.toString(sol.y));
             keel::println("[certificate: PROVED_SYMBOLIC]");
@@ -574,8 +574,8 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
         return 2;
     }
     if (cmd == "factor") {
-        numkit::cas::Expr factored;
-        if (!numkit::cas::factorExpr(ctx, f, var, factored)) {
+        keel::cas::Expr factored;
+        if (!keel::cas::factorExpr(ctx, f, var, factored)) {
             keel::println("not a rational function of {}", varName);
             return 1;
         }
@@ -585,8 +585,8 @@ int runCommand(keel::StringRef cmd, keel::StringRef exprSrc,
     if (cmd == "rubi") {
         // Apply the first matching Rubi rule of the committed slice,
         // certified by the Tier-1 gate (dF/dx == integrand).
-        const numkit::cas::Expr F =
-            numkit::cas::rubi::rubiApply(numkit::cas::rubi::sliceTables(),
+        const keel::cas::Expr F =
+            keel::cas::rubi::rubiApply(keel::cas::rubi::sliceTables(),
                                          ctx, f, var);
         if (F.isNull()) {
             keel::println("no certified rule application");

@@ -7,13 +7,17 @@
 #include <keel/ref.h>
 #include <keel/smart_ptr.h>
 #include <keel/string.h>
-#include <numkit/cas/core/expr.hpp>
-#include <numkit/cas/linalg/symmatrix.hpp>
+#include <keel/cas/core/expr.hpp>
+#include <keel/cas/linalg/symmatrix.hpp>
 #include <numkit/value/object.hpp>
 #include <numkit/value/value.hpp>
 
 
 namespace numkit::cas {
+
+using keel::cas::Ctx;
+using keel::cas::Expr;
+using keel::cas::SymMatrix;
 
 struct SymPayload : public numkit::NativePayload
 {

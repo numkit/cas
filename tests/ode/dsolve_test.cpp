@@ -1,8 +1,8 @@
 #include <keel/core.h>
-#include <numkit/cas/ode/dsolve.hpp>
+#include <keel/cas/ode/dsolve.hpp>
 
-#include <numkit/cas/core/parser.hpp>
-#include <numkit/cas/core/simplify.hpp>
+#include <numkit/cas/parse_expr.hpp>
+#include <keel/cas/core/simplify.hpp>
 
 #include <gtest/gtest.h>
 
@@ -11,6 +11,8 @@
 #include <string>
 
 namespace numkit::cas {
+
+using namespace keel::cas;
 namespace {
 
 Expr P(Ctx &c, const std::string &s) { return parseExpr(c, s); }

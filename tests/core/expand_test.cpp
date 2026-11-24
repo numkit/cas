@@ -1,7 +1,7 @@
 // core/expand_test.cpp — three layers per AGENTS.md for Ctx::expand.
 #include <keel/core.h>
-#include <numkit/cas/core/expr.hpp>
-#include <numkit/cas/core/parser.hpp>
+#include <keel/cas/core/expr.hpp>
+#include <numkit/cas/parse_expr.hpp>
 
 #include <gtest/gtest.h>
 
@@ -11,11 +11,11 @@
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Ctx;
-using numkit::cas::Expr;
+using keel::cas::BigInt;
+using keel::cas::Ctx;
+using keel::cas::Expr;
 using numkit::cas::parseExpr;
-using numkit::cas::Rational;
+using keel::cas::Rational;
 
 keel::u64 nextU64(keel::u64 &state)
 {

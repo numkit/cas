@@ -11,8 +11,8 @@
 #include <keel/core.h>
 #include "corpus_runner.hpp"
 
-#include <numkit/cas/core/parser.hpp>
-#include <numkit/cas/integrate/ratint.hpp>
+#include <numkit/cas/parse_expr.hpp>
+#include <keel/cas/integrate/ratint.hpp>
 
 #include <gtest/gtest.h>
 
@@ -182,13 +182,13 @@ TEST(CorpusProperty, RandomRationalTextAllProved)
     keel::u64 st = 0x5EEDC0DEBA5EULL;
     keel::usize proved = 0, total = 0;
     for (int iter = 0; iter < 150; ++iter) {
-        using numkit::cas::Rational;
-        using numkit::cas::UPoly;
+        using keel::cas::Rational;
+        using keel::cas::UPoly;
         auto rr = [&](int lim) {
             const keel::i64 q = 1 + static_cast<keel::i64>(nextU64(st) % 3);
             const keel::i64 p =
                 static_cast<keel::i64>(nextU64(st) % (2 * lim + 1)) - lim;
-            return Rational(numkit::cas::BigInt(p), numkit::cas::BigInt(q));
+            return Rational(keel::cas::BigInt(p), keel::cas::BigInt(q));
         };
         UPoly den(Rational(keel::i64{1}));
         const int nLin = static_cast<int>(nextU64(st) % 3);
@@ -241,11 +241,11 @@ TEST(CorpusProperty, RandomRationalTextAllProved)
         if (num.isZero())
             continue;
 
-        numkit::cas::Ctx ctx;
-        const numkit::cas::Expr var = ctx.symbol("x");
+        keel::cas::Ctx ctx;
+        const keel::cas::Expr var = ctx.symbol("x");
         const std::string text(ctx.toString(ctx.div(
-            numkit::cas::toExpr(ctx, num, var),
-            numkit::cas::toExpr(ctx, den, var))).as_ref());
+            keel::cas::toExpr(ctx, num, var),
+            keel::cas::toExpr(ctx, den, var))).as_ref());
         ++total;
         const TaskOutcome o = runTask(task("p", "x", text.c_str()));
         if (o.status == TaskStatus::Proved)

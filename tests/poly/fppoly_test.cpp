@@ -1,12 +1,12 @@
 #include <keel/core.h>
-#include <numkit/cas/poly/fppoly.hpp>
+#include <keel/cas/poly/fppoly.hpp>
 
 #include <gtest/gtest.h>
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::FpPoly;
+using keel::cas::BigInt;
+using keel::cas::FpPoly;
 
 keel::u64 nextU64(keel::u64 &state)
 {

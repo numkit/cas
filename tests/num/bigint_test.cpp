@@ -1,5 +1,5 @@
 #include <keel/core.h>
-#include <numkit/cas/num/bigint.hpp>
+#include <keel/cas/num/bigint.hpp>
 
 #include <limits>
 
@@ -11,7 +11,7 @@ namespace {
 using cas_test::nextU64;
 using cas_test::parse;
 using cas_test::randomBig;
-using numkit::cas::BigInt;
+using keel::cas::BigInt;
 
 // Python-generated oracle vectors: a, b, a+b, a-b, a*b, a/b (trunc), a%b.
 struct BinCase

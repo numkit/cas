@@ -1,15 +1,15 @@
 #include <keel/core.h>
-#include <numkit/cas/poly/sturm.hpp>
+#include <keel/cas/poly/sturm.hpp>
 
 #include <string>
 #include <gtest/gtest.h>
 
 namespace {
 
-using numkit::cas::BigInt;
-using numkit::cas::Rational;
-using numkit::cas::RootInterval;
-using numkit::cas::UPoly;
+using keel::cas::BigInt;
+using keel::cas::Rational;
+using keel::cas::RootInterval;
+using keel::cas::UPoly;
 
 keel::u64 nextU64(keel::u64 &state)
 {
@@ -89,11 +89,11 @@ TEST(SturmFixed, OracleVectors)
 {
     for (const Case &c : kCases) {
         const UPoly p = P(c.poly);
-        const keel::Array<RootInterval> roots = numkit::cas::isolateRealRoots(p);
+        const keel::Array<RootInterval> roots = keel::cas::isolateRealRoots(p);
         ASSERT_EQ(roots.size(), static_cast<keel::usize>(c.count)) << c.poly;
         ASSERT_EQ(roots.size(), c.roots.size());
         for (keel::usize i = 0; i < roots.size(); ++i) {
-            const RootInterval iv = numkit::cas::refineRoot(
+            const RootInterval iv = keel::cas::refineRoot(
                 p.squarefreePart(), roots[i],
                 Rational(keel::i64{1}, BigInt(1000000)));
             EXPECT_LE(toD(iv.lo), c.roots[i] + 1e-5) << c.poly;
@@ -106,15 +106,15 @@ TEST(SturmFixed, KnownBounds)
 {
     // sqrt(2) is the positive root of x^2 - 2.
     const UPoly q = P("-2,0,1");
-    const keel::Array<RootInterval> roots = numkit::cas::isolateRealRoots(q);
+    const keel::Array<RootInterval> roots = keel::cas::isolateRealRoots(q);
     ASSERT_EQ(roots.size(), 2u);
-    const RootInterval r2 = numkit::cas::refineRoot(
+    const RootInterval r2 = keel::cas::refineRoot(
         q, roots[1], Rational(keel::i64{1}, BigInt(1000000)));
     const double mid = 0.5 * (toD(r2.lo) + toD(r2.hi));
     EXPECT_NEAR(mid, 1.414213562, 1e-5);
 
     // All roots within the Cauchy bound.
-    const Rational B = numkit::cas::cauchyRootBound(q);
+    const Rational B = keel::cas::cauchyRootBound(q);
     for (const RootInterval &iv : roots) {
         EXPECT_LE(iv.lo.abs(), B);
         EXPECT_LE(iv.hi.abs(), B);
@@ -135,8 +135,8 @@ TEST(SturmProperty, IsolationInvariants)
         const UPoly psf = p.squarefreePart();
         if (p.isConst())
             continue; // generator can produce constants (trimmed zeros)
-        const keel::Array<RootInterval> roots = numkit::cas::isolateRealRoots(p);
-        const keel::Array<UPoly> sturm = numkit::cas::sturmSequence(psf);
+        const keel::Array<RootInterval> roots = keel::cas::isolateRealRoots(p);
+        const keel::Array<UPoly> sturm = keel::cas::sturmSequence(psf);
 
         // Pairwise disjoint interiors, ordered; endpoints may be exact
         // roots shared with neighbours.
@@ -146,18 +146,18 @@ TEST(SturmProperty, IsolationInvariants)
             } else if (!psf.eval(roots[i].lo).isZero() && !psf.eval(roots[i].hi).isZero()) {
                 // Sign change: one simple root of the squarefree part.
                 EXPECT_TRUE((psf.eval(roots[i].lo) * psf.eval(roots[i].hi)).signum() < 0);
-                EXPECT_EQ(numkit::cas::countRealRoots(sturm, roots[i].lo, roots[i].hi), 1u);
+                EXPECT_EQ(keel::cas::countRealRoots(sturm, roots[i].lo, roots[i].hi), 1u);
             }
             if (i + 1 < roots.size())
                 EXPECT_LE(roots[i].hi, roots[i + 1].lo);
         }
         // Count outside all intervals is zero (within the Cauchy bound).
-        const Rational B = numkit::cas::cauchyRootBound(p);
-        EXPECT_EQ(numkit::cas::countRealRoots(sturm, -B, B), roots.size());
+        const Rational B = keel::cas::cauchyRootBound(p);
+        EXPECT_EQ(keel::cas::countRealRoots(sturm, -B, B), roots.size());
 
         // Refinement keeps the root and shrinks the interval.
         for (const RootInterval &iv : roots) {
-            const RootInterval fine = numkit::cas::refineRoot(
+            const RootInterval fine = keel::cas::refineRoot(
                 psf, iv, Rational(keel::i64{1}, BigInt(1 << 20)));
             if (fine.exact()) {
                 EXPECT_TRUE(psf.eval(fine.lo).isZero());
@@ -191,7 +191,7 @@ TEST(SturmProperty, KnownRationalRootsContained)
             wanted.push_back(r);
             p = p * UPoly(keel::Array<Rational>{Rational(-r), Rational(keel::i64{1})});
         }
-        const keel::Array<RootInterval> roots = numkit::cas::isolateRealRoots(p);
+        const keel::Array<RootInterval> roots = keel::cas::isolateRealRoots(p);
         ASSERT_EQ(roots.size(), wanted.size());
         for (const Rational &w : wanted) {
             bool found = false;

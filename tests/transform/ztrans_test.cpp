@@ -1,8 +1,8 @@
-#include <numkit/cas/transform/ztrans.hpp>
+#include <keel/cas/transform/ztrans.hpp>
 
-#include <numkit/cas/core/parser.hpp>
-#include <numkit/cas/core/simplify.hpp>
-#include <numkit/cas/linalg/symmatrix.hpp>
+#include <numkit/cas/parse_expr.hpp>
+#include <keel/cas/core/simplify.hpp>
+#include <keel/cas/linalg/symmatrix.hpp>
 
 #include <gtest/gtest.h>
 
@@ -11,6 +11,8 @@
 #include <vector>
 
 namespace numkit::cas {
+
+using namespace keel::cas;
 namespace {
 
 bool equivExpr(Ctx &c, Expr a, Expr b)

@@ -80,9 +80,8 @@ void syms_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArra
     keel::Array<keel::Pair<keel::String, Value>> bindings;
     symsCommand(args, bindings, mrOf(ctx));
     if (ctx.engine) {
-        auto *pluginCtx = reinterpret_cast<PluginContext *>(ctx.engine);
         for (auto &kv : bindings) {
-            pluginCtx->assignToCaller(0, kv.first, keel::move(kv.second));
+            ctx.engine->assignToCaller(0, kv.first, keel::move(kv.second));
         }
     }
     if (!outs.empty()) {

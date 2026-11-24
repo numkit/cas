@@ -31,7 +31,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 
 namespace {
 
@@ -57,7 +56,7 @@ bool readStdinLine(keel::String &out)
     bool any = false;
     while (std::fgets(buf, sizeof(buf), stdin) != nullptr) {
         any = true;
-        const keel::usize len = std::strlen(buf);
+        const keel::usize len = keel::StringRef(buf).size();
         if (len > 0 && buf[len - 1] == '\n') {
             out.append(keel::StringRef(buf, len - 1));
             if (!out.empty() && out.back() == '\r')

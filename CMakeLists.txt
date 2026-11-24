@@ -71,7 +71,7 @@ if(NOT TARGET keel::cas)
     FetchContent_Declare(
         keel_cas
         GIT_REPOSITORY https://github.com/keelcpp/cas.git
-        GIT_TAG        9667d80ecac031bf2e351676f6dc2f49608afb1f
+        GIT_TAG        b946fb470790ded2dd0ed65b93bf7ea1a26f58ce
     )
     FetchContent_MakeAvailable(keel_cas)
 endif()

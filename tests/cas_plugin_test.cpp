@@ -338,4 +338,33 @@ TEST_F(CasPluginTest, FieldtestRegressionsRelationalSymfunDsolveIlaplaceSolveCom
     expectScalar("double(~isempty(strfind(cap_s, '42')))", 1.0);
     expectSymEqual("subs(x + 2*y, [x, y], [y, 3])", "y + 6");
     expectSymEqual("subs(x - y, [x, y], [y, x])", "y - x");
+
+    // 10. Small-magnitude double->sym rational conversion (1.82e-10 must not truncate to 0)
+    expectScalar("double(sym(1.82e-10))", 1.82e-10, 1e-22);
+    evalBoth("syms Ag Cl; sol_ci = solve([Ag*Cl == 1.82e-10, Cl == Ag + 1e-5], [Ag, Cl]);");
+    evalBoth("ag_v = double(sol_ci.Ag); ag_pos = ag_v(ag_v > 0);");
+    expectScalar("ag_pos(1)", 0.5 * (-1e-5 + std::sqrt(1e-10 + 4.0 * 1.82e-10)), 1e-15);
+
+    // 11. Variadic partial diff(f, x, x, y, y, y) and diff(f, x, 2, y, 3)
+    expectSymEqual("diff(3*x^5*y^10, x, x, y, y, y)", "43200*x^3*y^7");
+    expectSymEqual("diff(3*x^5*y^10, x, 2, y, 3)", "43200*x^3*y^7");
+
+    // 12. vpa preserves free symbolic variables while evaluating constant subexpressions
+    evalBoth("vp_expr = vpa(sym(1)/3 * exp(-sym(3)/2 * t));");
+    expectScalar("double(subs(vp_expr, t, 2))", (1.0 / 3.0) * std::exp(-3.0), 1e-11);
+
+    // 13. solve(..., 'Real', true) filters non-real roots without treating 'Real' as a variable
+    evalBoth("r_real = solve(x^3 - 1 == 0, x, 'Real', true);");
+    expectScalar("numel(r_real)", 1.0);
+    expectScalar("double(r_real(1))", 1.0, 1e-12);
+
+    // 14. Symbolic relational logical-mask indexing (e.g. sol.L(sol.L > 0))
+    evalBoth("sv_mix = [sym(-5); sym(1000)/3; sym(0); sym(7)]; sv_pos = sv_mix(sv_mix > 0);");
+    expectScalar("numel(sv_pos)", 2.0);
+    expectScalar("double(sv_pos(1))", 1000.0 / 3.0, 1e-12);
+    expectScalar("double(sv_pos(2))", 7.0, 1e-12);
+
+    // 15. Divergent improper definite integral int(1/x, x, 0, inf) -> Inf (not error)
+    evalBoth("div_i = int(1/x, x, 0, inf);");
+    expectScalar("double(isinf(double(div_i)))", 1.0);
 }

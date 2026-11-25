@@ -52,7 +52,7 @@ if(NOT TARGET keel::bignum)
     FetchContent_Declare(
         keel_bignum
         GIT_REPOSITORY https://github.com/keelcpp/bignum.git
-        GIT_TAG        f773bfd14f29ac523f60cf2b6001400026a10d5a
+        GIT_TAG        0cc55d4bb07b977055e4415070c516c872f79d3b
     )
     FetchContent_MakeAvailable(keel_bignum)
 endif()
@@ -71,7 +71,7 @@ if(NOT TARGET keel::cas)
     FetchContent_Declare(
         keel_cas
         GIT_REPOSITORY https://github.com/keelcpp/cas.git
-        GIT_TAG        b946fb470790ded2dd0ed65b93bf7ea1a26f58ce
+        GIT_TAG        5378335e62e144be9d4baddd38bdf860534ad8cb
     )
     FetchContent_MakeAvailable(keel_cas)
 endif()

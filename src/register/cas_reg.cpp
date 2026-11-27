@@ -114,6 +114,12 @@ void vpa_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArray
     outs[0] = symVpa(args, mrOf(ctx));
 }
 
+void digits_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
+{
+    argcheck::checkNargin(args.size(), 0, 1, "digits");
+    outs[0] = symDigits(args, nargout, mrOf(ctx));
+}
+
 void poly2sym_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 2, "poly2sym");
@@ -630,6 +636,7 @@ void CasLibrary::install(PluginContext &engine)
     engine.registerFunction("cas", "assume", &cas::detail::assume_reg);
     engine.registerFunction("cas", "assumptions", &cas::detail::assumptions_reg);
     engine.registerFunction("cas", "vpa", &cas::detail::vpa_reg);
+    engine.registerFunction("cas", "digits", &cas::detail::digits_reg);
     engine.registerFunction("cas", "poly2sym", &cas::detail::poly2sym_reg);
     engine.registerFunction("cas", "sym2poly", &cas::detail::sym2poly_reg);
     engine.registerFunction("cas", "symvar", &cas::detail::symvar_reg);

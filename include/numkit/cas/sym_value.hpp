@@ -97,6 +97,9 @@ numkit::Value symDouble(const numkit::Value &v,
                         keel::Allocator *mr = nullptr);
 numkit::Value symVpa(keel::ArrayRef<numkit::Value> args,
                      keel::Allocator *mr = nullptr);
+numkit::Value symDigits(keel::ArrayRef<numkit::Value> args,
+                        keel::usize nargout,
+                        keel::Allocator *mr = nullptr);
 numkit::Value symChar(const numkit::Value &v,
                       keel::Allocator *mr = nullptr);
 numkit::Value symLatex(const numkit::Value &v,

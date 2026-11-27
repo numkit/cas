@@ -8,7 +8,7 @@
   "varDeclCommands": ["syms"],
   "exports": [
     "sym", "symfun", "syms", "formula", "argnames", "lhs", "rhs", "isAlways", "matlabFunction",
-    "assume", "assumptions", "vpa", "poly2sym", "sym2poly", "symvar",
+    "assume", "assumptions", "vpa", "digits", "poly2sym", "sym2poly", "symvar",
     "simplify", "expand", "factor", "collect", "coeffs", "numden", "partfrac", "subs",
     "int", "defint", "limit", "taylor", "laurent", "mtaylor", "pade", "symsum", "finitediff", "eulermaclaurin",
     "solve", "groebner", "polyreduce",
@@ -24,7 +24,7 @@
   ],
   "functions": [
     "sym", "symfun", "syms", "formula", "argnames", "lhs", "rhs", "isAlways", "matlabFunction",
-    "assume", "assumptions", "vpa", "poly2sym", "sym2poly", "symvar",
+    "assume", "assumptions", "vpa", "digits", "poly2sym", "sym2poly", "symvar",
     "simplify", "expand", "factor", "collect", "coeffs", "numden", "partfrac", "subs",
     "int", "defint", "limit", "taylor", "laurent", "mtaylor", "pade", "symsum", "finitediff", "eulermaclaurin",
     "solve", "groebner", "polyreduce",

@@ -1666,6 +1666,38 @@ numkit::Value symDouble(const numkit::Value &v,
     return Value::scalar(val, mr);
 }
 
+namespace {
+thread_local keel::i32 gCasDigits = 32;
+
+void symDigits_argcheck(keel::ArrayRef<numkit::Value> args)
+{
+    argcheck::checkNargin(args.size(), 0, 1, "digits");
+    if (args.size() == 1) {
+        const keel::f64 v = argcheck::expectedPositiveInteger(
+            argcheck::expectedReal(args[0], 1, "d", "digits"), 1, "d", "digits");
+        if (v < 2.0) {
+            argcheck::detail::fail(
+                "digits: input 1 (d) must be an integer >= 2.",
+                "digits", "numkit:digits:invalidPrecision");
+        }
+    }
+}
+} // anonymous namespace
+
+numkit::Value symDigits(keel::ArrayRef<numkit::Value> args,
+                        keel::usize nargout,
+                        keel::Allocator *mr)
+{
+    symDigits_argcheck(args);
+    mr = resolveMr(mr);
+    const keel::i32 prev = gCasDigits;
+    if (args.size() == 1) {
+        gCasDigits = keel::as<keel::i32>(args[0].toScalar());
+        return (nargout >= 1) ? numkit::Value::scalar(keel::as<keel::f64>(prev), mr) : numkit::Value();
+    }
+    return numkit::Value::scalar(keel::as<keel::f64>(prev), mr);
+}
+
 numkit::Value symVpa(keel::ArrayRef<numkit::Value> args,
                      keel::Allocator *mr)
 {
@@ -5389,19 +5421,71 @@ numkit::BuiltinClass makeSymBuiltinClass()
             outs[0] = self.objectSubArray(idxs.as_ref(), mr);
             return;
         }
-        if (idxArgs.size() == 2) {
-            const keel::usize nRows = self.dims().rows();
-            const keel::usize nCols = self.dims().cols();
-            auto rIdx = resolveIdx(idxArgs[0], nRows);
-            auto cIdx = resolveIdx(idxArgs[1], nCols);
+        if (idxArgs.size() >= 2) {
+            const keel::usize nIdx = idxArgs.size();
+            const auto &sd = self.dims();
+            const keel::usize srcNdim = sd.ndims();
+            keel::Array<keel::Array<keel::usize>> dimIdxs(mr);
+            dimIdxs.reserve(nIdx);
+            keel::Array<keel::usize> srcStrides(mr);
+            srcStrides.reserve(nIdx);
+            keel::usize stride = 1;
+            keel::usize totalOut = 1;
+            for (keel::usize d = 0; d < nIdx; ++d) {
+                keel::usize dimSize = 1;
+                if (d + 1 == nIdx && srcNdim > nIdx) {
+                    // Last index collapses all remaining trailing dimensions.
+                    for (keel::usize k = d; k < srcNdim; ++k)
+                        dimSize *= sd.dim(k);
+                } else if (d < srcNdim) {
+                    dimSize = sd.dim(d);
+                }
+                auto resolved = resolveIdx(idxArgs[d], dimSize);
+                totalOut *= resolved.size();
+                dimIdxs.push_back(keel::move(resolved));
+                srcStrides.push_back(stride);
+                stride *= dimSize;
+            }
             keel::Array<keel::usize> lin(mr);
-            lin.reserve(rIdx.size() * cIdx.size());
-            for (keel::usize j = 0; j < cIdx.size(); ++j)
-                for (keel::usize i = 0; i < rIdx.size(); ++i)
-                    lin.push_back(cIdx[j] * nRows + rIdx[i]);
+            lin.reserve(totalOut);
+            if (totalOut > 0) {
+                keel::Array<keel::usize> coords(nIdx, 0, mr);
+                for (keel::usize outK = 0; outK < totalOut; ++outK) {
+                    keel::usize srcLin = 0;
+                    for (keel::usize d = 0; d < nIdx; ++d)
+                        srcLin += dimIdxs[d][coords[d]] * srcStrides[d];
+                    lin.push_back(srcLin);
+                    for (keel::usize d = 0; d < nIdx; ++d) {
+                        if (++coords[d] < dimIdxs[d].size())
+                            break;
+                        coords[d] = 0;
+                    }
+                }
+            }
             Value sub = self.objectSubArray(lin.as_ref(), mr);
-            if (sub.dims().rows() != rIdx.size() || sub.dims().cols() != cIdx.size())
-                sub = sub.reshape(rIdx.size(), cIdx.size(), mr);
+            keel::usize outNdim = nIdx;
+            while (outNdim > 2 && dimIdxs[outNdim - 1].size() == 1)
+                --outNdim;
+            if (outNdim == 2) {
+                const keel::usize rSz = dimIdxs[0].size();
+                const keel::usize cSz = dimIdxs[1].size();
+                if (sub.dims().rows() != rSz || sub.dims().cols() != cSz)
+                    sub = sub.reshape(rSz, cSz, mr);
+            } else {
+                keel::Array<keel::usize> outDims(mr);
+                outDims.reserve(outNdim);
+                for (keel::usize d = 0; d < outNdim; ++d)
+                    outDims.push_back(dimIdxs[d].size());
+                keel::Array<keel::Arc<ObjectState>> states(mr);
+                states.reserve(sub.objectCount());
+                for (keel::usize k = 0; k < sub.objectCount(); ++k) {
+                    const ObjectState *st = sub.objectStateAt(k);
+                    states.push_back(st ? st->deepCopy(mr) : keel::make_arc_in<ObjectState>(mr, mr));
+                }
+                sub = Value::objectArray(self.objectClassNameRef(),
+                                         Dims(outDims.data(), keel::as<keel::i32>(outNdim)),
+                                         keel::move(states), /*isHandle=*/false, mr);
+            }
             outs[0] = keel::move(sub);
             return;
         }

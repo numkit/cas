@@ -367,4 +367,14 @@ TEST_F(CasPluginTest, FieldtestRegressionsRelationalSymfunDsolveIlaplaceSolveCom
     // 15. Divergent improper definite integral int(1/x, x, 0, inf) -> Inf (not error)
     evalBoth("div_i = int(1/x, x, 0, inf);");
     expectScalar("double(isinf(double(div_i)))", 1.0);
+
+    // 16. N-D / trailing-singleton indexing on symbolic matrices (e.g. A(i, j, 1))
+    evalBoth("syms phi; M2 = [cos(phi), sin(phi); -sin(phi), cos(phi)];");
+    expectSymEqual("M2(1, 2, 1)", "sin(phi)");
+    expectSymEqual("M2(2, 1, 1, 1)", "-sin(phi)");
+
+    // 17. digits() precision getter/setter
+    evalBoth("d_old = digits(10); d_cur = digits(); digits(d_old);");
+    expectScalar("d_old", 32.0);
+    expectScalar("d_cur", 10.0);
 }

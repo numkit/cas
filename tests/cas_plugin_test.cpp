@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <complex>
 #include <string>
 
 using namespace numkit;
@@ -377,4 +378,57 @@ TEST_F(CasPluginTest, FieldtestRegressionsRelationalSymfunDsolveIlaplaceSolveCom
     evalBoth("d_old = digits(10); d_cur = digits(); digits(d_old);");
     expectScalar("d_old", 32.0);
     expectScalar("d_cur", 10.0);
+
+    // 18. Definite & indefinite integral of product of exponentials (EX_6_16 pattern)
+    evalBoth("syms tau_i t_i; ep_def = int(3*exp(-1.5*tau_i)*exp(-(2 + 5i)*(t_i - tau_i)), tau_i, 0, t_i);");
+    evalBoth("ep_v = double(subs(ep_def, t_i, 0.4));");
+    {
+        const std::complex<double> d(2.0, 5.0);
+        const double tv = 0.4;
+        const std::complex<double> expected = 3.0 * (std::exp(-1.5 * tv) - std::exp(-d * tv)) / (d - 1.5);
+        expectScalar("real(ep_v)", expected.real(), 1e-11);
+        expectScalar("imag(ep_v)", expected.imag(), 1e-11);
+    }
+
+    // 19. Distributional Fourier / inverse Fourier pair for abs(x) <-> -2/w^2
+    evalBoth("syms xf wf");
+    expectSymEqual("fourier(-2*pi*abs(xf))", "4*pi/sym('w')^2");
+    evalBoth("if_res = ifourier(4*pi/wf^2);");
+    expectScalar("double(subs(if_res, sym('x'), 3))", -6.0 * 3.14159265358979323846, 1e-11);
+    expectScalar("double(subs(if_res, sym('x'), -3))", -6.0 * 3.14159265358979323846, 1e-11);
+
+    // 20. ODE systems in dsolve: string coupled, string decoupled nonlinear, symbolic decoupled,
+    //     and coupled 2nd-order undamped double-pendulum IVP
+    evalBoth("[sx_o, sy_o] = dsolve('Dx=3*x+4*y', 'Dy=-4*x+3*y');");
+    expectSymEqual("diff(sx_o, sym('t')) - (3*sx_o + 4*sy_o)", "0");
+    expectSymEqual("diff(sy_o, sym('t')) - (-4*sx_o + 3*sy_o)", "0");
+
+    evalBoth("[sn_x, sn_y] = dsolve('Dx=x^2', 'Dy=y^2', 'x(0)=1,y(0)=1');");
+    expectSymEqual("sn_x", "-1/(sym('t') - 1)");
+    expectSymEqual("sn_y", "-1/(sym('t') - 1)");
+
+    evalBoth("[s3_x, s3_y, s3_z] = dsolve('Dx=x', 'Dy=y', 'Dz=-z');");
+    expectSymEqual("diff(s3_x, sym('t')) - s3_x", "0");
+    expectSymEqual("diff(s3_z, sym('t')) + s3_z", "0");
+
+    evalBoth("syms u_o(t) v_o(t) w_o(t);");
+    evalBoth("S_dec = dsolve([diff(u_o, t) == u_o, diff(v_o, t) == v_o, diff(w_o, t) == -w_o], "
+             "[u_o(0) == 1, v_o(0) == 2, w_o(0) == 3]);");
+    expectSymEqual("S_dec.u_o", "exp(t)");
+    expectSymEqual("S_dec.v_o", "2*exp(t)");
+    expectSymEqual("S_dec.w_o", "3*exp(-t)");
+
+    evalBoth("syms th1(t) th2(t); Dth1 = diff(th1, t, 1); Dth2 = diff(th2, t, 1); "
+             "D2th1 = diff(th1, t, 2); D2th2 = diff(th2, t, 2); "
+             "EQN_dp = [D2th1 == (-1/100)*(50*D2th2 + 20*9.81*th1), "
+             "D2th2 == (-1/50)*(50*D2th1 + 10*9.81*th2)]; "
+             "ICs_dp = [th1(0) == -0.5, Dth1(0) == -1, th2(0) == 1, Dth2(0) == 2]; "
+             "Th_dp = dsolve(EQN_dp, ICs_dp);");
+    // Verify ICs and ODE residual numerically at t = 0 and t = 1.2
+    expectScalar("double(subs(Th_dp.th1, t, 0))", -0.5, 1e-11);
+    expectScalar("double(subs(Th_dp.th2, t, 0))", 1.0, 1e-11);
+    expectScalar("double(subs(diff(Th_dp.th1, t), t, 0))", -1.0, 1e-11);
+    expectScalar("double(subs(diff(Th_dp.th2, t), t, 0))", 2.0, 1e-11);
+    expectScalar("double(subs(100*diff(Th_dp.th1, t, 2) + 50*diff(Th_dp.th2, t, 2) + 196.2*Th_dp.th1, t, 1.2))", 0.0, 1e-9);
+    expectScalar("double(subs(50*diff(Th_dp.th2, t, 2) + 50*diff(Th_dp.th1, t, 2) + 98.1*Th_dp.th2, t, 1.2))", 0.0, 1e-9);
 }

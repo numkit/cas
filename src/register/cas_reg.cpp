@@ -258,10 +258,25 @@ void polyreduce_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::M
     outs[0] = symPolyReduce(args, mrOf(ctx));
 }
 
-void dsolve_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)
+void dsolve_reg(keel::ArrayRef<Value> args, keel::usize nargout, keel::MutArrayRef<Value> outs, CallContext &ctx)
 {
     argcheck::checkNargin(args.size(), 1, 16, "dsolve");
-    outs[0] = symDsolve(args, mrOf(ctx));
+    Value res = symDsolve(args, mrOf(ctx));
+    if (nargout >= 2 && res.isStruct() && !res.isStructArray()) {
+        keel::Array<keel::String> names = res.fieldNamesInOrder();
+        for (keel::usize i = 1; i < names.size(); ++i) {
+            keel::usize j = i;
+            while (j > 0 && names[j].as_ref() < names[j - 1].as_ref()) {
+                keel::swap(names[j], names[j - 1]);
+                --j;
+            }
+        }
+        const keel::usize nCopy = keel::min(keel::min(nargout, outs.size()), names.size());
+        for (keel::usize i = 0; i < nCopy; ++i)
+            outs[i] = res.field(names[i].as_ref());
+        return;
+    }
+    outs[0] = keel::move(res);
 }
 
 void pdsolve_reg(keel::ArrayRef<Value> args, keel::usize /*nargout*/, keel::MutArrayRef<Value> outs, CallContext &ctx)

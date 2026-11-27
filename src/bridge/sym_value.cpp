@@ -2354,15 +2354,118 @@ numkit::Value symInt(keel::ArrayRef<numkit::Value> args,
         casFail("nk:int:invalidVar", "int: integration variable must be a symbol");
     }
 
+    struct ExpProductHelper {
+        static bool mentions(const Ctx &ctx, Expr node, Expr sym)
+        {
+            if (node.isNull())
+                return false;
+            if (node == sym)
+                return true;
+            for (keel::usize i = 0; i < ctx.childCount(node); ++i)
+                if (mentions(ctx, ctx.child(node, i), sym))
+                    return true;
+            return false;
+        }
+
+        static bool isInfLike(const Ctx &ctx, Expr node)
+        {
+            if (node.isNull())
+                return false;
+            if (ctx.kind(node) == NodeKind::Symbol) {
+                const keel::StringRef nm = ctx.symbolName(node).as_ref();
+                return nm.equals_ignore_ascii_case("oo") || nm.equals_ignore_ascii_case("inf");
+            }
+            for (keel::usize i = 0; i < ctx.childCount(node); ++i)
+                if (isInfLike(ctx, ctx.child(node, i)))
+                    return true;
+            return false;
+        }
+
+        static bool integrateTerm(Ctx &ctx, Expr term, Expr v, Expr &out)
+        {
+            keel::Array<Expr> factors;
+            if (ctx.kind(term) == NodeKind::Mul) {
+                factors.reserve(ctx.childCount(term));
+                for (keel::usize i = 0; i < ctx.childCount(term); ++i)
+                    factors.push_back(ctx.child(term, i));
+            } else {
+                factors.push_back(term);
+            }
+
+            keel::Array<Expr> constFactors;
+            keel::Array<Expr> expArgs;
+            for (const Expr fac : factors) {
+                if (!mentions(ctx, fac, v)) {
+                    constFactors.push_back(fac);
+                } else if (ctx.kind(fac) == NodeKind::Func &&
+                           ctx.funcName(fac) == "exp" && ctx.childCount(fac) == 1) {
+                    expArgs.push_back(ctx.child(fac, 0));
+                } else if (ctx.kind(fac) == NodeKind::Pow &&
+                           ctx.kind(ctx.child(fac, 0)) == NodeKind::Func &&
+                           ctx.funcName(ctx.child(fac, 0)) == "exp" &&
+                           ctx.childCount(ctx.child(fac, 0)) == 1 &&
+                           !mentions(ctx, ctx.child(fac, 1), v)) {
+                    expArgs.push_back(ctx.mul({ctx.child(fac, 1), ctx.child(ctx.child(fac, 0), 0)}));
+                } else {
+                    return false;
+                }
+            }
+            if (expArgs.empty()) {
+                out = ctx.mul({term, v});
+                return true;
+            }
+            Expr combinedExp = (expArgs.size() == 1) ? expArgs[0] : ctx.add(expArgs);
+            combinedExp = ctx.simplify(ctx.expand(combinedExp));
+            Expr slope = ctx.simplify(ctx.diff(combinedExp, v));
+            if (mentions(ctx, slope, v))
+                return false;
+            Expr coeff = constFactors.empty()
+                             ? ctx.one()
+                             : (constFactors.size() == 1 ? constFactors[0] : ctx.mul(constFactors));
+            Expr expNode = ctx.func("exp", combinedExp);
+            if (ctx.isZero(slope))
+                out = ctx.mul({coeff, expNode, v});
+            else
+                out = ctx.div(ctx.mul({coeff, expNode}), slope);
+            return true;
+        }
+
+        static bool integrateSum(Ctx &ctx, Expr expr, Expr v, Expr &out)
+        {
+            if (ctx.kind(expr) == NodeKind::Add) {
+                keel::Array<Expr> parts;
+                parts.reserve(ctx.childCount(expr));
+                for (keel::usize i = 0; i < ctx.childCount(expr); ++i) {
+                    Expr p;
+                    if (!integrateTerm(ctx, ctx.child(expr, i), v, p))
+                        return false;
+                    parts.push_back(p);
+                }
+                out = ctx.add(parts);
+                return true;
+            }
+            return integrateTerm(ctx, expr, v, out);
+        }
+
+        static bool integrate(Ctx &ctx, Expr expr, Expr v, Expr &out)
+        {
+            if (integrateSum(ctx, expr, v, out))
+                return true;
+            return integrateSum(ctx, ctx.expand(expr), v, out);
+        }
+    };
+
     if (!isDefinite) {
         return mapSymUnary(args[0], c, [&](Expr e) {
             RationalIntegral ri = integrate(c, e, var);
-            if (!ri.proved()) {
-                casFail("nk:int:unevaluated",
-                        keel::format("int: could not find closed-form antiderivative for '{}' ({})",
-                                     c.toString(e), ri.reason));
-            }
-            return ri.F;
+            if (ri.proved())
+                return ri.F;
+            Expr expAntideriv;
+            if (ExpProductHelper::integrate(c, e, var, expAntideriv))
+                return c.simplify(expAntideriv);
+            casFail("nk:int:unevaluated",
+                    keel::format("int: could not find closed-form antiderivative for '{}' ({})",
+                                 c.toString(e), ri.reason));
         }, mr, "int");
     }
 
@@ -2371,11 +2474,19 @@ numkit::Value symInt(keel::ArrayRef<numkit::Value> args,
         if (di.status == DefiniteIntegral::Status::Divergent) {
             return c.symbol("oo");
         }
-        if (!di.proved()) {
-            casFail("nk:int:unevaluated",
-                    keel::format("int: could not evaluate definite integral ({})", di.reason));
+        if (di.proved()) {
+            return di.value;
         }
-        return di.value;
+        if (!ExpProductHelper::isInfLike(c, aBound) && !ExpProductHelper::isInfLike(c, bBound)) {
+            Expr expAntideriv;
+            if (ExpProductHelper::integrate(c, e, var, expAntideriv)) {
+                Expr upper = c.subs(expAntideriv, var, bBound);
+                Expr lower = c.subs(expAntideriv, var, aBound);
+                return c.simplify(c.add({upper, c.neg(lower)}));
+            }
+        }
+        casFail("nk:int:unevaluated",
+                keel::format("int: could not evaluate definite integral ({})", di.reason));
     }, mr, "int");
 }
 
@@ -3410,6 +3521,311 @@ bool solveParsedOdeExpr(keel::Arc<Ctx> ctxPtr, Expr eq, keel::StringRef depName,
     return true;
 }
 
+bool solveOdeSystem(keel::Arc<Ctx> ctxPtr,
+                    keel::ArrayRef<Expr> odeEqs,
+                    keel::ArrayRef<keel::String> depNames,
+                    keel::ArrayRef<keel::i32> maxOrders,
+                    Expr xSym,
+                    keel::ArrayRef<keel::Array<ParsedDsolveIc>> perDepIcs,
+                    keel::Allocator *mr,
+                    numkit::Value &outVal)
+{
+    Ctx &c = *ctxPtr;
+    const keel::usize m = depNames.size();
+    if (m < 2 || odeEqs.size() != m || maxOrders.size() != m || perDepIcs.size() != m)
+        return false;
+
+    auto depDerivSym = [&](keel::usize idx, keel::i32 ord) -> Expr {
+        if (ord == 0)
+            return c.symbol(depNames[idx]);
+        if (ord == 1)
+            return c.symbol(keel::format("D{}", depNames[idx]));
+        return c.symbol(keel::format("D{}{}", ord, depNames[idx]));
+    };
+
+    auto eqMentionsDep = [&](Expr eq, keel::usize idx) -> bool {
+        for (keel::i32 ord = 0; ord <= maxOrders[idx]; ++ord) {
+            if (exprMentionsSymbol(c, eq, depDerivSym(idx, ord)))
+                return true;
+        }
+        return false;
+    };
+
+    // Path A: Decoupled system — each equation mentions exactly one distinct dependent variable.
+    {
+        keel::Array<keel::i32> eqForDep(m, -1);
+        bool decoupled = true;
+        for (keel::usize i = 0; i < m; ++i) {
+            keel::i32 owner = -1;
+            for (keel::usize k = 0; k < m; ++k) {
+                if (eqMentionsDep(odeEqs[i], k)) {
+                    if (owner >= 0) {
+                        decoupled = false;
+                        break;
+                    }
+                    owner = keel::as<keel::i32>(k);
+                }
+            }
+            if (!decoupled || owner < 0 || eqForDep[keel::as<keel::usize>(owner)] >= 0) {
+                decoupled = false;
+                break;
+            }
+            eqForDep[keel::as<keel::usize>(owner)] = keel::as<keel::i32>(i);
+        }
+
+        if (decoupled) {
+            Value st = Value::structure(mr);
+            keel::i32 nextConst = 1;
+            for (keel::usize k = 0; k < m; ++k) {
+                Value singleVal;
+                const keel::usize eqIdx = keel::as<keel::usize>(eqForDep[k]);
+                if (!solveParsedOdeExpr(ctxPtr, odeEqs[eqIdx], depNames[k].as_ref(), xSym,
+                                        maxOrders[k], perDepIcs[k].as_ref(), mr, singleVal)) {
+                    return false;
+                }
+                Expr sol = toSymExpr(singleVal, c, "dsolve");
+                // Rename C1..C<ord> sequentially across equations so constants stay distinct.
+                keel::Array<Expr> foundConsts;
+                for (keel::i32 ci = 1; ci <= maxOrders[k] + 2; ++ci) {
+                    Expr ck = c.symbol(keel::format("C{}", ci));
+                    if (exprMentionsSymbol(c, sol, ck))
+                        foundConsts.push_back(ck);
+                }
+                if (!foundConsts.empty()) {
+                    keel::Array<Expr> tmpConsts;
+                    tmpConsts.reserve(foundConsts.size());
+                    for (keel::usize j = 0; j < foundConsts.size(); ++j) {
+                        Expr tmp = c.symbol(keel::format("_nk_dsolve_c_{}_{}", k, j));
+                        sol = c.subs(sol, foundConsts[j], tmp);
+                        tmpConsts.push_back(tmp);
+                    }
+                    for (keel::usize j = 0; j < tmpConsts.size(); ++j) {
+                        sol = c.subs(sol, tmpConsts[j], c.symbol(keel::format("C{}", nextConst++)));
+                    }
+                }
+                st.field(depNames[k].as_ref()) = fromSymExpr(ctxPtr, sol, mr);
+            }
+            outVal = keel::move(st);
+            return true;
+        }
+    }
+
+    // Path B: Coupled linear constant-coefficient system (1st or 2nd order per variable).
+    keel::Array<keel::usize> stateOffsets(m, 0);
+    keel::Array<Expr> stateSyms;
+    keel::Array<Expr> highSyms;
+    highSyms.reserve(m);
+    for (keel::usize k = 0; k < m; ++k) {
+        if (maxOrders[k] < 1 || maxOrders[k] > 2)
+            return false;
+        stateOffsets[k] = stateSyms.size();
+        stateSyms.push_back(depDerivSym(k, 0));
+        if (maxOrders[k] == 2)
+            stateSyms.push_back(depDerivSym(k, 1));
+        highSyms.push_back(depDerivSym(k, maxOrders[k]));
+    }
+    const keel::usize nStates = stateSyms.size();
+
+    auto mentionsAnyStateOrHigh = [&](Expr e) -> bool {
+        for (const Expr s : highSyms)
+            if (exprMentionsSymbol(c, e, s))
+                return true;
+        for (const Expr s : stateSyms)
+            if (exprMentionsSymbol(c, e, s))
+                return true;
+        return false;
+    };
+
+    SymMatrix M(m, m, c.zero());
+    SymMatrix K(m, nStates, c.zero());
+    SymMatrix fRaw(m, 1, c.zero());
+    for (keel::usize i = 0; i < m; ++i) {
+        Expr rem = odeEqs[i];
+        for (keel::usize j = 0; j < m; ++j) {
+            Expr coeff, rest;
+            if (!extractLinearInSym(c, rem, highSyms[j], coeff, rest))
+                return false;
+            if (exprMentionsSymbol(c, coeff, xSym) || mentionsAnyStateOrHigh(coeff))
+                return false;
+            M.at(i, j) = coeff;
+            rem = rest;
+        }
+        for (keel::usize l = 0; l < nStates; ++l) {
+            Expr coeff, rest;
+            if (!extractLinearInSym(c, rem, stateSyms[l], coeff, rest))
+                return false;
+            if (exprMentionsSymbol(c, coeff, xSym) || mentionsAnyStateOrHigh(coeff))
+                return false;
+            K.at(i, l) = c.simplify(c.neg(coeff));
+            rem = rest;
+        }
+        if (mentionsAnyStateOrHigh(rem))
+            return false;
+        fRaw.at(i, 0) = c.simplify(c.neg(rem));
+    }
+
+    const SymMatrix Minv = inv(c, M);
+    if (Minv.empty())
+        return false;
+    const SymMatrix Atop = Minv.mul(c, K);
+    const SymMatrix ftop = Minv.mul(c, fRaw);
+
+    SymMatrix Asys(nStates, nStates, c.zero());
+    keel::Array<Expr> Fsys(nStates, c.zero());
+    bool hasForcing = false;
+    for (keel::usize k = 0; k < m; ++k) {
+        const keel::usize off = stateOffsets[k];
+        const keel::usize targetRow = (maxOrders[k] == 1) ? off : (off + 1);
+        if (maxOrders[k] == 2)
+            Asys.at(off, off + 1) = c.one();
+        for (keel::usize l = 0; l < nStates; ++l)
+            Asys.at(targetRow, l) = c.simplify(Atop.at(k, l));
+        Fsys[targetRow] = c.simplify(ftop.at(k, 0));
+        if (!c.isZero(Fsys[targetRow]))
+            hasForcing = true;
+    }
+
+    // Check if complete initial conditions at a common x0 are given for all nStates.
+    bool hasCompleteIvp = true;
+    bool haveX0 = false;
+    Expr commonX0;
+    keel::Array<Expr> z0(nStates);
+    for (keel::usize k = 0; k < m && hasCompleteIvp; ++k) {
+        const keel::usize off = stateOffsets[k];
+        for (keel::i32 ord = 0; ord < maxOrders[k]; ++ord) {
+            bool foundOrd = false;
+            for (const auto &ic : perDepIcs[k]) {
+                if (ic.order == ord) {
+                    if (!haveX0) {
+                        commonX0 = ic.x0;
+                        haveX0 = true;
+                    } else if (!c.isZero(c.simplify(c.add({ic.x0, c.neg(commonX0)})))) {
+                        hasCompleteIvp = false;
+                        break;
+                    }
+                    z0[off + keel::as<keel::usize>(ord)] = ic.val;
+                    foundOrd = true;
+                    break;
+                }
+            }
+            if (!foundOrd) {
+                hasCompleteIvp = false;
+                break;
+            }
+        }
+    }
+
+    // Fast exact closed-form for homogeneous undamped 2-DOF 2nd-order system: q'' = K2 * q
+    // Solved directly in real radicals via Sylvester's spectral projector formula:
+    //   q(t) = (c1(tau)*P1 + c2(tau)*P2)*q0 + (s1(tau)*P1 + s2(tau)*P2)*v0
+    // Runs before general 4x4 matrixExp to keep real trig form (no complex exp noise) and ms latency.
+    if (m == 2 && maxOrders[0] == 2 && maxOrders[1] == 2 && !hasForcing &&
+        c.isZero(Asys.at(1, 1)) && c.isZero(Asys.at(1, 3)) &&
+        c.isZero(Asys.at(3, 1)) && c.isZero(Asys.at(3, 3))) {
+        const Expr k00 = Asys.at(1, 0);
+        const Expr k01 = Asys.at(1, 2);
+        const Expr k10 = Asys.at(3, 0);
+        const Expr k11 = Asys.at(3, 2);
+        const Expr tr = c.simplify(c.add({k00, k11}));
+        const Expr dt = c.simplify(c.add({c.mul({k00, k11}), c.neg(c.mul({k01, k10}))}));
+        const Expr disc = c.simplify(c.add({c.pow(tr, c.number(keel::i64{2})),
+                                            c.mul({c.number(keel::i64{-4}), dt})}));
+        keel::c64 discNum;
+        if (evalComplexExprRec(c, disc, discNum) &&
+            keel::abs(discNum.imag()) < 1e-12 && discNum.real() > 1e-15) {
+            const Expr half = c.number(Rational(keel::i64{1}, BigInt(2)));
+            const Expr sqrtDisc = c.simplify(c.pow(disc, half));
+            const Expr mu1 = c.simplify(c.mul({half, c.add({tr, sqrtDisc})}));
+            const Expr mu2 = c.simplify(c.mul({half, c.add({tr, c.neg(sqrtDisc)})}));
+
+            const Expr p1_00 = c.simplify(c.div(c.add({k00, c.neg(mu2)}), sqrtDisc));
+            const Expr p1_01 = c.simplify(c.div(k01, sqrtDisc));
+            const Expr p1_10 = c.simplify(c.div(k10, sqrtDisc));
+            const Expr p1_11 = c.simplify(c.div(c.add({k11, c.neg(mu2)}), sqrtDisc));
+
+            const Expr p2_00 = c.simplify(c.div(c.add({mu1, c.neg(k00)}), sqrtDisc));
+            const Expr p2_01 = c.simplify(c.div(c.neg(k01), sqrtDisc));
+            const Expr p2_10 = c.simplify(c.div(c.neg(k10), sqrtDisc));
+            const Expr p2_11 = c.simplify(c.div(c.add({mu1, c.neg(k11)}), sqrtDisc));
+
+            const Expr tau = hasCompleteIvp
+                                 ? c.simplify(c.add({xSym, c.neg(commonX0)}))
+                                 : xSym;
+
+            auto modePair = [&](Expr mu, Expr &cMode, Expr &sMode) -> bool {
+                keel::c64 muNum;
+                if (!evalComplexExprRec(c, mu, muNum) || keel::abs(muNum.imag()) > 1e-12)
+                    return false;
+                if (muNum.real() < -1e-15) {
+                    const Expr w = c.pow(c.simplify(c.neg(mu)), half);
+                    const Expr wt = c.mul({w, tau});
+                    cMode = c.func("cos", wt);
+                    sMode = c.div(c.func("sin", wt), w);
+                } else if (muNum.real() > 1e-15) {
+                    const Expr a = c.pow(mu, half);
+                    const Expr at = c.mul({a, tau});
+                    cMode = c.func("cosh", at);
+                    sMode = c.div(c.func("sinh", at), a);
+                } else {
+                    cMode = c.one();
+                    sMode = tau;
+                }
+                return true;
+            };
+
+            Expr c1Mode, s1Mode, c2Mode, s2Mode;
+            if (modePair(mu1, c1Mode, s1Mode) && modePair(mu2, c2Mode, s2Mode)) {
+                const Expr q0_0 = hasCompleteIvp ? z0[0] : c.symbol("C1");
+                const Expr v0_0 = hasCompleteIvp ? z0[1] : c.symbol("C2");
+                const Expr q0_1 = hasCompleteIvp ? z0[2] : c.symbol("C3");
+                const Expr v0_1 = hasCompleteIvp ? z0[3] : c.symbol("C4");
+
+                const Expr a1_0 = c.simplify(c.add({c.mul({p1_00, q0_0}), c.mul({p1_01, q0_1})}));
+                const Expr a2_0 = c.simplify(c.add({c.mul({p2_00, q0_0}), c.mul({p2_01, q0_1})}));
+                const Expr b1_0 = c.simplify(c.add({c.mul({p1_00, v0_0}), c.mul({p1_01, v0_1})}));
+                const Expr b2_0 = c.simplify(c.add({c.mul({p2_00, v0_0}), c.mul({p2_01, v0_1})}));
+
+                const Expr a1_1 = c.simplify(c.add({c.mul({p1_10, q0_0}), c.mul({p1_11, q0_1})}));
+                const Expr a2_1 = c.simplify(c.add({c.mul({p2_10, q0_0}), c.mul({p2_11, q0_1})}));
+                const Expr b1_1 = c.simplify(c.add({c.mul({p1_10, v0_0}), c.mul({p1_11, v0_1})}));
+                const Expr b2_1 = c.simplify(c.add({c.mul({p2_10, v0_0}), c.mul({p2_11, v0_1})}));
+
+                const Expr sol0 = c.add({c.mul({a1_0, c1Mode}), c.mul({a2_0, c2Mode}),
+                                         c.mul({b1_0, s1Mode}), c.mul({b2_0, s2Mode})});
+                const Expr sol1 = c.add({c.mul({a1_1, c1Mode}), c.mul({a2_1, c2Mode}),
+                                         c.mul({b1_1, s1Mode}), c.mul({b2_1, s2Mode})});
+
+                Value st = Value::structure(mr);
+                st.field(depNames[0].as_ref()) = fromSymExpr(ctxPtr, sol0, mr);
+                st.field(depNames[1].as_ref()) = fromSymExpr(ctxPtr, sol1, mr);
+                outVal = keel::move(st);
+                return true;
+            }
+        }
+    }
+
+    OdeSystemResult sysRes;
+    if (hasCompleteIvp) {
+        sysRes = hasForcing
+                     ? dsolveSystem1LinearIVP(c, Asys, Fsys, xSym, commonX0, z0)
+                     : dsolveSystem1LinearIVP(c, Asys, xSym, commonX0, z0);
+    } else {
+        sysRes = hasForcing
+                     ? dsolveSystem1Linear(c, Asys, Fsys, xSym)
+                     : dsolveSystem1Linear(c, Asys, xSym);
+    }
+
+    if (sysRes.proved() && sysRes.y.size() == nStates) {
+        Value st = Value::structure(mr);
+        for (keel::usize k = 0; k < m; ++k)
+            st.field(depNames[k].as_ref()) = fromSymExpr(ctxPtr, sysRes.y[stateOffsets[k]], mr);
+        outVal = keel::move(st);
+        return true;
+    }
+
+    return false;
+}
+
 bool trySolveStringDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> args,
                           keel::Allocator *mr, numkit::Value &outVal)
 {
@@ -3449,54 +3865,110 @@ bool trySolveStringDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> a
     }
 
     keel::Array<keel::String> odeClauses;
-    keel::Array<ParsedDsolveIc> ics;
-    keel::String depName;
+    keel::Array<keel::Pair<keel::String, ParsedDsolveIc>> rawIcs;
     for (const auto &cl : clauses) {
+        keel::String icDep;
         ParsedDsolveIc ic;
-        if (tryParseIcClause(c, cl, depName, ic)) {
-            ics.push_back(keel::move(ic));
+        if (tryParseIcClause(c, cl, icDep, ic)) {
+            rawIcs.push_back(keel::Pair<keel::String, ParsedDsolveIc>(keel::move(icDep), keel::move(ic)));
         } else {
             odeClauses.push_back(cl.clone());
         }
     }
-    if (odeClauses.size() != 1)
+    if (odeClauses.empty())
         return false;
 
-    const keel::String &odeRaw = odeClauses[0];
-    keel::i32 maxOrder = 0;
-    for (keel::usize i = 0; i < odeRaw.size();) {
-        if (keel::is_ascii_alpha(odeRaw[i]) || odeRaw[i] == '_') {
-            keel::usize j = i + 1;
-            while (j < odeRaw.size() && (keel::is_ascii_alnum(odeRaw[j]) || odeRaw[j] == '_'))
-                ++j;
-            keel::StringRef id = odeRaw.as_ref().substr(i, j - i);
-            keel::i32 ord = 0;
-            keel::String dep;
-            if (parseDerivIdent(id, ord, dep)) {
-                if (depName.empty() || dep == depName) {
-                    depName = keel::move(dep);
-                    if (ord > maxOrder)
-                        maxOrder = ord;
+    // Collect all dependent variables and their max derivative order across all ODE clauses.
+    keel::Array<keel::String> depNames;
+    keel::Array<keel::i32> maxOrders;
+    for (const auto &odeRaw : odeClauses) {
+        for (keel::usize i = 0; i < odeRaw.size();) {
+            if (keel::is_ascii_alpha(odeRaw[i]) || odeRaw[i] == '_') {
+                keel::usize j = i + 1;
+                while (j < odeRaw.size() && (keel::is_ascii_alnum(odeRaw[j]) || odeRaw[j] == '_'))
+                    ++j;
+                keel::StringRef id = odeRaw.as_ref().substr(i, j - i);
+                keel::i32 ord = 0;
+                keel::String dep;
+                if (parseDerivIdent(id, ord, dep)) {
+                    keel::usize idx = depNames.size();
+                    for (keel::usize k = 0; k < depNames.size(); ++k) {
+                        if (depNames[k] == dep) {
+                            idx = k;
+                            break;
+                        }
+                    }
+                    if (idx == depNames.size()) {
+                        depNames.push_back(keel::move(dep));
+                        maxOrders.push_back(ord);
+                    } else if (ord > maxOrders[idx]) {
+                        maxOrders[idx] = ord;
+                    }
                 }
+                i = j;
+            } else {
+                ++i;
             }
-            i = j;
-        } else {
-            ++i;
         }
     }
-    if (depName.empty())
-        depName = keel::String::from("y");
-    if (maxOrder < 1)
+
+    // Sort (depNames, maxOrders) alphabetically for deterministic output order.
+    for (keel::usize i = 1; i < depNames.size(); ++i) {
+        keel::usize j = i;
+        while (j > 0 && depNames[j].as_ref() < depNames[j - 1].as_ref()) {
+            keel::swap(depNames[j], depNames[j - 1]);
+            keel::swap(maxOrders[j], maxOrders[j - 1]);
+            --j;
+        }
+    }
+
+    Expr xSym = c.symbol(indepName);
+
+    if (odeClauses.size() == 1) {
+        if (depNames.empty() || maxOrders[0] < 1)
+            return false;
+        keel::String depName = depNames[0].clone();
+        keel::Array<ParsedDsolveIc> ics;
+        ics.reserve(rawIcs.size());
+        for (const auto &p : rawIcs)
+            ics.push_back(p.second);
+        keel::String odeNorm = stripDepCallArg(odeClauses[0], depName, indepName);
+        Expr eq = parseExprFlexible(c, odeNorm, "dsolve");
+        return solveParsedOdeExpr(ctxPtr, eq, depName.as_ref(), xSym, maxOrders[0],
+                                  ics.as_ref(), mr, outVal);
+    }
+
+    if (odeClauses.size() != depNames.size())
         return false;
 
-    keel::String odeNorm = stripDepCallArg(odeRaw, depName, indepName);
-    Expr eq = parseExprFlexible(c, odeNorm, "dsolve");
-    Expr xSym = c.symbol(indepName);
-    return solveParsedOdeExpr(ctxPtr, eq, depName.as_ref(), xSym, maxOrder, ics.as_ref(), mr, outVal);
+    keel::Array<Expr> odeEqs;
+    odeEqs.reserve(odeClauses.size());
+    for (const auto &raw : odeClauses) {
+        keel::String norm = raw.clone();
+        for (const auto &dep : depNames)
+            norm = stripDepCallArg(norm, dep, indepName);
+        odeEqs.push_back(parseExprFlexible(c, norm, "dsolve"));
+    }
+
+    keel::Array<keel::Array<ParsedDsolveIc>> perDepIcs(depNames.size());
+    for (const auto &p : rawIcs) {
+        for (keel::usize k = 0; k < depNames.size(); ++k) {
+            if (p.first == depNames[k]) {
+                perDepIcs[k].push_back(p.second);
+                break;
+            }
+        }
+    }
+
+    return solveOdeSystem(ctxPtr, odeEqs.as_ref(), depNames.as_ref(), maxOrders.as_ref(),
+                          xSym, perDepIcs.as_ref(), mr, outVal);
 }
 
-// Scan an expression tree for `diff(y(t), t [, n])` nodes to find (depName, indepSym, maxOrder).
-void scanSymOdeDiffs(const Ctx &c, Expr e, keel::String &depName, Expr &indepSym, keel::i32 &maxOrder)
+// Scan an expression tree for all `diff(y(t), t [, n])` nodes to find all (depNames, maxOrders, indepSym).
+void scanSymOdeDiffsAll(const Ctx &c, Expr e,
+                        keel::Array<keel::String> &depNames,
+                        keel::Array<keel::i32> &maxOrders,
+                        Expr &indepSym)
 {
     if (e.isNull())
         return;
@@ -3512,17 +3984,29 @@ void scanSymOdeDiffs(const Ctx &c, Expr e, keel::String &depName, Expr &indepSym
                 if (c.numberValue(c.child(e, 2)).fitsInt64(k))
                     ord = keel::as<keel::i32>(k);
             }
-            if (depName.empty()) {
-                depName = c.funcName(target).clone();
+            if (indepSym.isNull())
                 indepSym = var;
+            if (var == indepSym) {
+                const keel::String &dep = c.funcName(target);
+                keel::usize idx = depNames.size();
+                for (keel::usize k = 0; k < depNames.size(); ++k) {
+                    if (depNames[k] == dep) {
+                        idx = k;
+                        break;
+                    }
+                }
+                if (idx == depNames.size()) {
+                    depNames.push_back(dep.clone());
+                    maxOrders.push_back(ord);
+                } else if (ord > maxOrders[idx]) {
+                    maxOrders[idx] = ord;
+                }
             }
-            if (c.funcName(target) == depName && var == indepSym && ord > maxOrder)
-                maxOrder = ord;
             return;
         }
     }
     for (keel::usize i = 0; i < c.childCount(e); ++i)
-        scanSymOdeDiffs(c, c.child(e, i), depName, indepSym, maxOrder);
+        scanSymOdeDiffsAll(c, c.child(e, i), depNames, maxOrders, indepSym);
 }
 
 // Replace `y(t)` -> `y`, `diff(y(t), t)` -> `Dy`, `diff(y(t), t, k)` -> `D<k>y`.
@@ -3650,33 +4134,60 @@ bool trySolveSymEqDsolve(keel::Arc<Ctx> ctxPtr, keel::ArrayRef<numkit::Value> ar
             items.push_back(e);
     }
 
-    keel::String depName;
+    keel::Array<keel::String> depNames;
+    keel::Array<keel::i32> maxOrders;
     Expr indepSym;
-    keel::i32 maxOrder = 0;
     for (const Expr e : items)
-        scanSymOdeDiffs(c, e, depName, indepSym, maxOrder);
+        scanSymOdeDiffsAll(c, e, depNames, maxOrders, indepSym);
 
-    if (maxOrder < 1 || depName.empty() || indepSym.isNull())
+    if (depNames.empty() || indepSym.isNull())
         return false;
 
+    // Sort (depNames, maxOrders) alphabetically for deterministic output order.
+    for (keel::usize i = 1; i < depNames.size(); ++i) {
+        keel::usize j = i;
+        while (j > 0 && depNames[j].as_ref() < depNames[j - 1].as_ref()) {
+            keel::swap(depNames[j], depNames[j - 1]);
+            keel::swap(maxOrders[j], maxOrders[j - 1]);
+            --j;
+        }
+    }
+
     keel::Array<Expr> odeEqs;
-    keel::Array<ParsedDsolveIc> ics;
+    keel::Array<keel::Array<ParsedDsolveIc>> perDepIcs(depNames.size());
     for (const Expr e : items) {
-        ParsedDsolveIc ic;
-        if (tryMatchSymIc(c, e, depName.as_ref(), indepSym, ic)) {
-            ics.push_back(keel::move(ic));
-        } else {
+        bool matchedIc = false;
+        for (keel::usize k = 0; k < depNames.size(); ++k) {
+            ParsedDsolveIc ic;
+            if (tryMatchSymIc(c, e, depNames[k].as_ref(), indepSym, ic)) {
+                perDepIcs[k].push_back(keel::move(ic));
+                matchedIc = true;
+                break;
+            }
+        }
+        if (!matchedIc) {
             Expr norm = e;
             if (c.kind(norm) == NodeKind::Func && c.funcName(norm) == "__eq" && c.childCount(norm) == 2)
                 norm = c.add({c.child(norm, 0), c.neg(c.child(norm, 1))});
-            odeEqs.push_back(replaceSymOdeFuncs(c, norm, depName.as_ref(), indepSym));
+            for (const auto &dep : depNames)
+                norm = replaceSymOdeFuncs(c, norm, dep.as_ref(), indepSym);
+            odeEqs.push_back(norm);
         }
     }
-    if (odeEqs.size() != 1)
-        return false;
 
-    return solveParsedOdeExpr(ctxPtr, odeEqs[0], depName.as_ref(), indepSym, maxOrder,
-                              ics.as_ref(), mr, outVal);
+    if (odeEqs.size() == 1 && depNames.size() == 1) {
+        if (maxOrders[0] < 1)
+            return false;
+        return solveParsedOdeExpr(ctxPtr, odeEqs[0], depNames[0].as_ref(), indepSym, maxOrders[0],
+                                  perDepIcs[0].as_ref(), mr, outVal);
+    }
+
+    if (odeEqs.size() >= 2 && odeEqs.size() == depNames.size()) {
+        return solveOdeSystem(ctxPtr, odeEqs.as_ref(), depNames.as_ref(), maxOrders.as_ref(),
+                              indepSym, perDepIcs.as_ref(), mr, outVal);
+    }
+
+    return false;
 }
 
 } // namespace
@@ -4029,9 +4540,49 @@ numkit::Value symFourier(keel::ArrayRef<numkit::Value> args,
     Expr t = (args.size() >= 2) ? toSymExpr(args[1], c, "fourier") : defaultSymVar(c, args[0], "t");
     Expr w = (args.size() >= 3) ? toSymExpr(args[2], c, "fourier") : c.symbol("w");
     FourierResult res = fourier(c, f, t, w);
-    if (!res.proved())
-        casFail("nk:fourier:unevaluated", keel::format("fourier: could not compute Fourier transform ({})", res.reason));
-    return fromSymExpr(ctxPtr, res.F, mr);
+    if (res.proved())
+        return fromSymExpr(ctxPtr, res.F, mr);
+
+    // Distributional pair: F{c * |t|}(w) = -2*c / w^2
+    {
+        keel::Array<Expr> factors;
+        if (c.kind(f) == NodeKind::Mul) {
+            for (keel::usize i = 0; i < c.childCount(f); ++i)
+                factors.push_back(c.child(f, i));
+        } else {
+            factors.push_back(f);
+        }
+        keel::Array<Expr> constFactors;
+        keel::usize absHits = 0;
+        bool matched = true;
+        for (const Expr fac : factors) {
+            if (!exprMentionsSymbol(c, fac, t)) {
+                constFactors.push_back(fac);
+            } else if (c.kind(fac) == NodeKind::Func && c.funcName(fac) == "abs" &&
+                       c.childCount(fac) == 1) {
+                const Expr arg = c.child(fac, 0);
+                if (arg == t || c.isZero(c.simplify(c.add({arg, t})))) {
+                    ++absHits;
+                } else {
+                    matched = false;
+                    break;
+                }
+            } else {
+                matched = false;
+                break;
+            }
+        }
+        if (matched && absHits == 1) {
+            Expr coeff = constFactors.empty()
+                             ? c.one()
+                             : (constFactors.size() == 1 ? constFactors[0] : c.mul(constFactors));
+            Expr out = c.simplify(c.mul({coeff, c.number(keel::i64{-2}),
+                                         c.pow(w, c.number(keel::i64{-2}))}));
+            return fromSymExpr(ctxPtr, out, mr);
+        }
+    }
+
+    casFail("nk:fourier:unevaluated", keel::format("fourier: could not compute Fourier transform ({})", res.reason));
 }
 
 numkit::Value symIfourier(keel::ArrayRef<numkit::Value> args,
@@ -4043,11 +4594,24 @@ numkit::Value symIfourier(keel::ArrayRef<numkit::Value> args,
     Ctx &c = *ctxPtr;
     Expr F = toSymExpr(args[0], c, "ifourier");
     Expr w = (args.size() >= 2) ? toSymExpr(args[1], c, "ifourier") : defaultSymVar(c, args[0], "w");
-    Expr t = (args.size() >= 3) ? toSymExpr(args[2], c, "ifourier") : c.symbol("t");
+    Expr t = (args.size() >= 3)
+                 ? toSymExpr(args[2], c, "ifourier")
+                 : ((c.kind(w) == NodeKind::Symbol && c.symbolName(w) == "x") ? c.symbol("t") : c.symbol("x"));
     FourierResult res = ifourier(c, F, w, t);
-    if (!res.proved())
-        casFail("nk:ifourier:unevaluated", keel::format("ifourier: could not compute inverse Fourier transform ({})", res.reason));
-    return fromSymExpr(ctxPtr, res.F, mr);
+    if (res.proved())
+        return fromSymExpr(ctxPtr, res.F, mr);
+
+    // Distributional pair: F^{-1}{c / w^2}(t) = -(c / 2) * |t|
+    if (!c.isZero(F)) {
+        Expr scaled = c.simplify(c.mul({F, c.pow(w, c.number(keel::i64{2}))}));
+        if (!exprMentionsSymbol(c, scaled, w)) {
+            Expr out = c.simplify(c.mul({c.number(Rational(keel::i64{-1}, BigInt(2))),
+                                         scaled, c.func("abs", t)}));
+            return fromSymExpr(ctxPtr, out, mr);
+        }
+    }
+
+    casFail("nk:ifourier:unevaluated", keel::format("ifourier: could not compute inverse Fourier transform ({})", res.reason));
 }
 
 numkit::Value symZtrans(keel::ArrayRef<numkit::Value> args,
